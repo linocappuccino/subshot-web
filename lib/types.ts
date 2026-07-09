@@ -28,6 +28,7 @@ export interface Project {
   location_lat: number | null;
   location_lng: number | null;
   folder_id: string | null;
+  team_id: string | null;
   thumbnail_url: string | null;
   notion_database_id: string | null;
   notion_last_synced_at: string | null;
@@ -141,6 +142,42 @@ export interface NotionDatabase {
   title: string;
 }
 
+export type TeamStatus = "inactive" | "active" | "past_due" | "canceled";
+
+export interface Team {
+  id: string;
+  name: string;
+  owner_id: string;
+  seat_count: number;
+  pending_seat_count: number | null;
+  status: TeamStatus;
+  cancel_at_period_end: boolean;
+  current_period_end: string | null;
+  unit_price_rappen: number;
+  monthly_total_rappen: number;
+  seats_used: number;
+  created_at: string;
+}
+
+export interface SeatPrice {
+  seat_count: number;
+  unit_price_rappen: number;
+  monthly_total_rappen: number;
+}
+
+export type TeamMemberStatus = "invited" | "active";
+
+export interface TeamMember {
+  id: string;
+  user_id: string | null;
+  email: string;
+  name: string | null;
+  avatar_url: string | null;
+  status: TeamMemberStatus;
+  invited_at: string;
+  joined_at: string | null;
+}
+
 export const PRIORITY_LABELS: Record<Priority, string> = {
   must: "Muss",
   should: "Sollte",
@@ -150,7 +187,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
 export const PRIORITY_COLORS: Record<Priority | "none", string> = {
   must: "#d1504f",
   should: "#e08a3c",
-  optional: "#c9a227",
+  optional: "#3d84d8",
   none: "#7a7a7a",
 };
 

@@ -8,7 +8,10 @@ import type {
   Scene,
   SceneDialogue,
   Section,
+  SeatPrice,
   Shot,
+  Team,
+  TeamMember,
   TodoItem,
   TodoList,
 } from "./types";
@@ -85,9 +88,10 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         location_lat: number | null;
         location_lng: number | null;
         folder_id: string | null;
+        team_id: string | null;
       }>
     ) => {
-      const { emoji, folder_id, ...rest } = body;
+      const { emoji, folder_id, team_id, ...rest } = body;
       return request<Project>(`projects/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
@@ -96,6 +100,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
           clear_emoji: emoji === null,
           folder_id: folder_id ?? undefined,
           clear_folder: folder_id === null,
+          team_id: team_id ?? undefined,
+          clear_team: team_id === null,
         }),
       });
     },
@@ -213,6 +219,25 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
+
+    // ── Teams (seat billing) ────────────────────────────────────────────────
+    seatPrice: (seatCount: number) => request<SeatPrice>(`seat-price?seat_count=${seatCount}`),
+    myTeams: () => request<Team[]>("teams/mine"),
+    teamCheckout: (name: string, seatCount: number) =>
+      request<{ url: string }>("teams/checkout", { method: "POST", body: JSON.stringify({ name, seat_count: seatCount }) }),
+    changeTeamSeats: (teamId: string, seatCount: number) =>
+      request<Team>(`teams/${teamId}/seats`, { method: "PATCH", body: JSON.stringify({ seat_count: seatCount }) }),
+    cancelTeam: (teamId: string) => request<Team>(`teams/${teamId}/cancel`, { method: "POST" }),
+    patchTeam: (teamId: string, name: string) =>
+      request<Team>(`teams/${teamId}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+    teamMembers: (teamId: string) => request<TeamMember[]>(`teams/${teamId}/members`),
+    inviteTeamMember: (teamId: string, email: string) =>
+      request<{ id: string; invited_email: string; status: string; token: string | null; invited_at: string }>(
+        `teams/${teamId}/invites`,
+        { method: "POST", body: JSON.stringify({ email }) }
+      ),
+    removeTeamMember: (teamId: string, membershipId: string) =>
+      request<void>(`teams/${teamId}/members/${membershipId}`, { method: "DELETE" }),
 
     // ── Location (no paid API key - Nominatim search + OSM static tiles,
     // same reasoning as the iOS app using MapKit instead of a Google key) ──

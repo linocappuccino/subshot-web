@@ -27,6 +27,11 @@ import { IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { ShotEditModal } from "./ShotEditModal";
 
+export function googleMapsUrl(scene: Scene): string {
+  const query = scene.location_lat != null && scene.location_lng != null ? `${scene.location_lat},${scene.location_lng}` : scene.location_address ?? "";
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
 function CalendarIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -48,6 +53,13 @@ function FilmIcon() {
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4" />
+    </svg>
+  );
+}
+function TextIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h16M4 12h16M4 18h10" />
     </svg>
   );
 }
@@ -217,7 +229,17 @@ export function SceneCard({
                   {scene.duration_minutes ? ` · ${scene.duration_minutes} Min.` : ""}
                 </Pill>
               )}
-              {scene.location_address && <Pill icon={<PinIcon />}>{scene.location_address}</Pill>}
+              {scene.location_address && (
+                <a
+                  href={googleMapsUrl(scene)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="hover:brightness-125 transition-[filter]"
+                >
+                  <Pill icon={<PinIcon />}>{scene.location_address}</Pill>
+                </a>
+              )}
             </div>
           )}
         </div>
@@ -275,7 +297,14 @@ export function SceneCard({
         </div>
       )}
 
-      {scene.description && <p className="text-sm text-white/80 mb-1.5 whitespace-pre-wrap">{scene.description}</p>}
+      {scene.description && (
+        <div className="mb-1.5">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 mb-1">
+            <TextIcon /> Beschreibung
+          </div>
+          <p className="text-sm text-white/80 whitespace-pre-wrap">{scene.description}</p>
+        </div>
+      )}
       {scene.dialogue && <p className="text-sm italic text-white/50 mb-1.5">„{scene.dialogue}“</p>}
 
       {scene.dialogues.length > 0 && (

@@ -1,0 +1,52 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#151826"/>
+      <stop offset="55%" stop-color="#2C3499"/>
+      <stop offset="100%" stop-color="#4F5BE0"/>
+    </linearGradient>
+    <linearGradient id="sGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#E7E9FF"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <rect x="0" y="0" width="1024" height="1024" rx="228" ry="228"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bgGrad)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="black" opacity="0.05"/>
+
+    <text x="418" y="742"
+          font-family="Arial, 'Helvetica Neue', sans-serif"
+          font-weight="800"
+          font-size="700"
+          text-anchor="middle"
+          fill="url(#sGrad)">S</text>
+
+    <g transform="translate(624,150)">
+      <circle cx="130" cy="130" r="150" fill="#F5A623"/>
+      <circle cx="130" cy="130" r="150" fill="black" opacity="0.05"/>
+
+      <rect x="48" y="118" width="164" height="110" rx="14" fill="#151826"/>
+
+      <g transform="rotate(-12 130 118)">
+        <rect x="42" y="86" width="176" height="46" rx="10" fill="#151826"/>
+        <clipPath id="barClip">
+          <rect x="42" y="86" width="176" height="46" rx="10"/>
+        </clipPath>
+        <g clip-path="url(#barClip)">
+          <rect x="42" y="86" width="176" height="46" fill="#151826"/>
+          <g fill="#FFFFFF">
+            <polygon points="60,132 90,86 110,86 80,132"/>
+            <polygon points="120,132 150,86 170,86 140,132"/>
+            <polygon points="180,132 210,86 230,86 200,132"/>
+          </g>
+        </g>
+      </g>
+
+      <circle cx="200" cy="118" r="9" fill="#F5A623" stroke="#151826" stroke-width="4"/>
+    </g>
+  </g>
+</svg>

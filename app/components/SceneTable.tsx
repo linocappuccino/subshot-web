@@ -6,6 +6,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
+import { googleMapsUrl } from "./SceneCard";
 import { ColorBadge, Pill } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
 import { AuthImage } from "./AuthImage";
@@ -29,7 +30,7 @@ export function SceneTable({
   members: Member[];
   onEditScene: (scene: Scene) => void;
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
-  onReorder: (ordered: Scene[]) => void;
+  onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -67,7 +68,8 @@ export function SceneTable({
     const oldIndex = scenes.findIndex((s) => s.id === active.id);
     const newIndex = scenes.findIndex((s) => s.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    onReorder(arrayMove(scenes, oldIndex, newIndex));
+    const reordered = arrayMove(scenes, oldIndex, newIndex);
+    onReorder(reordered, reordered[newIndex].id, reordered[newIndex + 1]?.id ?? null);
   }
 
   return (
@@ -181,8 +183,16 @@ function SceneRow({
           <span className="text-white/25">—</span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-white/60 max-w-[160px] cursor-pointer" onClick={() => onEditScene(scene)}>
-        {scene.location_address || <span className="text-white/25">—</span>}
+      <td className="px-3 py-2.5 text-white/60 max-w-[160px]">
+        {scene.location_address ? (
+          <a href={googleMapsUrl(scene)} target="_blank" rel="noopener noreferrer" className="hover:text-white hover:underline">
+            {scene.location_address}
+          </a>
+        ) : (
+          <span className="text-white/25 cursor-pointer" onClick={() => onEditScene(scene)}>
+            —
+          </span>
+        )}
       </td>
       <td className="px-3 py-2.5 text-white/70 max-w-[220px] cursor-pointer" onClick={() => onEditScene(scene)}>
         {scene.description || <span className="text-white/25">—</span>}

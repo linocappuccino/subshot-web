@@ -112,16 +112,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setNewSectionName("");
   }
 
-  async function createShareLink() {
-    if (!data) return;
-    setCreatingLink(true);
+  async function resolveShareLink(): Promise<string | null> {
+    if (!data) return null;
     try {
       const result = await api.shareLink(data.id);
       setShareLink(result.url);
-      await navigator.clipboard.writeText(result.url).catch(() => {});
-      toast.showSuccess("Link kopiert.");
+      return result.url;
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      return null;
+    }
+  }
+
+  async function copyPreviewLink() {
+    setCreatingLink(true);
+    try {
+      const url = await resolveShareLink();
+      if (!url) return;
+      await navigator.clipboard.writeText(url);
+      toast.showSuccess("Previewlink kopiert");
+    } catch {
+      toast.showError("Fehlgeschlagen.");
+    } finally {
+      setCreatingLink(false);
+    }
+  }
+
+  async function shareProject() {
+    setCreatingLink(true);
+    try {
+      const url = await resolveShareLink();
+      if (!url) return;
+      if (navigator.share) {
+        await navigator.share({ title: data?.name || "Subshot-Projekt", url }).catch(() => {});
+      } else {
+        await navigator.clipboard.writeText(url);
+        toast.showSuccess("Previewlink kopiert");
+      }
     } finally {
       setCreatingLink(false);
     }
@@ -187,8 +214,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <Button variant="secondary" size="sm" onClick={exportPdf} disabled={exportingPdf}>
               <DocIcon /> {exportingPdf ? "Exportiert…" : "PDF"}
             </Button>
-            <Button variant="secondary" size="sm" onClick={createShareLink} disabled={creatingLink}>
-              <LinkIcon /> {shareLink ? "Link erneuern" : "Link teilen"}
+            <Button variant="secondary" size="sm" onClick={copyPreviewLink} disabled={creatingLink}>
+              <LinkIcon /> Link
+            </Button>
+            <Button variant="secondary" size="sm" onClick={shareProject} disabled={creatingLink}>
+              <ShareIcon /> Teilen
             </Button>
             <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
               <button
@@ -208,12 +238,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </div>
           </div>
         </div>
-
-        {shareLink && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mb-6">
-            <Input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} className="text-xs max-w-md" />
-          </motion.div>
-        )}
 
         <ProjectInfoBox
           project={data}
@@ -237,7 +261,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onChange={updateScenesShots}
               onEditScene={setEditingScene}
               onDeleteScene={setDeleteScene}
-              onReorder={(ordered) => reorderScenes(api, ordered, setData)}
+              onReorder={(ordered, movedId, beforeId) => reorderScenes(api, ordered, movedId, beforeId, setData)}
               viewMode={viewMode}
             />
           );
@@ -252,7 +276,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             onChange={updateScenesShots}
             onEditScene={setEditingScene}
             onDeleteScene={setDeleteScene}
-            onReorder={(ordered) => reorderScenes(api, ordered, setData)}
+            onReorder={(ordered, movedId, beforeId) => reorderScenes(api, ordered, movedId, beforeId, setData)}
             viewMode={viewMode}
           />
         )}
@@ -305,6 +329,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         open={showTeam}
         onClose={() => setShowTeam(false)}
         projectId={data.id}
+        teamId={data.team_id}
         members={members}
         onChange={(updater) => setMembers(updater)}
       />
@@ -318,9 +343,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
+// Serializes backend move calls across successive drags (even across
+// separate SectionBlocks/tables). Two drags fired back-to-back used to send
+// their moveScene calls concurrently, and each call renumbers/reorders every
+// sibling scene in the project server-side - an in-flight call from drag #1
+// racing with drag #2's could scramble sort_order/number-letter assignment
+// badly enough that two scenes ended up sharing a number, which read as a
+// "duplicated" tile. Chaining through this queue guarantees only one
+// moveScene request is ever in flight at a time.
+let reorderQueue: Promise<void> = Promise.resolve();
+
 async function reorderScenes(
   api: ReturnType<typeof useApi>,
   ordered: Scene[],
+  movedSceneId: string,
+  beforeSceneId: string | null,
   setData: React.Dispatch<React.SetStateAction<ProjectDetail | null>>
 ) {
   setData((prev) => {
@@ -328,17 +365,17 @@ async function reorderScenes(
     const others = prev.scenes.filter((s) => !ordered.some((o) => o.id === s.id));
     return { ...prev, scenes: [...others, ...ordered] };
   });
-  // Backend renumbers via move-before-neighbor, one call per moved scene is
-  // unavoidable (no bulk-reorder endpoint - see moveScene in ShotListViewModel
-  // on iOS for the same constraint). Only the scene that actually moved needs
-  // the call; the rest just shifted index because of it.
-  for (let i = 0; i < ordered.length - 1; i++) {
-    try {
-      await api.moveScene(ordered[i].id, ordered[i + 1].id);
-    } catch {
-      // best-effort; a full reload will fix any drift
-    }
-  }
+  // Only the scene that actually moved needs a backend call - everything
+  // else in `ordered` just shifted index because of it.
+  reorderQueue = reorderQueue.then(() =>
+    api.moveScene(movedSceneId, beforeSceneId).then(
+      () => {},
+      () => {
+        // best-effort; a full reload will fix any drift
+      }
+    )
+  );
+  await reorderQueue;
 }
 
 function SectionBlock({
@@ -359,7 +396,7 @@ function SectionBlock({
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
-  onReorder: (ordered: Scene[]) => void;
+  onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
   viewMode: "grid" | "table";
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -379,7 +416,8 @@ function SectionBlock({
     const oldIndex = scenes.findIndex((s) => s.id === active.id);
     const newIndex = scenes.findIndex((s) => s.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    onReorder(arrayMove(scenes, oldIndex, newIndex));
+    const reordered = arrayMove(scenes, oldIndex, newIndex);
+    onReorder(reordered, reordered[newIndex].id, reordered[newIndex + 1]?.id ?? null);
   }
 
   const activeScene = activeId ? scenes.find((s) => s.id === activeId) ?? null : null;
@@ -471,6 +509,14 @@ function LinkIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5" />
       <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5" />
+    </svg>
+  );
+}
+function ShareIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+      <path d="M8.6 10.5 15.4 6.5M8.6 13.5l6.8 4" />
     </svg>
   );
 }
