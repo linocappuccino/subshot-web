@@ -311,7 +311,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       <NotionImportModal
         open={showNotion}
         onClose={() => setShowNotion(false)}
-        projectId={data.id}
+        project={data}
         onImported={() => api.projectDetail(data.id).then(setData)}
       />
     </AppShell>

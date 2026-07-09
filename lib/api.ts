@@ -192,8 +192,10 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     setNotionToken: (token: string) =>
       request<void>("me/notion-token", { method: "POST", body: JSON.stringify({ token }) }),
     notionDatabases: () => request<NotionDatabase[]>("me/notion-databases"),
-    importNotion: (projectId: string, databaseId: string) =>
-      request<{ imported: number }>(`projects/${projectId}/import-notion`, {
+    // databaseId omitted re-uses the project's already-linked database (see
+    // Project.notion_database_id) - only required the very first time.
+    importNotion: (projectId: string, databaseId?: string) =>
+      request<{ imported: number; updated: number }>(`projects/${projectId}/import-notion`, {
         method: "POST",
         body: JSON.stringify({ database_id: databaseId }),
       }),

@@ -29,6 +29,8 @@ export interface Project {
   location_lng: number | null;
   folder_id: string | null;
   thumbnail_url: string | null;
+  notion_database_id: string | null;
+  notion_last_synced_at: string | null;
   last_opened_at: string;
   created_at: string;
 }
