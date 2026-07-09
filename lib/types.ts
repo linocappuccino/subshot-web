@@ -180,8 +180,8 @@ export interface TeamMember {
 }
 
 export const PRIORITY_LABELS: Record<Priority, string> = {
-  must: "Muss",
-  should: "Sollte",
+  must: "Wichtig",
+  should: "Nice to have",
   optional: "Optional",
 };
 
