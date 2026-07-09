@@ -7,6 +7,7 @@ import type { Member, Project, TodoList } from "@/lib/types";
 import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
+import { DateTimePicker } from "./ui/DateTimePicker";
 import { Avatar } from "./ui/Avatar";
 import { Button } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -83,12 +84,9 @@ export function ProjectInfoBox({
               label="Drehdatum festlegen"
             />
             {hasShootDate && (
-              <input
-                type="date"
-                value={project.shoot_date ? project.shoot_date.slice(0, 10) : ""}
-                onChange={(e) => updateShootDate(e.target.value ? new Date(e.target.value) : null)}
-                className="mt-2 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-              />
+              <div className="mt-2">
+                <DateTimePicker value={project.shoot_date ? new Date(project.shoot_date) : new Date()} onChange={updateShootDate} />
+              </div>
             )}
           </div>
 

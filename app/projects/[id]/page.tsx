@@ -426,7 +426,7 @@ function SectionBlock({
 
   const content =
     viewMode === "table" ? (
-      <SceneTable scenes={scenes} shotsFor={shotsFor} members={members} onEditScene={onEditScene} onChange={onChange} />
+      <SceneTable scenes={scenes} shotsFor={shotsFor} members={members} onEditScene={onEditScene} onChange={onChange} onReorder={onReorder} />
     ) : (
       grid
     );

@@ -137,10 +137,11 @@ export function LocationPicker({
           href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="block mt-2 rounded-xl overflow-hidden border border-white/10 hover:opacity-90 transition-opacity"
+          className="flex items-center gap-3 mt-2 rounded-xl overflow-hidden border border-white/10 hover:bg-white/5 transition-colors p-1.5"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={effectiveMapUrl} alt={address} className="w-full h-32 object-cover" />
+          <img src={effectiveMapUrl} alt="" className="w-16 h-16 object-cover rounded-lg shrink-0" />
+          <span className="text-sm text-white/70 leading-snug">{address}</span>
         </motion.a>
       )}
     </div>
