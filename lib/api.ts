@@ -49,7 +49,7 @@ export function createApiClient(getToken: () => Promise<string | null>) {
   }
 
   return {
-    me: () => request<{ id: string; email: string; name: string | null; avatar_url: string | null }>("me"),
+    me: () => request<{ id: string; email: string; name: string | null; avatar_url: string | null; has_notion_token: boolean }>("me"),
     knownCollaborators: () => request<Member[]>("me/known-collaborators"),
 
     // ── Folders ──────────────────────────────────────────────────────────
@@ -61,7 +61,7 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       }),
     patchFolder: (
       id: string,
-      body: Partial<{ name: string; color: string; emoji: string | null; sort_order: number }>
+      body: Partial<{ name: string; color: string; emoji: string | null; sort_order: number; clear_background_image: boolean }>
     ) => {
       const { emoji, ...rest } = body;
       return request<ProjectFolder>(`folders/${id}`, {
@@ -70,6 +70,11 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       });
     },
     deleteFolder: (id: string) => request<void>(`folders/${id}`, { method: "DELETE" }),
+    uploadFolderImage: (id: string, file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<ProjectFolder>(`folders/${id}/image`, { method: "POST", body: form });
+    },
 
     // ── Projects ─────────────────────────────────────────────────────────
     projects: (folderId?: string) =>

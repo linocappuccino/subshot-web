@@ -91,14 +91,28 @@ function ProjectsPageContent() {
     }
   }
 
-  async function createOrEditFolder(name: string, color: string, emoji: string | null, existing: ProjectFolder | null) {
+  async function createOrEditFolder(
+    name: string,
+    color: string,
+    emoji: string | null,
+    imageFile: File | null,
+    clearImage: boolean,
+    existing: ProjectFolder | null
+  ) {
     try {
+      let folder: ProjectFolder;
       if (existing) {
-        const updated = await api.patchFolder(existing.id, { name, color, emoji });
-        setFolders((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+        folder = await api.patchFolder(existing.id, { name, color, emoji, clear_background_image: clearImage });
       } else {
-        const created = await api.createFolder(name, color, emoji ?? undefined, folders.length);
-        setFolders((prev) => [...prev, created]);
+        folder = await api.createFolder(name, color, emoji ?? undefined, folders.length);
+      }
+      if (imageFile) {
+        folder = await api.uploadFolderImage(folder.id, imageFile);
+      }
+      if (existing) {
+        setFolders((prev) => prev.map((f) => (f.id === folder.id ? folder : f)));
+      } else {
+        setFolders((prev) => [...prev, folder]);
         toast.showSuccess("Ordner angelegt.");
       }
     } catch (e) {
@@ -236,8 +250,8 @@ function ProjectsPageContent() {
         open={editingFolder !== null}
         onClose={() => setEditingFolder(null)}
         existing={editingFolder === "new" ? null : editingFolder}
-        onSave={(name, color, emoji) =>
-          createOrEditFolder(name, color, emoji, editingFolder === "new" ? null : editingFolder)
+        onSave={(name, color, emoji, imageFile, clearImage) =>
+          createOrEditFolder(name, color, emoji, imageFile, clearImage, editingFolder === "new" ? null : editingFolder)
         }
       />
       <ProjectEditModal
@@ -296,6 +310,7 @@ function TileGrid({ children }: { children: React.ReactNode }) {
 function TileShell({
   href,
   color,
+  hasImage,
   children,
   menu,
   label,
@@ -303,6 +318,14 @@ function TileShell({
 }: {
   href: string;
   color: string;
+  /** True whenever `children` is a full-bleed photo (folder background image
+   * or a project's scene-thumbnail) rather than a bare emoji - applies the
+   * same "light, slightly graded photo behind legible UI" treatment every
+   * app-style card view uses (Spotify/Apple Music playlist art, Notion
+   * covers, ...): a subtle darkening scrim plus a gentle exposure/contrast
+   * grade, so an arbitrary uploaded photo always reads as part of this UI
+   * instead of a raw, un-styled image sitting on top of it. */
+  hasImage?: boolean;
   children: React.ReactNode;
   menu: React.ReactNode;
   label: string;
@@ -323,7 +346,19 @@ function TileShell({
           className="aspect-[4/3] rounded-2xl overflow-hidden relative flex items-center justify-center shadow-lg shadow-black/20 ring-1 ring-white/10 transition-shadow group-hover:shadow-xl group-hover:shadow-black/30"
           style={{ backgroundColor: `${color}e6` }}
         >
-          {children}
+          {hasImage ? (
+            <div className="absolute inset-0 [&>img]:w-full [&>img]:h-full [&>img]:object-cover" style={{ filter: "brightness(0.94) saturate(1.08) contrast(1.04)" }}>
+              {children}
+            </div>
+          ) : (
+            children
+          )}
+          {hasImage && (
+            <div
+              className="absolute inset-0 pointer-events-none"
+              style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.1) 55%, rgba(0,0,0,0.45) 100%)" }}
+            />
+          )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
         </div>
         <div className="mt-2 text-sm font-semibold truncate">{label}</div>
@@ -358,6 +393,7 @@ function ProjectTile({
     <TileShell
       href={`/projects/${project.id}`}
       color={project.color}
+      hasImage={Boolean(project.thumbnail_url)}
       label={project.name}
       subtitle={`Wird gelöscht in ${daysUntilDeletion} Tagen`}
       menu={
@@ -418,6 +454,7 @@ function FolderTile({
     <TileShell
       href={`/projects?folder=${folder.id}`}
       color={folder.color}
+      hasImage={Boolean(folder.background_image_url)}
       label={folder.name}
       subtitle={`${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`}
       menu={
@@ -456,7 +493,11 @@ function FolderTile({
         </Menu>
       }
     >
-      <span className="text-3xl">{folder.emoji || "📁"}</span>
+      {folder.background_image_url ? (
+        <AuthImage path={folder.background_image_url} alt={folder.name} className="w-full h-full object-cover" />
+      ) : (
+        <span className="text-3xl">{folder.emoji || "📁"}</span>
+      )}
     </TileShell>
   );
 }

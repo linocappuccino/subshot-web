@@ -46,7 +46,19 @@ export function NotionImportModal({
   const [wasOpen, setWasOpen] = useState(open);
   if (open && !wasOpen) {
     setWasOpen(true);
-    setStep(project.notion_database_id ? "synced" : "token");
+    if (project.notion_database_id) {
+      setStep("synced");
+    } else {
+      // The Notion token is saved once per Subshot account (POST
+      // /me/notion-token), not per project - re-asking for it on every
+      // new project that hasn't been linked yet was a real bug (Lino: "muss
+      // ich jetzt jedesmal den Key suchen?"). Check first whether one's
+      // already stored and skip straight to picking a database if so.
+      setStep("token");
+      api.me().then((me) => {
+        if (me.has_notion_token) loadDatabases();
+      });
+    }
   } else if (!open && wasOpen) {
     setWasOpen(false);
   }

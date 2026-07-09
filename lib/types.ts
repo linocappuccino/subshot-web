@@ -14,6 +14,7 @@ export interface ProjectFolder {
   color: string;
   emoji: string | null;
   sort_order: number;
+  background_image_url: string | null;
   project_count: number;
   created_at: string;
 }
