@@ -137,7 +137,7 @@ function SceneRow({
   return (
     <tr
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      style={{ transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       className={`border-t border-white/6 transition-colors hover:bg-white/[0.05] align-top ${scene.completed ? "bg-emerald-500/[0.06]" : ""}`}
     >
       <td className="pl-2 pt-3">

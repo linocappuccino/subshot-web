@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 
@@ -27,12 +28,25 @@ function sameDay(a: Date, b: Date) {
 export function DateTimePicker({ value, onChange }: { value: Date; onChange: (date: Date) => void }) {
   const [open, setOpen] = useState(false);
   const [viewMonth, setViewMonth] = useState(startOfMonth(value));
-  const ref = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    // The popover is portaled straight to <body> (see render below) so it
+    // can't get clipped by an ancestor's overflow:hidden - the "Projektinfos"
+    // Collapsible section uses exactly that for its expand/collapse
+    // animation, which used to crop off the hour/minute row at the bottom
+    // of this popover, making it look like time couldn't be set at all.
+    // Because of the portal, a click inside the popover no longer lands
+    // inside `buttonRef`'s subtree, so outside-click detection has to check
+    // both refs, not just the trigger's.
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (buttonRef.current?.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -44,6 +58,10 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
     // rather than in an effect watching `open`, which was flagged as an
     // avoidable synchronous setState-in-effect.
     setViewMonth(startOfMonth(value));
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setCoords({ top: rect.bottom + 8, left: rect.left, width: rect.width });
+    }
     setOpen((v) => !v);
   }
 
@@ -72,8 +90,9 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={toggleOpen}
         className="w-full flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm hover:bg-white/8 transition-colors text-left"
@@ -89,15 +108,19 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
         </span>
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: -6 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: -6 }}
-            transition={{ type: "spring", stiffness: 420, damping: 30 }}
-            className="absolute z-40 mt-2 w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
-          >
+      {typeof document !== "undefined" && coords &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
+              <motion.div
+                ref={popoverRef}
+                initial={{ opacity: 0, scale: 0.96, y: -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: -6 }}
+                transition={{ type: "spring", stiffness: 420, damping: 30 }}
+                style={{ position: "fixed", top: coords.top, left: coords.left }}
+                className="z-40 w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
+              >
             <div className="flex items-center justify-between mb-3">
               <button
                 type="button"
@@ -179,9 +202,11 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
                 ))}
               </select>
             </div>
-          </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }
