@@ -16,11 +16,15 @@ export function TodoListsPanel({
   todoLists,
   members,
   onChange,
+  noMargin,
 }: {
   projectId: string;
   todoLists: TodoList[];
   members: Member[];
   onChange: (updater: (lists: TodoList[]) => TodoList[]) => void;
+  /** Drops the outer bottom margin when nested inside ProjectInfoBox rather
+   * than standing on its own as a top-level page section. */
+  noMargin?: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -61,7 +65,7 @@ export function TodoListsPanel({
   }
 
   return (
-    <div className="mb-10">
+    <div className={noMargin ? "" : "mb-10"}>
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wide">Todo-Listen</h2>
         {!addingList && (
@@ -142,6 +146,17 @@ function TodoListCard({
     );
     try {
       await api.patchTodoItem(itemId, { done: !done });
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    }
+  }
+
+  async function assignItem(itemId: string, userId: string | null) {
+    onChange((lists) =>
+      lists.map((l) => (l.id === list.id ? { ...l, items: l.items.map((i) => (i.id === itemId ? { ...i, assignee_id: userId } : i)) } : l))
+    );
+    try {
+      await api.patchTodoItem(itemId, { assignee_id: userId });
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
@@ -230,7 +245,47 @@ function TodoListCard({
                 <span className={`text-sm flex-1 min-w-0 truncate ${item.done ? "line-through text-white/35" : "text-white/80"}`}>
                   {item.text}
                 </span>
-                {assignee && <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={20} />}
+                <Menu
+                  align="end"
+                  trigger={
+                    assignee ? (
+                      <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={20} className="cursor-pointer" />
+                    ) : (
+                      <button className="text-white/25 hover:text-white/60 transition-colors shrink-0" title="Zuweisen">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                          <circle cx="12" cy="8" r="4" />
+                          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+                        </svg>
+                      </button>
+                    )
+                  }
+                >
+                  {(close) => (
+                    <>
+                      {assignee && (
+                        <MenuItem
+                          onClick={() => {
+                            assignItem(item.id, null);
+                            close();
+                          }}
+                        >
+                          Niemand zugewiesen
+                        </MenuItem>
+                      )}
+                      {members.map((m) => (
+                        <MenuItem
+                          key={m.user_id}
+                          onClick={() => {
+                            assignItem(item.id, m.user_id);
+                            close();
+                          }}
+                        >
+                          {m.name || m.email}
+                        </MenuItem>
+                      ))}
+                    </>
+                  )}
+                </Menu>
                 <button
                   onClick={() => onDeleteItem(item.id)}
                   className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity shrink-0"

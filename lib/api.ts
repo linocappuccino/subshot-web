@@ -211,6 +211,18 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
+
+    // ── Location (no paid API key - Nominatim search + OSM static tiles,
+    // same reasoning as the iOS app using MapKit instead of a Google key) ──
+    geocodeSearch: (q: string) => request<{ display_name: string; lat: number; lng: number }[]>(`geocode/search?q=${encodeURIComponent(q)}`),
+    async fetchStaticMapBlobUrl(lat: number, lng: number): Promise<string> {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      const res = await fetch(`${BASE_URL}/static-map?lat=${lat}&lng=${lng}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+      const blob = await res.blob();
+      return URL.createObjectURL(blob);
+    },
   };
 }
 

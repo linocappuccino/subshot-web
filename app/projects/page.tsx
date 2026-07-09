@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Project, ProjectFolder } from "@/lib/types";
@@ -105,6 +106,33 @@ function ProjectsPageContent() {
     }
   }
 
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  async function handleProjectDropOnFolder(projectId: string, targetFolderId: string) {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project || project.folder_id === targetFolderId) return;
+    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+    setFolders((prev) => prev.map((f) => (f.id === targetFolderId ? { ...f, project_count: f.project_count + 1 } : f)));
+    try {
+      await api.patchProject(projectId, { folder_id: targetFolderId });
+      toast.showSuccess("Projekt verschoben.");
+    } catch (e) {
+      // Best-effort rollback - a full reload would also fix this, but
+      // putting the tile back immediately keeps the failure feeling local.
+      setProjects((prev) => [...prev, project]);
+      setFolders((prev) => prev.map((f) => (f.id === targetFolderId ? { ...f, project_count: f.project_count - 1 } : f)));
+      toast.showError(e instanceof ApiError ? e.message : "Verschieben fehlgeschlagen.");
+    }
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const projectId = String(active.id).replace("project:", "");
+    const targetFolderId = String(over.id).replace("folder:", "");
+    handleProjectDropOnFolder(projectId, targetFolderId);
+  }
+
   async function handleDelete() {
     if (!deleteTarget) return;
     try {
@@ -152,11 +180,11 @@ function ProjectsPageContent() {
           <div className="flex gap-2">
             {!folderId && (
               <Button variant="secondary" onClick={() => setEditingFolder("new")}>
-                + Ordner
+                <PlusIcon /> Ordner
               </Button>
             )}
             <Button variant="primary" onClick={() => setEditingProject("new")}>
-              + Projekt
+              <PlusIcon /> Projekt
             </Button>
           </div>
         </div>
@@ -164,13 +192,13 @@ function ProjectsPageContent() {
         {loading ? (
           <GridSkeleton />
         ) : (
-          <>
+          <DndContext sensors={dndSensors} onDragEnd={handleDragEnd}>
             {folders.length > 0 && (
               <>
                 <SectionLabel>Ordner</SectionLabel>
                 <TileGrid>
                   {folders.map((folder) => (
-                    <FolderTile
+                    <DroppableFolderTile
                       key={folder.id}
                       folder={folder}
                       onEdit={() => setEditingFolder(folder)}
@@ -184,9 +212,10 @@ function ProjectsPageContent() {
             {(folders.length > 0 || projects.length > 0) && <SectionLabel>Projekte</SectionLabel>}
             <TileGrid>
               {projects.map((project) => (
-                <ProjectTile
+                <DraggableProjectTile
                   key={project.id}
                   project={project}
+                  draggable={folders.length > 0}
                   onEdit={() => setEditingProject(project)}
                   onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
                 />
@@ -199,7 +228,7 @@ function ProjectsPageContent() {
                 <p className="text-white/40">Noch keine Projekte — leg dein erstes an.</p>
               </div>
             )}
-          </>
+          </DndContext>
         )}
       </div>
 
@@ -314,11 +343,23 @@ function ProjectTile({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  // Date.now() is impure and isn't allowed directly in a render body (React
+  // flags it since two renders could disagree, e.g. server vs. client) - a
+  // lazy useState initializer is the sanctioned way to grab a one-time
+  // "now" reading; a few ms of staleness across re-renders doesn't matter
+  // for a days-until-deletion countdown.
+  const [now] = useState(() => Date.now());
+  const daysUntilDeletion = Math.max(
+    0,
+    Math.ceil((new Date(project.last_opened_at).getTime() + 30 * 24 * 3600 * 1000 - now) / (24 * 3600 * 1000))
+  );
+
   return (
     <TileShell
       href={`/projects/${project.id}`}
       color={project.color}
       label={project.name}
+      subtitle={`Wird gelöscht in ${daysUntilDeletion} Tagen`}
       menu={
         <Menu
           trigger={
@@ -417,6 +458,74 @@ function FolderTile({
     >
       <span className="text-3xl">{folder.emoji || "📁"}</span>
     </TileShell>
+  );
+}
+
+/** Draggable wrapper — only active when there's at least one folder to drop
+ * onto, so a project with no folders around doesn't pay for pointer-capture
+ * overhead (and a plain tap stays a plain tap, no activation-distance dance)
+ * for a gesture that couldn't do anything anyway. */
+function DraggableProjectTile({
+  project,
+  draggable,
+  onEdit,
+  onDelete,
+}: {
+  project: Project;
+  draggable: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: `project:${project.id}`,
+    disabled: !draggable,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...(draggable ? attributes : {})}
+      {...(draggable ? listeners : {})}
+      style={{
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 20 : "auto",
+        touchAction: draggable ? "none" : undefined,
+        cursor: draggable ? "grab" : undefined,
+      }}
+    >
+      <ProjectTile project={project} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
+/** Droppable wrapper - highlights while a project tile is being dragged
+ * over it, matching the iOS app's draggable=/dropDestination visual (drop
+ * a project onto a folder to file it there). */
+function DroppableFolderTile({
+  folder,
+  onEdit,
+  onDelete,
+}: {
+  folder: ProjectFolder;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `folder:${folder.id}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={isOver ? "rounded-2xl ring-2 ring-blue-400 ring-offset-2 ring-offset-[#161616] transition-all" : "rounded-2xl ring-2 ring-transparent transition-all"}
+    >
+      <FolderTile folder={folder} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
   );
 }
 

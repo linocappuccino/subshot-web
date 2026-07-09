@@ -3,14 +3,25 @@
 import { useEffect, useState, use as usePromise } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Member, ProjectDetail, Scene, Shot } from "@/lib/types";
 import { SortableSceneCard } from "@/app/components/SortableSceneCard";
+import { SceneCard } from "@/app/components/SceneCard";
 import { SceneEditModal } from "@/app/components/SceneEditModal";
-import { TodoListsPanel } from "@/app/components/TodoListsPanel";
+import { ProjectInfoBox } from "@/app/components/ProjectInfoBox";
 import { TeamPanel } from "@/app/components/TeamPanel";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { AppShell } from "@/app/components/AppShell";
@@ -18,6 +29,7 @@ import { Button } from "@/app/components/ui/Button";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { Input } from "@/app/components/ui/Field";
+import { Collapsible } from "@/app/components/ui/Collapsible";
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
@@ -158,16 +170,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="secondary" size="sm" onClick={() => setShowTeam(true)}>
-              Team
+              <UsersIcon /> Team
             </Button>
             <Button variant="secondary" size="sm" onClick={() => setShowNotion(true)}>
-              Notion-Import
+              <NotionIcon /> Notion-Import
             </Button>
             <Button variant="secondary" size="sm" onClick={exportPdf} disabled={exportingPdf}>
-              {exportingPdf ? "Exportiert…" : "PDF"}
+              <DocIcon /> {exportingPdf ? "Exportiert…" : "PDF"}
             </Button>
             <Button variant="secondary" size="sm" onClick={createShareLink} disabled={creatingLink}>
-              {shareLink ? "Link erneuern" : "Link teilen"}
+              <LinkIcon /> {shareLink ? "Link erneuern" : "Link teilen"}
             </Button>
           </div>
         </div>
@@ -177,6 +189,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <Input readOnly value={shareLink} onFocus={(e) => e.currentTarget.select()} className="text-xs max-w-md" />
           </motion.div>
         )}
+
+        <ProjectInfoBox
+          project={data}
+          members={members}
+          onProjectChange={(updater) => setData((prev) => (prev ? { ...prev, ...updater(prev) } : prev))}
+          onOpenTeam={() => setShowTeam(true)}
+          todoLists={data.todo_lists}
+          onTodoListsChange={(updater) => setData((prev) => (prev ? { ...prev, todo_lists: updater(prev.todo_lists) } : prev))}
+        />
 
         {sections.map((section) => {
           const group = scenesIn(section.id);
@@ -211,7 +232,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
         <div className="flex flex-wrap gap-3 mt-2 mb-10">
           <Button variant="primary" onClick={() => setCreatingScene(true)}>
-            + Neue Szene
+            <PlusIcon /> Neue Szene
           </Button>
           {creatingSection ? (
             <div className="flex gap-2">
@@ -227,17 +248,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             </div>
           ) : (
             <Button variant="secondary" onClick={() => setCreatingSection(true)}>
-              + Abschnitt
+              <PlusIcon /> Abschnitt
             </Button>
           )}
         </div>
-
-        <TodoListsPanel
-          projectId={data.id}
-          todoLists={data.todo_lists}
-          members={members}
-          onChange={(updater) => setData((prev) => (prev ? { ...prev, todo_lists: updater(prev.todo_lists) } : prev))}
-        />
       </div>
 
       <SceneEditModal
@@ -319,12 +333,18 @@ function SectionBlock({
   onDeleteScene: (scene: Scene) => void;
   onReorder: (ordered: Scene[]) => void;
 }) {
+  const [activeId, setActiveId] = useState<string | null>(null);
+  // A short press delay (not distance) on touch keeps a plain tap from ever
+  // registering as a drag attempt, while still letting a real press-and-hold
+  // start one immediately - distance-based activation felt "off" on touch
+  // because scrolling the page also moves the finger past the threshold.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
 
   function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = scenes.findIndex((s) => s.id === active.id);
@@ -333,13 +353,24 @@ function SectionBlock({
     onReorder(arrayMove(scenes, oldIndex, newIndex));
   }
 
-  return (
-    <div className="mb-8">
-      {title && <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-3">{title}</h2>}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+  const activeScene = activeId ? scenes.find((s) => s.id === activeId) ?? null : null;
+  const doneCount = scenes.filter((s) => s.completed).length;
+
+  const grid = (
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => setActiveId(null)}
+      >
+        {/* rectSortingStrategy (not verticalListSortingStrategy) - the grid
+            below wraps into 2-3 columns depending on viewport, and the
+            vertical-list strategy assumes a single column, which is what
+            made reordering look broken/jumpy in anything but one column. */}
+        <SortableContext items={scenes.map((s) => s.id)} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-            <AnimatePresence mode="popLayout">
+            <AnimatePresence>
               {scenes.map((scene) => (
                 <SortableSceneCard
                   key={scene.id}
@@ -354,7 +385,63 @@ function SectionBlock({
             </AnimatePresence>
           </div>
         </SortableContext>
+        <DragOverlay>
+          {activeScene && (
+            <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+              <SceneCard scene={activeScene} shots={shotsFor(activeScene.id)} members={members} onEdit={() => {}} onDelete={() => {}} onChange={() => {}} />
+            </div>
+          )}
+        </DragOverlay>
       </DndContext>
+  );
+
+  if (!title) {
+    return <div className="mb-8">{grid}</div>;
+  }
+
+  return (
+    <div className="mb-8">
+      <Collapsible title={title} subtitle={`${doneCount}/${scenes.length}`}>
+        {grid}
+      </Collapsible>
     </div>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+function UsersIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="7" r="3.5" /><path d="M2 20c0-3.5 3.1-6.2 7-6.2s7 2.7 7 6.2" />
+      <path d="M16.5 4.2a3.5 3.5 0 0 1 0 6.6M22 20c0-2.9-2.1-5.4-5-6.1" />
+    </svg>
+  );
+}
+function DocIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" />
+    </svg>
+  );
+}
+function LinkIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1.5 1.5" />
+      <path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1.5-1.5" />
+    </svg>
+  );
+}
+function NotionIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 7h2l6 8V7h2M7 17h2" />
+    </svg>
   );
 }

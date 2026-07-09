@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   PointerSensor,
   TouchSensor,
@@ -87,9 +88,10 @@ export function SceneCard({
   const [addingShot, setAddingShot] = useState(false);
   const [newShotText, setNewShotText] = useState("");
   const [editingShot, setEditingShot] = useState<Shot | null>(null);
+  const [draggingShotId, setDraggingShotId] = useState<string | null>(null);
   const shotSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
 
   /** Reorders this scene's shots and persists the new sort_order for every
@@ -97,6 +99,7 @@ export function SceneCard({
    * endpoint (same constraint the iOS app works around, see moveShot in
    * ShotListViewModel), so this is one PATCH per moved shot. */
   async function handleShotDragEnd(event: DragEndEvent) {
+    setDraggingShotId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = shots.findIndex((s) => s.id === active.id);
@@ -178,7 +181,6 @@ export function SceneCard({
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 14 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
@@ -301,7 +303,9 @@ export function SceneCard({
         <DndContext
           sensors={shotSensors}
           collisionDetection={closestCenter}
-          onDragEnd={(e) => handleShotDragEnd(e)}
+          onDragStart={(e) => setDraggingShotId(String(e.active.id))}
+          onDragEnd={handleShotDragEnd}
+          onDragCancel={() => setDraggingShotId(null)}
         >
           <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5 mb-2">
@@ -315,6 +319,16 @@ export function SceneCard({
               ))}
             </div>
           </SortableContext>
+          <DragOverlay>
+            {draggingShotId && (() => {
+              const s = shots.find((x) => x.id === draggingShotId);
+              return s ? (
+                <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
+                  <ShotRowContent shot={s} onToggleDone={() => {}} onEdit={() => {}} />
+                </div>
+              ) : null;
+            })()}
+          </DragOverlay>
         </DndContext>
       )}
 
@@ -406,12 +420,33 @@ export function SceneCard({
 function SortableShotRow({ shot, onToggleDone, onEdit }: { shot: Shot; onToggleDone: () => void; onEdit: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: shot.id });
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }}
-      className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors"
-    >
-      <button {...attributes} {...listeners} className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing">
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}>
+      <ShotRowContent shot={shot} onToggleDone={onToggleDone} onEdit={onEdit} dragHandleProps={{ attributes, listeners }} />
+    </div>
+  );
+}
+
+/** Plain presentational row, no useSortable of its own - reused as-is for
+ * the DragOverlay's floating clone, which must NOT register its own
+ * sortable id (dnd-kit doesn't allow two elements claiming the same one). */
+function ShotRowContent({
+  shot,
+  onToggleDone,
+  onEdit,
+  dragHandleProps,
+}: {
+  shot: Shot;
+  onToggleDone: () => void;
+  onEdit: () => void;
+  dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
+}) {
+  return (
+    <div className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
+      <button
+        {...dragHandleProps?.attributes}
+        {...dragHandleProps?.listeners}
+        className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
+      >
         <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
           <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
           <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />

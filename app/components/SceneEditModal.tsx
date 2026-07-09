@@ -8,6 +8,8 @@ import { Input, Textarea, Label, FieldGroup } from "./ui/Field";
 import { Switch } from "./ui/Switch";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { ImageDropZone } from "./ui/ImageDropZone";
+import { DateTimePicker } from "./ui/DateTimePicker";
+import { LocationPicker } from "./ui/LocationPicker";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
 import { ApiError } from "@/lib/api";
@@ -16,10 +18,11 @@ import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Priority, type Scen
 const DURATIONS = [null, ...Array.from({ length: 48 }, (_, i) => (i + 1) * 5)];
 
 /** Full-parity editor with the iOS app's SceneEditSheet: name, priority,
- * description, dialogue (legacy single field + checkable multi-line list),
- * Start date/time + duration (auto-suggested from the previous scene's
- * Start+duration when creating a new one), location, good-take filename,
- * and a cover photo. */
+ * description, dialogue (checkable multi-line list, added one at a time via
+ * "+ Dialog" - no free-text box here, only the individually-checkable
+ * lines), Start date/time + duration (auto-suggested from the previous
+ * scene's Start+duration when creating a new one), location, good-take
+ * filename, and a cover photo. */
 export function SceneEditModal({
   open,
   onClose,
@@ -42,22 +45,25 @@ export function SceneEditModal({
   const api = useApi();
   const toast = useToast();
 
-  const suggestedStart = () => {
-    if (existing || !previousScene?.scheduled_at || !previousScene.duration_minutes) return "";
-    const start = new Date(previousScene.scheduled_at);
-    start.setMinutes(start.getMinutes() + previousScene.duration_minutes);
-    return toLocalInputValue(start);
+  const suggestedStart = (): Date => {
+    if (!existing && previousScene?.scheduled_at && previousScene.duration_minutes) {
+      const start = new Date(previousScene.scheduled_at);
+      start.setMinutes(start.getMinutes() + previousScene.duration_minutes);
+      return start;
+    }
+    return new Date();
   };
 
   const [openedFor, setOpenedFor] = useState(existing?.id ?? "new");
   const [name, setName] = useState(existing?.name ?? "");
   const [priority, setPriority] = useState<Priority | null>(existing?.priority ?? null);
   const [description, setDescription] = useState(existing?.description ?? "");
-  const [dialogue, setDialogue] = useState(existing?.dialogue ?? "");
   const [hasStart, setHasStart] = useState(Boolean(existing?.scheduled_at));
-  const [start, setStart] = useState(existing?.scheduled_at ? toLocalInputValue(new Date(existing.scheduled_at)) : suggestedStart());
+  const [start, setStart] = useState<Date>(existing?.scheduled_at ? new Date(existing.scheduled_at) : suggestedStart());
   const [duration, setDuration] = useState<number | null>(existing?.duration_minutes ?? null);
   const [locationAddress, setLocationAddress] = useState(existing?.location_address ?? "");
+  const [locationLat, setLocationLat] = useState<number | null>(existing?.location_lat ?? null);
+  const [locationLng, setLocationLng] = useState<number | null>(existing?.location_lng ?? null);
   const [assigneeId, setAssigneeId] = useState(existing?.assignee_id ?? "");
   const [goodTake, setGoodTake] = useState(existing?.good_take_filename ?? "");
   const [dialogues, setDialogues] = useState<SceneDialogue[]>(existing?.dialogues ?? []);
@@ -73,11 +79,12 @@ export function SceneEditModal({
     setName(existing?.name ?? "");
     setPriority(existing?.priority ?? null);
     setDescription(existing?.description ?? "");
-    setDialogue(existing?.dialogue ?? "");
     setHasStart(Boolean(existing?.scheduled_at));
-    setStart(existing?.scheduled_at ? toLocalInputValue(new Date(existing.scheduled_at)) : suggestedStart());
+    setStart(existing?.scheduled_at ? new Date(existing.scheduled_at) : suggestedStart());
     setDuration(existing?.duration_minutes ?? null);
     setLocationAddress(existing?.location_address ?? "");
+    setLocationLat(existing?.location_lat ?? null);
+    setLocationLng(existing?.location_lng ?? null);
     setAssigneeId(existing?.assignee_id ?? "");
     setGoodTake(existing?.good_take_filename ?? "");
     setDialogues(existing?.dialogues ?? []);
@@ -153,10 +160,11 @@ export function SceneEditModal({
         priority: priority ?? null,
         clear_priority: priority === null,
         description: description.trim() || null,
-        dialogue: dialogue.trim() || null,
-        scheduled_at: hasStart && start ? new Date(start).toISOString() : null,
+        scheduled_at: hasStart ? start.toISOString() : null,
         duration_minutes: hasStart ? duration : null,
         location_address: locationAddress.trim() || null,
+        location_lat: locationLat,
+        location_lng: locationLng,
         clear_location: !locationAddress.trim(),
         assignee_id: assigneeId || null,
         clear_assignee: !assigneeId,
@@ -244,7 +252,6 @@ export function SceneEditModal({
 
       <FieldGroup>
         <Label>Dialog</Label>
-        <Textarea value={dialogue} onChange={(e) => setDialogue(e.target.value)} rows={2} placeholder="Gesprochener Text" className="mb-2" />
         <div className="space-y-1.5">
           <AnimatePresence initial={false}>
             {dialogues.map((d) => (
@@ -305,12 +312,9 @@ export function SceneEditModal({
         <Switch checked={hasStart} onChange={setHasStart} label="Start festlegen" />
         {hasStart && (
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 flex gap-2">
-            <Input
-              type="datetime-local"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="flex-1"
-            />
+            <div className="flex-1">
+              <DateTimePicker value={start} onChange={setStart} />
+            </div>
             <select
               value={duration ?? ""}
               onChange={(e) => setDuration(e.target.value ? Number(e.target.value) : null)}
@@ -328,7 +332,16 @@ export function SceneEditModal({
 
       <FieldGroup>
         <Label>Standort</Label>
-        <Input value={locationAddress} onChange={(e) => setLocationAddress(e.target.value)} placeholder="Adresse" />
+        <LocationPicker
+          address={locationAddress}
+          lat={locationLat}
+          lng={locationLng}
+          onChange={(addr, lat, lng) => {
+            setLocationAddress(addr);
+            setLocationLat(lat);
+            setLocationLng(lng);
+          }}
+        />
       </FieldGroup>
 
       <FieldGroup>
@@ -368,9 +381,4 @@ function CheckCircle({ done }: { done: boolean }) {
       )}
     </span>
   );
-}
-
-function toLocalInputValue(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
