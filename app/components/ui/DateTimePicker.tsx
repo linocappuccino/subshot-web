@@ -119,7 +119,7 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
                 exit={{ opacity: 0, scale: 0.96, y: -6 }}
                 transition={{ type: "spring", stiffness: 420, damping: 30 }}
                 style={{ position: "fixed", top: coords.top, left: coords.left }}
-                className="z-40 w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
+                className="z-[60] w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
               >
             <div className="flex items-center justify-between mb-3">
               <button
