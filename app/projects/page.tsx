@@ -341,10 +341,14 @@ function TileShell({
       whileHover={{ y: -3 }}
       className="group relative"
     >
-      <Link href={href}>
-        <div
-          className="aspect-[4/3] rounded-2xl overflow-hidden relative flex items-center justify-center shadow-lg shadow-black/20 ring-1 ring-white/10 transition-shadow group-hover:shadow-xl group-hover:shadow-black/30"
-          style={{ backgroundColor: `${color}e6` }}
+      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block">
+        <motion.div
+          whileHover={hasImage ? { rotateX: -5, rotateY: 7, scale: 1.035 } : undefined}
+          transition={{ type: "spring", stiffness: 260, damping: 18 }}
+          style={{ backgroundColor: `${color}e6`, transformStyle: hasImage ? "preserve-3d" : undefined }}
+          className={`aspect-[4/3] rounded-2xl overflow-hidden relative flex items-center justify-center ring-1 ring-white/10 transition-shadow ${
+            hasImage ? "shadow-xl shadow-black/40 group-hover:shadow-2xl group-hover:shadow-black/50" : "shadow-lg shadow-black/20 group-hover:shadow-xl group-hover:shadow-black/30"
+          }`}
         >
           {hasImage ? (
             <div className="absolute inset-0 [&>img]:w-full [&>img]:h-full [&>img]:object-cover" style={{ filter: "brightness(0.94) saturate(1.08) contrast(1.04)" }}>
@@ -354,13 +358,26 @@ function TileShell({
             children
           )}
           {hasImage && (
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.1) 55%, rgba(0,0,0,0.45) 100%)" }}
-            />
+            <>
+              {/* darkening scrim so UI (menu button, label) stays legible over
+                  an arbitrary uploaded photo */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.05) 0%, rgba(0,0,0,0.1) 55%, rgba(0,0,0,0.45) 100%)" }}
+              />
+              {/* glassy top-left highlight + inset rim light, the same
+                  "physical glossy app icon" material cues as the actual
+                  Subshot app icon (app/icon.svg) - a raw photo alone read as
+                  a flat sticker, not part of this UI. */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{ background: "radial-gradient(140% 90% at 15% 8%, rgba(255,255,255,0.35), transparent 55%)" }}
+              />
+              <div className="absolute inset-0 rounded-2xl pointer-events-none shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_0_0_1px_rgba(0,0,0,0.25)]" />
+            </>
           )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
-        </div>
+        </motion.div>
         <div className="mt-2 text-sm font-semibold truncate">{label}</div>
         {subtitle && <div className="text-xs text-white/40">{subtitle}</div>}
       </Link>
