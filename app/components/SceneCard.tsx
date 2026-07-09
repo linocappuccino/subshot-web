@@ -48,14 +48,6 @@ function PinIcon() {
     </svg>
   );
 }
-function FilmIcon() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="16" rx="2" />
-      <path d="M7 4v16M17 4v16M3 9h4M17 9h4M3 15h4M17 15h4" />
-    </svg>
-  );
-}
 function TextIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -213,12 +205,9 @@ export function SceneCard({
               </Pill>
             )}
           </div>
-          {!scene.is_intermediate_step && (
+          {!scene.is_intermediate_step && scene.good_take_filename && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
-              <Pill icon={<FilmIcon />}>
-                {shots.length} Einstellung{shots.length === 1 ? "" : "en"}
-              </Pill>
-              {scene.good_take_filename && <Pill tone="good">{scene.good_take_filename}</Pill>}
+              <Pill tone="good">{scene.good_take_filename}</Pill>
             </div>
           )}
           {(scene.scheduled_at || scene.location_address) && (

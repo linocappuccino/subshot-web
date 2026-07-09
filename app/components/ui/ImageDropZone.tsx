@@ -14,20 +14,36 @@ export function ImageDropZone({
   uploading,
   emptyLabel = "Bild hinzufügen",
   className,
+  lockAspectRatio = false,
 }: {
   previewUrl: string | null;
   onFile: (file: File) => void;
   uploading?: boolean;
   emptyLabel?: string;
   className?: string;
+  /** Locks the box to a clean 16:9 (landscape source) or 9:16 (portrait
+   * source) ratio once the photo loads, matching the iOS app's
+   * AsyncShotThumbnail(lockAspectRatio:) - without this, a fixed-height box
+   * + object-cover just crops every photo to whatever shape the box
+   * happens to be, unrelated to the photo's real orientation, which reads
+   * as "komisch" for anything that isn't already close to that ratio. */
+  lockAspectRatio?: boolean;
 }) {
   const [dragOver, setDragOver] = useState(false);
+  const [ratio, setRatio] = useState<"16/9" | "9/16" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleFiles(files: FileList | null) {
     const file = files?.[0];
     if (file && file.type.startsWith("image/")) onFile(file);
   }
+
+  // Explicit height + aspectRatio (not width+aspectRatio) so the box's
+  // width is derived from its intrinsic size - "w-fit" is what makes a
+  // block element actually size itself from that intrinsic width instead
+  // of the default block behavior of filling 100% of the container, which
+  // would silently override the ratio again.
+  const lockedStyle = lockAspectRatio && ratio ? { aspectRatio: ratio, height: 320, maxWidth: "100%" } : undefined;
 
   return (
     <div
@@ -42,9 +58,11 @@ export function ImageDropZone({
         setDragOver(false);
         handleFiles(e.dataTransfer.files);
       }}
+      style={lockedStyle}
       className={cn(
         "relative rounded-xl border-2 border-dashed cursor-pointer overflow-hidden transition-colors",
-        "flex items-center justify-center bg-white/3 min-h-[140px]",
+        "flex items-center justify-center bg-white/3",
+        lockedStyle ? "w-fit mx-auto" : "w-full min-h-[140px]",
         dragOver ? "border-blue-400 bg-blue-500/10" : "border-white/15 hover:border-white/30",
         className
       )}
@@ -58,7 +76,16 @@ export function ImageDropZone({
       />
       {previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={previewUrl} alt="" className="w-full h-full object-cover absolute inset-0" />
+        <img
+          src={previewUrl}
+          alt=""
+          className="w-full h-full object-cover absolute inset-0"
+          onLoad={(e) => {
+            if (!lockAspectRatio) return;
+            const img = e.currentTarget;
+            setRatio(img.naturalWidth >= img.naturalHeight ? "16/9" : "9/16");
+          }}
+        />
       ) : (
         <div className="flex flex-col items-center gap-2 text-white/40 py-6">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

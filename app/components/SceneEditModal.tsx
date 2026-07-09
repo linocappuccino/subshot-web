@@ -222,7 +222,7 @@ export function SceneEditModal({
             setImageFile(file);
             setImagePreview(URL.createObjectURL(file));
           }}
-          className="h-40"
+          lockAspectRatio
         />
       </FieldGroup>
 
