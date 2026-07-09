@@ -5,6 +5,8 @@
 
 export type Priority = "must" | "should" | "optional";
 export type ShotStatus = "open" | "done" | "deleted";
+export type MemberRole = "owner" | "editor" | "viewer";
+export type InviteRole = "editor" | "viewer";
 
 export interface ProjectFolder {
   id: string;
@@ -20,6 +22,7 @@ export interface Project {
   id: string;
   name: string;
   color: string;
+  emoji: string | null;
   shoot_date: string | null;
   location_address: string | null;
   location_lat: number | null;
@@ -58,6 +61,7 @@ export interface Scene {
   location_address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  good_take_filename: string | null;
   number: number;
   letter: string | null;
   is_intermediate_step: boolean;
@@ -85,13 +89,32 @@ export interface Section {
   project_id: string;
   name: string;
   sort_order: number;
+}
+
+export interface TodoItem {
+  id: string;
+  todo_list_id: string;
+  text: string;
+  done: boolean;
+  assignee_id: string | null;
+  sort_order: number;
   created_at: string;
+  completed_at: string | null;
+}
+
+export interface TodoList {
+  id: string;
+  project_id: string;
+  name: string;
+  sort_order: number;
+  items: TodoItem[];
 }
 
 export interface ProjectDetail extends Project {
   scenes: Scene[];
   shots: Shot[];
   sections: Section[];
+  todo_lists: TodoList[];
 }
 
 export interface Member {
@@ -99,5 +122,37 @@ export interface Member {
   name: string | null;
   email: string;
   avatar_url: string | null;
-  role: "owner" | "editor" | "viewer";
+  role: MemberRole;
 }
+
+export interface Invite {
+  id: string;
+  email: string;
+  role: string;
+  token: string;
+  created_at: string;
+  accepted_at: string | null;
+}
+
+export interface NotionDatabase {
+  id: string;
+  title: string;
+}
+
+export const PRIORITY_LABELS: Record<Priority, string> = {
+  must: "Muss",
+  should: "Sollte",
+  optional: "Optional",
+};
+
+export const PRIORITY_COLORS: Record<Priority | "none", string> = {
+  must: "#d1504f",
+  should: "#e08a3c",
+  optional: "#c9a227",
+  none: "#7a7a7a",
+};
+
+// Same swatch set the iOS app offers in its color grids (Color.subshotPalette
+// in ColorHex.swift) — kept identical so a project/scene color picked on
+// either client looks the same on both.
+export const PALETTE = ["#3875bd", "#0f7e55", "#4e4295", "#d1504f", "#b9507b", "#a64c22"];
