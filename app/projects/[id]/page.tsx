@@ -21,6 +21,7 @@ import type { Member, ProjectDetail, Scene, Shot } from "@/lib/types";
 import { SortableSceneCard } from "@/app/components/SortableSceneCard";
 import { SceneCard } from "@/app/components/SceneCard";
 import { SceneEditModal } from "@/app/components/SceneEditModal";
+import { SceneTable } from "@/app/components/SceneTable";
 import { ProjectInfoBox } from "@/app/components/ProjectInfoBox";
 import { TeamPanel } from "@/app/components/TeamPanel";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
@@ -48,6 +49,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [showNotion, setShowNotion] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [creatingLink, setCreatingLink] = useState(false);
+  const [viewMode, setViewMode] = useState<"grid" | "table">(() =>
+    typeof window !== "undefined" && window.localStorage.getItem("subshotSceneViewMode") === "table" ? "table" : "grid"
+  );
+
+  function setViewModePersisted(mode: "grid" | "table") {
+    setViewMode(mode);
+    window.localStorage.setItem("subshotSceneViewMode", mode);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +190,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <Button variant="secondary" size="sm" onClick={createShareLink} disabled={creatingLink}>
               <LinkIcon /> {shareLink ? "Link erneuern" : "Link teilen"}
             </Button>
+            <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
+              <button
+                onClick={() => setViewModePersisted("grid")}
+                title="Kachelansicht"
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+              >
+                <GridIcon />
+              </button>
+              <button
+                onClick={() => setViewModePersisted("table")}
+                title="Tabellenansicht"
+                className={`p-1.5 rounded-lg transition-colors ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+              >
+                <TableIcon />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -213,6 +238,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onEditScene={setEditingScene}
               onDeleteScene={setDeleteScene}
               onReorder={(ordered) => reorderScenes(api, ordered, setData)}
+              viewMode={viewMode}
             />
           );
         })}
@@ -227,6 +253,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             onEditScene={setEditingScene}
             onDeleteScene={setDeleteScene}
             onReorder={(ordered) => reorderScenes(api, ordered, setData)}
+            viewMode={viewMode}
           />
         )}
 
@@ -323,6 +350,7 @@ function SectionBlock({
   onEditScene,
   onDeleteScene,
   onReorder,
+  viewMode,
 }: {
   title?: string;
   scenes: Scene[];
@@ -332,6 +360,7 @@ function SectionBlock({
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
   onReorder: (ordered: Scene[]) => void;
+  viewMode: "grid" | "table";
 }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   // A short press delay (not distance) on touch keeps a plain tap from ever
@@ -395,14 +424,21 @@ function SectionBlock({
       </DndContext>
   );
 
+  const content =
+    viewMode === "table" ? (
+      <SceneTable scenes={scenes} shotsFor={shotsFor} members={members} onEditScene={onEditScene} onChange={onChange} />
+    ) : (
+      grid
+    );
+
   if (!title) {
-    return <div className="mb-8">{grid}</div>;
+    return <div className="mb-8">{content}</div>;
   }
 
   return (
     <div className="mb-8">
       <Collapsible title={title} subtitle={`${doneCount}/${scenes.length}`}>
-        {grid}
+        {content}
       </Collapsible>
     </div>
   );
@@ -442,6 +478,21 @@ function NotionIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M7 7h2l6 8V7h2M7 17h2" />
+    </svg>
+  );
+}
+function GridIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+function TableIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="1" /><path d="M3 10h18M9 10v10" />
     </svg>
   );
 }
