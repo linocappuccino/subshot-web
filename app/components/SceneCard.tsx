@@ -282,7 +282,7 @@ export function SceneCard({
 
       {scene.image_url && (
         <div className="cursor-pointer mb-2 rounded-xl overflow-hidden" onClick={onEdit}>
-          <AuthImage path={scene.image_url} alt={scene.name ?? "Szene"} className="w-full max-h-64 object-cover" />
+          <AuthImage path={scene.image_url} alt={scene.name ?? "Szene"} className="w-full object-cover" lockAspectRatio />
         </div>
       )}
 
