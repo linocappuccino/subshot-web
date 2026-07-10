@@ -76,6 +76,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // figure out which section the scene actually started in (data.scenes
   // itself gets live-reordered mid-drag, see handleSceneDragOver).
   const dragOriginScenesRef = useRef<Scene[] | null>(null);
+  // Debounces the live-reorder preview (see handleSceneDragOver) so a fast
+  // sweep across many cards doesn't reflow the whole grid on every single
+  // one of them.
+  const sceneDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
@@ -88,6 +92,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // is being dragged has to live in React state instead.
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   const dragOriginSectionsRef = useRef<Section[] | null>(null);
+  const sectionDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function setViewModePersisted(mode: "grid" | "table") {
     setViewMode(mode);
@@ -172,36 +177,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     dragOriginSectionsRef.current = data?.sections ?? null;
   }
 
+  // Native dragover fires continuously (a raw DOM event, easily 60+/sec
+  // while the mouse moves) — debounced for the same reason as the scene
+  // grid's handleSceneDragOver (see its comment): applying a reflow on
+  // every single one of those was the actual cause of the reported
+  // flickering, not a logic bug.
   function handleSectionDragOver(targetId: string) {
-    if (!data || !draggingSectionId || draggingSectionId === targetId) return;
-    const current = [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
-    const draggedIndex = current.findIndex((s) => s.id === draggingSectionId);
-    const targetIndexBefore = current.findIndex((s) => s.id === targetId);
-    if (draggedIndex === -1 || targetIndexBefore === -1) return;
-    const dragged = current[draggedIndex];
-    const withoutDragged = current.filter((s) => s.id !== draggingSectionId);
-    let targetIndex = withoutDragged.findIndex((s) => s.id === targetId);
-    if (targetIndex === -1) return;
-    // Dragging downward (dragged started before target): insert AFTER target,
-    // not before — otherwise hovering the very next section is a no-op,
-    // since removing dragged from just above target shifts target's index
-    // down by exactly the one slot "insert before" would have used anyway.
-    if (draggedIndex < targetIndexBefore) targetIndex += 1;
-    withoutDragged.splice(targetIndex, 0, dragged);
-    const unchanged = withoutDragged.length === current.length && withoutDragged.every((s, i) => s.id === current[i].id);
-    if (unchanged) return;
-    setData((prev) => (prev ? { ...prev, sections: withoutDragged.map((s, i) => ({ ...s, sort_order: i })) } : prev));
+    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
+    if (!draggingSectionId || draggingSectionId === targetId) return;
+    sectionDragOverTimeoutRef.current = setTimeout(() => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = computeSectionReorder(prev.sections, draggingSectionId, targetId);
+        if (!next) return prev;
+        const current = [...prev.sections].sort((a, b) => a.sort_order - b.sort_order);
+        const unchanged = next.length === current.length && next.every((s, i) => s.id === current[i].id);
+        if (unchanged) return prev;
+        return { ...prev, sections: next };
+      });
+    }, 100);
   }
 
-  // By the time this fires, data.sections already reflects the
-  // live-previewed final order — just persist whatever actually changed
-  // from the pre-drag snapshot.
-  async function handleSectionDrop() {
+  // Never trusts whatever data.sections currently shows (the live preview
+  // is debounced, so it can lag behind) — recomputes the definitive final
+  // order fresh from the same pure logic handleSectionDragOver uses, fed
+  // with the actual drop target, so what's persisted always matches
+  // exactly what the section was dropped onto.
+  async function handleSectionDrop(targetId: string) {
+    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
     const origin = dragOriginSectionsRef.current;
     dragOriginSectionsRef.current = null;
+    const draggedId = draggingSectionId;
     setDraggingSectionId(null);
-    if (!data || !origin) return;
-    const changed = data.sections.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
+    if (!data || !origin || !draggedId) return;
+    const next = draggedId === targetId ? null : computeSectionReorder(data.sections, draggedId, targetId);
+    const resultSections = next ?? [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
+    setData((prev) => (prev ? { ...prev, sections: resultSections } : prev));
+    const changed = resultSections.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
     if (changed.length === 0) return;
     try {
       await Promise.all(changed.map((s) => api.patchSection(s.id, { sort_order: s.sort_order })));
@@ -216,6 +228,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // drag was cancelled/dropped somewhere invalid.
   function handleSectionDragEnd() {
     setDraggingSectionId(null);
+    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
     const origin = dragOriginSectionsRef.current;
     dragOriginSectionsRef.current = null;
     if (origin) setData((prev) => (prev ? { ...prev, sections: origin } : prev));
@@ -229,57 +242,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   // Fires continuously while dragging, whenever the pointer moves onto a
-  // new card/drop-zone. Lino: cards need to visibly get "out of the way" and
-  // show exactly where the dragged card will land, not just highlight
-  // whatever it's currently hovering (that read as "drop onto this card").
-  // So this ACTUALLY reorders data.scenes live (dnd-kit's own official
-  // "multiple containers" pattern) instead of only faking a preview via
-  // CSS transforms — the grid re-renders in real time in the position the
-  // scene would land in if dropped right now, with the gap opening up
-  // between/beside its new neighbors exactly like Lino described. Nothing
-  // here touches the backend; handleSceneDragEnd persists whatever this
-  // left data.scenes in.
+  // new card/drop-zone — in a REAL browser this can be dozens of times a
+  // second as the cursor sweeps across a grid. Lino: cards need to visibly
+  // get "out of the way" and show exactly where the dragged card will
+  // land. The first attempt at this reordered data.scenes on every single
+  // one of those events, which meant sweeping across N cards on the way to
+  // the actual target caused N full-page re-renders in a fraction of a
+  // second — exactly the "flackert alles wie wild" Lino reported, not a
+  // logic bug but a re-render storm from over-eager live updates. Fix:
+  // debounce — only actually apply the reorder ~100ms after the hovered
+  // target stops changing, so a fast sweep across many cards settles once
+  // near wherever the pointer actually stops, instead of reflowing on
+  // every card it merely passed over. Reads/writes `data` exclusively
+  // through the setData updater (never the outer closure's `data`) so a
+  // stale snapshot from before the debounce delay can never be applied.
   function handleSceneDragOver(event: DragOverEvent) {
     const { active, over } = event;
-    if (!over || !data) return;
+    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
+    if (!over) return;
     const activeId = String(active.id);
     const overIdStr = String(over.id);
     if (activeId === overIdStr) return;
-    const activeScene = data.scenes.find((s) => s.id === activeId);
-    if (!activeScene) return;
-
-    let targetSectionId: string | null;
-    let overSceneId: string | null = null;
-    if (overIdStr.startsWith("section-drop:")) {
-      targetSectionId = overIdStr.slice("section-drop:".length) || null;
-    } else {
-      const overScene = data.scenes.find((s) => s.id === overIdStr);
-      if (!overScene || overScene.id === activeId) return;
-      targetSectionId = overScene.section_id;
-      overSceneId = overScene.id;
-    }
-
-    const withoutActive = data.scenes.filter((s) => s.id !== activeId);
-    let insertAt = withoutActive.length;
-    if (overSceneId) {
-      const idx = withoutActive.findIndex((s) => s.id === overSceneId);
-      if (idx !== -1) insertAt = idx;
-    } else {
-      let lastIdxInSection = -1;
-      withoutActive.forEach((s, i) => {
-        if (s.section_id === targetSectionId) lastIdxInSection = i;
+    sceneDragOverTimeoutRef.current = setTimeout(() => {
+      setData((prev) => {
+        if (!prev) return prev;
+        const next = computeSceneReorder(prev.scenes, activeId, overIdStr);
+        if (!next) return prev;
+        const unchanged =
+          next.length === prev.scenes.length && next.every((s, i) => s.id === prev.scenes[i].id && s.section_id === prev.scenes[i].section_id);
+        if (unchanged) return prev;
+        return { ...prev, scenes: next };
       });
-      insertAt = lastIdxInSection + 1;
-    }
-    const next = [...withoutActive];
-    next.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
-
-    // Bail if this would be a no-op re-render (already in this exact spot) —
-    // avoids fighting dnd-kit's own measuring with redundant state updates.
-    const unchanged =
-      next.length === data.scenes.length && next.every((s, i) => s.id === data.scenes[i].id && s.section_id === data.scenes[i].section_id);
-    if (unchanged) return;
-    setData((prev) => (prev ? { ...prev, scenes: next } : prev));
+    }, 100);
   }
 
   // Scene-level drag end — the ONE shared handler for every section's grid
@@ -290,6 +284,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // where the drag started, then reorderScenes() for the sort_order.
   function handleSceneDragEnd(event: DragEndEvent) {
     setActiveSceneId(null);
+    // Cancel any pending debounced preview — the block below recomputes
+    // the DEFINITIVE final position directly from dnd-kit's own `over` at
+    // this exact moment, so a stale/not-yet-applied preview must never be
+    // allowed to sneak in afterwards and clobber it.
+    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
     const { active, over } = event;
     const origin = dragOriginScenesRef.current;
     dragOriginScenesRef.current = null;
@@ -298,14 +297,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       return;
     }
     const activeId = String(active.id);
-    const activeScene = data.scenes.find((s) => s.id === activeId);
+    const overIdStr = String(over.id) === activeId ? null : String(over.id);
     const originScene = origin?.find((s) => s.id === activeId);
-    if (!activeScene || !originScene) return;
+    if (!originScene) return;
+
+    // Never trust whatever data.scenes currently shows (the live preview
+    // is debounced, so it can lag up to ~100ms behind reality) — compute
+    // the result fresh from the same pure logic handleSceneDragOver uses,
+    // fed with dnd-kit's real final `over`, so what gets persisted always
+    // matches exactly what the user actually dropped onto.
+    const finalScenes = overIdStr ? computeSceneReorder(data.scenes, activeId, overIdStr) : null;
+    const resultScenes = finalScenes ?? data.scenes;
+    const activeScene = resultScenes.find((s) => s.id === activeId);
+    if (!activeScene) return;
 
     const sectionChanged = activeScene.section_id !== originScene.section_id;
-    const destScenes = data.scenes.filter((s) => s.section_id === activeScene.section_id);
+    const destScenes = resultScenes.filter((s) => s.section_id === activeScene.section_id);
     const idx = destScenes.findIndex((s) => s.id === activeId);
     const beforeId = destScenes[idx + 1]?.id ?? null;
+
+    setData((prev) => (prev ? { ...prev, scenes: resultScenes } : prev));
 
     (async () => {
       if (sectionChanged) {
@@ -328,6 +339,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // persisted to the backend so a plain state restore is enough.
   function handleSceneDragCancel() {
     setActiveSceneId(null);
+    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
     const origin = dragOriginScenesRef.current;
     dragOriginScenesRef.current = null;
     if (origin) setData((prev) => (prev ? { ...prev, scenes: origin } : prev));
@@ -665,6 +677,75 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   );
 }
 
+// Pure — same idea as computeSceneReorder below, for whole sections.
+// Direction-aware insert (after target on a forward drag, otherwise a
+// one-slot neighbor drag would be a silent no-op — see the "KRITISCH"
+// section-drag bug in project memory) so both the debounced live preview
+// and the definitive drop computation agree.
+function computeSectionReorder(sections: Section[], draggedId: string, targetId: string): Section[] | null {
+  const current = [...sections].sort((a, b) => a.sort_order - b.sort_order);
+  const draggedIndex = current.findIndex((s) => s.id === draggedId);
+  const targetIndexBefore = current.findIndex((s) => s.id === targetId);
+  if (draggedIndex === -1 || targetIndexBefore === -1) return null;
+  const dragged = current[draggedIndex];
+  const withoutDragged = current.filter((s) => s.id !== draggedId);
+  let targetIndex = withoutDragged.findIndex((s) => s.id === targetId);
+  if (targetIndex === -1) return null;
+  if (draggedIndex < targetIndexBefore) targetIndex += 1;
+  withoutDragged.splice(targetIndex, 0, dragged);
+  return withoutDragged.map((s, i) => ({ ...s, sort_order: i }));
+}
+
+// Pure — computes what `scenes` would look like if `activeId` were dropped
+// on `overIdStr` right now (either another scene's id, or a
+// "section-drop:{id}" empty-section drop zone). Returns null if the inputs
+// don't resolve to a valid move. Shared by handleSceneDragOver's debounced
+// live preview AND handleSceneDragEnd's definitive final computation, so
+// the two can never disagree about what a given (scenes, activeId, overId)
+// triple resolves to.
+function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: string): Scene[] | null {
+  const activeScene = scenes.find((s) => s.id === activeId);
+  if (!activeScene) return null;
+
+  let targetSectionId: string | null;
+  let overSceneId: string | null = null;
+  if (overIdStr.startsWith("section-drop:")) {
+    targetSectionId = overIdStr.slice("section-drop:".length) || null;
+  } else {
+    const overScene = scenes.find((s) => s.id === overIdStr);
+    if (!overScene || overScene.id === activeId) return null;
+    targetSectionId = overScene.section_id;
+    overSceneId = overScene.id;
+  }
+
+  const withoutActive = scenes.filter((s) => s.id !== activeId);
+  let insertAt = withoutActive.length;
+  if (overSceneId) {
+    const idx = withoutActive.findIndex((s) => s.id === overSceneId);
+    if (idx !== -1) insertAt = idx;
+  } else {
+    let lastIdxInSection = -1;
+    withoutActive.forEach((s, i) => {
+      if (s.section_id === targetSectionId) lastIdxInSection = i;
+    });
+    insertAt = lastIdxInSection + 1;
+  }
+  const next = [...withoutActive];
+  next.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
+
+  // Reassign sort_order per section (mirrors the backend's own per-section
+  // renumbering, see move_scene) so it matches the new array position —
+  // scenesIn()'s render-time sort compares the sort_order FIELD, not
+  // array position, so without this the live preview's reordering was
+  // silently discarded on render (array shuffled, display didn't move).
+  const counters = new Map<string | null, number>();
+  return next.map((s) => {
+    const n = counters.get(s.section_id) ?? 0;
+    counters.set(s.section_id, n + 1);
+    return s.sort_order === n ? s : { ...s, sort_order: n };
+  });
+}
+
 // Serializes backend move calls across successive drags (even across
 // separate SectionBlocks/tables). Two drags fired back-to-back used to send
 // their moveScene calls concurrently, and each call renumbers/reorders every
@@ -733,7 +814,7 @@ function SectionBlock({
   onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
   onSectionDragStart?: (id: string) => void;
   onSectionDragOver?: (targetId: string) => void;
-  onSectionDrop?: () => void;
+  onSectionDrop?: (targetId: string) => void;
   onSectionDragEnd?: () => void;
   draggingSectionId?: string | null;
   viewMode: "grid" | "table";
@@ -800,7 +881,7 @@ function SectionBlock({
         section && onSectionDrop
           ? (e) => {
               e.preventDefault();
-              onSectionDrop();
+              onSectionDrop(section.id);
             }
           : undefined
       }

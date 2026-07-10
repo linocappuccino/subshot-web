@@ -34,6 +34,18 @@ export function googleMapsUrl(scene: Scene): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 }
 
+/** Pure — what `shots` (already scoped to one scene) would look like with
+ * `activeId` moved to `overId`'s position, sort_order reassigned to match.
+ * Shared by handleShotDragOver's debounced live preview and
+ * handleShotDragEnd's definitive final computation so the two can never
+ * disagree about what a given (shots, activeId, overId) triple resolves to. */
+function computeShotReorder(shots: Shot[], activeId: string, overId: string): Shot[] | null {
+  const oldIndex = shots.findIndex((s) => s.id === activeId);
+  const newIndex = shots.findIndex((s) => s.id === overId);
+  if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return null;
+  return arrayMove(shots, oldIndex, newIndex).map((s, idx) => ({ ...s, sort_order: idx }));
+}
+
 function CalendarIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -114,6 +126,10 @@ export function SceneCard({
   // cancel/invalid-drop, same pattern as the scene grid's drag (see
   // handleSceneDragCancel in page.tsx).
   const shotDragOriginRef = useRef<Shot[] | null>(null);
+  // Debounces the live-reorder preview (see handleShotDragOver) — a fast
+  // sweep across several shot rows shouldn't reflow the list on every one
+  // of them, only once near wherever the pointer actually settles.
+  const shotDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shotSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
@@ -124,45 +140,57 @@ export function SceneCard({
     shotDragOriginRef.current = shots;
   }
 
-  /** Fires on every hover change while dragging — actually reorders `shots`
-   * live (not just a CSS preview) so rows visibly make way for the dragged
-   * one, exactly where it'll land if dropped right now. Same "multiple
-   * containers" live-preview pattern as the scene grid's handleSceneDragOver
-   * in page.tsx; nothing here touches the backend yet. */
+  /** Fires on every hover change while dragging. A real drag can fire this
+   * dozens of times a second while sweeping across rows — debounced (like
+   * the scene grid's handleSceneDragOver, see its comment for why) so it
+   * only actually reorders `shots` ~100ms after the hovered row stops
+   * changing, instead of reflowing on every row merely passed over. */
   function handleShotDragOver(event: DragOverEvent) {
     const { active, over } = event;
+    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
     if (!over || active.id === over.id) return;
-    const oldIndex = shots.findIndex((s) => s.id === active.id);
-    const newIndex = shots.findIndex((s) => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-    const reordered = arrayMove(shots, oldIndex, newIndex);
-    onChange((d) => ({
-      ...d,
-      shots: d.shots.map((s) => {
-        const idx = reordered.findIndex((r) => r.id === s.id);
-        return idx === -1 ? s : { ...s, sort_order: idx };
-      }),
-    }));
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    shotDragOverTimeoutRef.current = setTimeout(() => {
+      onChange((d) => {
+        // Same scoping + order as the shotsFor() prop this component
+        // normally receives — d.shots itself isn't guaranteed sorted, and
+        // computeShotReorder needs the current on-screen order to resolve
+        // "move active to over's index" correctly.
+        const currentShots = d.shots
+          .filter((s) => s.scene_id === scene.id && s.status !== "deleted")
+          .sort((a, b) => a.sort_order - b.sort_order);
+        const reordered = computeShotReorder(currentShots, activeId, overId);
+        if (!reordered) return d;
+        return { ...d, shots: d.shots.map((s) => reordered.find((r) => r.id === s.id) ?? s) };
+      });
+    }, 100);
   }
 
-  /** By the time this fires, `shots` already reflects the live-previewed
-   * final order (handleShotDragOver kept it in sync on every hover change)
-   * — persist the new sort_order for every shot whose position actually
-   * changed from the pre-drag snapshot. The backend has no bulk-reorder
-   * endpoint (same constraint the iOS app works around, see moveShot in
-   * ShotListViewModel), so this is one PATCH per moved shot. */
+  /** Never trusts whatever `shots` currently shows (the live preview is
+   * debounced, so it can lag behind) — recomputes the definitive final
+   * order fresh from dnd-kit's actual final `over`, then persists the new
+   * sort_order for every shot whose position changed from the pre-drag
+   * snapshot. The backend has no bulk-reorder endpoint (same constraint
+   * the iOS app works around, see moveShot in ShotListViewModel), so this
+   * is one PATCH per moved shot. */
   async function handleShotDragEnd(event: DragEndEvent) {
     setDraggingShotId(null);
+    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
     const origin = shotDragOriginRef.current;
     shotDragOriginRef.current = null;
-    const { over } = event;
+    const { active, over } = event;
     if (!over) {
       if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
       return;
     }
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const finalOrder = activeId === overId ? shots : computeShotReorder(shots, activeId, overId) ?? shots;
+    onChange((d) => ({ ...d, shots: d.shots.map((s) => finalOrder.find((f) => f.id === s.id) ?? s) }));
     try {
       await Promise.all(
-        shots.map((s, idx) => {
+        finalOrder.map((s, idx) => {
           const orig = origin?.find((o) => o.id === s.id);
           return orig && orig.sort_order !== idx ? api.patchShot(s.id, { sort_order: idx }) : Promise.resolve();
         })
@@ -176,6 +204,7 @@ export function SceneCard({
    * live preview from handleShotDragOver, nothing was persisted yet. */
   function handleShotDragCancel() {
     setDraggingShotId(null);
+    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
     const origin = shotDragOriginRef.current;
     shotDragOriginRef.current = null;
     if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
