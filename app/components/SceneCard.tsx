@@ -78,6 +78,7 @@ export function SceneCard({
   onDelete,
   onChange,
   dragHandleProps,
+  dropHighlight,
 }: {
   scene: Scene;
   shots: Shot[];
@@ -86,6 +87,9 @@ export function SceneCard({
   onDelete: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
+  /** True while another scene is being dragged directly over this card —
+   * rings it as the drop target, same style as SectionDropZone's isOver. */
+  dropHighlight?: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -190,7 +194,11 @@ export function SceneCard({
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: "spring", stiffness: 380, damping: 32 }}
       className={`rounded-2xl p-4 border transition-colors ${
-        scene.completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-white/[0.045] border-white/8 hover:border-white/15"
+        dropHighlight
+          ? "bg-blue-500/10 border-blue-500/40 ring-1 ring-inset ring-blue-500/40"
+          : scene.completed
+            ? "bg-emerald-500/10 border-emerald-500/20"
+            : "bg-white/[0.045] border-white/8 hover:border-white/15"
       }`}
     >
       <div className="flex items-start gap-2 mb-2">
@@ -224,9 +232,11 @@ export function SceneCard({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="hover:brightness-125 transition-[filter]"
+                  className="hover:brightness-125 transition-[filter] max-w-full min-w-0"
                 >
-                  <Pill icon={<PinIcon />}>{scene.location_address}</Pill>
+                  <Pill icon={<PinIcon />} wrap>
+                    {scene.location_address}
+                  </Pill>
                 </a>
               )}
             </div>

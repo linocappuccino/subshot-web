@@ -26,7 +26,7 @@ export function SortableSceneCard({
   onDelete: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: scene.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({ id: scene.id });
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 10 : "auto" }}>
@@ -38,6 +38,15 @@ export function SortableSceneCard({
         onDelete={onDelete}
         onChange={onChange}
         dragHandleProps={{ attributes, listeners }}
+        // isOver fires for whichever card is currently under the pointer
+        // while something else is dragging — used to ring-highlight it as
+        // a "drop here" target, same visual language as SectionDropZone.
+        // Without this the only drop feedback in a filled grid was the
+        // subtle sibling-shift reflow, which reads as "drop always lands
+        // at the bottom" (the one strip that DOES highlight) even though
+        // dropping mid-grid works fine and lands the card beside/between
+        // its neighbors. See project memory, "Drop-Zone-Indikator".
+        dropHighlight={isOver && !isDragging}
       />
     </div>
   );
