@@ -374,6 +374,23 @@ function TileShell({
                 style={{ background: "radial-gradient(140% 90% at 15% 8%, rgba(255,255,255,0.35), transparent 55%)" }}
               />
               <div className="absolute inset-0 rounded-2xl pointer-events-none shadow-[inset_0_1px_0_rgba(255,255,255,0.35),inset_0_0_0_1px_rgba(0,0,0,0.25)]" />
+              {/* A thin glass rim (no backdrop-blur on the photo itself —
+                  tried that, combined with the 3D hover transform below it
+                  rendered WAY blurrier than the 1.5px requested in some
+                  browsers, almost certainly a backdrop-filter + CSS 3D
+                  transform compositing bug, not a value that needed tuning.
+                  The gradients/rim-light/reflection streak already carry the
+                  "glass" read without touching the photo's own sharpness). */}
+              <div className="absolute inset-0 rounded-2xl pointer-events-none ring-1 ring-inset ring-white/20" />
+              {/* Diagonal light-reflection streak, the classic "light
+                  catching glass" cue — sweeps across on hover for a bit of
+                  life instead of sitting static. */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-2xl">
+                <div
+                  className="absolute -inset-y-6 -left-2/3 w-1/2 rotate-[-20deg] blur-md transition-transform duration-700 ease-out group-hover:translate-x-[220%]"
+                  style={{ background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)" }}
+                />
+              </div>
             </>
           )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
@@ -511,7 +528,16 @@ function FolderTile({
       }
     >
       {folder.background_image_url ? (
-        <AuthImage path={folder.background_image_url} alt={folder.name} className="w-full h-full object-cover" />
+        <AuthImage
+          path={folder.background_image_url}
+          alt={folder.name}
+          className="w-full h-full object-cover"
+          objectPosition={
+            folder.background_image_focus_x != null && folder.background_image_focus_y != null
+              ? `${(folder.background_image_focus_x * 100).toFixed(1)}% ${(folder.background_image_focus_y * 100).toFixed(1)}%`
+              : undefined
+          }
+        />
       ) : (
         <span className="text-3xl">{folder.emoji || "📁"}</span>
       )}

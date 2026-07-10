@@ -165,7 +165,7 @@ function TeamPageInner() {
       <div className="flex-1 max-w-2xl mx-auto w-full px-4 sm:px-6 py-8">
         <h1 className="text-2xl font-bold tracking-tight mb-1">Team</h1>
         <p className="text-sm text-white/40 mb-6">
-          Seats kaufen und Leute einladen. Ein Seat kostet CHF 6.00/Monat, ab 40 Seats nur noch CHF 4.50/Monat pro Seat —
+          Seats kaufen und Leute einladen. Ein Seat kostet CHF 4.90/Monat, ab 40 Seats nur noch CHF 4.00/Monat pro Seat —
           monatlich im Voraus, dazwischen linear gestaffelt.
         </p>
 

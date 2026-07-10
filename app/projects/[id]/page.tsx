@@ -7,11 +7,13 @@ import {
   DndContext,
   DragOverlay,
   pointerWithin,
+  rectIntersection,
   PointerSensor,
   TouchSensor,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -25,24 +27,43 @@ import { SceneCard } from "@/app/components/SceneCard";
 import { SceneEditModal } from "@/app/components/SceneEditModal";
 import { SceneTable } from "@/app/components/SceneTable";
 import { ProjectInfoBox } from "@/app/components/ProjectInfoBox";
-import { SectionInfoBox } from "@/app/components/SectionInfoBox";
+import { ProjectInfoTile } from "@/app/components/ProjectInfoTile";
 import { TeamPanel } from "@/app/components/TeamPanel";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { ShareLinkModal } from "@/app/components/ShareLinkModal";
 import { AppShell } from "@/app/components/AppShell";
-import { Button } from "@/app/components/ui/Button";
+import { Button, IconButton } from "@/app/components/ui/Button";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { Input } from "@/app/components/ui/Field";
 import { Collapsible } from "@/app/components/ui/Collapsible";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 
-// Sentinel used as `draggingSectionId` while dragging the "Projektinfo"
-// placement chip (see placingProjectInfo) — never a real section id, so it
-// can't collide with one. Lets handleSectionDragOver/Drop reuse the same
-// native-D&D plumbing as real section reordering without a parallel set of
-// handlers, just branching on this one value.
-const PENDING_PROJECT_INFO_ID = "__pending_project_info__";
+// pointerWithin requires the cursor to be exactly inside a droppable's
+// rect — cards have gap-4 between them, so hovering in that gap (very easy
+// to do, especially moving fast) found nothing at all, which is exactly
+// what Lino described as "man muss mega genau treffen". Falling back to
+// rectIntersection (does the DRAGGED CARD's rect merely overlap a
+// droppable's rect at all, not the exact pointer) when pointerWithin comes
+// up empty keeps pointerWithin's precise cross-section behavior (see the
+// comment at the DndContext below — that's still the primary check, this
+// only fills the gaps) while making near-misses still register.
+const sceneCollisionDetection: CollisionDetection = (args) => {
+  // Filter out the dragged item's own id from every candidate list — found
+  // via a real repro with the (full-width) Projektinfo tile: its
+  // translated rect stays just as wide as its original col-span-full
+  // layout, and rectIntersection (unlike pointerWithin) compares that
+  // WHOLE rect against every droppable, not just the cursor position. A
+  // rect that size self-overlaps its own still-registered droppable
+  // constantly, which without this filter resolved as "over" = itself
+  // more often than any real target — the drag looked like it accepted no
+  // valid drop at all. pointerWithin doesn't have this problem (it only
+  // cares where the cursor actually is), but keep the filter on both for
+  // safety.
+  const pointerHits = pointerWithin(args).filter((c) => c.id !== args.active.id);
+  if (pointerHits.length > 0) return pointerHits;
+  return rectIntersection(args).filter((c) => c.id !== args.active.id);
+};
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
@@ -58,23 +79,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [creatingIntermediateStep, setCreatingIntermediateStep] = useState(false);
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
   const [deleteScene, setDeleteScene] = useState<Scene | null>(null);
+  const [deleteSection, setDeleteSection] = useState<Section | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
-  // Only used for the very first Projektinfo in a project that has NO
-  // sections yet — there's nowhere to attach it to, so a section has to be
-  // created alongside it (name-prompt flow, see createSection below). Once
-  // at least one section exists, "Projektinfo" from the "+" menu no longer
-  // creates a section at all — see placingProjectInfo instead (2026-07-10,
-  // Lino: was auto-creating a redundant empty section every time, wanted to
-  // drag the info box onto whichever EXISTING section it belongs to).
-  const [creatingSectionWithProjectInfo, setCreatingSectionWithProjectInfo] = useState(false);
-  // True right after picking "Projektinfo" from the "+" menu when sections
-  // already exist — shows a small draggable "Projektinfo" chip near the FAB
-  // that attaches to whichever section it's dropped onto (handleSectionDrop
-  // special-cases draggingSectionId === PENDING_PROJECT_INFO_ID). No section
-  // is ever created by this path.
-  const [placingProjectInfo, setPlacingProjectInfo] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showNotion, setShowNotion] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -86,15 +94,33 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // dragged from one section straight into another, not just reordered
   // within the section it started in. See handleSceneDragEnd below.
   const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
+  // Notion-style insertion indicator (Lino's own suggestion, 2026-07-10:
+  // "eine blaue schöne Indikatorlinie... wo das gehaltene Objekt hin
+  // fliegt") — the only visual feedback during the drag itself. Nothing in
+  // the grid actually moves until drop (see handleSceneDragOver/End), so
+  // this line is the sole "where will it land" signal while dragging.
+  const [insertionIndicator, setInsertionIndicator] = useState<{ targetId: string; edge: "left" | "right" | "top" | "bottom" } | null>(null);
   // Snapshot of data.scenes taken at drag start, restored verbatim on
   // cancel/invalid-drop (see handleSceneDragCancel) and used at drag end to
-  // figure out which section the scene actually started in (data.scenes
-  // itself gets live-reordered mid-drag, see handleSceneDragOver).
+  // figure out which section the scene actually started in.
   const dragOriginScenesRef = useRef<Scene[] | null>(null);
-  // Debounces the live-reorder preview (see handleSceneDragOver) so a fast
-  // sweep across many cards doesn't reflow the whole grid on every single
-  // one of them.
-  const sceneDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Real cursor position, tracked independently of dnd-kit — used instead
+  // of `active.rect.current.translated` (the dragged tile's own rect) for
+  // the insertion-line's left/right (or top/bottom) side. The tile's rect
+  // is offset from the cursor by wherever on it you happened to grab the
+  // handle, and that offset is constant for the whole drag — comparing
+  // TILE center vs target center is a systematically biased proxy for
+  // "which side is my cursor on", most visible on multi-row grids (Lino:
+  // "die blaue Linie stimmt nicht überein mit wo die Kachel landet").
+  // Comparing the actual cursor position removes that bias entirely.
+  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    function onPointerMove(e: PointerEvent) {
+      pointerPosRef.current = { x: e.clientX, y: e.clientY };
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    return () => window.removeEventListener("pointermove", onPointerMove);
+  }, []);
   const sceneSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
@@ -106,12 +132,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // dataTransfer payloads during dragover (only at drop), so which section
   // is being dragged has to live in React state instead.
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
+  // Same insertion-line-only idea as scenes (see handleSceneDragOver's
+  // comment) — sections used to live-reflow during the drag itself, which
+  // for a COLLAPSED section is basically invisible (a header shuffling
+  // among other headers, no card motion to see), so a Lino: "welcher
+  // Abschnitt landet wo?" complaint was really just this needing the same
+  // fix scenes already got. top/bottom since sections stack vertically.
+  const [sectionInsertionIndicator, setSectionInsertionIndicator] = useState<{ targetId: string; edge: "top" | "bottom" } | null>(null);
   const dragOriginSectionsRef = useRef<Section[] | null>(null);
-  const sectionDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Which section is currently hovered while dragging the "Projektinfo"
-  // placement chip — only used to highlight a valid drop target, since
-  // there's nothing to reflow-preview for a non-section drag.
-  const [projectInfoHoverTarget, setProjectInfoHoverTarget] = useState<string | null>(null);
 
   function setViewModePersisted(mode: "grid" | "table") {
     setViewMode(mode);
@@ -174,6 +202,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // Deleting a section never deletes its scenes — the backend FK is
+  // ON DELETE SET NULL (see iOS' matching deleteSection comment), so they
+  // fall back to "Ohne Abschnitt" instead of disappearing. Clear
+  // section_id locally on whatever scenes had it so that shows immediately
+  // instead of waiting for a reload.
+  async function confirmDeleteSection() {
+    if (!deleteSection) return;
+    try {
+      await api.deleteSection(deleteSection.id);
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              sections: prev.sections.filter((s) => s.id !== deleteSection.id),
+              scenes: prev.scenes.map((s) => (s.section_id === deleteSection.id ? { ...s, section_id: null } : s)),
+            }
+          : prev
+      );
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+    } finally {
+      setDeleteSection(null);
+    }
+  }
+
   // Section-level reordering (drag the whole section, scenes included) —
   // same "insert before/after target depending on drag direction" approach
   // as the iOS app's ShotListViewModel.reorderSection, since the backend
@@ -186,80 +239,41 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // avoids having to discriminate "is this drag a scene or a whole
   // section" inside one shared collision-detection/onDragEnd handler.
   //
-  // Split into start/over/drop/end (same live-preview shape as the scene
-  // grid's handleSceneDragOver) so sections visibly reflow during the drag
-  // instead of only jumping into place on drop — Lino: cards/sections need
-  // to make way and show exactly where the dragged one will land, not just
-  // silently reorder on release.
+  // Insertion-line-only, same as scenes (see handleSceneDragOver's
+  // comment) — nothing in `data.sections` moves until drop, only the
+  // indicator line updates during the drag itself.
   function handleSectionDragStart(id: string) {
     setDraggingSectionId(id);
     dragOriginSectionsRef.current = data?.sections ?? null;
   }
 
-  // Native dragover fires continuously (a raw DOM event, easily 60+/sec
-  // while the mouse moves) — debounced for the same reason as the scene
-  // grid's handleSceneDragOver (see its comment): applying a reflow on
-  // every single one of those was the actual cause of the reported
-  // flickering, not a logic bug.
-  function handleSectionDragOver(targetId: string) {
-    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
-    if (!draggingSectionId || draggingSectionId === targetId) return;
-    // Dragging the "Projektinfo" placement chip (not a real section) — no
-    // reorder to preview, just track which section is currently hovered so
-    // it can be highlighted as a valid/invalid attach target (see
-    // SectionBlock's dropTargetHighlight prop).
-    if (draggingSectionId === PENDING_PROJECT_INFO_ID) {
-      setProjectInfoHoverTarget(targetId);
+  function handleSectionDragOver(targetId: string, e: React.DragEvent) {
+    if (!draggingSectionId || draggingSectionId === targetId) {
+      setSectionInsertionIndicator(null);
       return;
     }
-    sectionDragOverTimeoutRef.current = setTimeout(() => {
-      setData((prev) => {
-        if (!prev) return prev;
-        const next = computeSectionReorder(prev.sections, draggingSectionId, targetId);
-        if (!next) return prev;
-        const current = [...prev.sections].sort((a, b) => a.sort_order - b.sort_order);
-        const unchanged = next.length === current.length && next.every((s, i) => s.id === current[i].id);
-        if (unchanged) return prev;
-        return { ...prev, sections: next };
-      });
-    }, 100);
+    const rect = e.currentTarget.getBoundingClientRect();
+    setSectionInsertionIndicator({ targetId, edge: e.clientY < rect.top + rect.height / 2 ? "top" : "bottom" });
   }
 
-  // Never trusts whatever data.sections currently shows (the live preview
-  // is debounced, so it can lag behind) — recomputes the definitive final
-  // order fresh from the same pure logic handleSectionDragOver uses, fed
-  // with the actual drop target, so what's persisted always matches
-  // exactly what the section was dropped onto.
-  async function handleSectionDrop(targetId: string) {
-    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
+  // Recomputes the definitive final order fresh from the actual drop
+  // event's own cursor position (same reasoning as handleSceneDragEnd —
+  // never trust stale hover state), so what's persisted always matches
+  // exactly what the insertion line last pointed at.
+  async function handleSectionDrop(targetId: string, e: React.DragEvent) {
+    setSectionInsertionIndicator(null);
     const origin = dragOriginSectionsRef.current;
     dragOriginSectionsRef.current = null;
     const draggedId = draggingSectionId;
     setDraggingSectionId(null);
-    setProjectInfoHoverTarget(null);
 
-    if (draggedId === PENDING_PROJECT_INFO_ID) {
-      setPlacingProjectInfo(false);
-      const target = data?.sections.find((s) => s.id === targetId);
-      if (!target) return;
-      if (target.has_project_info) {
-        toast.showError("Dieser Abschnitt hat schon eine Projektinfo.");
-        return;
-      }
-      try {
-        const updated = await api.patchSection(targetId, { add_project_info: true });
-        setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
-      } catch (e) {
-        toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
-      }
-      return;
-    }
-
-    if (!data || !origin || !draggedId) return;
-    const next = draggedId === targetId ? null : computeSectionReorder(data.sections, draggedId, targetId);
-    const resultSections = next ?? [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
-    setData((prev) => (prev ? { ...prev, sections: resultSections } : prev));
-    const changed = resultSections.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
+    if (!data || !origin || !draggedId || draggedId === targetId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const insertAfter = e.clientY >= rect.top + rect.height / 2;
+    const next = computeSectionReorder(data.sections, draggedId, targetId, insertAfter);
+    if (!next) return;
+    setData((prev) => (prev ? { ...prev, sections: next } : prev));
+    const changed = next.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
     if (changed.length === 0) return;
     try {
       await Promise.all(changed.map((s) => api.patchSection(s.id, { sort_order: s.sort_order })));
@@ -269,16 +283,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   // Fires on the drag SOURCE after every drag, successful or not (native
-  // D&D always calls dragend). handleSectionDrop already clears
-  // dragOriginSectionsRef on a real drop, so this only reverts when the
-  // drag was cancelled/dropped somewhere invalid.
+  // D&D always calls dragend). Nothing was ever mutated during the drag
+  // itself (see above), so cancelling just clears the indicator/state —
+  // no revert needed.
   function handleSectionDragEnd() {
     setDraggingSectionId(null);
-    setProjectInfoHoverTarget(null);
-    if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
-    const origin = dragOriginSectionsRef.current;
+    setSectionInsertionIndicator(null);
     dragOriginSectionsRef.current = null;
-    if (origin) setData((prev) => (prev ? { ...prev, sections: origin } : prev));
   }
 
   // Scene-level drag start — snapshots the pre-drag order so a cancelled or
@@ -289,53 +300,65 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   // Fires continuously while dragging, whenever the pointer moves onto a
-  // new card/drop-zone — in a REAL browser this can be dozens of times a
-  // second as the cursor sweeps across a grid. Lino: cards need to visibly
-  // get "out of the way" and show exactly where the dragged card will
-  // land. The first attempt at this reordered data.scenes on every single
-  // one of those events, which meant sweeping across N cards on the way to
-  // the actual target caused N full-page re-renders in a fraction of a
-  // second — exactly the "flackert alles wie wild" Lino reported, not a
-  // logic bug but a re-render storm from over-eager live updates. Fix:
-  // debounce — only actually apply the reorder ~100ms after the hovered
-  // target stops changing, so a fast sweep across many cards settles once
-  // near wherever the pointer actually stops, instead of reflowing on
-  // every card it merely passed over. Reads/writes `data` exclusively
-  // through the setData updater (never the outer closure's `data`) so a
-  // stale snapshot from before the debounce delay can never be applied.
+  // new card/drop-zone. This used to also live-reorder data.scenes here
+  // (cards visibly "making way" during the drag itself), removed
+  // 2026-07-10: found via a real repro that the reflow could shift the
+  // hovered target out from under a STATIONARY cursor mid-drag (most
+  // visible with the full-width Projektinfo tile reflowing a whole row,
+  // but not exclusive to it) — the exact "Vorschau zeigt eine Stelle,
+  // Loslassen landet wo anders" bug Lino reported. Only updating the
+  // insertion-line indicator here (cheap, doesn't move anything) sidesteps
+  // that whole class of bug: nothing in the grid actually moves until
+  // handleSceneDragEnd computes and applies the real result in one step,
+  // so the target a user is hovering can never drift away mid-drag. This
+  // was Lino's own suggested alternative ("Notion-artige Indikatorlinie").
   function handleSceneDragOver(event: DragOverEvent) {
     const { active, over } = event;
-    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
-    if (!over) return;
+    if (!over) {
+      setInsertionIndicator(null);
+      return;
+    }
     const activeId = String(active.id);
     const overIdStr = String(over.id);
-    if (activeId === overIdStr) return;
-    sceneDragOverTimeoutRef.current = setTimeout(() => {
-      setData((prev) => {
-        if (!prev) return prev;
-        const next = computeSceneReorder(prev.scenes, activeId, overIdStr);
-        if (!next) return prev;
-        const unchanged =
-          next.length === prev.scenes.length && next.every((s, i) => s.id === prev.scenes[i].id && s.section_id === prev.scenes[i].section_id);
-        if (unchanged) return prev;
-        return { ...prev, scenes: next };
-      });
-    }, 100);
+    if (activeId === overIdStr) {
+      setInsertionIndicator(null);
+      return;
+    }
+
+    // Which half of the hovered card/row the cursor currently sits over
+    // (see pointerPosRef's comment above for why the cursor, not the
+    // dragged tile's rect). Grid tiles sit side by side (compare X), table
+    // rows stack vertically (compare Y) — same before/after idea, different
+    // axis. A bare section-drop zone (empty/near-empty section, or the
+    // Projektinfo-onto-a-section case) has no "before/after" neighbor of
+    // its own to straddle — show a plain "drop here" indicator instead,
+    // rendered by SectionDropZone/TableDropZone themselves (Lino: "hat man
+    // keine Ahnung wo man die Projektinfo ablegen muss").
+    if (overIdStr.startsWith("section-drop:")) {
+      setInsertionIndicator({ targetId: overIdStr, edge: "top" });
+    } else {
+      const pointer = pointerPosRef.current;
+      if (pointer) {
+        if (viewMode === "table") {
+          const targetCenterY = over.rect.top + over.rect.height / 2;
+          setInsertionIndicator({ targetId: overIdStr, edge: pointer.y < targetCenterY ? "top" : "bottom" });
+        } else {
+          const targetCenterX = over.rect.left + over.rect.width / 2;
+          setInsertionIndicator({ targetId: overIdStr, edge: pointer.x < targetCenterX ? "left" : "right" });
+        }
+      }
+    }
   }
 
   // Scene-level drag end — the ONE shared handler for every section's grid
-  // (see the DndContext wrapping all of them further down). By the time
-  // this fires, data.scenes already reflects the live-previewed final
-  // position (handleSceneDragOver keeps it in sync on every hover change),
-  // so this just has to persist it: PATCH section_id if it changed from
-  // where the drag started, then reorderScenes() for the sort_order.
+  // (see the DndContext wrapping all of them further down). Nothing moves
+  // in the grid during the drag itself (see handleSceneDragOver) — this is
+  // where the actual reorder is computed and persisted, fed with dnd-kit's
+  // real final `over` so the result always matches exactly what the
+  // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
     setActiveSceneId(null);
-    // Cancel any pending debounced preview — the block below recomputes
-    // the DEFINITIVE final position directly from dnd-kit's own `over` at
-    // this exact moment, so a stale/not-yet-applied preview must never be
-    // allowed to sneak in afterwards and clobber it.
-    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
+    setInsertionIndicator(null);
     const { active, over } = event;
     const origin = dragOriginScenesRef.current;
     dragOriginScenesRef.current = null;
@@ -348,12 +371,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const originScene = origin?.find((s) => s.id === activeId);
     if (!originScene) return;
 
-    // Never trust whatever data.scenes currently shows (the live preview
-    // is debounced, so it can lag up to ~100ms behind reality) — compute
-    // the result fresh from the same pure logic handleSceneDragOver uses,
-    // fed with dnd-kit's real final `over`, so what gets persisted always
-    // matches exactly what the user actually dropped onto.
-    const finalScenes = overIdStr ? computeSceneReorder(data.scenes, activeId, overIdStr) : null;
+    // data.scenes is still the pre-drag order (nothing moves during the
+    // drag itself, see handleSceneDragOver) — compute the result fresh
+    // here from the same pure logic the indicator line used, fed with
+    // dnd-kit's real final `over`, so what gets persisted always matches
+    // exactly what the user dropped onto.
+    let insertAfter = false;
+    if (overIdStr && !overIdStr.startsWith("section-drop:")) {
+      const pointer = pointerPosRef.current;
+      if (pointer && over) {
+        insertAfter =
+          viewMode === "table"
+            ? pointer.y >= over.rect.top + over.rect.height / 2
+            : pointer.x >= over.rect.left + over.rect.width / 2;
+      }
+    }
+    const finalScenes = overIdStr ? computeSceneReorder(data.scenes, activeId, overIdStr, insertAfter) : null;
     const resultScenes = finalScenes ?? data.scenes;
     const activeScene = resultScenes.find((s) => s.id === activeId);
     if (!activeScene) return;
@@ -386,7 +419,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // persisted to the backend so a plain state restore is enough.
   function handleSceneDragCancel() {
     setActiveSceneId(null);
-    if (sceneDragOverTimeoutRef.current) clearTimeout(sceneDragOverTimeoutRef.current);
+    setInsertionIndicator(null);
     const origin = dragOriginScenesRef.current;
     dragOriginScenesRef.current = null;
     if (origin) setData((prev) => (prev ? { ...prev, scenes: origin } : prev));
@@ -395,19 +428,35 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   async function createSection() {
     const name = newSectionName.trim();
     setCreatingSection(false);
-    const withProjectInfo = creatingSectionWithProjectInfo;
-    setCreatingSectionWithProjectInfo(false);
     if (!name || !data) return;
     try {
-      let section = await api.createSection(data.id, name, data.sections.length);
-      if (withProjectInfo) {
-        section = await api.patchSection(section.id, { add_project_info: true });
-      }
+      const section = await api.createSection(data.id, name, data.sections.length);
       setData((prev) => (prev ? { ...prev, sections: [...prev.sections, section] } : prev));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
     setNewSectionName("");
+  }
+
+  // "Projektinfo" (2026-07-10 redesign, Lino: NEVER auto-create a section
+  // for this) — a Projektinfo is just a scene tile with is_project_info
+  // set, created directly with no section (lands in "Ohne Abschnitt", same
+  // bucket every other unsectioned scene sits in) and no name prompt (it
+  // has no name of its own to ask for). From there it's dragged into
+  // whichever section it belongs to using the exact same scene drag
+  // mechanism as any other tile — see computeSceneReorder's
+  // is_project_info handling for the "always lands first, one per
+  // section" rule.
+  async function createProjectInfoScene() {
+    if (!data) return;
+    try {
+      const scene = await api.createScene(data.id, {
+        project_id: data.id, color: "#3875bd", is_project_info: true, sort_order: data.scenes.length,
+      });
+      setData((prev) => (prev ? { ...prev, scenes: [...prev.scenes, scene] } : prev));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    }
   }
 
   async function exportPdf() {
@@ -434,16 +483,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  // Same "completed scenes always last within their group" rule as the iOS
-  // app (ShotListViewModel.scenes(in:)) and the PDF/share-link exports.
-  // Secondary sort_order compare (like shotsFor/sections below) — the
-  // backend relationship this data comes from doesn't guarantee sort_order
-  // sequence on its own, so without this a fresh page load could show
-  // scenes in a different order than whatever was last dragged into place.
+  // Marking a scene "Im Kasten" (completed) must NOT shove it to the back
+  // of the list (Lino, 2026-07-10: "wenn man im kasten drückt, die kacheln
+  // NICHT nach hinten geschoben werden sollen") — a completed-sorts-last
+  // rule used to live here, removed. is_project_info still sorts first
+  // (Lino: "die Projektinfo ist immer die erste Kachel in einem
+  // Abschnitt"). Secondary sort_order compare (like shotsFor/sections
+  // below) — the backend relationship this data comes from doesn't
+  // guarantee sort_order sequence on its own, so without this a fresh page
+  // load could show scenes in a different order than whatever was last
+  // dragged into place.
   const scenesIn = (sectionId: string | null) =>
     data.scenes
       .filter((s) => s.section_id === sectionId)
-      .sort((a, b) => Number(a.completed) - Number(b.completed) || a.sort_order - b.sort_order);
+      .sort((a, b) => Number(b.is_project_info) - Number(a.is_project_info) || a.sort_order - b.sort_order);
 
   const shotsFor = (sceneId: string) => data.shots.filter((s) => s.scene_id === sceneId && s.status !== "deleted").sort((a, b) => a.sort_order - b.sort_order);
 
@@ -527,7 +580,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           // project memory), pointerWithin (checks whether the actual
           // cursor position is over a droppable, which is what a user
           // visually expects "am I over this drop zone" to mean) fixed it.
-          collisionDetection={pointerWithin}
+          // sceneCollisionDetection layers a rectIntersection fallback on
+          // top for when the cursor is in the gap between cards (Lino:
+          // "man muss mega genau treffen") — see its own comment above.
+          collisionDetection={sceneCollisionDetection}
           onDragStart={handleSceneDragStart}
           onDragOver={handleSceneDragOver}
           onDragEnd={handleSceneDragEnd}
@@ -550,15 +606,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 onChange={updateScenesShots}
                 onEditScene={setEditingScene}
                 onDeleteScene={setDeleteScene}
-                onReorder={(ordered, movedId, beforeId) => reorderScenes(api, ordered, movedId, beforeId, setData)}
+                onDeleteSection={setDeleteSection}
                 onSectionDragStart={handleSectionDragStart}
                 onSectionDragOver={handleSectionDragOver}
                 onSectionDrop={handleSectionDrop}
                 onSectionDragEnd={handleSectionDragEnd}
                 draggingSectionId={draggingSectionId}
-                projectInfoDropHighlight={
-                  draggingSectionId === PENDING_PROJECT_INFO_ID && projectInfoHoverTarget === section.id && !section.has_project_info
-                }
+                sectionInsertionIndicator={sectionInsertionIndicator}
+                insertionIndicator={insertionIndicator}
                 viewMode={viewMode}
                 projectId={data.id}
                 onSectionChange={(updated) =>
@@ -584,7 +639,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onChange={updateScenesShots}
               onEditScene={setEditingScene}
               onDeleteScene={setDeleteScene}
-              onReorder={(ordered, movedId, beforeId) => reorderScenes(api, ordered, movedId, beforeId, setData)}
+              insertionIndicator={insertionIndicator}
               viewMode={viewMode}
             />
           )}
@@ -594,6 +649,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               (() => {
                 const activeScene = data.scenes.find((s) => s.id === activeSceneId);
                 if (!activeScene) return null;
+                if (activeScene.is_project_info) {
+                  return (
+                    <div className="w-full shadow-2xl shadow-black/50 cursor-grabbing opacity-90">
+                      <ProjectInfoTile scene={activeScene} members={members} onDelete={() => {}} onChange={() => {}} onOpenTeam={() => {}} />
+                    </div>
+                  );
+                }
                 return (
                   <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
                     <SceneCard scene={activeScene} shots={shotsFor(activeScene.id)} members={members} onEdit={() => {}} onDelete={() => {}} onChange={() => {}} />
@@ -620,31 +682,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onChange={(e) => setNewSectionName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && createSection()}
               onBlur={createSection}
-              placeholder={creatingSectionWithProjectInfo ? "Name (z.B. Tag 2)" : "Abschnittsname"}
+              placeholder="Abschnittsname"
               className="w-48 shadow-2xl shadow-black/50"
             />
-          ) : placingProjectInfo ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setPlacingProjectInfo(false)}
-                className="text-xs font-semibold text-white/50 hover:text-white/80 px-2 py-1"
-              >
-                Abbrechen
-              </button>
-              <div
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData("text/subshot-section-id", PENDING_PROJECT_INFO_ID);
-                  e.dataTransfer.effectAllowed = "move";
-                  handleSectionDragStart(PENDING_PROJECT_INFO_ID);
-                }}
-                onDragEnd={handleSectionDragEnd}
-                className="flex items-center gap-2 bg-blue-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl shadow-black/50 cursor-grab active:cursor-grabbing touch-none"
-              >
-                <InfoIcon />
-                Projektinfo — auf einen Abschnitt ziehen
-              </div>
-            </div>
           ) : (
             // Mirrors the iOS app's addSceneButton menu exactly (same 4
             // options, same order) — was 3 separate flat buttons before,
@@ -688,17 +728,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
-                      // No sections yet — Projektinfo has nowhere to attach
-                      // to, so (only in this case) create one alongside it.
-                      // Once any section exists, this never creates a new
-                      // one — drag the chip onto whichever section it
-                      // belongs to instead (see placingProjectInfo).
-                      if (data.sections.length === 0) {
-                        setCreatingSectionWithProjectInfo(true);
-                        setCreatingSection(true);
-                      } else {
-                        setPlacingProjectInfo(true);
-                      }
+                      createProjectInfoScene();
                       close();
                     }}
                   >
@@ -734,6 +764,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onConfirm={confirmDeleteScene}
         onCancel={() => setDeleteScene(null)}
       />
+      <ConfirmDialog
+        open={deleteSection !== null}
+        title="Abschnitt löschen?"
+        message={`"${deleteSection?.name}" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter "Ohne Abschnitt".`}
+        onConfirm={confirmDeleteSection}
+        onCancel={() => setDeleteSection(null)}
+      />
       <TeamPanel
         open={showTeam}
         onClose={() => setShowTeam(false)}
@@ -759,11 +796,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 }
 
 // Pure — same idea as computeSceneReorder below, for whole sections.
-// Direction-aware insert (after target on a forward drag, otherwise a
-// one-slot neighbor drag would be a silent no-op — see the "KRITISCH"
-// section-drag bug in project memory) so both the debounced live preview
-// and the definitive drop computation agree.
-function computeSectionReorder(sections: Section[], draggedId: string, targetId: string): Section[] | null {
+// insertAfter comes straight from the cursor position (top vs bottom half
+// of the target header, see handleSectionDragOver/Drop) rather than being
+// inferred from index direction — a pointer-driven flag mirrors the
+// insertion line exactly, instead of a "which way did the drag start"
+// heuristic that could disagree with what the line last showed.
+function computeSectionReorder(sections: Section[], draggedId: string, targetId: string, insertAfter: boolean): Section[] | null {
   const current = [...sections].sort((a, b) => a.sort_order - b.sort_order);
   const draggedIndex = current.findIndex((s) => s.id === draggedId);
   const targetIndexBefore = current.findIndex((s) => s.id === targetId);
@@ -772,7 +810,7 @@ function computeSectionReorder(sections: Section[], draggedId: string, targetId:
   const withoutDragged = current.filter((s) => s.id !== draggedId);
   let targetIndex = withoutDragged.findIndex((s) => s.id === targetId);
   if (targetIndex === -1) return null;
-  if (draggedIndex < targetIndexBefore) targetIndex += 1;
+  if (insertAfter) targetIndex += 1;
   withoutDragged.splice(targetIndex, 0, dragged);
   return withoutDragged.map((s, i) => ({ ...s, sort_order: i }));
 }
@@ -784,7 +822,7 @@ function computeSectionReorder(sections: Section[], draggedId: string, targetId:
 // live preview AND handleSceneDragEnd's definitive final computation, so
 // the two can never disagree about what a given (scenes, activeId, overId)
 // triple resolves to.
-function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: string): Scene[] | null {
+function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: string, insertAfter = false): Scene[] | null {
   const activeScene = scenes.find((s) => s.id === activeId);
   if (!activeScene) return null;
 
@@ -801,6 +839,17 @@ function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: strin
 
   const sourceSectionId = activeScene.section_id;
 
+  // A Projektinfo tile always lands first, full stop — wherever within the
+  // target section it's dropped, ignore the specific hover position (Lino:
+  // "die Projektinfo ist immer die erste Kachel in einem Abschnitt, alle
+  // anderen Kacheln kommen unter der eingefügten Projektinfo Kachel"). Only
+  // one per section: reject the move if the target already has a
+  // different Projektinfo tile.
+  if (activeScene.is_project_info) {
+    const conflict = scenes.find((s) => s.section_id === targetSectionId && s.is_project_info && s.id !== activeId);
+    if (conflict) return null;
+  }
+
   // Renumber each affected section from ITS OWN scenes sorted by their
   // current sort_order — never from raw array position. The scenes array
   // this data comes from has no guaranteed order (the backend relationship
@@ -813,9 +862,18 @@ function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: strin
   // section that was never part of the drag).
   const targetSectionScenes = scenes.filter((s) => s.section_id === targetSectionId && s.id !== activeId).sort((a, b) => a.sort_order - b.sort_order);
   let insertAt = targetSectionScenes.length;
-  if (overSceneId) {
+  if (activeScene.is_project_info) {
+    insertAt = 0;
+  } else if (overSceneId) {
     const idx = targetSectionScenes.findIndex((s) => s.id === overSceneId);
-    if (idx !== -1) insertAt = idx;
+    // insertAfter mirrors the insertion-line indicator exactly (left half
+    // of the hovered card = insert before it, right half = after) — the
+    // preview and the actual result must always agree on this, or dropping
+    // lands somewhere different than what the line just showed.
+    if (idx !== -1) insertAt = insertAfter ? idx + 1 : idx;
+    // Never insert a regular scene BEFORE the section's Projektinfo tile —
+    // that tile is pinned to index 0 unconditionally.
+    if (insertAt === 0 && targetSectionScenes[0]?.is_project_info) insertAt = 1;
   }
   const newTargetOrder = [...targetSectionScenes];
   newTargetOrder.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
@@ -880,13 +938,14 @@ function SectionBlock({
   onChange,
   onEditScene,
   onDeleteScene,
-  onReorder,
+  onDeleteSection,
   onSectionDragStart,
   onSectionDragOver,
   onSectionDrop,
   onSectionDragEnd,
   draggingSectionId,
-  projectInfoDropHighlight,
+  sectionInsertionIndicator,
+  insertionIndicator,
   viewMode,
   projectId,
   onSectionChange,
@@ -902,17 +961,14 @@ function SectionBlock({
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
-  onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
+  onDeleteSection?: (section: Section) => void;
+  insertionIndicator?: { targetId: string; edge: "left" | "right" | "top" | "bottom" } | null;
   onSectionDragStart?: (id: string) => void;
-  onSectionDragOver?: (targetId: string) => void;
-  onSectionDrop?: (targetId: string) => void;
+  onSectionDragOver?: (targetId: string, e: React.DragEvent) => void;
+  onSectionDrop?: (targetId: string, e: React.DragEvent) => void;
   onSectionDragEnd?: () => void;
   draggingSectionId?: string | null;
-  /** True while the "Projektinfo" placement chip is hovering over THIS
-   * section and it's a valid drop target (see PENDING_PROJECT_INFO_ID) —
-   * the only remaining highlight-based drop indicator, since there's no
-   * card/section to reflow-preview for a non-reorder drag like this one. */
-  projectInfoDropHighlight?: boolean;
+  sectionInsertionIndicator?: { targetId: string; edge: "top" | "bottom" } | null;
   viewMode: "grid" | "table";
   projectId?: string;
   onSectionChange?: (updated: Section) => void;
@@ -942,17 +998,28 @@ function SectionBlock({
               onEdit={() => onEditScene(scene)}
               onDelete={() => onDeleteScene(scene)}
               onChange={onChange}
+              onOpenTeam={onOpenTeam ?? (() => {})}
+              insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
             />
           ))}
         </AnimatePresence>
       </div>
-      <SectionDropZone sectionId={section?.id ?? null} />
+      <SectionDropZone sectionId={section?.id ?? null} insertionIndicator={insertionIndicator} />
     </SortableContext>
   );
 
   const content =
     viewMode === "table" ? (
-      <SceneTable scenes={scenes} shotsFor={shotsFor} members={members} onEditScene={onEditScene} onDeleteScene={onDeleteScene} onChange={onChange} onReorder={onReorder} />
+      <SceneTable
+        scenes={scenes}
+        shotsFor={shotsFor}
+        members={members}
+        onEditScene={onEditScene}
+        onDeleteScene={onDeleteScene}
+        onChange={onChange}
+        sectionId={section?.id ?? null}
+        insertionIndicator={insertionIndicator}
+      />
     ) : (
       grid
     );
@@ -961,15 +1028,23 @@ function SectionBlock({
     return <div className="mb-8">{content}</div>;
   }
 
+  const sectionInsertionEdge = section && sectionInsertionIndicator?.targetId === section.id ? sectionInsertionIndicator.edge : null;
+
   return (
     <div
-      className={`mb-8 transition-transform rounded-2xl ${projectInfoDropHighlight ? "ring-2 ring-blue-500/60 bg-blue-500/5" : ""}`}
-      style={draggingSectionId === section?.id ? { opacity: 0.4 } : undefined}
+      className="relative mb-8 transition-transform"
+      // section && ... — without the `section &&` guard this was also true
+      // for the "Ohne Abschnitt" bucket (section is undefined there) any
+      // time draggingSectionId was ALSO undefined (i.e. nothing being
+      // dragged at all, the normal/idle state) — undefined === undefined,
+      // permanently dimming the unsectioned bucket even when nothing was
+      // being dragged (Lino, 2026-07-10: "sollen NICHT ausgegraut werden").
+      style={section && draggingSectionId === section.id ? { opacity: 0.4 } : undefined}
       onDragOver={
         section && onSectionDragOver
           ? (e) => {
               e.preventDefault();
-              onSectionDragOver(section.id);
+              onSectionDragOver(section.id, e);
             }
           : undefined
       }
@@ -977,11 +1052,21 @@ function SectionBlock({
         section && onSectionDrop
           ? (e) => {
               e.preventDefault();
-              onSectionDrop(section.id);
+              onSectionDrop(section.id, e);
             }
           : undefined
       }
     >
+      {/* Notion-style insertion line, same idea as scenes' left/right —
+          sections stack vertically so top/bottom is the meaningful edge.
+          Positioned on the OUTER wrapper (not just the header) so it reads
+          clearly as "the whole section goes here", not just its title row. */}
+      {sectionInsertionEdge === "top" && (
+        <div className="absolute -top-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+      )}
+      {sectionInsertionEdge === "bottom" && (
+        <div className="absolute -bottom-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+      )}
       <div className="flex items-start gap-1">
         {section && onSectionDragStart && (
           <span
@@ -1005,16 +1090,38 @@ function SectionBlock({
           </span>
         )}
         <div className="flex-1 min-w-0">
-          {section && projectId && onSectionChange && (
-            <SectionInfoBox
-              section={section}
-              projectId={projectId}
-              members={members}
-              onOpenTeam={onOpenTeam ?? (() => {})}
-              onSectionChange={onSectionChange}
-            />
-          )}
-          <Collapsible title={title} subtitle={`${doneCount}/${scenes.length}`}>
+          <Collapsible
+            title={title}
+            subtitle={`${doneCount}/${scenes.length}`}
+            actions={
+              section &&
+              onDeleteSection && (
+                <Menu
+                  trigger={
+                    <IconButton size={24} className="text-white/30 hover:text-white/70">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                        <circle cx="5" cy="12" r="1.8" />
+                        <circle cx="12" cy="12" r="1.8" />
+                        <circle cx="19" cy="12" r="1.8" />
+                      </svg>
+                    </IconButton>
+                  }
+                >
+                  {(close) => (
+                    <MenuItem
+                      danger
+                      onClick={() => {
+                        onDeleteSection(section);
+                        close();
+                      }}
+                    >
+                      Abschnitt löschen
+                    </MenuItem>
+                  )}
+                </Menu>
+              )
+            }
+          >
             {content}
           </Collapsible>
         </div>
@@ -1031,15 +1138,27 @@ function SectionBlock({
 // unsectioned bucket) this is; the page-level handleDragEnd below decodes
 // it. Mirrors the iOS app's sectionDropZone.
 //
-// No isOver highlight on purpose (Lino: the separate blue bar was confusing
-// alongside the card reflow — "wieso soll ich eine karte auf die andere
-// karte legen" applies here too, a second independent highlight competing
-// with the live-reorder preview reads as two different things happening at
-// once). The reflow itself (the dragged card visibly appearing in this
-// section's grid, see handleSceneDragOver) is the only landing preview now.
-function SectionDropZone({ sectionId }: { sectionId: string | null }) {
+// A card-reflow preview used to double up with a blue highlight bar here
+// and read as two different things happening at once (Lino: "wieso soll ich
+// eine karte auf die andere karte legen") — that reflow is gone now
+// (nothing moves until drop, see handleSceneDragOver's comment), which left
+// this zone with NO landing feedback at all. That's exactly what made
+// dropping a Projektinfo tile into a section a guessing game (Lino: "hat
+// man keine Ahnung wo man die Projektinfo ablegen muss") — an empty/sparse
+// section has no neighboring card to show the left/right insertion line
+// against. Highlight is now driven by the same shared `insertionIndicator`
+// state as every other drop target, so it's the one consistent mechanism.
+function SectionDropZone({ sectionId, insertionIndicator }: { sectionId: string | null; insertionIndicator?: { targetId: string } | null }) {
   const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
-  return <div ref={setNodeRef} className="h-11 rounded-xl mt-2" />;
+  const active = insertionIndicator?.targetId === `section-drop:${sectionId ?? ""}`;
+  return (
+    <div
+      ref={setNodeRef}
+      className={`h-11 rounded-xl mt-2 border-2 border-dashed transition-colors ${
+        active ? "border-blue-500 bg-blue-500/10" : "border-transparent"
+      }`}
+    />
+  );
 }
 
 function PlusIcon() {

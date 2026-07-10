@@ -13,6 +13,7 @@ export function AuthImage({
   alt,
   className,
   lockAspectRatio,
+  objectPosition,
 }: {
   path: string;
   alt: string;
@@ -23,6 +24,11 @@ export function AuthImage({
    * to — same fix as ImageDropZone's lockAspectRatio, for the read-only
    * scene tile cover photo this component also renders. */
   lockAspectRatio?: boolean;
+  /** CSS object-position, e.g. "48% 90%" — used with a face-detected focus
+   * point (see ProjectFolder.background_image_focus_x/y) so an
+   * object-cover crop centers on the face instead of the geometric middle.
+   * Falls back to the browser default (50% 50%, plain center) when omitted. */
+  objectPosition?: string;
 }) {
   const api = useApi();
   const [src, setSrc] = useState<string | null>(null);
@@ -56,7 +62,10 @@ export function AuthImage({
       src={src}
       alt={alt}
       className={className}
-      style={lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined}
+      style={{
+        ...(lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined),
+        ...(objectPosition ? { objectPosition } : undefined),
+      }}
       onLoad={(e) => {
         if (!lockAspectRatio) return;
         const img = e.currentTarget;

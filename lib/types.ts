@@ -15,6 +15,11 @@ export interface ProjectFolder {
   emoji: string | null;
   sort_order: number;
   background_image_url: string | null;
+  /** Fractional (0-1) face-detected focus point within the cover image, or
+   * null when no face was found (plain center crop then). See
+   * app/face_detect.py on the backend. */
+  background_image_focus_x: number | null;
+  background_image_focus_y: number | null;
   project_count: number;
   created_at: string;
 }
@@ -69,7 +74,16 @@ export interface Scene {
   number: number;
   letter: string | null;
   is_intermediate_step: boolean;
+  /** A "Projektinfo" tile (2026-07-10 redesign, replaces the old
+   * Section.has_project_info attached-box concept) — behaves exactly like
+   * any other scene for drag/reorder/section-assignment purposes, but
+   * always renders full-width and always sorts first within whichever
+   * section (or "Ohne Abschnitt") it's in. scheduled_at, the location
+   * fields, and name double as this tile's shoot-date/location fields;
+   * shots/priority/dialogue/etc. are simply unused. */
+  is_project_info: boolean;
   dialogues: SceneDialogue[];
+  todo_lists: TodoList[];
 }
 
 export interface Shot {
@@ -93,6 +107,16 @@ export interface Section {
   project_id: string;
   name: string;
   sort_order: number;
+  /** Multi-day shoots (2026-07-10): a section can optionally carry its own
+   * mini project-info box, same fields as Project's own top-level one.
+   * has_project_info false = no box, not "box with empty fields" — see
+   * backend Section.has_project_info doc. */
+  has_project_info: boolean;
+  shoot_date: string | null;
+  location_address: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  todo_lists: TodoList[];
 }
 
 export interface TodoItem {
@@ -109,6 +133,12 @@ export interface TodoItem {
 export interface TodoList {
   id: string;
   project_id: string;
+  /** Old attached-to-section mechanism (2026-07-10: superseded by
+   * scene_id below), kept only so any pre-existing rows still serialize. */
+  section_id: string | null;
+  /** Set when this list belongs to a "Projektinfo" scene tile's own todo
+   * section. See Scene.is_project_info. */
+  scene_id: string | null;
   name: string;
   sort_order: number;
   items: TodoItem[];

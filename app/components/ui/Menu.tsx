@@ -10,10 +10,15 @@ export function Menu({
   trigger,
   children,
   align = "end",
+  direction = "down",
 }: {
   trigger: React.ReactNode;
   children: (close: () => void) => React.ReactNode;
   align?: "start" | "end";
+  /** "up" opens the dropdown above the trigger instead of below — for a
+   * trigger fixed near the bottom of the viewport (see the floating "+
+   * Hinzufügen" button), where there's no room to open downward. */
+  direction?: "down" | "up";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -48,12 +53,13 @@ export function Menu({
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            initial={{ opacity: 0, scale: 0.95, y: direction === "up" ? 4 : -4 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            exit={{ opacity: 0, scale: 0.95, y: direction === "up" ? 4 : -4 }}
             transition={{ duration: 0.12 }}
             className={cn(
-              "absolute z-30 mt-1.5 min-w-[160px] rounded-xl bg-[#242426] border border-white/10 shadow-xl py-1 overflow-hidden",
+              "absolute z-30 min-w-[160px] rounded-xl bg-[#242426] border border-white/10 shadow-xl py-1 overflow-hidden",
+              direction === "up" ? "bottom-full mb-1.5" : "mt-1.5",
               align === "end" ? "right-0" : "left-0"
             )}
           >

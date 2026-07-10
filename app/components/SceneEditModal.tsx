@@ -32,6 +32,7 @@ export function SceneEditModal({
   members,
   onCreated,
   onUpdated,
+  isIntermediateStep = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -41,9 +42,19 @@ export function SceneEditModal({
   members: Member[];
   onCreated: (scene: Scene) => void;
   onUpdated: (scene: Scene) => void;
+  /** "Zwischenschritt" (mirrors the iOS app's SceneEditSheet): a lighter
+   * connective beat, not a shootable scene — creation-time choice only (an
+   * existing scene's `existing.is_intermediate_step` decides this instead,
+   * never toggled after creation), hides Bild/Priorität/Dialog since none
+   * of those apply. */
+  isIntermediateStep?: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
+
+  // An existing scene's own field wins once it's been created — the prop is
+  // only meaningful for the not-yet-created case (see the prop's doc comment).
+  const effectiveIsIntermediateStep = existing ? existing.is_intermediate_step : isIntermediateStep;
 
   const suggestedStart = (): Date => {
     if (!existing && previousScene?.scheduled_at && previousScene.duration_minutes) {
@@ -176,7 +187,7 @@ export function SceneEditModal({
       if (existing) {
         scene = await api.patchScene(existing.id, body);
       } else {
-        scene = await api.createScene(projectId, { color: "#3875bd", ...body });
+        scene = await api.createScene(projectId, { color: "#3875bd", is_intermediate_step: isIntermediateStep, ...body });
         for (const text of draftDialogues) {
           const d = await api.addDialogue(scene.id, text);
           scene = { ...scene, dialogues: [...scene.dialogues, d] };
@@ -201,7 +212,7 @@ export function SceneEditModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={existing ? "Szene bearbeiten" : "Neue Szene"}
+      title={existing ? "Szene bearbeiten" : effectiveIsIntermediateStep ? "Neuer Zwischenschritt" : "Neue Szene"}
       wide
       footer={
         <div className="flex justify-end gap-2">
@@ -214,42 +225,47 @@ export function SceneEditModal({
         </div>
       }
     >
-      <FieldGroup>
-        <Label>Bild</Label>
-        <ImageDropZone
-          previewUrl={imagePreview}
-          onFile={(file) => {
-            setImageFile(file);
-            setImagePreview(URL.createObjectURL(file));
-          }}
-          lockAspectRatio
-        />
-      </FieldGroup>
+      {!effectiveIsIntermediateStep && (
+        <FieldGroup>
+          <Label>Bild</Label>
+          <ImageDropZone
+            previewUrl={imagePreview}
+            onFile={(file) => {
+              setImageFile(file);
+              setImagePreview(URL.createObjectURL(file));
+            }}
+            lockAspectRatio
+          />
+        </FieldGroup>
+      )}
 
       <FieldGroup>
         <Label>Name</Label>
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="z.B. Küche, Aussen Tag 1" autoFocus />
       </FieldGroup>
 
-      <FieldGroup>
-        <Label>Priorität</Label>
-        <SegmentedControl
-          value={priority ?? "none"}
-          onChange={(v) => setPriority(v === "none" ? null : (v as Priority))}
-          options={[
-            { value: "none", label: "Keine", color: PRIORITY_COLORS.none },
-            { value: "must", label: PRIORITY_LABELS.must, color: PRIORITY_COLORS.must },
-            { value: "should", label: PRIORITY_LABELS.should, color: PRIORITY_COLORS.should },
-            { value: "optional", label: PRIORITY_LABELS.optional, color: PRIORITY_COLORS.optional },
-          ]}
-        />
-      </FieldGroup>
+      {!effectiveIsIntermediateStep && (
+        <FieldGroup>
+          <Label>Priorität</Label>
+          <SegmentedControl
+            value={priority ?? "none"}
+            onChange={(v) => setPriority(v === "none" ? null : (v as Priority))}
+            options={[
+              { value: "none", label: "Keine", color: PRIORITY_COLORS.none },
+              { value: "must", label: PRIORITY_LABELS.must, color: PRIORITY_COLORS.must },
+              { value: "should", label: PRIORITY_LABELS.should, color: PRIORITY_COLORS.should },
+              { value: "optional", label: PRIORITY_LABELS.optional, color: PRIORITY_COLORS.optional },
+            ]}
+          />
+        </FieldGroup>
+      )}
 
       <FieldGroup>
         <Label>Beschreibung</Label>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="z.B. Handlung, Notizen" />
       </FieldGroup>
 
+      {!effectiveIsIntermediateStep && (
       <FieldGroup>
         <Label>Dialog</Label>
         <div className="space-y-1.5">
@@ -307,6 +323,7 @@ export function SceneEditModal({
           )}
         </div>
       </FieldGroup>
+      )}
 
       <FieldGroup>
         <Switch checked={hasStart} onChange={setHasStart} label="Start festlegen" />
@@ -360,10 +377,12 @@ export function SceneEditModal({
         </select>
       </FieldGroup>
 
-      <FieldGroup className="mb-0">
-        <Label>Good Take</Label>
-        <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder="Dateiname, z.B. A003_C012" />
-      </FieldGroup>
+      {!effectiveIsIntermediateStep && (
+        <FieldGroup className="mb-0">
+          <Label>Good Take</Label>
+          <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder="Dateiname, z.B. A003_C012" />
+        </FieldGroup>
+      )}
     </Modal>
   );
 }

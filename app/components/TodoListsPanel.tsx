@@ -13,12 +13,20 @@ import { ConfirmDialog } from "./ui/ConfirmDialog";
 
 export function TodoListsPanel({
   projectId,
+  sectionId,
+  sceneId,
   todoLists,
   members,
   onChange,
   noMargin,
 }: {
   projectId: string;
+  /** Old attached-to-section mechanism (2026-07-10: superseded by sceneId
+   * below), kept only for any pre-existing section-owned lists. */
+  sectionId?: string;
+  /** When set, new lists are created scoped to this "Projektinfo" scene
+   * tile's own todo section — see api.createSceneTodoList. */
+  sceneId?: string;
   todoLists: TodoList[];
   members: Member[];
   onChange: (updater: (lists: TodoList[]) => TodoList[]) => void;
@@ -37,7 +45,11 @@ export function TodoListsPanel({
     setAddingList(false);
     if (!name) return;
     try {
-      const list = await api.createTodoList(projectId, name, todoLists.length);
+      const list = sceneId
+        ? await api.createSceneTodoList(sceneId, name, todoLists.length)
+        : sectionId
+          ? await api.createSectionTodoList(sectionId, name, todoLists.length)
+          : await api.createTodoList(projectId, name, todoLists.length);
       onChange((prev) => [...prev, list]);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");

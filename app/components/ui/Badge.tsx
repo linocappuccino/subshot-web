@@ -4,11 +4,16 @@ export function Pill({
   icon,
   children,
   tone = "default",
+  wrap = false,
   className,
 }: {
   icon?: React.ReactNode;
   children: React.ReactNode;
   tone?: "default" | "good" | "danger";
+  /** Long unbreakable content (e.g. a street address) would otherwise stay
+   * on one line and overflow past the card's right padding — set this to
+   * let it wrap onto multiple lines instead, same as any other text. */
+  wrap?: boolean;
   className?: string;
 }) {
   const tones = {
@@ -17,7 +22,14 @@ export function Pill({
     danger: "bg-red-500/15 text-red-400",
   };
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap", tones[tone], className)}>
+    <span
+      className={cn(
+        "inline-flex gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium max-w-full",
+        wrap ? "items-start whitespace-normal break-words" : "items-center whitespace-nowrap",
+        tones[tone],
+        className
+      )}
+    >
       {icon}
       {children}
     </span>

@@ -1,8 +1,7 @@
 "use client";
 
-import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { useDroppable } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
@@ -11,33 +10,46 @@ import { ColorBadge, Pill } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
 import { AuthImage } from "./AuthImage";
 import { useToast } from "./ui/Toast";
+import { Menu, MenuItem } from "./ui/Menu";
+import { IconButton } from "./ui/Button";
 
 /** Full-detail alternative to the card grid — every field the card shows
  * (image, description, dialogue lines, good-take, location, ...) still
  * shown, just as one wide row per scene instead of a tile, for scanning a
  * long shot list without scrolling past photos. Rows are drag-sortable the
- * same way the card grid is. */
+ * same way the card grid is.
+ *
+ * No DndContext/sensors here — a scene needs to be draggable from one
+ * section's table straight into another's (or into/out of the card grid,
+ * since both views share the same underlying scenes), which needs dnd-kit's
+ * "multiple containers" pattern: one shared DndContext up on the page,
+ * every section just contributes its own SortableContext. An own DndContext
+ * here used to swallow every drag before it could ever reach the page-level
+ * handler — the exact bug that made cross-section drag impossible in the
+ * table view (see project memory). */
 export function SceneTable({
   scenes,
   shotsFor,
   members,
   onEditScene,
+  onDeleteScene,
   onChange,
-  onReorder,
+  sectionId,
+  insertionIndicator,
 }: {
   scenes: Scene[];
   shotsFor: (sceneId: string) => Shot[];
   members: Member[];
   onEditScene: (scene: Scene) => void;
+  onDeleteScene: (scene: Scene) => void;
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
-  onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
+  /** Undefined for the "Ohne Abschnitt" bucket, same convention as
+   * SectionBlock's own `section` prop. */
+  sectionId?: string | null;
+  insertionIndicator?: { targetId: string; edge: "left" | "right" | "top" | "bottom" } | null;
 }) {
   const api = useApi();
   const toast = useToast();
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
-  );
 
   async function toggleCompleted(scene: Scene) {
     try {
@@ -62,55 +74,65 @@ export function SceneTable({
     }
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = scenes.findIndex((s) => s.id === active.id);
-    const newIndex = scenes.findIndex((s) => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-    const reordered = arrayMove(scenes, oldIndex, newIndex);
-    onReorder(reordered, reordered[newIndex].id, reordered[newIndex + 1]?.id ?? null);
-  }
-
   return (
     <div className="overflow-x-auto rounded-2xl border border-white/8 mb-2">
-      <table className="w-full text-sm border-collapse">
+      {/* min-w on the table (not just w-full) so text-heavy columns below
+          get real breathing room instead of being squeezed down to fit the
+          viewport — the outer overflow-x-auto above picks up the slack with
+          a horizontal scrollbar on narrower screens instead. */}
+      <table className="w-full min-w-[1540px] text-sm border-collapse">
         <thead>
           <tr className="bg-white/[0.04] text-left text-[11px] font-semibold text-white/40 uppercase tracking-wide">
             <th className="w-6" />
-            <th className="px-3 py-2.5">Bild</th>
-            <th className="px-3 py-2.5">Nr.</th>
-            <th className="px-3 py-2.5">Name</th>
-            <th className="px-3 py-2.5">Priorität</th>
-            <th className="px-3 py-2.5">Start</th>
-            <th className="px-3 py-2.5">Standort</th>
-            <th className="px-3 py-2.5">Beschreibung</th>
-            <th className="px-3 py-2.5">Dialog</th>
-            <th className="px-3 py-2.5">Good Take</th>
-            <th className="px-3 py-2.5">Zuständig</th>
-            <th className="px-3 py-2.5 text-center">Einst.</th>
-            <th className="px-3 py-2.5 text-center">Im Kasten</th>
+            <th className="px-3 py-2.5 w-16">Bild</th>
+            <th className="px-3 py-2.5 w-16">Nr.</th>
+            <th className="px-3 py-2.5 min-w-[160px]">Name</th>
+            <th className="px-3 py-2.5 min-w-[110px]">Priorität</th>
+            <th className="px-3 py-2.5 min-w-[110px]">Start</th>
+            <th className="px-3 py-2.5 min-w-[220px]">Standort</th>
+            <th className="px-3 py-2.5 min-w-[320px]">Beschreibung</th>
+            <th className="px-3 py-2.5 min-w-[320px]">Dialog</th>
+            <th className="px-3 py-2.5 min-w-[140px]">Good Take</th>
+            <th className="px-3 py-2.5 min-w-[140px]">Zuständig</th>
+            <th className="px-3 py-2.5 text-center w-16">Einst.</th>
+            <th className="px-3 py-2.5 text-center w-20">Im Kasten</th>
+            <th className="w-10" />
           </tr>
         </thead>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <tbody>
-              {scenes.map((scene) => (
-                <SceneRow
-                  key={scene.id}
-                  scene={scene}
-                  shots={shotsFor(scene.id)}
-                  members={members}
-                  onEditScene={onEditScene}
-                  onToggleCompleted={toggleCompleted}
-                  onToggleDialogue={toggleDialogueLine}
-                />
-              ))}
-            </tbody>
-          </SortableContext>
-        </DndContext>
+        <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          <tbody>
+            {scenes.map((scene) => (
+              <SceneRow
+                key={scene.id}
+                scene={scene}
+                shots={shotsFor(scene.id)}
+                members={members}
+                onEditScene={onEditScene}
+                onDeleteScene={onDeleteScene}
+                onToggleCompleted={toggleCompleted}
+                onToggleDialogue={toggleDialogueLine}
+                insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
+              />
+            ))}
+            {/* Table equivalent of the grid's SectionDropZone — makes an
+                empty section (or dropping past the last row) a valid target
+                for a cross-section drag, same "section-drop:{id}" id the
+                page-level handler already decodes. */}
+            <TableDropZone sectionId={sectionId ?? null} insertionIndicator={insertionIndicator} />
+          </tbody>
+        </SortableContext>
       </table>
     </div>
+  );
+}
+
+function TableDropZone({ sectionId, insertionIndicator }: { sectionId: string | null; insertionIndicator?: { targetId: string } | null }) {
+  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
+  const active = insertionIndicator?.targetId === `section-drop:${sectionId ?? ""}`;
+  return (
+    <tr ref={setNodeRef}>
+      <td colSpan={14} className={`h-11 border-2 border-dashed transition-colors ${active ? "border-blue-500 bg-blue-500/10" : "border-transparent"}`} />
+    </tr>
   );
 }
 
@@ -119,17 +141,27 @@ function SceneRow({
   shots,
   members,
   onEditScene,
+  onDeleteScene,
   onToggleCompleted,
   onToggleDialogue,
+  insertionEdge,
 }: {
   scene: Scene;
   shots: Shot[];
   members: Member[];
   onEditScene: (scene: Scene) => void;
+  onDeleteScene: (scene: Scene) => void;
   onToggleCompleted: (scene: Scene) => void;
   onToggleDialogue: (scene: Scene, dialogueId: string, done: boolean) => void;
+  /** Notion-style insertion indicator, table equivalent of
+   * SortableSceneCard's left/right line — a row is a horizontal strip, so
+   * top/bottom is the meaningful edge here instead. */
+  insertionEdge?: "left" | "right" | "top" | "bottom" | null;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: scene.id });
+  // See SortableSceneCard's comment on the same pattern — transform/transition
+  // deliberately dropped so dnd-kit's own rectSortingStrategy reflow can't
+  // fight the insertion-line indicator.
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   const assignee = members.find((m) => m.user_id === scene.assignee_id);
   const dialogues = [...scene.dialogues].sort((a, b) => a.sort_order - b.sort_order);
@@ -137,14 +169,17 @@ function SceneRow({
   return (
     <tr
       ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
-      className={`border-t border-white/6 transition-colors hover:bg-white/[0.05] align-top ${scene.completed ? "bg-emerald-500/[0.06]" : ""}`}
+      style={{ opacity: isDragging ? 0.4 : 1 }}
+      className={`relative border-t border-white/6 transition-colors hover:bg-white/[0.05] align-top ${scene.completed ? "bg-emerald-500/[0.06]" : ""} ${
+        insertionEdge === "top" ? "shadow-[inset_0_2px_0_0_#3b82f6]" : insertionEdge === "bottom" ? "shadow-[inset_0_-2px_0_0_#3b82f6]" : ""
+      }`}
     >
       <td className="pl-2 pt-3">
         <button
           {...attributes}
           {...listeners}
           className="touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
+          aria-label="Szene verschieben"
         >
           <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
             <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
@@ -163,7 +198,7 @@ function SceneRow({
         <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
       </td>
       <td className="px-3 py-2.5 font-medium cursor-pointer max-w-[160px]" onClick={() => onEditScene(scene)}>
-        {scene.name || "Unbenannte Szene"}
+        {scene.is_project_info ? "Projektinfo" : scene.name || "Unbenannte Szene"}
       </td>
       <td className="px-3 py-2.5 cursor-pointer" onClick={() => onEditScene(scene)}>
         {scene.priority ? <ColorBadge label={PRIORITY_LABELS[scene.priority]} color={color} /> : <span className="text-white/25">—</span>}
@@ -183,7 +218,7 @@ function SceneRow({
           <span className="text-white/25">—</span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-white/60 max-w-[160px]">
+      <td className="px-3 py-2.5 text-white/60">
         {scene.location_address ? (
           <a href={googleMapsUrl(scene)} target="_blank" rel="noopener noreferrer" className="hover:text-white hover:underline">
             {scene.location_address}
@@ -194,10 +229,10 @@ function SceneRow({
           </span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-white/70 max-w-[220px] cursor-pointer" onClick={() => onEditScene(scene)}>
+      <td className="px-3 py-2.5 text-white/70 cursor-pointer" onClick={() => onEditScene(scene)}>
         {scene.description || <span className="text-white/25">—</span>}
       </td>
-      <td className="px-3 py-2.5 max-w-[220px]">
+      <td className="px-3 py-2.5">
         {scene.dialogue && <div className="italic text-white/50 mb-1">„{scene.dialogue}“</div>}
         {dialogues.length > 0 ? (
           <ul className="space-y-1">
@@ -264,6 +299,41 @@ function SceneRow({
             )}
           </span>
         </button>
+      </td>
+      <td className="px-1 py-2.5 text-center">
+        <Menu
+          trigger={
+            <IconButton size={28}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </IconButton>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                onClick={() => {
+                  onEditScene(scene);
+                  close();
+                }}
+              >
+                Bearbeiten
+              </MenuItem>
+              <MenuItem
+                danger
+                onClick={() => {
+                  onDeleteScene(scene);
+                  close();
+                }}
+              >
+                Löschen
+              </MenuItem>
+            </>
+          )}
+        </Menu>
       </td>
     </tr>
   );

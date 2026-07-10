@@ -121,8 +121,15 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
-    shareLink: (projectId: string) =>
-      request<{ url: string; expires_at: string }>(`projects/${projectId}/share-link`, { method: "POST" }),
+    // password/clearPassword both optional — omitting both leaves whatever
+    // password an existing link already had untouched (see backend
+    // ShareLinkCreate), so re-opening the share modal without touching the
+    // password fields can't silently wipe one that was set earlier.
+    shareLink: (projectId: string, password?: string, clearPassword?: boolean) =>
+      request<{ url: string; expires_at: string; has_password: boolean }>(`projects/${projectId}/share-link`, {
+        method: "POST",
+        body: JSON.stringify({ password: password || null, clear_password: !!clearPassword }),
+      }),
 
     // ── Scenes ───────────────────────────────────────────────────────────
     createScene: (projectId: string, body: Record<string, unknown>) =>
@@ -162,13 +169,35 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     // ── Sections ─────────────────────────────────────────────────────────
     createSection: (projectId: string, name: string, sortOrder = 0) =>
       request<Section>(`projects/${projectId}/sections`, { method: "POST", body: JSON.stringify({ name, sort_order: sortOrder }) }),
-    patchSection: (id: string, body: Partial<{ name: string; sort_order: number }>) =>
-      request<Section>(`sections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    patchSection: (
+      id: string,
+      body: Partial<{
+        name: string; sort_order: number;
+        shoot_date: string | null; location_address: string; location_lat: number; location_lng: number;
+        add_project_info: boolean; remove_project_info: boolean;
+      }>
+    ) => request<Section>(`sections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteSection: (id: string) => request<void>(`sections/${id}`, { method: "DELETE" }),
 
     // ── Todo lists ───────────────────────────────────────────────────────
     createTodoList: (projectId: string, name: string, sortOrder = 0) =>
       request<TodoList>(`projects/${projectId}/todo-lists`, {
+        method: "POST",
+        body: JSON.stringify({ name, sort_order: sortOrder }),
+      }),
+    // Same shape as createTodoList above, but scoped to a section's own
+    // project-info box (multi-day shoots) instead of the project-level one.
+    // Old mechanism, kept only for any pre-existing rows — see
+    // createSceneTodoList for the current one.
+    createSectionTodoList: (sectionId: string, name: string, sortOrder = 0) =>
+      request<TodoList>(`sections/${sectionId}/todo-lists`, {
+        method: "POST",
+        body: JSON.stringify({ name, sort_order: sortOrder }),
+      }),
+    // Scoped to a "Projektinfo" scene tile's own todo section (2026-07-10
+    // redesign — see Scene.is_project_info).
+    createSceneTodoList: (sceneId: string, name: string, sortOrder = 0) =>
+      request<TodoList>(`scenes/${sceneId}/todo-lists`, {
         method: "POST",
         body: JSON.stringify({ name, sort_order: sortOrder }),
       }),
