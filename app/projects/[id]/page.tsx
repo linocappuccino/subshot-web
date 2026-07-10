@@ -37,6 +37,13 @@ import { Input } from "@/app/components/ui/Field";
 import { Collapsible } from "@/app/components/ui/Collapsible";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 
+// Sentinel used as `draggingSectionId` while dragging the "Projektinfo"
+// placement chip (see placingProjectInfo) — never a real section id, so it
+// can't collide with one. Lets handleSectionDragOver/Drop reuse the same
+// native-D&D plumbing as real section reordering without a parallel set of
+// handlers, just branching on this one value.
+const PENDING_PROJECT_INFO_ID = "__pending_project_info__";
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
   const api = useApi();
@@ -54,12 +61,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [showShareModal, setShowShareModal] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
-  // Set right before showing the section-name input from the "Projektinfo"
-  // entry in the "+" menu (2026-07-10, Lino: wants Projektinfo reachable
-  // from the same "+" menu as Neue Szene/Zwischenschritt/Abschnitt, mirrors
-  // iOS' addSceneButton menu exactly) — creates a section AND immediately
-  // gives it a project-info box in one step, see createSection below.
+  // Only used for the very first Projektinfo in a project that has NO
+  // sections yet — there's nowhere to attach it to, so a section has to be
+  // created alongside it (name-prompt flow, see createSection below). Once
+  // at least one section exists, "Projektinfo" from the "+" menu no longer
+  // creates a section at all — see placingProjectInfo instead (2026-07-10,
+  // Lino: was auto-creating a redundant empty section every time, wanted to
+  // drag the info box onto whichever EXISTING section it belongs to).
   const [creatingSectionWithProjectInfo, setCreatingSectionWithProjectInfo] = useState(false);
+  // True right after picking "Projektinfo" from the "+" menu when sections
+  // already exist — shows a small draggable "Projektinfo" chip near the FAB
+  // that attaches to whichever section it's dropped onto (handleSectionDrop
+  // special-cases draggingSectionId === PENDING_PROJECT_INFO_ID). No section
+  // is ever created by this path.
+  const [placingProjectInfo, setPlacingProjectInfo] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
   const [showNotion, setShowNotion] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -93,6 +108,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   const dragOriginSectionsRef = useRef<Section[] | null>(null);
   const sectionDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Which section is currently hovered while dragging the "Projektinfo"
+  // placement chip — only used to highlight a valid drop target, since
+  // there's nothing to reflow-preview for a non-section drag.
+  const [projectInfoHoverTarget, setProjectInfoHoverTarget] = useState<string | null>(null);
 
   function setViewModePersisted(mode: "grid" | "table") {
     setViewMode(mode);
@@ -185,6 +204,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   function handleSectionDragOver(targetId: string) {
     if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
     if (!draggingSectionId || draggingSectionId === targetId) return;
+    // Dragging the "Projektinfo" placement chip (not a real section) — no
+    // reorder to preview, just track which section is currently hovered so
+    // it can be highlighted as a valid/invalid attach target (see
+    // SectionBlock's dropTargetHighlight prop).
+    if (draggingSectionId === PENDING_PROJECT_INFO_ID) {
+      setProjectInfoHoverTarget(targetId);
+      return;
+    }
     sectionDragOverTimeoutRef.current = setTimeout(() => {
       setData((prev) => {
         if (!prev) return prev;
@@ -209,6 +236,25 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     dragOriginSectionsRef.current = null;
     const draggedId = draggingSectionId;
     setDraggingSectionId(null);
+    setProjectInfoHoverTarget(null);
+
+    if (draggedId === PENDING_PROJECT_INFO_ID) {
+      setPlacingProjectInfo(false);
+      const target = data?.sections.find((s) => s.id === targetId);
+      if (!target) return;
+      if (target.has_project_info) {
+        toast.showError("Dieser Abschnitt hat schon eine Projektinfo.");
+        return;
+      }
+      try {
+        const updated = await api.patchSection(targetId, { add_project_info: true });
+        setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
+      } catch (e) {
+        toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      }
+      return;
+    }
+
     if (!data || !origin || !draggedId) return;
     const next = draggedId === targetId ? null : computeSectionReorder(data.sections, draggedId, targetId);
     const resultSections = next ?? [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
@@ -228,6 +274,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // drag was cancelled/dropped somewhere invalid.
   function handleSectionDragEnd() {
     setDraggingSectionId(null);
+    setProjectInfoHoverTarget(null);
     if (sectionDragOverTimeoutRef.current) clearTimeout(sectionDragOverTimeoutRef.current);
     const origin = dragOriginSectionsRef.current;
     dragOriginSectionsRef.current = null;
@@ -509,6 +556,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 onSectionDrop={handleSectionDrop}
                 onSectionDragEnd={handleSectionDragEnd}
                 draggingSectionId={draggingSectionId}
+                projectInfoDropHighlight={
+                  draggingSectionId === PENDING_PROJECT_INFO_ID && projectInfoHoverTarget === section.id && !section.has_project_info
+                }
                 viewMode={viewMode}
                 projectId={data.id}
                 onSectionChange={(updated) =>
@@ -573,6 +623,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               placeholder={creatingSectionWithProjectInfo ? "Name (z.B. Tag 2)" : "Abschnittsname"}
               className="w-48 shadow-2xl shadow-black/50"
             />
+          ) : placingProjectInfo ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPlacingProjectInfo(false)}
+                className="text-xs font-semibold text-white/50 hover:text-white/80 px-2 py-1"
+              >
+                Abbrechen
+              </button>
+              <div
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/subshot-section-id", PENDING_PROJECT_INFO_ID);
+                  e.dataTransfer.effectAllowed = "move";
+                  handleSectionDragStart(PENDING_PROJECT_INFO_ID);
+                }}
+                onDragEnd={handleSectionDragEnd}
+                className="flex items-center gap-2 bg-blue-500 text-white text-sm font-semibold px-4 py-2.5 rounded-full shadow-2xl shadow-black/50 cursor-grab active:cursor-grabbing touch-none"
+              >
+                <InfoIcon />
+                Projektinfo — auf einen Abschnitt ziehen
+              </div>
+            </div>
           ) : (
             // Mirrors the iOS app's addSceneButton menu exactly (same 4
             // options, same order) — was 3 separate flat buttons before,
@@ -616,8 +688,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
-                      setCreatingSectionWithProjectInfo(true);
-                      setCreatingSection(true);
+                      // No sections yet — Projektinfo has nowhere to attach
+                      // to, so (only in this case) create one alongside it.
+                      // Once any section exists, this never creates a new
+                      // one — drag the chip onto whichever section it
+                      // belongs to instead (see placingProjectInfo).
+                      if (data.sections.length === 0) {
+                        setCreatingSectionWithProjectInfo(true);
+                        setCreatingSection(true);
+                      } else {
+                        setPlacingProjectInfo(true);
+                      }
                       close();
                     }}
                   >
@@ -718,32 +799,41 @@ function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: strin
     overSceneId = overScene.id;
   }
 
-  const withoutActive = scenes.filter((s) => s.id !== activeId);
-  let insertAt = withoutActive.length;
-  if (overSceneId) {
-    const idx = withoutActive.findIndex((s) => s.id === overSceneId);
-    if (idx !== -1) insertAt = idx;
-  } else {
-    let lastIdxInSection = -1;
-    withoutActive.forEach((s, i) => {
-      if (s.section_id === targetSectionId) lastIdxInSection = i;
-    });
-    insertAt = lastIdxInSection + 1;
-  }
-  const next = [...withoutActive];
-  next.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
+  const sourceSectionId = activeScene.section_id;
 
-  // Reassign sort_order per section (mirrors the backend's own per-section
-  // renumbering, see move_scene) so it matches the new array position —
-  // scenesIn()'s render-time sort compares the sort_order FIELD, not
-  // array position, so without this the live preview's reordering was
-  // silently discarded on render (array shuffled, display didn't move).
-  const counters = new Map<string | null, number>();
-  return next.map((s) => {
-    const n = counters.get(s.section_id) ?? 0;
-    counters.set(s.section_id, n + 1);
-    return s.sort_order === n ? s : { ...s, sort_order: n };
-  });
+  // Renumber each affected section from ITS OWN scenes sorted by their
+  // current sort_order — never from raw array position. The scenes array
+  // this data comes from has no guaranteed order (the backend relationship
+  // it's fetched from doesn't sort it), so walking raw array order here
+  // would reassign sequential sort_order to whatever section a scene
+  // happened to sit next to in that arbitrary order — corrupting a
+  // completely unrelated, untouched section's sequence in the process
+  // (confirmed via a real reload-mismatch: dragging a scene between two
+  // sections silently swapped the sort_order of two scenes in a THIRD
+  // section that was never part of the drag).
+  const targetSectionScenes = scenes.filter((s) => s.section_id === targetSectionId && s.id !== activeId).sort((a, b) => a.sort_order - b.sort_order);
+  let insertAt = targetSectionScenes.length;
+  if (overSceneId) {
+    const idx = targetSectionScenes.findIndex((s) => s.id === overSceneId);
+    if (idx !== -1) insertAt = idx;
+  }
+  const newTargetOrder = [...targetSectionScenes];
+  newTargetOrder.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
+  const renumberedTarget = newTargetOrder.map((s, i) => (s.sort_order === i ? s : { ...s, sort_order: i }));
+
+  let renumberedSource: Scene[] = [];
+  if (sourceSectionId !== targetSectionId) {
+    // Cross-section move: the source section's remaining scenes close the
+    // gap the active scene left behind, same section-scoped renumbering.
+    renumberedSource = scenes
+      .filter((s) => s.section_id === sourceSectionId && s.id !== activeId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((s, i) => (s.sort_order === i ? s : { ...s, sort_order: i }));
+  }
+
+  const touchedIds = new Set([...renumberedTarget.map((s) => s.id), ...renumberedSource.map((s) => s.id)]);
+  const untouched = scenes.filter((s) => !touchedIds.has(s.id));
+  return [...untouched, ...renumberedSource, ...renumberedTarget];
 }
 
 // Serializes backend move calls across successive drags (even across
@@ -796,6 +886,7 @@ function SectionBlock({
   onSectionDrop,
   onSectionDragEnd,
   draggingSectionId,
+  projectInfoDropHighlight,
   viewMode,
   projectId,
   onSectionChange,
@@ -817,6 +908,11 @@ function SectionBlock({
   onSectionDrop?: (targetId: string) => void;
   onSectionDragEnd?: () => void;
   draggingSectionId?: string | null;
+  /** True while the "Projektinfo" placement chip is hovering over THIS
+   * section and it's a valid drop target (see PENDING_PROJECT_INFO_ID) —
+   * the only remaining highlight-based drop indicator, since there's no
+   * card/section to reflow-preview for a non-reorder drag like this one. */
+  projectInfoDropHighlight?: boolean;
   viewMode: "grid" | "table";
   projectId?: string;
   onSectionChange?: (updated: Section) => void;
@@ -867,7 +963,7 @@ function SectionBlock({
 
   return (
     <div
-      className="mb-8 transition-transform"
+      className={`mb-8 transition-transform rounded-2xl ${projectInfoDropHighlight ? "ring-2 ring-blue-500/60 bg-blue-500/5" : ""}`}
       style={draggingSectionId === section?.id ? { opacity: 0.4 } : undefined}
       onDragOver={
         section && onSectionDragOver
@@ -892,6 +988,10 @@ function SectionBlock({
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData("text/subshot-section-id", section.id);
+              // Without this the browser shows its default "copy" cursor
+              // (a "+") for the whole drag, which reads as "this will
+              // duplicate something" rather than "this will move it".
+              e.dataTransfer.effectAllowed = "move";
               onSectionDragStart(section.id);
             }}
             onDragEnd={() => onSectionDragEnd?.()}
@@ -930,20 +1030,29 @@ function SectionBlock({
 // section has no cards to drop onto). id encodes which section (or the
 // unsectioned bucket) this is; the page-level handleDragEnd below decodes
 // it. Mirrors the iOS app's sectionDropZone.
+//
+// No isOver highlight on purpose (Lino: the separate blue bar was confusing
+// alongside the card reflow — "wieso soll ich eine karte auf die andere
+// karte legen" applies here too, a second independent highlight competing
+// with the live-reorder preview reads as two different things happening at
+// once). The reflow itself (the dragged card visibly appearing in this
+// section's grid, see handleSceneDragOver) is the only landing preview now.
 function SectionDropZone({ sectionId }: { sectionId: string | null }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`h-11 rounded-xl mt-2 transition-colors ${isOver ? "bg-blue-500/10 ring-1 ring-inset ring-blue-500/40" : ""}`}
-    />
-  );
+  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
+  return <div ref={setNodeRef} className="h-11 rounded-xl mt-2" />;
 }
 
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+function InfoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v5h1" />
     </svg>
   );
 }
