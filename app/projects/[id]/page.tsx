@@ -80,6 +80,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
+  // Section drag-and-drop (plain HTML5 D&D, not dnd-kit — see reorderSections'
+  // comment further down) — same live-preview-on-hover + origin-snapshot
+  // pattern as scenes/shots above, just driven by native dragover/dragend
+  // events instead of dnd-kit's since native D&D can't reliably read
+  // dataTransfer payloads during dragover (only at drop), so which section
+  // is being dragged has to live in React state instead.
+  const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
+  const dragOriginSectionsRef = useRef<Section[] | null>(null);
 
   function setViewModePersisted(mode: "grid" | "table") {
     setViewMode(mode);
@@ -143,41 +151,74 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   // Section-level reordering (drag the whole section, scenes included) —
-  // same "insert before target, then re-PATCH sort_order for whichever
-  // sections actually moved" approach as the iOS app's
-  // ShotListViewModel.reorderSection, since the backend has no dedicated
-  // "move section" endpoint (unlike scenes/shots, which do). Plain native
-  // HTML5 drag-and-drop (not dnd-kit) on purpose, kept as an independent
-  // mechanism from the scene-level dnd-kit DndContext below (handleSceneDragEnd)
-  // rather than folding section-dragging into the same DndContext — a
-  // section drag-handle is never a dnd-kit sortable item, so there's no
-  // event conflict, and it avoids having to discriminate "is this drag a
-  // scene or a whole section" inside one shared collision-detection/
-  // onDragEnd handler.
-  async function reorderSections(draggedId: string, targetId: string) {
-    if (!data || draggedId === targetId) return;
+  // same "insert before/after target depending on drag direction" approach
+  // as the iOS app's ShotListViewModel.reorderSection, since the backend
+  // has no dedicated "move section" endpoint (unlike scenes/shots, which
+  // do — see reorderScenes). Plain native HTML5 drag-and-drop (not dnd-kit)
+  // on purpose, kept as an independent mechanism from the scene-level
+  // dnd-kit DndContext below (handleSceneDragEnd) rather than folding
+  // section-dragging into the same DndContext — a section drag-handle is
+  // never a dnd-kit sortable item, so there's no event conflict, and it
+  // avoids having to discriminate "is this drag a scene or a whole
+  // section" inside one shared collision-detection/onDragEnd handler.
+  //
+  // Split into start/over/drop/end (same live-preview shape as the scene
+  // grid's handleSceneDragOver) so sections visibly reflow during the drag
+  // instead of only jumping into place on drop — Lino: cards/sections need
+  // to make way and show exactly where the dragged one will land, not just
+  // silently reorder on release.
+  function handleSectionDragStart(id: string) {
+    setDraggingSectionId(id);
+    dragOriginSectionsRef.current = data?.sections ?? null;
+  }
+
+  function handleSectionDragOver(targetId: string) {
+    if (!data || !draggingSectionId || draggingSectionId === targetId) return;
     const current = [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
-    const draggedIndex = current.findIndex((s) => s.id === draggedId);
+    const draggedIndex = current.findIndex((s) => s.id === draggingSectionId);
     const targetIndexBefore = current.findIndex((s) => s.id === targetId);
     if (draggedIndex === -1 || targetIndexBefore === -1) return;
     const dragged = current[draggedIndex];
-    const withoutDragged = current.filter((s) => s.id !== draggedId);
+    const withoutDragged = current.filter((s) => s.id !== draggingSectionId);
     let targetIndex = withoutDragged.findIndex((s) => s.id === targetId);
     if (targetIndex === -1) return;
     // Dragging downward (dragged started before target): insert AFTER target,
-    // not before — otherwise dropping onto the very next section is a no-op,
+    // not before — otherwise hovering the very next section is a no-op,
     // since removing dragged from just above target shifts target's index
     // down by exactly the one slot "insert before" would have used anyway.
     if (draggedIndex < targetIndexBefore) targetIndex += 1;
     withoutDragged.splice(targetIndex, 0, dragged);
-    const reordered = withoutDragged.map((s, i) => ({ ...s, sort_order: i }));
-    setData((prev) => (prev ? { ...prev, sections: reordered } : prev));
-    const changed = reordered.filter((s, i) => current.find((c) => c.id === s.id)?.sort_order !== i);
+    const unchanged = withoutDragged.length === current.length && withoutDragged.every((s, i) => s.id === current[i].id);
+    if (unchanged) return;
+    setData((prev) => (prev ? { ...prev, sections: withoutDragged.map((s, i) => ({ ...s, sort_order: i })) } : prev));
+  }
+
+  // By the time this fires, data.sections already reflects the
+  // live-previewed final order — just persist whatever actually changed
+  // from the pre-drag snapshot.
+  async function handleSectionDrop() {
+    const origin = dragOriginSectionsRef.current;
+    dragOriginSectionsRef.current = null;
+    setDraggingSectionId(null);
+    if (!data || !origin) return;
+    const changed = data.sections.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
+    if (changed.length === 0) return;
     try {
       await Promise.all(changed.map((s) => api.patchSection(s.id, { sort_order: s.sort_order })));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Umsortieren fehlgeschlagen.");
     }
+  }
+
+  // Fires on the drag SOURCE after every drag, successful or not (native
+  // D&D always calls dragend). handleSectionDrop already clears
+  // dragOriginSectionsRef on a real drop, so this only reverts when the
+  // drag was cancelled/dropped somewhere invalid.
+  function handleSectionDragEnd() {
+    setDraggingSectionId(null);
+    const origin = dragOriginSectionsRef.current;
+    dragOriginSectionsRef.current = null;
+    if (origin) setData((prev) => (prev ? { ...prev, sections: origin } : prev));
   }
 
   // Scene-level drag start — snapshots the pre-drag order so a cancelled or
@@ -451,7 +492,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 onEditScene={setEditingScene}
                 onDeleteScene={setDeleteScene}
                 onReorder={(ordered, movedId, beforeId) => reorderScenes(api, ordered, movedId, beforeId, setData)}
-                onReorderSections={reorderSections}
+                onSectionDragStart={handleSectionDragStart}
+                onSectionDragOver={handleSectionDragOver}
+                onSectionDrop={handleSectionDrop}
+                onSectionDragEnd={handleSectionDragEnd}
+                draggingSectionId={draggingSectionId}
                 viewMode={viewMode}
                 projectId={data.id}
                 onSectionChange={(updated) =>
@@ -665,7 +710,11 @@ function SectionBlock({
   onEditScene,
   onDeleteScene,
   onReorder,
-  onReorderSections,
+  onSectionDragStart,
+  onSectionDragOver,
+  onSectionDrop,
+  onSectionDragEnd,
+  draggingSectionId,
   viewMode,
   projectId,
   onSectionChange,
@@ -682,7 +731,11 @@ function SectionBlock({
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
   onReorder: (ordered: Scene[], movedSceneId: string, beforeSceneId: string | null) => void;
-  onReorderSections?: (draggedId: string, targetId: string) => void;
+  onSectionDragStart?: (id: string) => void;
+  onSectionDragOver?: (targetId: string) => void;
+  onSectionDrop?: () => void;
+  onSectionDragEnd?: () => void;
+  draggingSectionId?: string | null;
   viewMode: "grid" | "table";
   projectId?: string;
   onSectionChange?: (updated: Section) => void;
@@ -733,23 +786,34 @@ function SectionBlock({
 
   return (
     <div
-      className="mb-8"
-      onDragOver={section && onReorderSections ? (e) => e.preventDefault() : undefined}
-      onDrop={
-        section && onReorderSections
+      className="mb-8 transition-transform"
+      style={draggingSectionId === section?.id ? { opacity: 0.4 } : undefined}
+      onDragOver={
+        section && onSectionDragOver
           ? (e) => {
               e.preventDefault();
-              const draggedId = e.dataTransfer.getData("text/subshot-section-id");
-              if (draggedId) onReorderSections(draggedId, section.id);
+              onSectionDragOver(section.id);
+            }
+          : undefined
+      }
+      onDrop={
+        section && onSectionDrop
+          ? (e) => {
+              e.preventDefault();
+              onSectionDrop();
             }
           : undefined
       }
     >
       <div className="flex items-start gap-1">
-        {section && onReorderSections && (
+        {section && onSectionDragStart && (
           <span
             draggable
-            onDragStart={(e) => e.dataTransfer.setData("text/subshot-section-id", section.id)}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/subshot-section-id", section.id);
+              onSectionDragStart(section.id);
+            }}
+            onDragEnd={() => onSectionDragEnd?.()}
             className="cursor-grab active:cursor-grabbing text-white/20 hover:text-white/50 shrink-0 p-1.5 mt-0.5 touch-none"
             title="Abschnitt verschieben"
           >

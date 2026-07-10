@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   DndContext,
@@ -11,6 +11,8 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
   type DraggableAttributes,
   type DraggableSyntheticListeners,
 } from "@dnd-kit/core";
@@ -69,6 +71,15 @@ function CheckIcon() {
     </svg>
   );
 }
+/** Web equivalent of iOS's "sdcard.fill" SF Symbol, used on the good-take
+ * button — a memory card with a clipped top-left corner. */
+function SdCardIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17 2H9L4 7v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-9 4h2v5H8V6Zm4 0h2v5h-2V6Zm4 0h2v5h-2V6Z" />
+    </svg>
+  );
+}
 
 export function SceneCard({
   scene,
@@ -93,22 +104,37 @@ export function SceneCard({
   const [newShotText, setNewShotText] = useState("");
   const [editingShot, setEditingShot] = useState<Shot | null>(null);
   const [draggingShotId, setDraggingShotId] = useState<string | null>(null);
+  // Quick inline good-take editor, bottom-left of the tile — mirrors iOS's
+  // sceneGoodTakeButton exactly (same capsule pill, same position in the
+  // bottom action row), previously web-only had a read-only badge and the
+  // full edit modal, no quick way to set/clear it straight from the tile.
+  const [editingGoodTake, setEditingGoodTake] = useState(false);
+  const [goodTakeText, setGoodTakeText] = useState(scene.good_take_filename ?? "");
+  // Snapshot of `shots` taken at drag start — restored verbatim on
+  // cancel/invalid-drop, same pattern as the scene grid's drag (see
+  // handleSceneDragCancel in page.tsx).
+  const shotDragOriginRef = useRef<Shot[] | null>(null);
   const shotSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
 
-  /** Reorders this scene's shots and persists the new sort_order for every
-   * shot whose position actually changed - the backend has no bulk-reorder
-   * endpoint (same constraint the iOS app works around, see moveShot in
-   * ShotListViewModel), so this is one PATCH per moved shot. */
-  async function handleShotDragEnd(event: DragEndEvent) {
-    setDraggingShotId(null);
+  function handleShotDragStart(event: DragStartEvent) {
+    setDraggingShotId(String(event.active.id));
+    shotDragOriginRef.current = shots;
+  }
+
+  /** Fires on every hover change while dragging — actually reorders `shots`
+   * live (not just a CSS preview) so rows visibly make way for the dragged
+   * one, exactly where it'll land if dropped right now. Same "multiple
+   * containers" live-preview pattern as the scene grid's handleSceneDragOver
+   * in page.tsx; nothing here touches the backend yet. */
+  function handleShotDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = shots.findIndex((s) => s.id === active.id);
     const newIndex = shots.findIndex((s) => s.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
     const reordered = arrayMove(shots, oldIndex, newIndex);
     onChange((d) => ({
       ...d,
@@ -117,12 +143,53 @@ export function SceneCard({
         return idx === -1 ? s : { ...s, sort_order: idx };
       }),
     }));
+  }
+
+  /** By the time this fires, `shots` already reflects the live-previewed
+   * final order (handleShotDragOver kept it in sync on every hover change)
+   * — persist the new sort_order for every shot whose position actually
+   * changed from the pre-drag snapshot. The backend has no bulk-reorder
+   * endpoint (same constraint the iOS app works around, see moveShot in
+   * ShotListViewModel), so this is one PATCH per moved shot. */
+  async function handleShotDragEnd(event: DragEndEvent) {
+    setDraggingShotId(null);
+    const origin = shotDragOriginRef.current;
+    shotDragOriginRef.current = null;
+    const { over } = event;
+    if (!over) {
+      if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
+      return;
+    }
     try {
       await Promise.all(
-        reordered.map((s, idx) => (s.sort_order !== idx ? api.patchShot(s.id, { sort_order: idx }) : Promise.resolve()))
+        shots.map((s, idx) => {
+          const orig = origin?.find((o) => o.id === s.id);
+          return orig && orig.sort_order !== idx ? api.patchShot(s.id, { sort_order: idx }) : Promise.resolve();
+        })
       );
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Sortierung fehlgeschlagen.");
+    }
+  }
+
+  /** Drag cancelled (Escape, dropped outside any droppable) — revert the
+   * live preview from handleShotDragOver, nothing was persisted yet. */
+  function handleShotDragCancel() {
+    setDraggingShotId(null);
+    const origin = shotDragOriginRef.current;
+    shotDragOriginRef.current = null;
+    if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
+  }
+
+  async function saveGoodTake() {
+    setEditingGoodTake(false);
+    const trimmed = goodTakeText.trim();
+    if (trimmed === (scene.good_take_filename ?? "")) return;
+    try {
+      const updated = await api.patchScene(scene.id, { good_take_filename: trimmed || null, clear_good_take: !trimmed });
+      onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
   }
 
@@ -205,11 +272,6 @@ export function SceneCard({
               </Pill>
             )}
           </div>
-          {!scene.is_intermediate_step && scene.good_take_filename && (
-            <div className="flex flex-wrap gap-1.5 mb-1.5">
-              <Pill tone="good">{scene.good_take_filename}</Pill>
-            </div>
-          )}
           {(scene.scheduled_at || scene.location_address) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               {scene.scheduled_at && (
@@ -323,9 +385,10 @@ export function SceneCard({
         <DndContext
           sensors={shotSensors}
           collisionDetection={closestCenter}
-          onDragStart={(e) => setDraggingShotId(String(e.active.id))}
+          onDragStart={handleShotDragStart}
+          onDragOver={handleShotDragOver}
           onDragEnd={handleShotDragEnd}
-          onDragCancel={() => setDraggingShotId(null)}
+          onDragCancel={handleShotDragCancel}
         >
           <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <div className="space-y-1.5 mb-2">
@@ -372,7 +435,35 @@ export function SceneCard({
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
+        {!scene.is_intermediate_step ? (
+          editingGoodTake ? (
+            <input
+              autoFocus
+              value={goodTakeText}
+              onChange={(e) => setGoodTakeText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveGoodTake()}
+              onBlur={saveGoodTake}
+              placeholder="Dateiname, z.B. A003_C012"
+              className="bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-xs w-36 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+          ) : (
+            <button
+              onClick={() => {
+                setGoodTakeText(scene.good_take_filename ?? "");
+                setEditingGoodTake(true);
+              }}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors min-w-0 ${
+                scene.good_take_filename ? "bg-emerald-500/20 text-emerald-400" : "bg-white/8 text-white/50 hover:bg-white/14"
+              }`}
+            >
+              <SdCardIcon />
+              <span className="truncate max-w-[9rem]">{scene.good_take_filename || "Good Take"}</span>
+            </button>
+          )
+        ) : (
+          <span />
+        )}
         <Menu
           align="start"
           trigger={
