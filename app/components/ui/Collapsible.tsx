@@ -26,7 +26,7 @@ export function Collapsible({
     <div>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 py-1.5 text-left group"
+        className="w-full flex items-center gap-2 py-2.5 text-left group"
       >
         <span
           className="text-white/40 group-hover:text-white/70 transition-transform duration-200 shrink-0"
@@ -44,7 +44,7 @@ export function Collapsible({
         className={cn("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}
       >
         <div className="overflow-hidden min-h-0">
-          <div className="pt-2 pb-1">{children}</div>
+          <div className="pt-3 pb-2">{children}</div>
         </div>
       </div>
     </div>

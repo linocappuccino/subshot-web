@@ -63,7 +63,7 @@ export function ProjectInfoBox({
   }
 
   return (
-    <div className="bg-white/[0.035] border border-white/8 rounded-2xl px-4 py-3 mb-8">
+    <div className="bg-white/[0.035] border border-white/8 rounded-2xl px-4 py-4 mb-8">
       <Collapsible
         title="Projektinfos"
         subtitle={`Wird in ${daysUntilDeletion} Tagen gelöscht`}
