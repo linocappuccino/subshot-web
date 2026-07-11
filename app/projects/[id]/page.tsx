@@ -440,6 +440,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
     setActiveSceneId(null);
+    // Captured BEFORE clearing — this indicator is the single source of
+    // truth for where the drop lands (see below for why).
+    const indicator = insertionIndicator;
     setInsertionIndicator(null);
     const { active, over } = event;
     const origin = dragOriginScenesRef.current;
@@ -449,25 +452,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       return;
     }
     const activeId = String(active.id);
-    const overIdStr = String(over.id) === activeId ? null : String(over.id);
     const originScene = origin?.find((s) => s.id === activeId);
     if (!originScene) return;
 
-    // data.scenes is still the pre-drag order (nothing moves during the
-    // drag itself, see handleSceneDragOver) — compute the result fresh
-    // here from the same pure logic the indicator line used, fed with
-    // dnd-kit's real final `over`, so what gets persisted always matches
-    // exactly what the user dropped onto.
-    let insertAfter = false;
-    if (overIdStr && !overIdStr.startsWith("section-drop:")) {
-      const pointer = pointerPosRef.current;
-      if (pointer && over) {
-        insertAfter =
-          viewMode === "table"
-            ? pointer.y >= over.rect.top + over.rect.height / 2
-            : pointer.x >= over.rect.left + over.rect.width / 2;
-      }
-    }
+    // CRITICAL: use the last-DISPLAYED indicator, not a fresh read of
+    // dnd-kit's own `event.over` — onDragEnd fires on pointer-up, a
+    // physically separate event from the last onDragOver that drew the
+    // indicator, and sceneCollisionDetection's rectIntersection fallback
+    // can resolve differently between the two right at a section boundary
+    // (the dragged card's rect can overlap both the current section's
+    // empty-space dropzone AND the next section's first card at once).
+    // That mismatch was a real, reported bug: the indicator visibly showed
+    // "end of this section" but the card silently landed in the section
+    // below (Lino: "die Kachel muss GENAU DA HIN FALLEN WO DER INDIKATOR
+    // ES ANZEIGT, NIRGENDS ANDERS"). Falling back to event.over only when
+    // there's no indicator at all (e.g. a drag that never moved).
+    const overIdStr = indicator ? indicator.targetId : String(over.id) === activeId ? null : String(over.id);
+    const insertAfter = indicator ? indicator.edge === "right" || indicator.edge === "bottom" : false;
     const finalScenes = overIdStr ? computeSceneReorder(data.scenes, activeId, overIdStr, insertAfter) : null;
     const resultScenes = finalScenes ?? data.scenes;
     const activeScene = resultScenes.find((s) => s.id === activeId);
