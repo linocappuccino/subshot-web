@@ -585,17 +585,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Marking a scene "Im Kasten" (completed) must NOT shove it to the back
   // of the list (Lino, 2026-07-10: "wenn man im kasten drückt, die kacheln
   // NICHT nach hinten geschoben werden sollen") — a completed-sorts-last
-  // rule used to live here, removed. is_project_info still sorts first
-  // (Lino: "die Projektinfo ist immer die erste Kachel in einem
-  // Abschnitt"). Secondary sort_order compare (like shotsFor/sections
-  // below) — the backend relationship this data comes from doesn't
-  // guarantee sort_order sequence on its own, so without this a fresh page
-  // load could show scenes in a different order than whatever was last
-  // dragged into place.
+  // rule used to live here, removed. is_project_info no longer forces
+  // first position either (Lino, 2026-07-11: "die Info-Kachel kann man
+  // jetzt überall platzieren... kann wie eine normale Szenenkachel
+  // behandelt werden von der Platzierung her") — plain sort_order for
+  // everything, same as every other scene. Still just sort_order compare
+  // (like shotsFor/sections below) — the backend relationship this data
+  // comes from doesn't guarantee sort_order sequence on its own, so
+  // without this a fresh page load could show scenes in a different order
+  // than whatever was last dragged into place.
   const scenesIn = (sectionId: string | null) =>
     data.scenes
       .filter((s) => s.section_id === sectionId)
-      .sort((a, b) => Number(b.is_project_info) - Number(a.is_project_info) || a.sort_order - b.sort_order);
+      .sort((a, b) => a.sort_order - b.sort_order);
 
   const shotsFor = (sceneId: string) => data.shots.filter((s) => s.scene_id === sceneId && s.status !== "deleted").sort((a, b) => a.sort_order - b.sort_order);
 
@@ -989,16 +991,10 @@ function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: strin
 
   const sourceSectionId = activeScene.section_id;
 
-  // A Projektinfo tile always lands first, full stop — wherever within the
-  // target section it's dropped, ignore the specific hover position (Lino:
-  // "die Projektinfo ist immer die erste Kachel in einem Abschnitt, alle
-  // anderen Kacheln kommen unter der eingefügten Projektinfo Kachel"). Only
-  // one per section: reject the move if the target already has a
-  // different Projektinfo tile.
-  if (activeScene.is_project_info) {
-    const conflict = scenes.find((s) => s.section_id === targetSectionId && s.is_project_info && s.id !== activeId);
-    if (conflict) return null;
-  }
+  // No more "only one Info tile per section" restriction (Lino, 2026-07-11:
+  // "man soll jetzt mehrere Info-Kacheln in einen Abschnitt legen können")
+  // — an is_project_info scene is now just a normal scene for every
+  // placement purpose, full stop, including how many can share a section.
 
   // Renumber each affected section from ITS OWN scenes sorted by their
   // current sort_order — never from raw array position. The scenes array
@@ -1012,18 +1008,17 @@ function computeSceneReorder(scenes: Scene[], activeId: string, overIdStr: strin
   // section that was never part of the drag).
   const targetSectionScenes = scenes.filter((s) => s.section_id === targetSectionId && s.id !== activeId).sort((a, b) => a.sort_order - b.sort_order);
   let insertAt = targetSectionScenes.length;
-  if (activeScene.is_project_info) {
-    insertAt = 0;
-  } else if (overSceneId) {
+  if (overSceneId) {
     const idx = targetSectionScenes.findIndex((s) => s.id === overSceneId);
     // insertAfter mirrors the insertion-line indicator exactly (left half
     // of the hovered card = insert before it, right half = after) — the
     // preview and the actual result must always agree on this, or dropping
-    // lands somewhere different than what the line just showed.
+    // lands somewhere different than what the line just showed. An
+    // is_project_info scene (Info tile) is no longer pinned to a fixed
+    // position (Lino, 2026-07-11: "kann wie eine normale Szenenkachel
+    // behandelt werden von der Platzierung her") — it drags/reorders
+    // exactly like any other scene now, on both sides of this check.
     if (idx !== -1) insertAt = insertAfter ? idx + 1 : idx;
-    // Never insert a regular scene BEFORE the section's Projektinfo tile —
-    // that tile is pinned to index 0 unconditionally.
-    if (insertAt === 0 && targetSectionScenes[0]?.is_project_info) insertAt = 1;
   }
   const newTargetOrder = [...targetSectionScenes];
   newTargetOrder.splice(insertAt, 0, { ...activeScene, section_id: targetSectionId });
