@@ -33,6 +33,7 @@ export function SceneTable({
   members,
   onEditScene,
   onDeleteScene,
+  onDuplicateScene,
   onChange,
   sectionId,
   insertionIndicator,
@@ -42,6 +43,7 @@ export function SceneTable({
   members: Member[];
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
+  onDuplicateScene?: (scene: Scene) => void;
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   /** Undefined for the "Ohne Abschnitt" bucket, same convention as
    * SectionBlock's own `section` prop. */
@@ -109,6 +111,7 @@ export function SceneTable({
                 members={members}
                 onEditScene={onEditScene}
                 onDeleteScene={onDeleteScene}
+                onDuplicateScene={onDuplicateScene}
                 onToggleCompleted={toggleCompleted}
                 onToggleDialogue={toggleDialogueLine}
                 insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
@@ -142,6 +145,7 @@ function SceneRow({
   members,
   onEditScene,
   onDeleteScene,
+  onDuplicateScene,
   onToggleCompleted,
   onToggleDialogue,
   insertionEdge,
@@ -151,6 +155,7 @@ function SceneRow({
   members: Member[];
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
+  onDuplicateScene?: (scene: Scene) => void;
   onToggleCompleted: (scene: Scene) => void;
   onToggleDialogue: (scene: Scene, dialogueId: string, done: boolean) => void;
   /** Notion-style insertion indicator, table equivalent of
@@ -322,6 +327,16 @@ function SceneRow({
               >
                 Bearbeiten
               </MenuItem>
+              {onDuplicateScene && (
+                <MenuItem
+                  onClick={() => {
+                    onDuplicateScene(scene);
+                    close();
+                  }}
+                >
+                  Duplizieren
+                </MenuItem>
+              )}
               <MenuItem
                 danger
                 onClick={() => {

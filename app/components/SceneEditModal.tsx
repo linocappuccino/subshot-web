@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
@@ -29,6 +29,7 @@ export function SceneEditModal({
   projectId,
   existing,
   previousScene,
+  nextSortOrder,
   members,
   onCreated,
   onUpdated,
@@ -39,6 +40,17 @@ export function SceneEditModal({
   projectId: string;
   existing: Scene | null;
   previousScene: Scene | null;
+  /** sort_order to send when CREATING a scene — always "one past the
+   * project's current highest sort_order" (see page.tsx), so a new scene
+   * always lands at the very end instead of colliding with an existing one.
+   * See its own doc comment at the call site for why this matters: without
+   * it the backend defaulted every new scene to sort_order 0, which made
+   * scene NUMBERING (a completely separate concept from sort_order, see
+   * _assign_scene_number in main.py) resolve every second/third/... new
+   * scene as a lettered variant of the first scene's number instead of its
+   * own next integer (Lino: "die erste Szene ist 1, die zweite 1A, dann
+   * 1B"). */
+  nextSortOrder: number;
   members: Member[];
   onCreated: (scene: Scene) => void;
   onUpdated: (scene: Scene) => void;
@@ -81,11 +93,34 @@ export function SceneEditModal({
   const [draftDialogues, setDraftDialogues] = useState<string[]>([]);
   const [newDialogueText, setNewDialogueText] = useState("");
   const [addingDialogue, setAddingDialogue] = useState(false);
+  // Which existing dialogue line is being edited inline (2026-07-11, Lino:
+  // dialog lines must be correctable, not just add/toggle/delete) — id of
+  // the SceneDialogue, plus its own draft text so typing doesn't mutate
+  // `dialogues` (and thus the checkbox/strike-through render) until saved.
+  const [editingDialogueId, setEditingDialogueId] = useState<string | null>(null);
+  const [editingDialogueText, setEditingDialogueText] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  if (open && openedFor !== (existing?.id ?? "new")) {
+  // This component never unmounts (the page renders it once, unconditionally,
+  // and toggles `open` — see Modal, which only hides/shows its CHILDREN, not
+  // this component itself), so every useState above keeps whatever value it
+  // last had across opens. The `openedFor !== (existing?.id ?? "new")` check
+  // below used to be the only reset trigger — fine for switching between two
+  // DIFFERENT existing scenes (their ids differ), but every brand-new scene
+  // shares the same "new" sentinel, so creating one scene, closing, then
+  // creating a second one saw "new" === "new" and skipped the reset entirely
+  // — the second scene silently inherited the first one's name/image/dialog/
+  // every other field until manually overwritten. Tracking the false→true
+  // open transition catches that case too: any time the modal is freshly
+  // opened for creation (not just for a genuinely different existing scene),
+  // it resets.
+  const wasOpenRef = useRef(false);
+  const justOpened = open && !wasOpenRef.current;
+  wasOpenRef.current = open;
+
+  if (open && (justOpened || openedFor !== (existing?.id ?? "new"))) {
     setOpenedFor(existing?.id ?? "new");
     setName(existing?.name ?? "");
     setPriority(existing?.priority ?? null);
@@ -162,6 +197,24 @@ export function SceneEditModal({
     }
   }
 
+  function startEditingDialogue(d: SceneDialogue) {
+    setEditingDialogueId(d.id);
+    setEditingDialogueText(d.text);
+  }
+
+  async function saveEditedDialogue(d: SceneDialogue) {
+    const text = editingDialogueText.trim();
+    setEditingDialogueId(null);
+    if (!text || text === d.text) return;
+    setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, text } : x)));
+    try {
+      await api.patchDialogue(d.id, { text });
+    } catch (e) {
+      setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, text: d.text } : x)));
+      toast.showError(e instanceof ApiError ? e.message : "Konnte nicht gespeichert werden.");
+    }
+  }
+
   async function handleSave() {
     const trimmedName = name.trim();
     setSaving(true);
@@ -187,7 +240,9 @@ export function SceneEditModal({
       if (existing) {
         scene = await api.patchScene(existing.id, body);
       } else {
-        scene = await api.createScene(projectId, { color: "#3875bd", is_intermediate_step: isIntermediateStep, ...body });
+        scene = await api.createScene(projectId, {
+          color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder, ...body,
+        });
         for (const text of draftDialogues) {
           const d = await api.addDialogue(scene.id, text);
           scene = { ...scene, dialogues: [...scene.dialogues, d] };
@@ -278,13 +333,54 @@ export function SceneEditModal({
                 exit={{ opacity: 0, height: 0 }}
                 className="flex items-center gap-2 group"
               >
-                <button onClick={() => toggleDialogueLine(d)} className="shrink-0">
+                <button onClick={() => toggleDialogueLine(d)} className="shrink-0 mt-0.5">
                   <CheckCircle done={d.done} />
                 </button>
-                <span className={`text-sm flex-1 ${d.done ? "line-through text-white/40" : "text-white/80"}`}>{d.text}</span>
+                {editingDialogueId === d.id ? (
+                  <>
+                    <Textarea
+                      autoFocus
+                      value={editingDialogueText}
+                      onChange={(e) => setEditingDialogueText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          saveEditedDialogue(d);
+                        } else if (e.key === "Escape") {
+                          setEditingDialogueId(null);
+                        }
+                      }}
+                      onBlur={() => saveEditedDialogue(d)}
+                      rows={2}
+                      className="flex-1 text-sm py-1"
+                    />
+                    {/* Explicit save button (2026-07-11) — not just onBlur.
+                        onBlur only fires if the textarea actually held real
+                        focus in the first place, which isn't guaranteed
+                        (autofocus timing varies across browsers/input
+                        methods) — a visible, always-clickable "Fertig"
+                        removes that dependency entirely, same reasoning the
+                        section-rename modal already uses an explicit
+                        Speichern button rather than relying on blur alone. */}
+                    <button
+                      onClick={() => saveEditedDialogue(d)}
+                      className="shrink-0 text-white/40 hover:text-emerald-400 transition-colors"
+                      aria-label="Dialogzeile speichern"
+                    >
+                      <CheckIcon />
+                    </button>
+                  </>
+                ) : (
+                  <span
+                    onClick={() => startEditingDialogue(d)}
+                    className={`text-sm flex-1 whitespace-pre-wrap cursor-text ${d.done ? "line-through text-white/40" : "text-white/80"}`}
+                  >
+                    {d.text}
+                  </span>
+                )}
                 <button
                   onClick={() => deleteDialogueLine(d)}
-                  className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity text-xs"
+                  className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity text-xs shrink-0"
                 >
                   Löschen
                 </button>
@@ -293,7 +389,7 @@ export function SceneEditModal({
             {draftDialogues.map((text, i) => (
               <motion.div key={`draft-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 group">
                 <CheckCircle done={false} />
-                <span className="text-sm flex-1 text-white/80">{text}</span>
+                <span className="text-sm flex-1 whitespace-pre-wrap text-white/80">{text}</span>
                 <button
                   onClick={() => setDraftDialogues((prev) => prev.filter((_, idx) => idx !== i))}
                   className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity text-xs"
@@ -304,14 +400,25 @@ export function SceneEditModal({
             ))}
           </AnimatePresence>
           {addingDialogue ? (
-            <Input
+            <Textarea
               autoFocus
               value={newDialogueText}
               onChange={(e) => setNewDialogueText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addDialogueLine()}
+              onKeyDown={(e) => {
+                // Shift+Enter inserts a real line break (Lino, 2026-07-11) —
+                // plain Enter still submits the line, matching every other
+                // single-line-by-default input in this app. A bare <Input>
+                // (single-line <input>) can never hold a newline at all,
+                // which is why this switched to <Textarea>.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  addDialogueLine();
+                }
+              }}
               onBlur={addDialogueLine}
-              placeholder="Neuer Dialog"
-              className="py-1.5"
+              placeholder="Neuer Dialog (Shift+Enter für Zeilenumbruch)"
+              rows={2}
+              className="py-1.5 text-sm"
             />
           ) : (
             <button
@@ -384,6 +491,14 @@ export function SceneEditModal({
         </FieldGroup>
       )}
     </Modal>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
   );
 }
 

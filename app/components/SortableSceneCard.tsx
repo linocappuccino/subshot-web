@@ -18,6 +18,7 @@ export function SortableSceneCard({
   members,
   onEdit,
   onDelete,
+  onDuplicate,
   onChange,
   onOpenTeam,
   insertionEdge,
@@ -27,6 +28,7 @@ export function SortableSceneCard({
   members: Member[];
   onEdit: () => void;
   onDelete: () => void;
+  onDuplicate?: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   onOpenTeam: () => void;
   /** Notion-style insertion indicator — a thin blue line on this card's
@@ -78,6 +80,7 @@ export function SortableSceneCard({
           members={members}
           onEdit={onEdit}
           onDelete={onDelete}
+          onDuplicate={onDuplicate}
           onChange={onChange}
           dragHandleProps={{ attributes, listeners }}
         />

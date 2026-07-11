@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import type {
   DraggableAttributes,
   DraggableSyntheticListeners,
@@ -62,12 +63,16 @@ export function ProjectInfoTile({
     }
   }
 
+  // Same stale-response race as ProjectInfoBox's updateLocation — see its
+  // comment. Only the most recently fired request's response is applied.
+  const locationRequestId = useRef(0);
   async function updateLocation(address: string, lat: number | null, lng: number | null) {
+    const requestId = ++locationRequestId.current;
     try {
       const updated = await api.patchScene(scene.id, {
         location_address: address || undefined, location_lat: lat ?? undefined, location_lng: lng ?? undefined,
       });
-      applyScene(updated);
+      if (requestId === locationRequestId.current) applyScene(updated);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
@@ -98,7 +103,7 @@ export function ProjectInfoTile({
         )}
         <div className="flex-1 min-w-0">
           <Collapsible
-            title="Projektinfo"
+            title="Info"
             icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
                 <circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v5h1" />

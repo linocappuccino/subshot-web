@@ -99,6 +99,7 @@ export function SceneCard({
   members,
   onEdit,
   onDelete,
+  onDuplicate,
   onChange,
   dragHandleProps,
 }: {
@@ -106,6 +107,7 @@ export function SceneCard({
   shots: Shot[];
   members: Member[];
   onEdit: () => void;
+  onDuplicate?: () => void;
   onDelete: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
@@ -122,6 +124,10 @@ export function SceneCard({
   // full edit modal, no quick way to set/clear it straight from the tile.
   const [editingGoodTake, setEditingGoodTake] = useState(false);
   const [goodTakeText, setGoodTakeText] = useState(scene.good_take_filename ?? "");
+  // Dialog list on the tile itself, collapsed by clicking its "Dialog"
+  // header (2026-07-11, Lino) — defaults open so nothing changes for
+  // scenes that were already showing their dialogue lines.
+  const [dialogOpen, setDialogOpen] = useState(true);
   // Snapshot of `shots` taken at drag start — restored verbatim on
   // cancel/invalid-drop, same pattern as the scene grid's drag (see
   // handleSceneDragCancel in page.tsx).
@@ -359,6 +365,16 @@ export function SceneCard({
               >
                 Bearbeiten
               </MenuItem>
+              {onDuplicate && (
+                <MenuItem
+                  onClick={() => {
+                    onDuplicate();
+                    close();
+                  }}
+                >
+                  Duplizieren
+                </MenuItem>
+              )}
               <MenuItem
                 danger
                 onClick={() => {
@@ -391,21 +407,34 @@ export function SceneCard({
 
       {scene.dialogues.length > 0 && (
         <div className="bg-white/[0.03] rounded-lg p-2.5 mb-2">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 mb-1.5">
+          <button
+            onClick={() => setDialogOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 hover:text-white/70 transition-colors w-full"
+          >
             <QuoteIcon /> Dialog
-          </div>
-          <div className="space-y-1">
-            {scene.dialogues.map((d) => (
-              <button key={d.id} onClick={() => toggleDialogueLine(d.id, d.done)} className="flex items-start gap-2 text-left w-full group">
-                <span
-                  className="w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 mt-0.5 transition-colors"
-                  style={{ borderColor: d.done ? "#4caf6d" : "rgba(255,255,255,0.3)", backgroundColor: d.done ? "#4caf6d" : "transparent" }}
-                >
-                  {d.done && <CheckIcon />}
-                </span>
-                <span className={`text-sm ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
-              </button>
-            ))}
+            <span className="ml-auto text-white/30 normal-case tracking-normal font-medium">{scene.dialogues.length}</span>
+            <span className="transition-transform duration-200 shrink-0" style={{ transform: dialogOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </span>
+          </button>
+          <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${dialogOpen ? "grid-rows-[1fr] mt-1.5" : "grid-rows-[0fr]"}`}>
+            <div className="overflow-hidden min-h-0">
+              <div className="space-y-1">
+                {scene.dialogues.map((d) => (
+                  <button key={d.id} onClick={() => toggleDialogueLine(d.id, d.done)} className="flex items-start gap-2 text-left w-full group">
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 mt-0.5 transition-colors"
+                      style={{ borderColor: d.done ? "#4caf6d" : "rgba(255,255,255,0.3)", backgroundColor: d.done ? "#4caf6d" : "transparent" }}
+                    >
+                      {d.done && <CheckIcon />}
+                    </span>
+                    <span className={`text-sm ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useApi } from "@/lib/useApi";
 import { Input } from "./Field";
@@ -33,7 +34,12 @@ export function LocationPicker({
   const [open, setOpen] = useState(false);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputWrapRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Screen-space position of the results dropdown, recomputed whenever it
+  // opens/closes and while scrolling. Used to render the dropdown through a
+  // portal (see below) instead of as a normal `position: absolute` child.
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Resets the local query text whenever the address prop changes from the
   // outside (e.g. the parent scene/project reloads) - done during render,
@@ -44,14 +50,50 @@ export function LocationPicker({
     setQuery(address);
   }
 
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     function onClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      // dropdownRef, not just containerRef — the results list now renders
+      // through a portal (see below), so it's no longer a DOM descendant of
+      // containerRef and needs its own explicit "inside" check, or every
+      // click on a result would register as "outside" and close the list on
+      // mousedown before its own onClick (which picks the result) ever runs.
+      if (containerRef.current?.contains(target)) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
+
+  // Positions the results dropdown in VIEWPORT (not document/ancestor)
+  // coordinates so it can be rendered through a portal straight to
+  // document.body — see the portal's own comment below for why. Recomputed
+  // whenever the dropdown opens and on every scroll/resize while it's open
+  // (capture: true on the scroll listener so it also fires for scrolling
+  // inside an ancestor container, e.g. a Modal's own scrollable body —
+  // "scroll" doesn't bubble, but capture-phase listeners on window still see
+  // it happen on any descendant).
+  useEffect(() => {
+    if (!open || results.length === 0) {
+      setDropdownRect(null);
+      return;
+    }
+    function reposition() {
+      const rect = inputWrapRef.current?.getBoundingClientRect();
+      if (rect) setDropdownRect({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    }
+    reposition();
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+    return () => {
+      window.removeEventListener("scroll", reposition, true);
+      window.removeEventListener("resize", reposition);
+    };
+  }, [open, results.length]);
 
   // No lat/lng means nothing to fetch - the effect simply doesn't run
   // rather than needing to setState back to null itself; `mapUrl` (state)
@@ -102,33 +144,54 @@ export function LocationPicker({
 
   return (
     <div className="relative" ref={containerRef}>
-      <Input
-        value={query}
-        onChange={(e) => handleQueryChange(e.target.value)}
-        onFocus={() => results.length > 0 && setOpen(true)}
-        placeholder="Adresse suchen…"
-      />
-      <AnimatePresence>
-        {open && results.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.15 }}
-            className="absolute z-30 mt-1.5 w-full bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
-          >
-            {results.map((r, i) => (
-              <button
-                key={i}
-                onClick={() => pickResult(r)}
-                className="w-full text-left px-3.5 py-2.5 text-sm text-white/80 hover:bg-white/8 transition-colors border-b border-white/5 last:border-b-0"
+      <div ref={inputWrapRef}>
+        <Input
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder="Adresse suchen…"
+        />
+      </div>
+      {/* Portaled straight to document.body instead of rendered as a normal
+          `position: absolute` child (2026-07-11 fix) — this picker is used
+          inside SceneEditModal, whose scrollable body is `overflow-y-auto`
+          (see Modal.tsx), and the Standort field sits near the bottom of
+          that list. An absolutely-positioned dropdown anchored to it mostly
+          renders BELOW the scroll container's own clipped bounds, so it was
+          being silently clipped to invisible — the search request fires and
+          returns real results (confirmed live: a 200 response with a real
+          match came back every time), but nothing ever appeared on screen,
+          which read as "die Google-Maps-Funktion funktioniert nicht"
+          (Lino). A portal has no ancestor overflow/clipping to fight —
+          position comes from dropdownRect (see its own effect above),
+          computed straight from the input's on-screen bounding box. */}
+      {dropdownRect &&
+        createPortal(
+          <AnimatePresence>
+            {open && results.length > 0 && (
+              <motion.div
+                ref={dropdownRef}
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15 }}
+                style={{ position: "fixed", top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
+                className="z-[70] bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
               >
-                {r.display_name}
-              </button>
-            ))}
-          </motion.div>
+                {results.map((r, i) => (
+                  <button
+                    key={i}
+                    onClick={() => pickResult(r)}
+                    className="w-full text-left px-3.5 py-2.5 text-sm text-white/80 hover:bg-white/8 transition-colors border-b border-white/5 last:border-b-0"
+                  >
+                    {r.display_name}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
 
       {effectiveMapUrl && (
         <motion.a

@@ -137,6 +137,7 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     patchScene: (id: string, body: Record<string, unknown>) =>
       request<Scene>(`scenes/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteScene: (id: string) => request<void>(`scenes/${id}`, { method: "DELETE" }),
+    duplicateScene: (id: string) => request<Scene>(`scenes/${id}/duplicate`, { method: "POST" }),
     moveScene: (id: string, beforeSceneId: string | null) =>
       request<Scene>(`scenes/${id}/move`, { method: "POST", body: JSON.stringify({ before_scene_id: beforeSceneId }) }),
     uploadSceneImage: (id: string, file: File) => {

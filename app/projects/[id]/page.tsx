@@ -31,6 +31,7 @@ import { ProjectInfoTile } from "@/app/components/ProjectInfoTile";
 import { TeamPanel } from "@/app/components/TeamPanel";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { ShareLinkModal } from "@/app/components/ShareLinkModal";
+import { Modal } from "@/app/components/ui/Modal";
 import { AppShell } from "@/app/components/AppShell";
 import { Button, IconButton } from "@/app/components/ui/Button";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
@@ -83,6 +84,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [showShareModal, setShowShareModal] = useState(false);
   const [creatingSection, setCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
+  const [editingSection, setEditingSection] = useState<Section | null>(null);
+  const [editSectionName, setEditSectionName] = useState("");
   const [showTeam, setShowTeam] = useState(false);
   const [showNotion, setShowNotion] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -186,8 +189,87 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     setData((prev) => (prev ? { ...prev, scenes: [...prev.scenes, scene] } : prev));
   }
 
+  // Time-cascade offer (2026-07-11, Lino): "ändert man die Zeit in der
+  // ersten Szene, passen sich alle folgenden Szenen die am gleichen Tag
+  // stattfinden an" — but only asked/confirmed via dialog, never silently.
+  // `editingScene` still holds the PRE-edit scene here (SceneEditModal's
+  // onUpdated fires before the page clears it in its own onClose), so it's
+  // the only place that knows both the old and new start time.
+  const [cascadeConfirm, setCascadeConfirm] = useState<{ updated: Scene; affected: Scene[] } | null>(null);
+
   async function handleSceneUpdated(scene: Scene) {
+    const previous = editingScene;
     setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((s) => (s.id === scene.id ? scene : s)) } : prev));
+
+    const timeChanged = previous?.scheduled_at && scene.scheduled_at && previous.scheduled_at !== scene.scheduled_at;
+    if (timeChanged && scene.duration_minutes && data) {
+      const editedDay = new Date(scene.scheduled_at!);
+      const editedStart = editedDay.getTime();
+      // "Folgende Szenen" — same calendar day, chronologically after the
+      // just-edited scene's NEW start, and (per Lino's own precondition:
+      // "hat man alle Zeiten inkl. Dauer eingestellt") only ones that
+      // already have both a start and a duration of their own — a scene
+      // with no time of its own has nothing for a chain to "logically take
+      // over" from.
+      const affected = data.scenes
+        .filter((s) => s.id !== scene.id && s.scheduled_at && s.duration_minutes)
+        .filter((s) => {
+          const d = new Date(s.scheduled_at!);
+          return (
+            d.getFullYear() === editedDay.getFullYear() &&
+            d.getMonth() === editedDay.getMonth() &&
+            d.getDate() === editedDay.getDate() &&
+            d.getTime() > editedStart
+          );
+        })
+        .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
+      if (affected.length > 0) {
+        setCascadeConfirm({ updated: scene, affected });
+      }
+    }
+  }
+
+  // Recomputes each affected scene's start as "previous scene's (possibly
+  // just-updated) start + its own duration" — the same chain logic
+  // suggestedStart() in SceneEditModal already uses when proposing a new
+  // scene's start, applied here retroactively down the whole same-day
+  // chain instead of just once at creation time.
+  async function confirmCascadeTimes() {
+    if (!cascadeConfirm) return;
+    const { updated, affected } = cascadeConfirm;
+    setCascadeConfirm(null);
+    let cursor = new Date(updated.scheduled_at!);
+    cursor.setMinutes(cursor.getMinutes() + (updated.duration_minutes ?? 0));
+    for (const s of affected) {
+      const newStart = new Date(cursor);
+      try {
+        const patched = await api.patchScene(s.id, { scheduled_at: newStart.toISOString() });
+        setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((x) => (x.id === patched.id ? patched : x)) } : prev));
+      } catch (e) {
+        toast.showError(e instanceof ApiError ? e.message : "Zeiten anpassen fehlgeschlagen.");
+        break;
+      }
+      cursor = newStart;
+      cursor.setMinutes(cursor.getMinutes() + (s.duration_minutes ?? 0));
+    }
+  }
+
+  // Full refetch rather than patching local state (2026-07-11) — the
+  // backend shifts sort_order on every sibling from the duplicate's
+  // insertion point onward (see duplicate_scene in main.py) to make room
+  // right next to the original, and duplicating is infrequent enough
+  // (unlike dragging) that a plain refetch is simpler and safer than trying
+  // to mirror that shift locally and risking the same kind of drift bug
+  // that plagued the drag-and-drop reorder logic before it got a backend
+  // source of truth.
+  async function handleDuplicateScene(scene: Scene) {
+    try {
+      await api.duplicateScene(scene.id);
+      const fresh = await api.projectDetail(data!.id);
+      setData(fresh);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Duplizieren fehlgeschlagen.");
+    }
   }
 
   async function confirmDeleteScene() {
@@ -447,6 +529,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // mechanism as any other tile — see computeSceneReorder's
   // is_project_info handling for the "always lands first, one per
   // section" rule.
+  async function saveEditedSection() {
+    const name = editSectionName.trim();
+    if (!editingSection || !name) {
+      setEditingSection(null);
+      return;
+    }
+    try {
+      const updated = await api.patchSection(editingSection.id, { name });
+      setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    } finally {
+      setEditingSection(null);
+    }
+  }
+
   async function createProjectInfoScene() {
     if (!data) return;
     try {
@@ -606,7 +704,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 onChange={updateScenesShots}
                 onEditScene={setEditingScene}
                 onDeleteScene={setDeleteScene}
+                onDuplicateScene={handleDuplicateScene}
                 onDeleteSection={setDeleteSection}
+                onEditSection={(s) => {
+                  setEditingSection(s);
+                  setEditSectionName(s.name);
+                }}
                 onSectionDragStart={handleSectionDragStart}
                 onSectionDragOver={handleSectionDragOver}
                 onSectionDrop={handleSectionDrop}
@@ -639,6 +742,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onChange={updateScenesShots}
               onEditScene={setEditingScene}
               onDeleteScene={setDeleteScene}
+              onDuplicateScene={handleDuplicateScene}
               insertionIndicator={insertionIndicator}
               viewMode={viewMode}
             />
@@ -675,72 +779,103 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             to reach it on any project with more than a couple of scenes. */}
         <div className="fixed bottom-6 inset-x-0 z-40 pointer-events-none">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap gap-3 justify-end pointer-events-none [&>*]:pointer-events-auto">
-          {creatingSection ? (
-            <Input
-              autoFocus
-              value={newSectionName}
-              onChange={(e) => setNewSectionName(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && createSection()}
-              onBlur={createSection}
-              placeholder="Abschnittsname"
-              className="w-48 shadow-2xl shadow-black/50"
-            />
-          ) : (
-            // Mirrors the iOS app's addSceneButton menu exactly (same 4
-            // options, same order) — was 3 separate flat buttons before,
-            // which had no room for a 4th ("Projektinfo") without cluttering
-            // the toolbar further, and iOS already uses one "+" menu for all
-            // of these.
-            <Menu
-              align="end"
-              direction="up"
-              trigger={
-                <Button variant="primary" className="shadow-2xl shadow-black/50">
-                  <PlusIcon /> Hinzufügen
-                </Button>
-              }
-            >
-              {(close) => (
-                <>
-                  <MenuItem
-                    onClick={() => {
-                      setCreatingScene(true);
-                      close();
-                    }}
-                  >
-                    Neue Szene
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      setCreatingIntermediateStep(true);
-                      close();
-                    }}
-                  >
-                    Zwischenschritt
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      setCreatingSection(true);
-                      close();
-                    }}
-                  >
-                    Abschnitt
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      createProjectInfoScene();
-                      close();
-                    }}
-                  >
-                    Projektinfo
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
-          )}
+          {/* Mirrors the iOS app's addSceneButton menu exactly (same 4
+              options, same order) — was 3 separate flat buttons before,
+              which had no room for a 4th ("Projektinfo") without cluttering
+              the toolbar further, and iOS already uses one "+" menu for all
+              of these. */}
+          <Menu
+            align="end"
+            direction="up"
+            trigger={
+              <Button variant="primary" className="shadow-2xl shadow-black/50">
+                <PlusIcon /> Hinzufügen
+              </Button>
+            }
+          >
+            {(close) => (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    setCreatingScene(true);
+                    close();
+                  }}
+                >
+                  Neue Szene
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setCreatingIntermediateStep(true);
+                    close();
+                  }}
+                >
+                  Zwischenschritt
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    setCreatingSection(true);
+                    close();
+                  }}
+                >
+                  Abschnitt
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    createProjectInfoScene();
+                    close();
+                  }}
+                >
+                  Info
+                </MenuItem>
+              </>
+            )}
+          </Menu>
           </div>
         </div>
       </div>
+
+      {/* Centered modal for the section name, not an inline input next to
+          the FAB (Lino, 2026-07-10) — matches every other "name this thing"
+          prompt in the app (SceneEditModal etc.) instead of being the one
+          exception tucked into a corner. */}
+      <Modal open={creatingSection} onClose={() => setCreatingSection(false)} title="Neuer Abschnitt">
+        <Input
+          autoFocus
+          value={newSectionName}
+          onChange={(e) => setNewSectionName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && createSection()}
+          placeholder="Abschnittsname"
+        />
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="ghost" onClick={() => setCreatingSection(false)}>
+            Abbrechen
+          </Button>
+          <Button variant="primary" onClick={createSection}>
+            Speichern
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Abschnitt umbenennen — mirrors iOS' contextMenu "Umbenennen" entry
+          (see ShotListView.swift's sectionHeader), which the web app never
+          had at all (only create/delete existed here before). */}
+      <Modal open={editingSection !== null} onClose={() => setEditingSection(null)} title="Abschnitt umbenennen">
+        <Input
+          autoFocus
+          value={editSectionName}
+          onChange={(e) => setEditSectionName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveEditedSection()}
+          placeholder="Abschnittsname"
+        />
+        <div className="flex justify-end gap-2 mt-5">
+          <Button variant="ghost" onClick={() => setEditingSection(null)}>
+            Abbrechen
+          </Button>
+          <Button variant="primary" onClick={saveEditedSection}>
+            Speichern
+          </Button>
+        </div>
+      </Modal>
 
       <SceneEditModal
         open={editingScene !== null || creatingScene || creatingIntermediateStep}
@@ -752,6 +887,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         projectId={data.id}
         existing={editingScene}
         previousScene={creatingScene || creatingIntermediateStep ? lastScene : null}
+        nextSortOrder={(lastScene?.sort_order ?? -1) + 1}
         members={members}
         onCreated={handleSceneCreated}
         onUpdated={handleSceneUpdated}
@@ -770,6 +906,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         message={`"${deleteSection?.name}" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter "Ohne Abschnitt".`}
         onConfirm={confirmDeleteSection}
         onCancel={() => setDeleteSection(null)}
+      />
+      <ConfirmDialog
+        open={cascadeConfirm !== null}
+        title="Folgezeiten anpassen?"
+        message={
+          cascadeConfirm
+            ? `${cascadeConfirm.affected.length} nachfolgende Szene${cascadeConfirm.affected.length === 1 ? "" : "n"} am selben Tag ${cascadeConfirm.affected.length === 1 ? "hat" : "haben"} bereits eigene Zeiten. Sollen sie entsprechend der neuen Startzeit von "${cascadeConfirm.updated.name || "dieser Szene"}" verschoben werden?`
+            : ""
+        }
+        confirmLabel="Anpassen"
+        danger={false}
+        onConfirm={confirmCascadeTimes}
+        onCancel={() => setCascadeConfirm(null)}
       />
       <TeamPanel
         open={showTeam}
@@ -938,7 +1087,9 @@ function SectionBlock({
   onChange,
   onEditScene,
   onDeleteScene,
+  onDuplicateScene,
   onDeleteSection,
+  onEditSection,
   onSectionDragStart,
   onSectionDragOver,
   onSectionDrop,
@@ -961,7 +1112,9 @@ function SectionBlock({
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   onEditScene: (scene: Scene) => void;
   onDeleteScene: (scene: Scene) => void;
+  onDuplicateScene?: (scene: Scene) => void;
   onDeleteSection?: (section: Section) => void;
+  onEditSection?: (section: Section) => void;
   insertionIndicator?: { targetId: string; edge: "left" | "right" | "top" | "bottom" } | null;
   onSectionDragStart?: (id: string) => void;
   onSectionDragOver?: (targetId: string, e: React.DragEvent) => void;
@@ -997,6 +1150,7 @@ function SectionBlock({
               members={members}
               onEdit={() => onEditScene(scene)}
               onDelete={() => onDeleteScene(scene)}
+              onDuplicate={onDuplicateScene ? () => onDuplicateScene(scene) : undefined}
               onChange={onChange}
               onOpenTeam={onOpenTeam ?? (() => {})}
               insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
@@ -1016,6 +1170,7 @@ function SectionBlock({
         members={members}
         onEditScene={onEditScene}
         onDeleteScene={onDeleteScene}
+        onDuplicateScene={onDuplicateScene}
         onChange={onChange}
         sectionId={section?.id ?? null}
         insertionIndicator={insertionIndicator}
@@ -1060,12 +1215,21 @@ function SectionBlock({
       {/* Notion-style insertion line, same idea as scenes' left/right —
           sections stack vertically so top/bottom is the meaningful edge.
           Positioned on the OUTER wrapper (not just the header) so it reads
-          clearly as "the whole section goes here", not just its title row. */}
+          clearly as "the whole section goes here", not just its title row.
+          INSIDE the wrapper's own box (top-0/bottom-0, not a negative
+          offset like scenes' left/right line uses) — native HTML5 D&D's
+          drop/dragover fire off real elementFromPoint hit-testing (unlike
+          dnd-kit's own geometry-based collision detection for scenes), so a
+          line drawn outside the wrapper's box sat in the dead margin gap
+          between sections: releasing right on the line — the exact thing
+          it invites you to do — landed on no valid drop target at all and
+          silently did nothing (Lino, 2026-07-10: "die blaue linie wird
+          angezeigt aber der Abschnitt wird nicht verschoben"). */}
       {sectionInsertionEdge === "top" && (
-        <div className="absolute -top-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute top-0 left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
       )}
       {sectionInsertionEdge === "bottom" && (
-        <div className="absolute -bottom-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
       )}
       <div className="flex items-start gap-1">
         {section && onSectionDragStart && (
@@ -1108,15 +1272,25 @@ function SectionBlock({
                   }
                 >
                   {(close) => (
-                    <MenuItem
-                      danger
-                      onClick={() => {
-                        onDeleteSection(section);
-                        close();
-                      }}
-                    >
-                      Abschnitt löschen
-                    </MenuItem>
+                    <>
+                      <MenuItem
+                        onClick={() => {
+                          onEditSection?.(section);
+                          close();
+                        }}
+                      >
+                        Umbenennen
+                      </MenuItem>
+                      <MenuItem
+                        danger
+                        onClick={() => {
+                          onDeleteSection(section);
+                          close();
+                        }}
+                      >
+                        Abschnitt löschen
+                      </MenuItem>
+                    </>
                   )}
                 </Menu>
               )

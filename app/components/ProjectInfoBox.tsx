@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Member, Project, TodoList } from "@/lib/types";
@@ -52,11 +52,26 @@ export function ProjectInfoBox({
     }
   }
 
+  // LocationPicker fires onChange on every keystroke (no debounce, so the
+  // map/geocode results can update live) — that used to mean every keystroke
+  // also fired its own patchProject request with no ordering guarantee
+  // between them. A slower request for an EARLIER (longer) value could
+  // resolve after a newer, faster one for the just-edited (shorter) value,
+  // and its response was applied unconditionally, silently reverting the
+  // just-typed edit — most reliably reproduced by deleting the very first
+  // character right after the address was set (Lino: "kann den ersten
+  // Buchstaben nicht aus dem Adressfeld löschen"), since that's usually the
+  // fastest possible single keystroke after a slower prior request (e.g. the
+  // initial full address being set) is still in flight. Fix: a monotonic
+  // request id — only the response to the MOST RECENTLY fired request is
+  // ever applied, any stale one arriving late is discarded.
+  const locationRequestId = useRef(0);
   async function updateLocation(address: string, lat: number | null, lng: number | null) {
     onProjectChange((p) => ({ ...p, location_address: address || null, location_lat: lat, location_lng: lng }));
+    const requestId = ++locationRequestId.current;
     try {
       const updated = await api.patchProject(project.id, { location_address: address || null, location_lat: lat, location_lng: lng });
-      onProjectChange(() => updated);
+      if (requestId === locationRequestId.current) onProjectChange(() => updated);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
