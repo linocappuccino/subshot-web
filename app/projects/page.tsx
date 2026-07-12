@@ -1,10 +1,22 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragOverEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Project, ProjectFolder } from "@/lib/types";
@@ -16,6 +28,49 @@ import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { FolderEditModal } from "@/app/components/FolderEditModal";
 import { ProjectEditModal } from "@/app/components/ProjectEditModal";
+
+/** Prefixed-id-aware collision detection (2026-07-13), same layered
+ * pointerWithin -> rectIntersection -> closestCenter fallback chain as the
+ * scene grid's sceneCollisionDetection, adapted for two different tile
+ * "kinds" sharing one DndContext:
+ * - Dragging a PROJECT: a FOLDER tile is a valid target too (file the
+ *   project into it, existing behavior) alongside other project tiles
+ *   (reorder).
+ * - Dragging a FOLDER: only other folder tiles are valid targets (folders
+ *   never nest, and a folder can't be filed into a project).
+ * closestCenter as the last resort mirrors the same fix the scene grid
+ * needed: without it, a fast/imprecise drop between tiles of different
+ * heights can lose collision detection entirely (see project memory). */
+const tileCollisionDetection: CollisionDetection = (args) => {
+  const activeId = String(args.active.id);
+  const activeIsProject = activeId.startsWith("project:");
+  const isValidTarget = (c: { id: string | number }) => {
+    if (String(c.id) === activeId) return false;
+    return activeIsProject ? true : String(c.id).startsWith("folder:");
+  };
+
+  const pointerHits = pointerWithin(args).filter(isValidTarget);
+  if (pointerHits.length > 0) return pointerHits;
+  const rectHits = rectIntersection(args).filter(isValidTarget);
+  if (rectHits.length > 0) return rectHits;
+  return closestCenter(args).filter(isValidTarget);
+};
+
+/** Pure local array reorder for the immediate optimistic preview — mirrors
+ * computeSceneReorder's role on the project detail page, but much simpler
+ * (no section-scoping concept here, just one flat sibling list). Actual
+ * persistence goes through api.moveProject/moveFolder (server-authoritative,
+ * see the backend's move_project/move_folder), this only drives what's
+ * shown on screen between drop and that call resolving. */
+function localReorder<T extends { id: string }>(list: T[], activeId: string, overId: string, insertAfter: boolean): T[] | null {
+  const active = list.find((x) => x.id === activeId);
+  if (!active) return null;
+  const without = list.filter((x) => x.id !== activeId);
+  const overIdx = without.findIndex((x) => x.id === overId);
+  if (overIdx === -1) return null;
+  const insertAt = insertAfter ? overIdx + 1 : overIdx;
+  return [...without.slice(0, insertAt), active, ...without.slice(insertAt)];
+}
 
 export default function ProjectsPage() {
   // useSearchParams() requires a Suspense boundary in the App Router.
@@ -122,6 +177,111 @@ function ProjectsPageContent() {
 
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
+  // Real cursor position, tracked independently of dnd-kit — same reasoning
+  // and pattern as the scene grid's pointerPosRef (comparing the DRAGGED
+  // TILE's rect center against a target is a biased proxy for "which side/
+  // edge is my cursor actually near", most visible once you grab a tile
+  // somewhere other than its exact center).
+  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Notion-style insertion indicator (same idea as the scene grid's) — but
+  // 4-directional here (left/right/top/bottom), not just left/right: this
+  // grid wraps up to 5 columns depending on viewport width, so "the next
+  // sibling" can sit to the side OR in the row above/below depending on
+  // where in the grid you are. Direction is picked by whichever of the
+  // hovered tile's 4 edges the cursor is nearest to (see handleDragOver) —
+  // left/top mean "insert before this tile", right/bottom mean "insert
+  // after", matching Lino's spec ("Man muss objekte Links, rechts, oben und
+  // unten droppen können, dies muss der indikator auch anzeigen").
+  const [insertionIndicator, setInsertionIndicator] = useState<{ targetId: string; edge: "left" | "right" | "top" | "bottom" } | null>(null);
+  // Separate from insertionIndicator — set only while dragging a PROJECT
+  // over a FOLDER tile (filing, not reordering), which gets its own ring-
+  // highlight treatment instead of an insertion line (there's no
+  // "before/after" concept for "put this project inside that folder").
+  const [fileIntoFolderId, setFileIntoFolderId] = useState<string | null>(null);
+  // Which tile dnd-kit last told us the cursor is "over", and whether a
+  // drag is in progress — dnd-kit's onDragOver only fires when the
+  // collision result CHANGES (moving onto a DIFFERENT droppable), not
+  // continuously while the cursor stays over the SAME one (see the scene
+  // grid's identical fix + full writeup in project memory: this is exactly
+  // the bug that made the indicator get stuck on whichever edge you
+  // entered from, most visible for a 4-directional grid like this one
+  // where "did I cross into the top or the left of this tile" genuinely
+  // depends on continuous tracking, confirmed via a real Playwright sweep
+  // here too before adding this). The pointermove listener below (which
+  // DOES fire continuously) recomputes the edge live against a fresh
+  // getBoundingClientRect() of whichever tile dnd-kit most recently told
+  // us we're over, via data-sortable-tile-id (added to both tile wrappers
+  // specifically for this) — dnd-kit only has to get "which tile" right
+  // (works fine on enter/exit), the edge itself never depends on its cadence.
+  const activeDragRef = useRef(false);
+  const lastOverIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    function onPointerMove(e: PointerEvent) {
+      pointerPosRef.current = { x: e.clientX, y: e.clientY };
+      const overId = lastOverIdRef.current;
+      if (!activeDragRef.current || !overId) return;
+      const el = document.querySelector<HTMLElement>(`[data-sortable-tile-id="${CSS.escape(overId)}"]`);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / rect.width;
+      const relY = (e.clientY - rect.top) / rect.height;
+      const distances = { left: relX, right: 1 - relX, top: relY, bottom: 1 - relY } as const;
+      const edge = (Object.keys(distances) as Array<keyof typeof distances>).reduce((a, b) => (distances[a] <= distances[b] ? a : b));
+      setInsertionIndicator({ targetId: overId, edge });
+    }
+    window.addEventListener("pointermove", onPointerMove);
+    return () => window.removeEventListener("pointermove", onPointerMove);
+  }, []);
+
+  function handleDragStart() {
+    setInsertionIndicator(null);
+    setFileIntoFolderId(null);
+    activeDragRef.current = true;
+    lastOverIdRef.current = null;
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    const { active, over } = event;
+    if (!over) {
+      lastOverIdRef.current = null;
+      setInsertionIndicator(null);
+      setFileIntoFolderId(null);
+      return;
+    }
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) {
+      lastOverIdRef.current = null;
+      setInsertionIndicator(null);
+      setFileIntoFolderId(null);
+      return;
+    }
+
+    if (activeId.startsWith("project:") && overId.startsWith("folder:")) {
+      lastOverIdRef.current = null;
+      setInsertionIndicator(null);
+      setFileIntoFolderId(overId.slice("folder:".length));
+      return;
+    }
+    setFileIntoFolderId(null);
+    // Remembered for the pointermove listener above — see its comment for
+    // why the edge itself is recomputed there continuously instead of only
+    // here.
+    lastOverIdRef.current = overId;
+
+    const pointer = pointerPosRef.current;
+    if (!pointer) return;
+    // Nearest-edge-to-cursor (not just left/right like the scene grid) —
+    // this grid genuinely wraps multiple rows, so "insert above/below" is a
+    // real, distinct gesture here, not just a cosmetic variant of left/right.
+    const rect = over.rect;
+    const relX = (pointer.x - rect.left) / rect.width;
+    const relY = (pointer.y - rect.top) / rect.height;
+    const distances = { left: relX, right: 1 - relX, top: relY, bottom: 1 - relY } as const;
+    const edge = (Object.keys(distances) as Array<keyof typeof distances>).reduce((a, b) => (distances[a] <= distances[b] ? a : b));
+    setInsertionIndicator({ targetId: overId, edge });
+  }
+
   async function handleProjectDropOnFolder(projectId: string, targetFolderId: string) {
     const project = projects.find((p) => p.id === projectId);
     if (!project || project.folder_id === targetFolderId) return;
@@ -139,12 +299,62 @@ function ProjectsPageContent() {
     }
   }
 
+  // Persists via the last-DISPLAYED indicator, not a fresh read of dnd-kit's
+  // own final `over` — same reasoning as the scene grid's handleSceneDragEnd
+  // (onDragEnd fires on pointer-up, a physically separate event from the
+  // last onDragOver that drew the indicator; trusting a fresh over here
+  // could land the drop somewhere the indicator never actually showed).
   function handleDragEnd(event: DragEndEvent) {
+    const indicator = insertionIndicator;
+    const fileInto = fileIntoFolderId;
+    setInsertionIndicator(null);
+    setFileIntoFolderId(null);
+    activeDragRef.current = false;
+    lastOverIdRef.current = null;
     const { active, over } = event;
     if (!over) return;
-    const projectId = String(active.id).replace("project:", "");
-    const targetFolderId = String(over.id).replace("folder:", "");
-    handleProjectDropOnFolder(projectId, targetFolderId);
+    const activeId = String(active.id);
+
+    if (fileInto) {
+      handleProjectDropOnFolder(activeId.replace("project:", ""), fileInto);
+      return;
+    }
+
+    const overIdStr = indicator ? indicator.targetId : String(over.id);
+    if (overIdStr === activeId) return;
+    const insertAfter = indicator ? indicator.edge === "right" || indicator.edge === "bottom" : false;
+
+    if (activeId.startsWith("project:")) {
+      const rawActiveId = activeId.slice("project:".length);
+      const rawOverId = overIdStr.slice("project:".length);
+      const next = localReorder(projects, rawActiveId, rawOverId, insertAfter);
+      if (!next) return;
+      setProjects(next);
+      const idx = next.findIndex((p) => p.id === rawActiveId);
+      const beforeId = next[idx + 1]?.id ?? null;
+      api.moveProject(rawActiveId, beforeId).catch(() => toast.showError("Verschieben fehlgeschlagen."));
+    } else {
+      const rawActiveId = activeId.slice("folder:".length);
+      const rawOverId = overIdStr.slice("folder:".length);
+      const next = localReorder(folders, rawActiveId, rawOverId, insertAfter);
+      if (!next) return;
+      setFolders(next);
+      const idx = next.findIndex((f) => f.id === rawActiveId);
+      const beforeId = next[idx + 1]?.id ?? null;
+      api.moveFolder(rawActiveId, beforeId).catch(() => toast.showError("Verschieben fehlgeschlagen."));
+    }
+  }
+
+  // Escape / dropped outside any droppable — dnd-kit fires this SEPARATELY
+  // from onDragEnd (which may not fire at all on cancel), so the refs need
+  // resetting here too or a cancelled drag could leave activeDragRef stuck
+  // true, making the pointermove listener above keep recomputing an
+  // indicator for a drag that's no longer happening.
+  function handleDragCancel() {
+    setInsertionIndicator(null);
+    setFileIntoFolderId(null);
+    activeDragRef.current = false;
+    lastOverIdRef.current = null;
   }
 
   async function handleDelete() {
@@ -206,35 +416,48 @@ function ProjectsPageContent() {
         {loading ? (
           <GridSkeleton />
         ) : (
-          <DndContext sensors={dndSensors} onDragEnd={handleDragEnd}>
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={tileCollisionDetection}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
             {folders.length > 0 && (
               <>
                 <SectionLabel>Ordner</SectionLabel>
-                <TileGrid>
-                  {folders.map((folder) => (
-                    <DroppableFolderTile
-                      key={folder.id}
-                      folder={folder}
-                      onEdit={() => setEditingFolder(folder)}
-                      onDelete={() => setDeleteTarget({ kind: "folder", id: folder.id, name: folder.name })}
-                    />
-                  ))}
-                </TileGrid>
+                <SortableContext items={folders.map((f) => `folder:${f.id}`)}>
+                  <TileGrid>
+                    {folders.map((folder) => (
+                      <DroppableFolderTile
+                        key={folder.id}
+                        folder={folder}
+                        insertionEdge={insertionIndicator?.targetId === `folder:${folder.id}` ? insertionIndicator.edge : null}
+                        filingHighlighted={fileIntoFolderId === folder.id}
+                        onEdit={() => setEditingFolder(folder)}
+                        onDelete={() => setDeleteTarget({ kind: "folder", id: folder.id, name: folder.name })}
+                      />
+                    ))}
+                  </TileGrid>
+                </SortableContext>
               </>
             )}
 
             {(folders.length > 0 || projects.length > 0) && <SectionLabel>Projekte</SectionLabel>}
-            <TileGrid>
-              {projects.map((project) => (
-                <DraggableProjectTile
-                  key={project.id}
-                  project={project}
-                  draggable={folders.length > 0}
-                  onEdit={() => setEditingProject(project)}
-                  onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
-                />
-              ))}
-            </TileGrid>
+            <SortableContext items={projects.map((p) => `project:${p.id}`)}>
+              <TileGrid>
+                {projects.map((project) => (
+                  <DraggableProjectTile
+                    key={project.id}
+                    project={project}
+                    insertionEdge={insertionIndicator?.targetId === `project:${project.id}` ? insertionIndicator.edge : null}
+                    onEdit={() => setEditingProject(project)}
+                    onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                  />
+                ))}
+              </TileGrid>
+            </SortableContext>
 
             {projects.length === 0 && folders.length === 0 && (
               <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -556,61 +779,93 @@ function FolderTile({
   );
 }
 
-/** Draggable wrapper — only active when there's at least one folder to drop
- * onto, so a project with no folders around doesn't pay for pointer-capture
- * overhead (and a plain tap stays a plain tap, no activation-distance dance)
- * for a gesture that couldn't do anything anyway. */
+/** 4-directional Notion-style insertion line, same visual language as the
+ * scene grid's SortableSceneCard indicator — see tileCollisionDetection's
+ * doc comment above for why this grid needs all 4 directions, not just
+ * left/right (it wraps multiple rows, unlike the scene grid). */
+function TileInsertionIndicator({ edge }: { edge?: "left" | "right" | "top" | "bottom" | null }) {
+  if (!edge) return null;
+  const base = "absolute rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none z-10";
+  if (edge === "left") return <div className={`${base} -left-[9px] top-0 bottom-0 w-[3px]`} />;
+  if (edge === "right") return <div className={`${base} -right-[9px] top-0 bottom-0 w-[3px]`} />;
+  if (edge === "top") return <div className={`${base} -top-[9px] left-0 right-0 h-[3px]`} />;
+  return <div className={`${base} -bottom-[9px] left-0 right-0 h-[3px]`} />;
+}
+
+/** Always draggable now (2026-07-13) — was gated behind "only if at least
+ * one folder exists" back when dragging a project could only ever mean
+ * "file it into a folder"; now it also means "reorder among sibling
+ * projects", which is always meaningful regardless of whether any folders
+ * exist. transform/transition deliberately NOT applied (useSortable would
+ * otherwise reflow every sibling toward its predicted post-drop position)
+ * — same insertion-line-only design as the scene grid, isDragging/opacity
+ * is all this tile needs. */
 function DraggableProjectTile({
   project,
-  draggable,
+  insertionEdge,
   onEdit,
   onDelete,
 }: {
   project: Project;
-  draggable: boolean;
+  insertionEdge?: "left" | "right" | "top" | "bottom" | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: `project:${project.id}`,
-    disabled: !draggable,
-  });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: `project:${project.id}` });
   return (
     <div
       ref={setNodeRef}
-      {...(draggable ? attributes : {})}
-      {...(draggable ? listeners : {})}
+      data-sortable-tile-id={`project:${project.id}`}
+      {...attributes}
+      {...listeners}
+      className="relative"
       style={{
-        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         opacity: isDragging ? 0.4 : 1,
         zIndex: isDragging ? 20 : "auto",
-        touchAction: draggable ? "none" : undefined,
-        cursor: draggable ? "grab" : undefined,
+        touchAction: "none",
+        cursor: "grab",
       }}
     >
+      <TileInsertionIndicator edge={insertionEdge} />
       <ProjectTile project={project} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }
 
-/** Droppable wrapper - highlights while a project tile is being dragged
- * over it, matching the iOS app's draggable=/dropDestination visual (drop
- * a project onto a folder to file it there). */
+/** Sortable AND a filing target (2026-07-13) — folders reorder among
+ * themselves (insertion line, same as projects) but also stay droppable
+ * FOR a dragged project (ring highlight, driven by fileIntoFolderId rather
+ * than dnd-kit's own isOver — isOver would also fire while reordering two
+ * folders past each other, which shouldn't show the "file into me" ring). */
 function DroppableFolderTile({
   folder,
+  insertionEdge,
+  filingHighlighted,
   onEdit,
   onDelete,
 }: {
   folder: ProjectFolder;
+  insertionEdge?: "left" | "right" | "top" | "bottom" | null;
+  filingHighlighted: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `folder:${folder.id}` });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: `folder:${folder.id}` });
   return (
     <div
       ref={setNodeRef}
-      className={isOver ? "rounded-2xl ring-2 ring-blue-400 ring-offset-2 ring-offset-[#161616] transition-all" : "rounded-2xl ring-2 ring-transparent transition-all"}
+      data-sortable-tile-id={`folder:${folder.id}`}
+      {...attributes}
+      {...listeners}
+      className={`relative rounded-2xl ring-2 transition-all ${filingHighlighted ? "ring-blue-400 ring-offset-2 ring-offset-[#161616]" : "ring-transparent"}`}
+      style={{
+        opacity: isDragging ? 0.4 : 1,
+        zIndex: isDragging ? 20 : "auto",
+        touchAction: "none",
+        cursor: "grab",
+      }}
     >
+      <TileInsertionIndicator edge={insertionEdge} />
       <FolderTile folder={folder} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );

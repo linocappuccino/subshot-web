@@ -70,6 +70,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       });
     },
     deleteFolder: (id: string) => request<void>(`folders/${id}`, { method: "DELETE" }),
+    moveFolder: (id: string, beforeFolderId: string | null) =>
+      request<ProjectFolder>(`folders/${id}/move`, { method: "POST", body: JSON.stringify({ before_folder_id: beforeFolderId }) }),
     uploadFolderImage: (id: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
@@ -111,6 +113,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       });
     },
     deleteProject: (id: string) => request<void>(`projects/${id}`, { method: "DELETE" }),
+    moveProject: (id: string, beforeProjectId: string | null) =>
+      request<Project>(`projects/${id}/move`, { method: "POST", body: JSON.stringify({ before_project_id: beforeProjectId }) }),
     projectPdfUrl: async (id: string) => {
       // Downloaded (not just linked) because the endpoint needs the same
       // Bearer auth as everything else — a plain <a href> can't attach one.
