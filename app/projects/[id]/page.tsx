@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
   DragOverlay,
+  closestCenter,
   pointerWithin,
   rectIntersection,
   PointerSensor,
@@ -50,20 +51,52 @@ import { Menu, MenuItem } from "@/app/components/ui/Menu";
 // comment at the DndContext below — that's still the primary check, this
 // only fills the gaps) while making near-misses still register.
 const sceneCollisionDetection: CollisionDetection = (args) => {
-  // Filter out the dragged item's own id from every candidate list — found
-  // via a real repro with the (full-width) Projektinfo tile: its
-  // translated rect stays just as wide as its original col-span-full
-  // layout, and rectIntersection (unlike pointerWithin) compares that
-  // WHOLE rect against every droppable, not just the cursor position. A
-  // rect that size self-overlaps its own still-registered droppable
-  // constantly, which without this filter resolved as "over" = itself
-  // more often than any real target — the drag looked like it accepted no
-  // valid drop at all. pointerWithin doesn't have this problem (it only
-  // cares where the cursor actually is), but keep the filter on both for
-  // safety.
-  const pointerHits = pointerWithin(args).filter((c) => c.id !== args.active.id);
-  if (pointerHits.length > 0) return pointerHits;
-  return rectIntersection(args).filter((c) => c.id !== args.active.id);
+  // Filter out the dragged item's own id AND section-drop-zone ids from
+  // "real" candidate lists. Two separate real bugs found here:
+  // 1) (full-width Projektinfo tile) its translated rect stays just as
+  //    wide as its original col-span-full layout, and rectIntersection
+  //    compares that WHOLE rect against every droppable, not just the
+  //    cursor position — self-overlapping its own still-registered
+  //    droppable constantly, which without the active-id filter resolved
+  //    as "over" = itself more often than any real target.
+  // 2) (2026-07-13) a section's empty-space drop zone ("section-drop:...")
+  //    has a rect that can span a wide area of the section — once a
+  //    dragged card's cursor exits a SHORT neighboring card's actual
+  //    bounding box (very possible: two same-row cards can have very
+  //    different heights, e.g. one with an image+long description, one
+  //    without either — dragging the tall one toward the short one, the
+  //    cursor is very likely below the short card's bottom edge at some
+  //    point), rectIntersection kept matching the section-drop zone
+  //    instead, which used to be returned immediately — the REAL
+  //    neighboring card was never found again for the rest of the drag.
+  //    Reported: "man muss immer Kacheln von aussen nach innen schieben
+  //    aber kann sie nicht von innen nach aussen schieben" — confirmed via
+  //    a real repro with mismatched card heights (indicator vanished
+  //    entirely once past the short card's bottom edge, drop silently did
+  //    nothing). Real scene/card hits now always win over a section-drop
+  //    hit, from every detection strategy in turn, with closestCenter
+  //    (nearest droppable CENTER, regardless of rect overlap at all) added
+  //    as a new last resort before ever falling back to section-drop.
+  const activeId = args.active.id;
+  const isRealCard = (c: { id: string | number }) => c.id !== activeId && !String(c.id).startsWith("section-drop:");
+
+  const pointerHits = pointerWithin(args);
+  const pointerCardHits = pointerHits.filter(isRealCard);
+  if (pointerCardHits.length > 0) return pointerCardHits;
+
+  const rectHits = rectIntersection(args);
+  const rectCardHits = rectHits.filter(isRealCard);
+  if (rectCardHits.length > 0) return rectCardHits;
+
+  const closestCardHits = closestCenter(args).filter(isRealCard);
+  if (closestCardHits.length > 0) return closestCardHits;
+
+  // Nothing real anywhere nearby — genuinely an empty/near-empty section,
+  // or past the end of the list. Fall back to whatever section-drop zone
+  // pointerWithin/rectIntersection found, same as before this fix.
+  const pointerNonActive = pointerHits.filter((c) => c.id !== activeId);
+  if (pointerNonActive.length > 0) return pointerNonActive;
+  return rectHits.filter((c) => c.id !== activeId);
 };
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
