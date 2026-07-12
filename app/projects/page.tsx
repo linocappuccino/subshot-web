@@ -341,7 +341,8 @@ function TileShell({
       whileHover={{ y: -3 }}
       className="group relative"
     >
-      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block relative">
+      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block">
+        <div className="relative">
         <motion.div
           whileHover={hasImage ? { rotateX: -5, rotateY: 7, scale: 1.035 } : undefined}
           transition={{ type: "spring", stiffness: 260, damping: 18 }}
@@ -402,11 +403,15 @@ function TileShell({
             composite; it doesn't reach into siblings. The earlier
             "mega verschwommen" bug (see this file's git history) came from
             putting backdrop-blur INSIDE that 3D element — this sits outside
-            it entirely, on the (now `relative`) Link wrapper, so it should
-            render as a normal flat blur layer regardless of the tile's 3D
-            hover tilt. Absent on non-image tiles — nothing behind it there
-            but a flat color fill, blurring that would do nothing useful. */}
+            it entirely. Scoped to its OWN wrapper div (not the outer Link,
+            which also wraps the title/subtitle text below the image) —
+            `inset-0` on the Link previously stretched the blur down over
+            that text too ("die Titelbeschreibung und 'wird gelöscht in'
+            text sind jetzt auch blurry", 2026-07-12 regression). Absent on
+            non-image tiles — nothing behind it there but a flat color fill,
+            blurring that would do nothing useful. */}
         {hasImage && <div className="absolute inset-0 rounded-2xl pointer-events-none backdrop-blur-[3px] backdrop-saturate-150" />}
+        </div>
         <div className="mt-2 text-sm font-semibold truncate">{label}</div>
         {subtitle && <div className="text-xs text-white/40">{subtitle}</div>}
       </Link>
