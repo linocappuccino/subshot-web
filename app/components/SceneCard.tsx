@@ -128,6 +128,10 @@ export function SceneCard({
   // header (2026-07-11, Lino) — defaults open so nothing changes for
   // scenes that were already showing their dialogue lines.
   const [dialogOpen, setDialogOpen] = useState(true);
+  // Same collapsible idea as the Dialog list, for the description block.
+  const [descriptionOpen, setDescriptionOpen] = useState(true);
+  // ...and for the shot ("Einstellung") list.
+  const [shotsOpen, setShotsOpen] = useState(true);
   // Snapshot of `shots` taken at drag start — restored verbatim on
   // cancel/invalid-drop, same pattern as the scene grid's drag (see
   // handleSceneDragCancel in page.tsx).
@@ -291,8 +295,16 @@ export function SceneCard({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: "spring", stiffness: 380, damping: 32 }}
-      className={`rounded-2xl p-4 border transition-colors ${
-        scene.completed ? "bg-emerald-500/10 border-emerald-500/20" : "bg-white/[0.045] border-white/8 hover:border-white/15"
+      // backdrop-blur is safe here (unlike TileShell's photo tiles) — this
+      // card has no 3D hover transform (rotateX/rotateY + preserve-3d),
+      // which is what caused the earlier "mega verschwommen" compositing
+      // bug on the folder/project tiles (see project memory). A real
+      // frosted-glass material now, not just a gradient standing in for one
+      // (Lino: "der apple glas effekt soll auf ALLEN Kacheln sein").
+      className={`rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
+        scene.completed
+          ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
+          : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
       }`}
     >
       <div className="flex items-start gap-2 mb-2">
@@ -397,10 +409,22 @@ export function SceneCard({
 
       {scene.description && (
         <div className="mb-1.5">
-          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 mb-1">
+          <button
+            onClick={() => setDescriptionOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 hover:text-white/70 transition-colors w-full mb-1"
+          >
             <TextIcon /> Beschreibung
+            <span className="ml-auto transition-transform duration-200 shrink-0" style={{ transform: descriptionOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </span>
+          </button>
+          <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${descriptionOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+            <div className="overflow-hidden min-h-0">
+              <p className="text-sm text-white/80 whitespace-pre-wrap">{scene.description}</p>
+            </div>
           </div>
-          <p className="text-sm text-white/80 whitespace-pre-wrap">{scene.description}</p>
         </div>
       )}
       {scene.dialogue && <p className="text-sm italic text-white/50 mb-1.5">„{scene.dialogue}“</p>}
@@ -440,37 +464,55 @@ export function SceneCard({
       )}
 
       {!scene.is_intermediate_step && shots.length > 0 && (
-        <DndContext
-          sensors={shotSensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleShotDragStart}
-          onDragOver={handleShotDragOver}
-          onDragEnd={handleShotDragEnd}
-          onDragCancel={handleShotDragCancel}
-        >
-          <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-            <div className="space-y-1.5 mb-2">
-              {shots.map((shot) => (
-                <SortableShotRow
-                  key={shot.id}
-                  shot={shot}
-                  onToggleDone={() => toggleShotDone(shot)}
-                  onEdit={() => setEditingShot(shot)}
-                />
-              ))}
+        <div className="mb-2">
+          <button
+            onClick={() => setShotsOpen((v) => !v)}
+            className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 hover:text-white/70 transition-colors w-full mb-1.5"
+          >
+            Einstellungen
+            <span className="ml-auto text-white/30 normal-case tracking-normal font-medium">{shots.length}</span>
+            <span className="transition-transform duration-200 shrink-0" style={{ transform: shotsOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </span>
+          </button>
+          <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${shotsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
+            <div className="overflow-hidden min-h-0">
+              <DndContext
+                sensors={shotSensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleShotDragStart}
+                onDragOver={handleShotDragOver}
+                onDragEnd={handleShotDragEnd}
+                onDragCancel={handleShotDragCancel}
+              >
+                <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                  <div className="space-y-1.5">
+                    {shots.map((shot) => (
+                      <SortableShotRow
+                        key={shot.id}
+                        shot={shot}
+                        onToggleDone={() => toggleShotDone(shot)}
+                        onEdit={() => setEditingShot(shot)}
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+                <DragOverlay>
+                  {draggingShotId && (() => {
+                    const s = shots.find((x) => x.id === draggingShotId);
+                    return s ? (
+                      <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
+                        <ShotRowContent shot={s} onToggleDone={() => {}} onEdit={() => {}} />
+                      </div>
+                    ) : null;
+                  })()}
+                </DragOverlay>
+              </DndContext>
             </div>
-          </SortableContext>
-          <DragOverlay>
-            {draggingShotId && (() => {
-              const s = shots.find((x) => x.id === draggingShotId);
-              return s ? (
-                <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
-                  <ShotRowContent shot={s} onToggleDone={() => {}} onEdit={() => {}} />
-                </div>
-              ) : null;
-            })()}
-          </DragOverlay>
-        </DndContext>
+          </div>
+        </div>
       )}
 
       {!scene.is_intermediate_step && (

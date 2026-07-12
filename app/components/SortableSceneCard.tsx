@@ -31,11 +31,12 @@ export function SortableSceneCard({
   onDuplicate?: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   onOpenTeam: () => void;
-  /** Notion-style insertion indicator — a thin blue line on this card's
-   * left/right edge showing exactly where the dragged card would land if
-   * dropped right now. See page.tsx's insertionIndicator state. Grid drags
-   * only ever produce "left"/"right" — "top"/"bottom" are table-view-only,
-   * included here just so the shared state type lines up. */
+  /** Notion-style insertion indicator — a thin blue line showing exactly
+   * where the dragged card would land if dropped right now. See page.tsx's
+   * insertionIndicator state. Grid drags normally produce "left"/"right"
+   * (this card sits beside a same-row neighbor); "top"/"bottom" happen in
+   * table view, AND in grid view whenever this card is the full-width
+   * Projektinfo tile (col-span-full — no left/right neighbor to straddle). */
   insertionEdge?: "left" | "right" | "top" | "bottom" | null;
 }) {
   // transform/transition deliberately NOT applied to the style below —
@@ -63,6 +64,16 @@ export function SortableSceneCard({
       )}
       {insertionEdge === "right" && (
         <div className="absolute -right-[9px] top-0 bottom-0 w-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+      )}
+      {/* top/bottom only ever fires for this card when it's the full-width
+          Projektinfo tile (see handleSceneDragOver in page.tsx) — the bar
+          spans the tile's whole width to match, not a fixed 3px edge marker
+          like left/right (which sit on a normal-width neighbor). */}
+      {insertionEdge === "top" && (
+        <div className="absolute -top-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+      )}
+      {insertionEdge === "bottom" && (
+        <div className="absolute -bottom-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
       )}
       {scene.is_project_info ? (
         <ProjectInfoTile

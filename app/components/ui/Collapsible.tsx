@@ -13,6 +13,7 @@ export function Collapsible({
   icon,
   actions,
   defaultOpen = true,
+  titleClassName,
   children,
 }: {
   title: React.ReactNode;
@@ -22,6 +23,11 @@ export function Collapsible({
    * toggle button so they don't also collapse/expand on click. */
   actions?: React.ReactNode;
   defaultOpen?: boolean;
+  /** Overrides the title's default text-xs — e.g. project SectionBlock
+   * headers want to read slightly larger than this component's other users
+   * (ProjectInfoBox, DateTimePicker), so it's opt-in per caller rather than
+   * a global bump. */
+  titleClassName?: string;
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -29,7 +35,7 @@ export function Collapsible({
   return (
     <div>
       <div className="flex items-center gap-2 group">
-        <button onClick={() => setOpen((v) => !v)} className="flex-1 min-w-0 flex items-center gap-2 py-2.5 text-left">
+        <button onClick={() => setOpen((v) => !v)} className="flex-1 min-w-0 flex items-center gap-2 py-2 text-left">
           <span
             className="text-white/40 group-hover:text-white/70 transition-transform duration-200 shrink-0"
             style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
@@ -39,7 +45,7 @@ export function Collapsible({
             </svg>
           </span>
           {icon}
-          <span className="text-xs font-semibold text-white/50 group-hover:text-white/80 uppercase tracking-wide transition-colors">{title}</span>
+          <span className={cn("font-semibold text-white/50 group-hover:text-white/80 uppercase tracking-wide transition-colors", titleClassName ?? "text-xs")}>{title}</span>
           {subtitle && <span className="text-xs text-white/30">{subtitle}</span>}
         </button>
         {actions}
@@ -48,7 +54,7 @@ export function Collapsible({
         className={cn("grid transition-[grid-template-rows] duration-300 ease-out", open ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}
       >
         <div className="overflow-hidden min-h-0">
-          <div className="pt-3 pb-2">{children}</div>
+          <div className="pt-2 pb-1.5">{children}</div>
         </div>
       </div>
     </div>

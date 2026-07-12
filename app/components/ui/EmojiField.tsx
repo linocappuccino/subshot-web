@@ -2,19 +2,112 @@
 
 import { Menu } from "./Menu";
 
-/** Curated set, film/project-relevant first — there's no cross-browser API
- * to open the OS emoji keyboard programmatically, and the earlier version
- * of this component relied on that (focus a hidden input, hope the person
- * knows their OS emoji shortcut) — from the outside that just looked like
- * "the plus button does nothing" since focusing an empty input has no
- * visible effect on desktop. An actual in-app grid is the only reliable
- * fix. */
-const EMOJI_OPTIONS = [
-  "🎬", "🎥", "📹", "🎞️", "📽️", "🎙️", "🎧", "🎵",
-  "📝", "📋", "📌", "📍", "🗓️", "⏰", "⭐️", "🔥",
-  "💡", "🎯", "✅", "🚀", "🏆", "🎉", "✨", "🎭",
-  "🖼️", "📸", "🌆", "🏙️", "🚗", "✈️", "🏠", "🏢",
-  "🌲", "🌊", "☀️", "🌙", "❤️", "😀", "😎", "🔥",
+/** There's no cross-browser API to open the OS emoji keyboard
+ * programmatically, and the earlier version of this component relied on
+ * that (focus a hidden input, hope the person knows their OS emoji
+ * shortcut) — from the outside that just looked like "the plus button does
+ * nothing" since focusing an empty input has no visible effect on desktop.
+ * An actual in-app grid is the only reliable fix.
+ *
+ * Was a ~40-emoji curated set — Lino asked for the full Apple emoji catalog,
+ * scrollable, same as the iOS app already got (2026-07-11, see
+ * EmojiPickerField.swift's identical categories). Mirrored 1:1 here instead
+ * of re-curating a second list, so both clients offer exactly the same set. */
+const EMOJI_CATEGORIES: { name: string; emojis: string[] }[] = [
+  { name: "Film & Projekt", emojis: [
+    "🎬", "🎥", "📹", "🎞️", "📽️", "🎙️", "🎧", "🎵", "🎶", "📝", "📋",
+    "📌", "📍", "🗓️", "📅", "⏰", "⏱️", "⭐️", "🔥", "💡", "🎯", "✅",
+    "🚀", "🏆", "🎉", "✨", "🎭", "🖼️", "📸", "📷", "🎨", "🎤", "📺",
+    "💻", "🖥️", "🎮", "📀", "💾", "🔊", "🔦", "🎇", "🎆",
+  ] },
+  { name: "Smileys", emojis: [
+    "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂",
+    "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛",
+    "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏",
+    "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩",
+    "🥺", "😢", "😭", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶",
+    "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥", "😶",
+    "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴",
+    "🤤", "😪", "😵", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕",
+    "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "👽",
+    "🤖", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
+  ] },
+  { name: "Menschen", emojis: [
+    "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🤟",
+    "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊",
+    "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🙏", "✍️", "💅", "🤳",
+    "💪", "🦾", "👀", "👁️", "👤", "👥", "🧑", "👶", "🧒", "👦", "👧",
+    "🧑‍🦱", "🧑‍🦰", "🧑‍🦳", "🧑‍🦲", "👨", "👩", "🧓", "👴", "👵", "🙍", "🙎",
+    "🙅", "🙆", "💁", "🙋", "🧏", "🙇", "🤦", "🤷", "🧑‍💼", "🧑‍🎓", "🧑‍🏫",
+    "🧑‍⚕️", "🧑‍🌾", "🧑‍🍳", "🧑‍🎤", "🧑‍🎨", "🧑‍✈️", "🧑‍🚀", "🧑‍🚒", "👮", "🕵️", "💂",
+    "👷", "🤴", "👸", "👳", "👲", "🧕", "🤵", "👰", "🤰", "🤱",
+  ] },
+  { name: "Natur", emojis: [
+    "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁",
+    "🐮", "🐷", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦",
+    "🐤", "🦆", "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛",
+    "🦋", "🐌", "🐞", "🐜", "🦟", "🦗", "🕷️", "🕸️", "🐢", "🐍", "🦎",
+    "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀", "🐡", "🐠", "🐟", "🐬",
+    "🐳", "🐋", "🦈", "🐊", "🐅", "🐆", "🦓", "🦍", "🦧", "🐘", "🦛",
+    "🦏", "🐪", "🐫", "🦒", "🦘", "🐃", "🐂", "🐄", "🐎", "🐖", "🐑",
+    "🐐", "🦙", "🐕", "🐩", "🐈", "🐓", "🦃", "🦤", "🦚", "🦜", "🦢",
+    "🌵", "🎄", "🌲", "🌳", "🌴", "🌱", "🌿", "☘️", "🍀", "🎍", "🎋",
+    "🍃", "🍂", "🍁", "🍄", "🐚", "🌾", "💐", "🌷", "🌹", "🥀", "🌺",
+    "🌸", "🌼", "🌻", "🌞", "🌝", "🌛", "🌜", "🌚", "🌕", "🌖", "☀️",
+    "🌤️", "⛅️", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "🌨️", "❄️", "☃️",
+    "⛄️", "🌬️", "💨", "🌪️", "🌫️", "🌈", "☂️", "☔️", "⚡️", "🔥", "💧",
+    "🌊",
+  ] },
+  { name: "Essen", emojis: [
+    "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈",
+    "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬",
+    "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🥐",
+    "🥯", "🍞", "🥖", "🥨", "🧀", "🥚", "🍳", "🧈", "🥞", "🧇", "🥓",
+    "🥩", "🍗", "🍖", "🌭", "🍔", "🍟", "🍕", "🫓", "🥪", "🥙", "🧆",
+    "🌮", "🌯", "🥗", "🥘", "🫕", "🍝", "🍜", "🍲", "🍛", "🍣", "🍱",
+    "🥟", "🦪", "🍤", "🍙", "🍚", "🍘", "🍥", "🥠", "🥮", "🍢", "🍡",
+    "🍧", "🍨", "🍦", "🥧", "🧁", "🍰", "🎂", "🍮", "🍭", "🍬", "🍫",
+    "🍿", "🍩", "🍪", "🌰", "🥜", "🍯", "🥛", "🍼", "☕️", "🍵", "🧃",
+    "🥤", "🍶", "🍺", "🍻", "🥂", "🍷", "🥃", "🍸", "🍹", "🧉", "🍾",
+  ] },
+  { name: "Aktivität", emojis: [
+    "⚽️", "🏀", "🏈", "⚾️", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🪀",
+    "🏓", "🏸", "🏒", "🏑", "🥍", "🏏", "🥅", "⛳️", "🪁", "🏹", "🎣",
+    "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷", "⛸️", "🥌", "🎿", "⛷️",
+    "🏂", "🪂", "🏋️", "🤼", "🤸", "⛹️", "🤺", "🤾", "🏌️", "🏇", "🧘",
+    "🏄", "🏊", "🤽", "🚣", "🧗", "🚵", "🚴", "🏆", "🥇", "🥈", "🥉",
+    "🏅", "🎖️", "🏵️", "🎗️", "🎫", "🎟️", "🎪", "🤹", "🎨", "🎭", "🩰",
+  ] },
+  { name: "Reisen", emojis: [
+    "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐", "🛻",
+    "🚚", "🚛", "🚜", "🛵", "🏍️", "🛺", "🚲", "🛴", "🚨", "🚔", "🚍",
+    "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🚋", "🚞", "🚝", "🚄", "🚅",
+    "🚈", "🚂", "🚆", "🚇", "🚊", "🚉", "✈️", "🛫", "🛬", "🛩️", "💺",
+    "🛰️", "🚀", "🛸", "🚁", "🛶", "⛵️", "🚤", "🛥️", "🛳️", "⛴️", "🚢",
+    "⚓️", "⛽️", "🚧", "🚦", "🚥", "🗺️", "🗿", "🗽", "🗼", "🏰", "🏯",
+    "🏟️", "🎡", "🎢", "🎠", "⛲️", "⛱️", "🏖️", "🏝️", "🏜️", "🌋", "⛰️",
+    "🏔️", "🗻", "🏕️", "⛺️", "🏠", "🏡", "🏘️", "🏚️", "🏗️", "🏭", "🏢",
+    "🏬", "🏣", "🏤", "🏥", "🏦", "🏨", "🏪", "🏫", "🏩", "💒", "🏛️",
+    "⛪️", "🕌", "🕍", "🛕", "🕋",
+  ] },
+  { name: "Symbole", emojis: [
+    "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️",
+    "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💯", "💢", "💥", "💫",
+    "💦", "💨", "🕳️", "💣", "💬", "👁️‍🗨️", "🗨️", "🗯️", "💭", "💤", "✅",
+    "❌", "❓", "❗️", "⚠️", "🚫", "🔞", "📵", "🚭", "♻️", "✳️", "✴️",
+    "❇️", "©️", "®️", "™️", "🔟", "🔢", "🔤", "🅰️", "🆎", "🆑", "🆒",
+    "🆓", "🆔", "🆕", "🆖", "🆗", "🆘", "🆙", "🆚", "🈁", "🈂️", "🈷️",
+    "㊙️", "㊗️", "🈵", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫️",
+    "⚪️", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "🟫", "⬛️", "⬜️", "◼️",
+    "◻️", "◾️", "◽️", "▪️", "▫️", "🔶", "🔷", "🔸", "🔹", "🔺", "🔻",
+    "💠", "🔘", "🔳", "🔲",
+  ] },
+  { name: "Flaggen", emojis: [
+    "🏁", "🚩", "🎌", "🏴", "🏳️", "🏳️‍🌈", "🇨🇭", "🇩🇪", "🇦🇹", "🇺🇸", "🇬🇧",
+    "🇫🇷", "🇮🇹", "🇪🇸", "🇵🇹", "🇳🇱", "🇧🇪", "🇸🇪", "🇳🇴", "🇩🇰", "🇫🇮", "🇮🇪",
+    "🇵🇱", "🇬🇷", "🇹🇷", "🇷🇺", "🇺🇦", "🇨🇦", "🇲🇽", "🇧🇷", "🇦🇷", "🇯🇵", "🇰🇷",
+    "🇨🇳", "🇮🇳", "🇦🇺", "🇿🇦", "🇪🇬",
+  ] },
 ];
 
 /** Same one-emoji convention as the iOS FolderEditSheet/ProjectEditSheet.
@@ -43,19 +136,29 @@ export function EmojiField({ value, onChange }: { value: string; onChange: (emoj
         }
       >
         {(close) => (
-          <div className="grid grid-cols-8 gap-0.5 p-2 w-[280px]">
-            {EMOJI_OPTIONS.map((emoji, i) => (
-              <button
-                key={`${emoji}-${i}`}
-                type="button"
-                onClick={() => {
-                  onChange(emoji);
-                  close();
-                }}
-                className="w-8 h-8 rounded-lg text-lg flex items-center justify-center hover:bg-white/10 transition-colors"
-              >
-                {emoji}
-              </button>
+          // Vertically scrolling, grouped by category (Lino: "einfach wenn
+          // sich die Emoji auswahl öffnet nach unten scrollen können") —
+          // capped height so the popover itself never grows off-screen.
+          <div className="w-[280px] max-h-[320px] overflow-y-auto p-2">
+            {EMOJI_CATEGORIES.map((category) => (
+              <div key={category.name} className="mb-2 last:mb-0">
+                <div className="px-1 pb-1 text-[10px] font-semibold uppercase tracking-wide text-white/30">{category.name}</div>
+                <div className="grid grid-cols-8 gap-0.5">
+                  {category.emojis.map((emoji, i) => (
+                    <button
+                      key={`${emoji}-${i}`}
+                      type="button"
+                      onClick={() => {
+                        onChange(emoji);
+                        close();
+                      }}
+                      className="w-8 h-8 rounded-lg text-lg flex items-center justify-center hover:bg-white/10 transition-colors"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         )}

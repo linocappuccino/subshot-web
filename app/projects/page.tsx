@@ -341,7 +341,7 @@ function TileShell({
       whileHover={{ y: -3 }}
       className="group relative"
     >
-      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block">
+      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block relative">
         <motion.div
           whileHover={hasImage ? { rotateX: -5, rotateY: 7, scale: 1.035 } : undefined}
           transition={{ type: "spring", stiffness: 260, damping: 18 }}
@@ -395,6 +395,18 @@ function TileShell({
           )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
         </motion.div>
+        {/* Real frosted-glass material (Lino: "der apple glas effekt soll
+            auf ALLEN Kacheln sein") — as a SIBLING of the 3D-transformed
+            motion.div above, not nested inside it. transform-style:
+            preserve-3d only affects how an element's own DIRECT children
+            composite; it doesn't reach into siblings. The earlier
+            "mega verschwommen" bug (see this file's git history) came from
+            putting backdrop-blur INSIDE that 3D element — this sits outside
+            it entirely, on the (now `relative`) Link wrapper, so it should
+            render as a normal flat blur layer regardless of the tile's 3D
+            hover tilt. Absent on non-image tiles — nothing behind it there
+            but a flat color fill, blurring that would do nothing useful. */}
+        {hasImage && <div className="absolute inset-0 rounded-2xl pointer-events-none backdrop-blur-[3px] backdrop-saturate-150" />}
         <div className="mt-2 text-sm font-semibold truncate">{label}</div>
         {subtitle && <div className="text-xs text-white/40">{subtitle}</div>}
       </Link>

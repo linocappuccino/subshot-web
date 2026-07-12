@@ -11,8 +11,6 @@ import { useToast } from "./ui/Toast";
 import { ApiError } from "@/lib/api";
 import { PRIORITY_COLORS, PRIORITY_LABELS, type Priority, type Shot } from "@/lib/types";
 
-const ANGLES = ["Weit", "Halbnah", "Nah", "Detail", "Andere"];
-
 export function ShotEditModal({
   open,
   onClose,
@@ -28,8 +26,6 @@ export function ShotEditModal({
   const toast = useToast();
 
   const [description, setDescription] = useState(shot?.description ?? "");
-  const [cameraAngle, setCameraAngle] = useState(shot?.camera_angle ?? "");
-  const [durationSeconds, setDurationSeconds] = useState(shot?.duration_seconds?.toString() ?? "");
   const [priority, setPriority] = useState<Priority | null>(shot?.priority ?? null);
   const [goodTake, setGoodTake] = useState(shot?.good_take_filename ?? "");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -40,8 +36,6 @@ export function ShotEditModal({
   if (open && shot && openedFor !== shot.id) {
     setOpenedFor(shot.id);
     setDescription(shot.description ?? "");
-    setCameraAngle(shot.camera_angle ?? "");
-    setDurationSeconds(shot.duration_seconds?.toString() ?? "");
     setPriority(shot.priority ?? null);
     setGoodTake(shot.good_take_filename ?? "");
     setImageFile(null);
@@ -73,8 +67,6 @@ export function ShotEditModal({
     try {
       let updated = await api.patchShot(shot.id, {
         description: description.trim() || null,
-        camera_angle: cameraAngle || null,
-        duration_seconds: durationSeconds ? Number(durationSeconds) : null,
         priority: priority ?? null,
         clear_priority: priority === null,
         good_take_filename: goodTake.trim() || null,
@@ -122,26 +114,6 @@ export function ShotEditModal({
       <FieldGroup>
         <Label>Beschreibung</Label>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="z.B. Weitwinkel Establishing Shot" autoFocus />
-      </FieldGroup>
-      <FieldGroup>
-        <Label>Kamerawinkel</Label>
-        <div className="flex flex-wrap gap-2">
-          {ANGLES.map((a) => (
-            <button
-              key={a}
-              onClick={() => setCameraAngle(a)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                cameraAngle === a ? "bg-blue-600 text-white" : "bg-white/8 text-white/60 hover:bg-white/14"
-              }`}
-            >
-              {a}
-            </button>
-          ))}
-        </div>
-      </FieldGroup>
-      <FieldGroup>
-        <Label>Dauer (Sekunden)</Label>
-        <Input type="number" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="z.B. 8" />
       </FieldGroup>
       <FieldGroup>
         <Label>Priorität</Label>

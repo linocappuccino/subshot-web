@@ -420,8 +420,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setInsertionIndicator({ targetId: overIdStr, edge: "top" });
     } else {
       const pointer = pointerPosRef.current;
+      // A Projektinfo tile spans the full grid row (col-span-full) — it has
+      // no left/right neighbor to straddle, only tiles above/below it, so a
+      // left/right split (like every normal same-row scene tile gets) would
+      // point at a spot on the far edge of the row that has nothing to do
+      // with where the card would actually land. Compare Y instead whenever
+      // the hovered target itself is a full-width tile.
+      const overTarget = data?.scenes.find((s) => s.id === overIdStr);
+      const overIsFullWidth = overTarget?.is_project_info ?? false;
       if (pointer) {
-        if (viewMode === "table") {
+        if (viewMode === "table" || overIsFullWidth) {
           const targetCenterY = over.rect.top + over.rect.height / 2;
           setInsertionIndicator({ targetId: overIdStr, edge: pointer.y < targetCenterY ? "top" : "bottom" });
         } else {
@@ -1176,14 +1184,14 @@ function SectionBlock({
     );
 
   if (!title) {
-    return <div className="mb-8">{content}</div>;
+    return <div className="mb-5">{content}</div>;
   }
 
   const sectionInsertionEdge = section && sectionInsertionIndicator?.targetId === section.id ? sectionInsertionIndicator.edge : null;
 
   return (
     <div
-      className="relative mb-8 transition-transform"
+      className="relative mb-5 transition-transform"
       // section && ... — without the `section &&` guard this was also true
       // for the "Ohne Abschnitt" bucket (section is undefined there) any
       // time draggingSectionId was ALSO undefined (i.e. nothing being
@@ -1252,6 +1260,7 @@ function SectionBlock({
         <div className="flex-1 min-w-0">
           <Collapsible
             title={title}
+            titleClassName="text-sm"
             subtitle={`${doneCount}/${scenes.length}`}
             actions={
               section &&

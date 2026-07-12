@@ -122,7 +122,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
           />
           <div className="flex gap-2 mt-2">
             <Button variant="primary" size="sm" onClick={savePassword} disabled={!password.trim() || isSavingPassword}>
-              {isSavingPassword ? "Speichert…" : hasPassword ? "Passwort ändern" : "Passwort setzen"}
+              {isSavingPassword ? "Speichert…" : hasPassword ? "Passwort bestätigen" : "Passwort setzen"}
             </Button>
             {hasPassword && (
               <Button variant="danger" size="sm" onClick={clearPassword}>Entfernen</Button>
