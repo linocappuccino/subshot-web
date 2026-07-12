@@ -198,13 +198,14 @@ export function SceneCard({
     const overId = String(over.id);
     const finalOrder = activeId === overId ? shots : computeShotReorder(shots, activeId, overId) ?? shots;
     onChange((d) => ({ ...d, shots: d.shots.map((s) => finalOrder.find((f) => f.id === s.id) ?? s) }));
+    if (activeId === overId) return;
+    // Single server-authoritative move (2026-07-13) — replaces the old
+    // per-changed-shot Promise.all(patchShot) loop, same reasoning as
+    // Section's move above (see move_shot in the backend).
+    const idx = finalOrder.findIndex((s) => s.id === activeId);
+    const beforeId = finalOrder[idx + 1]?.id ?? null;
     try {
-      await Promise.all(
-        finalOrder.map((s, idx) => {
-          const orig = origin?.find((o) => o.id === s.id);
-          return orig && orig.sort_order !== idx ? api.patchShot(s.id, { sort_order: idx }) : Promise.resolve();
-        })
-      );
+      await api.moveShot(activeId, beforeId);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Sortierung fehlgeschlagen.");
     }

@@ -433,7 +433,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Recomputes the definitive final order fresh from the actual drop
   // event's own cursor position (same reasoning as handleSceneDragEnd —
   // never trust stale hover state), so what's persisted always matches
-  // exactly what the insertion line last pointed at.
+  // exactly what the insertion line last pointed at. computeSectionReorder
+  // is still used for the local array (drives the visible order
+  // immediately), but persistence is now a single api.moveSection call
+  // (2026-07-13) — same server-authoritative move_section endpoint iOS
+  // uses, replacing the old per-changed-section Promise.all(patchSection)
+  // loop (see move_section in the backend for why: one shared computation
+  // instead of two independently-implemented, potentially divergent ones).
   async function handleSectionDrop(targetId: string, e: React.DragEvent) {
     setSectionInsertionIndicator(null);
     const origin = dragOriginSectionsRef.current;
@@ -447,10 +453,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const next = computeSectionReorder(data.sections, draggedId, targetId, insertAfter);
     if (!next) return;
     setData((prev) => (prev ? { ...prev, sections: next } : prev));
-    const changed = next.filter((s) => origin.find((o) => o.id === s.id)?.sort_order !== s.sort_order);
-    if (changed.length === 0) return;
+    const idx = next.findIndex((s) => s.id === draggedId);
+    const beforeId = next[idx + 1]?.id ?? null;
     try {
-      await Promise.all(changed.map((s) => api.patchSection(s.id, { sort_order: s.sort_order })));
+      await api.moveSection(draggedId, beforeId);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Umsortieren fehlgeschlagen.");
     }

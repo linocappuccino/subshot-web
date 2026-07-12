@@ -161,6 +161,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     patchShot: (id: string, body: Record<string, unknown>) =>
       request<Shot>(`shots/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteShot: (id: string) => request<void>(`shots/${id}`, { method: "DELETE" }),
+    moveShot: (id: string, beforeShotId: string | null) =>
+      request<Shot>(`shots/${id}/move`, { method: "POST", body: JSON.stringify({ before_shot_id: beforeShotId }) }),
     uploadShotImage: (id: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
@@ -179,6 +181,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       }>
     ) => request<Section>(`sections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteSection: (id: string) => request<void>(`sections/${id}`, { method: "DELETE" }),
+    moveSection: (id: string, beforeSectionId: string | null) =>
+      request<Section>(`sections/${id}/move`, { method: "POST", body: JSON.stringify({ before_section_id: beforeSectionId }) }),
 
     // ── Todo lists ───────────────────────────────────────────────────────
     createTodoList: (projectId: string, name: string, sortOrder = 0) =>
