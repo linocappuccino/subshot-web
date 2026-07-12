@@ -12,6 +12,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel = "Löschen",
+  cancelLabel = "Abbrechen",
   danger = true,
   onConfirm,
   onCancel,
@@ -20,6 +21,7 @@ export function ConfirmDialog({
   title: string;
   message: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -51,7 +53,7 @@ export function ConfirmDialog({
                 onClick={onCancel}
                 className="px-4 py-2 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors"
               >
-                Abbrechen
+                {cancelLabel}
               </button>
               <button
                 onClick={onConfirm}
