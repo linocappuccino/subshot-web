@@ -56,6 +56,7 @@ export function SortableSceneCard({
   return (
     <div
       ref={setNodeRef}
+      data-sortable-scene-id={scene.id}
       className={`relative ${scene.is_project_info ? "col-span-full" : ""}`}
       style={{ opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 10 : "auto" }}
     >

@@ -117,9 +117,58 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // "die blaue Linie stimmt nicht überein mit wo die Kachel landet").
   // Comparing the actual cursor position removes that bias entirely.
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
+  // Always-current mirror of `data` for the pointermove handler below, which
+  // is set up once (empty deps) and would otherwise close over a stale
+  // `data` from mount time.
+  const dataRef = useRef<ProjectDetail | null>(null);
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
+  // Which scene dnd-kit last told us the cursor is "over", and whether a
+  // scene drag is in progress at all — see the live-edge-recompute comment
+  // on the pointermove handler below for why this is tracked independently
+  // of insertionIndicator itself.
+  const activeSceneDragRef = useRef(false);
+  const lastOverIdRef = useRef<string | null>(null);
   useEffect(() => {
     function onPointerMove(e: PointerEvent) {
       pointerPosRef.current = { x: e.clientX, y: e.clientY };
+      // dnd-kit's onDragOver (see handleSceneDragOver) only fires when the
+      // collision result CHANGES — i.e. when the cursor moves onto a
+      // DIFFERENT droppable — not continuously while it stays over the
+      // SAME one. For small cards that's rarely noticeable (you tend to
+      // cross into a neighboring card before the stale edge matters), but
+      // the full-width Projektinfo tile is one single large droppable that
+      // can be 300+px tall — entering it computes the edge ONCE at
+      // whichever point you crossed its boundary, and that never updates
+      // again no matter how far you then move within it. Reported live:
+      // dragging a lower Projektinfo tile up over an upper one always
+      // showed the indicator at the bottom of the target, because you
+      // enter a tile-you're-moving-upward-into from ITS bottom edge first,
+      // and that first (correct, at-that-instant) "bottom" reading then
+      // never got recomputed even once you'd moved well into its top half.
+      // Fix: recompute the edge on every real pointermove (this listener,
+      // which — unlike dnd-kit's callback — does fire continuously) against
+      // a FRESH getBoundingClientRect() of whichever element dnd-kit most
+      // recently told us we're over, via data-sortable-scene-id (added to
+      // SortableSceneCard's root specifically for this). Section-drop
+      // zones are excluded — dnd-kit computed "top" once for those on
+      // purpose (see handleSceneDragOver's comment) and they have no
+      // before/after neighbor of their own to split against.
+      const overId = lastOverIdRef.current;
+      if (!activeSceneDragRef.current || !overId || overId.startsWith("section-drop:")) return;
+      const el = document.querySelector<HTMLElement>(`[data-sortable-scene-id="${CSS.escape(overId)}"]`);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const overTarget = dataRef.current?.scenes.find((s) => s.id === overId);
+      const overIsFullWidth = overTarget?.is_project_info ?? false;
+      if (overIsFullWidth) {
+        const targetCenterY = rect.top + rect.height / 2;
+        setInsertionIndicator({ targetId: overId, edge: e.clientY < targetCenterY ? "top" : "bottom" });
+      } else {
+        const targetCenterX = rect.left + rect.width / 2;
+        setInsertionIndicator({ targetId: overId, edge: e.clientX < targetCenterX ? "left" : "right" });
+      }
     }
     window.addEventListener("pointermove", onPointerMove);
     return () => window.removeEventListener("pointermove", onPointerMove);
@@ -379,6 +428,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   function handleSceneDragStart(event: DragStartEvent) {
     setActiveSceneId(String(event.active.id));
     dragOriginScenesRef.current = data?.scenes ?? null;
+    activeSceneDragRef.current = true;
+    lastOverIdRef.current = null;
   }
 
   // Fires continuously while dragging, whenever the pointer moves onto a
@@ -397,15 +448,22 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   function handleSceneDragOver(event: DragOverEvent) {
     const { active, over } = event;
     if (!over) {
+      lastOverIdRef.current = null;
       setInsertionIndicator(null);
       return;
     }
     const activeId = String(active.id);
     const overIdStr = String(over.id);
     if (activeId === overIdStr) {
+      lastOverIdRef.current = null;
       setInsertionIndicator(null);
       return;
     }
+    // Remembered for the pointermove handler above — this event only fires
+    // on ENTER into a new droppable, but which droppable that is stays
+    // correct until the next enter/exit, so it's safe to read continuously
+    // from there in between.
+    lastOverIdRef.current = overIdStr;
 
     // Which half of the hovered card/row the cursor currently sits over
     // (see pointerPosRef's comment above for why the cursor, not the
@@ -448,6 +506,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
     setActiveSceneId(null);
+    activeSceneDragRef.current = false;
+    lastOverIdRef.current = null;
     // Captured BEFORE clearing — this indicator is the single source of
     // truth for where the drop lands (see below for why).
     const indicator = insertionIndicator;
@@ -510,6 +570,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // persisted to the backend so a plain state restore is enough.
   function handleSceneDragCancel() {
     setActiveSceneId(null);
+    activeSceneDragRef.current = false;
+    lastOverIdRef.current = null;
     setInsertionIndicator(null);
     const origin = dragOriginScenesRef.current;
     dragOriginScenesRef.current = null;
