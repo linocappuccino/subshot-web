@@ -60,21 +60,35 @@ export function SortableSceneCard({
       className={`relative ${scene.is_project_info ? "col-span-full" : ""}`}
       style={{ opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 10 : "auto" }}
     >
+      {/* Thickened + much brighter/wider glow (was w-[3px], shadow blur
+          8px) — Lino reported the indicator as "never shown" specifically
+          when dragging a card past the outer edge of a 3-card row: it DID
+          render (confirmed via screenshot), but a thin 3px line can end up
+          ~100px+ away from the actual cursor/dragged-card ghost once
+          you're past the row's own edge, which during a real fast drag is
+          easy to miss entirely since your eyes are on the cursor, not
+          scanning the screen for a thin line elsewhere (2026-07-13). Also
+          extends slightly past the card's own top/bottom (-6/-6 instead of
+          0/0) so it visually "pops" out of the row instead of blending
+          into two card edges meeting flush. Deliberately still a thin BAR,
+          not a ring around the whole card — an earlier ring-highlight
+          attempt was rejected (see project memory): it reads as "drop
+          ONTO this card" rather than "insert before/after it". */}
       {insertionEdge === "left" && (
-        <div className="absolute -left-[9px] top-0 bottom-0 w-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute -left-[11px] -top-1.5 -bottom-1.5 w-[5px] rounded-full bg-blue-400 shadow-[0_0_20px_6px_rgba(59,130,246,0.85)] pointer-events-none" />
       )}
       {insertionEdge === "right" && (
-        <div className="absolute -right-[9px] top-0 bottom-0 w-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute -right-[11px] -top-1.5 -bottom-1.5 w-[5px] rounded-full bg-blue-400 shadow-[0_0_20px_6px_rgba(59,130,246,0.85)] pointer-events-none" />
       )}
       {/* top/bottom only ever fires for this card when it's the full-width
           Projektinfo tile (see handleSceneDragOver in page.tsx) — the bar
-          spans the tile's whole width to match, not a fixed 3px edge marker
+          spans the tile's whole width to match, not a fixed edge marker
           like left/right (which sit on a normal-width neighbor). */}
       {insertionEdge === "top" && (
-        <div className="absolute -top-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute -top-[11px] -left-1.5 -right-1.5 h-[5px] rounded-full bg-blue-400 shadow-[0_0_20px_6px_rgba(59,130,246,0.85)] pointer-events-none" />
       )}
       {insertionEdge === "bottom" && (
-        <div className="absolute -bottom-[9px] left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
+        <div className="absolute -bottom-[11px] -left-1.5 -right-1.5 h-[5px] rounded-full bg-blue-400 shadow-[0_0_20px_6px_rgba(59,130,246,0.85)] pointer-events-none" />
       )}
       {scene.is_project_info ? (
         <ProjectInfoTile
