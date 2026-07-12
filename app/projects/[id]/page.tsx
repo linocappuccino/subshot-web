@@ -279,18 +279,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // page clears it in its own onClose), so it's the only place that knows
   // both the old and new start time.
   //
-  // UNIFORM DELTA SHIFT, not a back-to-back chain recompute (2026-07-13
-  // correction) — the original implementation recomputed every affected
-  // scene's start as "previous scene's new start + its own duration",
-  // which silently collapses any GAP between originally non-contiguous
-  // scenes into zero. Lino's own spec example only ever showed already-
-  // contiguous scenes, where a chain-recompute and a delta-shift produce
-  // identical results by coincidence — they diverge as soon as two scenes
-  // aren't back-to-back. A delta shift (every affected scene's start moves
-  // by exactly the same offset the edited scene's start moved by)
-  // preserves whatever gaps already existed, which is what "verschoben"
-  // (shifted) in the spec actually means, not "re-chained".
-  const [cascadeConfirm, setCascadeConfirm] = useState<{ affected: Scene[]; deltaMs: number } | null>(null);
+  // The actual shifting itself moved server-side (2026-07-13) — see
+  // ScenePatch.cascade_shift_seconds / patch_scene in the backend — so web
+  // AND iOS always compute the exact same result instead of each
+  // re-implementing the same date math client-side (both had independently
+  // arrived at the same "chain scenes back-to-back" bug, which silently
+  // collapses any GAP between originally non-contiguous scenes to zero;
+  // Lino: "so its automaticly gets updated via server... on both systems
+  // always the same"). This component only detects (client-side, cheap,
+  // just to decide whether to ask at all) whether there's anything to
+  // offer a cascade for, and computes the plain delta to send.
+  const [cascadeConfirm, setCascadeConfirm] = useState<{ sceneId: string; deltaSeconds: number } | null>(null);
 
   async function handleSceneUpdated(scene: Scene) {
     const previous = editingScene;
@@ -298,7 +297,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
     const timeChanged = previous?.scheduled_at && scene.scheduled_at && previous.scheduled_at !== scene.scheduled_at;
     if (timeChanged && data) {
-      const deltaMs = new Date(scene.scheduled_at!).getTime() - new Date(previous!.scheduled_at!).getTime();
+      const deltaSeconds = (new Date(scene.scheduled_at!).getTime() - new Date(previous!.scheduled_at!).getTime()) / 1000;
       const editedDay = new Date(scene.scheduled_at!);
       const editedStart = editedDay.getTime();
       // "Folgende [getimte] Szenen" — same calendar day (as the NEW start),
@@ -310,40 +309,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       // Projektinfo tiles excluded — the spec only ever mentions "Szenen
       // und Zwischenszenen", and shifting a Drehdatum display alongside an
       // unrelated scene's time edit would be a surprising side effect.
-      const affected = data.scenes
-        .filter((s) => s.id !== scene.id && s.scheduled_at && !s.is_project_info)
-        .filter((s) => {
-          const d = new Date(s.scheduled_at!);
-          return (
-            d.getFullYear() === editedDay.getFullYear() &&
-            d.getMonth() === editedDay.getMonth() &&
-            d.getDate() === editedDay.getDate() &&
-            d.getTime() > editedStart
-          );
-        })
-        .sort((a, b) => new Date(a.scheduled_at!).getTime() - new Date(b.scheduled_at!).getTime());
-      if (affected.length > 0) {
-        setCascadeConfirm({ affected, deltaMs });
+      // (Mirrors the server's own eligibility filter exactly, purely so
+      // the dialog only pops up when there's actually something to do —
+      // the server re-derives "affected" itself from scratch, this list
+      // is never sent to it.)
+      const hasAffected = data.scenes.some((s) => {
+        if (s.id === scene.id || !s.scheduled_at || s.is_project_info) return false;
+        const d = new Date(s.scheduled_at);
+        return (
+          d.getFullYear() === editedDay.getFullYear() &&
+          d.getMonth() === editedDay.getMonth() &&
+          d.getDate() === editedDay.getDate() &&
+          d.getTime() > editedStart
+        );
+      });
+      if (hasAffected) {
+        setCascadeConfirm({ sceneId: scene.id, deltaSeconds });
       }
     }
   }
 
-  // Shifts every affected scene's start by the SAME delta the edited
-  // scene's start just moved by — see the deltaMs comment above for why
-  // this replaced a back-to-back chain recompute.
+  // Single server round-trip — the backend does the actual shifting (see
+  // the comment on cascadeConfirm above for why).
   async function confirmCascadeTimes() {
     if (!cascadeConfirm) return;
-    const { affected, deltaMs } = cascadeConfirm;
+    const { sceneId, deltaSeconds } = cascadeConfirm;
     setCascadeConfirm(null);
-    for (const s of affected) {
-      const newStart = new Date(new Date(s.scheduled_at!).getTime() + deltaMs);
-      try {
-        const patched = await api.patchScene(s.id, { scheduled_at: newStart.toISOString() });
-        setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((x) => (x.id === patched.id ? patched : x)) } : prev));
-      } catch (e) {
-        toast.showError(e instanceof ApiError ? e.message : "Zeiten anpassen fehlgeschlagen.");
-        break;
+    try {
+      await api.patchScene(sceneId, { cascade_shift_seconds: deltaSeconds });
+      if (data) {
+        const fresh = await api.projectDetail(data.id);
+        setData(fresh);
       }
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Zeiten anpassen fehlgeschlagen.");
     }
   }
 
