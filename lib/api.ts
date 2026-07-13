@@ -2,6 +2,7 @@ import type {
   Annotation,
   Invite,
   Member,
+  Notification,
   NotionDatabase,
   Project,
   ProjectDetail,
@@ -52,6 +53,9 @@ export function createApiClient(getToken: () => Promise<string | null>) {
   return {
     me: () => request<{ id: string; email: string; name: string | null; avatar_url: string | null; has_notion_token: boolean }>("me"),
     knownCollaborators: () => request<Member[]>("me/known-collaborators"),
+    notifications: (unreadOnly = true) => request<Notification[]>(`me/notifications?unread_only=${unreadOnly}`),
+    markNotificationRead: (id: string) => request<Notification>(`me/notifications/${id}/read`, { method: "POST" }),
+    markAllNotificationsRead: () => request<void>("me/notifications/read-all", { method: "POST" }),
 
     // ── Folders ──────────────────────────────────────────────────────────
     folders: () => request<ProjectFolder[]>("folders"),

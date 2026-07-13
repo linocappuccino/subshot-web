@@ -256,3 +256,18 @@ export interface Annotation {
   status: "open" | "resolved" | "rejected";
   created_at: string;
 }
+
+/** Batched per (user, project, kind) on the backend — a burst of e.g. todo
+ * assignments collapses into one row with a running `count`, not one row
+ * per event. See app/models.py's Notification docstring. */
+export interface Notification {
+  id: string;
+  project_id: string;
+  kind: string;
+  count: number;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  read_at: string | null;
+}

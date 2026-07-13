@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { motion } from "framer-motion";
+import { NotificationBell } from "./NotificationBell";
 
 /** Persistent top bar for every signed-in screen — replaces the bare
  * "Subshot" <h1> each page used to render on its own. One shared shell so
@@ -31,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </svg>
               Team
             </Link>
+            <NotificationBell />
             <UserButton
               appearance={{
                 elements: { userButtonAvatarBox: "w-8 h-8" },
