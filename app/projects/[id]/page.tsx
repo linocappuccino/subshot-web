@@ -1255,6 +1255,14 @@ function SectionBlock({
   // a valid target, not just dropping directly onto another card.
   const grid = (
     <SortableContext items={scenes.map((s) => s.id)} strategy={rectSortingStrategy}>
+      {/* Widened by 16px on each side (negative margin) with matching inner
+          padding to cancel it back out — the grid itself, and every card's
+          size/position inside it, ends up pixel-identical to before. Only
+          gives the -9px insertion-line offset on the outermost column (see
+          SortableSceneCard) more guaranteed non-clipped room around it
+          (2026-07-13, Lino: "der Indikator wird NIE ganz rechts/links am
+          Seitenrand angezeigt" — widen the container, not the cards). */}
+      <div className="-mx-4 px-4 overflow-visible">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
         <AnimatePresence>
           {scenes.map((scene) => (
@@ -1272,6 +1280,7 @@ function SectionBlock({
             />
           ))}
         </AnimatePresence>
+      </div>
       </div>
       <SectionDropZone sectionId={section?.id ?? null} insertionIndicator={insertionIndicator} />
     </SortableContext>
