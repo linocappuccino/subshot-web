@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   Invite,
   Member,
   NotionDatabase,
@@ -143,6 +144,9 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       request<Scene>(`scenes/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteScene: (id: string) => request<void>(`scenes/${id}`, { method: "DELETE" }),
     duplicateScene: (id: string) => request<Scene>(`scenes/${id}/duplicate`, { method: "POST" }),
+    listAnnotations: (projectId: string) => request<Annotation[]>(`projects/${projectId}/annotations`),
+    patchAnnotation: (id: string, status: "open" | "resolved" | "rejected") =>
+      request<Annotation>(`annotations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
     moveScene: (id: string, beforeSceneId: string | null) =>
       request<Scene>(`scenes/${id}/move`, { method: "POST", body: JSON.stringify({ before_scene_id: beforeSceneId }) }),
     reorderScenes: (projectId: string, sectionId: string | null, orderedSceneIds: string[]) =>

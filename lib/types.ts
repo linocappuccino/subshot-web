@@ -239,3 +239,20 @@ export const PRIORITY_COLORS: Record<Priority | "none", string> = {
 // in ColorHex.swift) — kept identical so a project/scene color picked on
 // either client looks the same on both.
 export const PALETTE = ["#3875bd", "#0f7e55", "#4e4295", "#d1504f", "#b9507b", "#a64c22"];
+
+/** Comment/markup left on the public preview page (2026-07-13) — read-only
+ * here (the app shows what reviewers marked up, doesn't create new ones
+ * itself; that's the preview page's own job, see share_view.py). */
+export interface Annotation {
+  id: string;
+  project_id: string;
+  scene_id: string;
+  author_name: string;
+  kind: "highlight" | "pen";
+  field: string | null;
+  text: string | null;
+  pen_path: string | null;
+  comment: string | null;
+  status: "open" | "resolved" | "rejected";
+  created_at: string;
+}
