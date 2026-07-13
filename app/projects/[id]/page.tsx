@@ -267,6 +267,43 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     });
   }
 
+  /** Auto-sort button (2026-07-13, Lino: "ein Button um die Kacheln
+   * automatisch nach Identifikationsnummer/Zeit/Ort zu sortieren") — sorts
+   * this one section's (or the unsectioned bucket's, sectionId=null)
+   * scenes locally by the chosen key, then persists the whole new order in
+   * a single request (see reorderScenes/reorder_scenes_bulk) instead of
+   * one move call per scene. Scenes missing the sort key (e.g. no
+   * location_address set) sort to the end, stable otherwise.
+   */
+  async function handleSortScenes(sectionId: string | null, criterion: "number" | "time" | "location") {
+    if (!data) return;
+    const group = data.scenes.filter((s) => (s.section_id ?? null) === sectionId);
+    const key = (s: Scene): [number, string | number] => {
+      if (criterion === "number") return [0, s.number * 1000 + (s.letter ? s.letter.charCodeAt(0) : 0)];
+      if (criterion === "time") return s.scheduled_at ? [0, s.scheduled_at] : [1, ""];
+      return s.location_address ? [0, s.location_address.toLowerCase()] : [1, ""];
+    };
+    const sorted = [...group].sort((a, b) => {
+      const [aMissing, aKey] = key(a);
+      const [bMissing, bKey] = key(b);
+      if (aMissing !== bMissing) return aMissing - bMissing;
+      return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+    });
+    const orderedIds = sorted.map((s) => s.id);
+    updateScenesShots((d) => ({
+      ...d,
+      scenes: d.scenes.map((s) => {
+        const idx = orderedIds.indexOf(s.id);
+        return idx === -1 ? s : { ...s, sort_order: idx };
+      }),
+    }));
+    try {
+      await api.reorderScenes(data.id, sectionId, orderedIds);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+    }
+  }
+
   async function handleSceneCreated(scene: Scene) {
     setData((prev) => (prev ? { ...prev, scenes: [...prev.scenes, scene] } : prev));
   }
@@ -848,6 +885,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev))
                 }
                 onOpenTeam={() => setShowTeam(true)}
+                onSortScenes={(criterion) => handleSortScenes(section.id, criterion)}
               />
             );
           })}
@@ -870,6 +908,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               onDuplicateScene={handleDuplicateScene}
               insertionIndicator={insertionIndicator}
               viewMode={viewMode}
+              onSortScenes={(criterion) => handleSortScenes(null, criterion)}
             />
           )}
 
@@ -1216,6 +1255,7 @@ function SectionBlock({
   projectId,
   onSectionChange,
   onOpenTeam,
+  onSortScenes,
 }: {
   /** Undefined for the "Ohne Abschnitt" bucket — that one has no real
    * SceneSection to drag/attach a project-info box to. */
@@ -1241,6 +1281,7 @@ function SectionBlock({
   projectId?: string;
   onSectionChange?: (updated: Section) => void;
   onOpenTeam?: () => void;
+  onSortScenes?: (criterion: "number" | "time" | "location") => void;
 }) {
   const doneCount = scenes.filter((s) => s.completed).length;
 
@@ -1383,8 +1424,10 @@ function SectionBlock({
             titleClassName="text-sm"
             subtitle={`${doneCount}/${scenes.length}`}
             actions={
-              section &&
-              onDeleteSection && (
+              // Menu itself no longer requires a real `section` (2026-07-13:
+              // sort-by options are useful for "Ohne Abschnitt" too) -
+              // rename/delete stay conditional on one existing.
+              (onSortScenes || (section && onDeleteSection)) && (
                 <Menu
                   trigger={
                     <IconButton size={24} className="text-white/30 hover:text-white/70">
@@ -1398,23 +1441,55 @@ function SectionBlock({
                 >
                   {(close) => (
                     <>
-                      <MenuItem
-                        onClick={() => {
-                          onEditSection?.(section);
-                          close();
-                        }}
-                      >
-                        Umbenennen
-                      </MenuItem>
-                      <MenuItem
-                        danger
-                        onClick={() => {
-                          onDeleteSection(section);
-                          close();
-                        }}
-                      >
-                        Abschnitt löschen
-                      </MenuItem>
+                      {onSortScenes && scenes.length > 1 && (
+                        <>
+                          <MenuItem
+                            onClick={() => {
+                              onSortScenes("number");
+                              close();
+                            }}
+                          >
+                            Nach Identifikationsnummer sortieren
+                          </MenuItem>
+                          <MenuItem
+                            onClick={() => {
+                              onSortScenes("time");
+                              close();
+                            }}
+                          >
+                            Nach Zeit sortieren
+                          </MenuItem>
+                          <MenuItem
+                            onClick={() => {
+                              onSortScenes("location");
+                              close();
+                            }}
+                          >
+                            Nach Ort sortieren
+                          </MenuItem>
+                        </>
+                      )}
+                      {section && onEditSection && (
+                        <MenuItem
+                          onClick={() => {
+                            onEditSection(section);
+                            close();
+                          }}
+                        >
+                          Umbenennen
+                        </MenuItem>
+                      )}
+                      {section && onDeleteSection && (
+                        <MenuItem
+                          danger
+                          onClick={() => {
+                            onDeleteSection(section);
+                            close();
+                          }}
+                        >
+                          Abschnitt löschen
+                        </MenuItem>
+                      )}
                     </>
                   )}
                 </Menu>

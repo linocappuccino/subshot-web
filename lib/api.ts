@@ -145,6 +145,11 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     duplicateScene: (id: string) => request<Scene>(`scenes/${id}/duplicate`, { method: "POST" }),
     moveScene: (id: string, beforeSceneId: string | null) =>
       request<Scene>(`scenes/${id}/move`, { method: "POST", body: JSON.stringify({ before_scene_id: beforeSceneId }) }),
+    reorderScenes: (projectId: string, sectionId: string | null, orderedSceneIds: string[]) =>
+      request<Scene[]>(`projects/${projectId}/scenes/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ section_id: sectionId, ordered_scene_ids: orderedSceneIds }),
+      }),
     uploadSceneImage: (id: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
