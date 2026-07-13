@@ -714,11 +714,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  async function exportPdf() {
+  // 2026-07-13, Lino: "beim Klick auf PDF Export soll zuerst gefragt werden,
+  // ob Kachelansicht oder Tabellenansicht exportiert werden soll" — was a
+  // single click straight to the (card-only) export before.
+  async function exportPdf(view: "cards" | "table") {
     if (!data) return;
     setExportingPdf(true);
     try {
-      const url = await api.projectPdfUrl(data.id);
+      const url = await api.projectPdfUrl(data.id, view);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${data.name || "shotlist"}.pdf`;
@@ -785,9 +788,34 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <Button variant="secondary" size="sm" onClick={() => setShowNotion(true)}>
               <NotionIcon /> Notion-Import
             </Button>
-            <Button variant="secondary" size="sm" onClick={exportPdf} disabled={exportingPdf}>
-              <DocIcon /> {exportingPdf ? "Exportiert…" : "PDF"}
-            </Button>
+            <Menu
+              trigger={
+                <Button variant="secondary" size="sm" disabled={exportingPdf}>
+                  <DocIcon /> {exportingPdf ? "Exportiert…" : "PDF"}
+                </Button>
+              }
+            >
+              {(close) => (
+                <>
+                  <MenuItem
+                    onClick={() => {
+                      exportPdf("cards");
+                      close();
+                    }}
+                  >
+                    Kachelansicht
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      exportPdf("table");
+                      close();
+                    }}
+                  >
+                    Tabellenansicht
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
             <Button variant="secondary" size="sm" onClick={() => setShowShareModal(true)}>
               <ShareIcon /> Teilen
             </Button>

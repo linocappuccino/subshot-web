@@ -116,12 +116,12 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     deleteProject: (id: string) => request<void>(`projects/${id}`, { method: "DELETE" }),
     moveProject: (id: string, beforeProjectId: string | null) =>
       request<Project>(`projects/${id}/move`, { method: "POST", body: JSON.stringify({ before_project_id: beforeProjectId }) }),
-    projectPdfUrl: async (id: string) => {
+    projectPdfUrl: async (id: string, view: "cards" | "table" = "cards") => {
       // Downloaded (not just linked) because the endpoint needs the same
       // Bearer auth as everything else — a plain <a href> can't attach one.
       const token = await getToken();
       if (!token) throw new ApiError(401, "Nicht angemeldet.");
-      const res = await fetch(`${BASE_URL}/projects/${id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${BASE_URL}/projects/${id}/pdf?view=${view}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       const blob = await res.blob();
       return URL.createObjectURL(blob);
