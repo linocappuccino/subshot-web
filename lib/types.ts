@@ -4,6 +4,7 @@
 // backend.
 
 export type Priority = "must" | "should" | "optional";
+export type CameraSupport = "gimbal" | "handheld" | "tripod";
 export type ShotStatus = "open" | "done" | "deleted";
 export type MemberRole = "owner" | "editor" | "viewer";
 export type InviteRole = "editor" | "viewer";
@@ -33,6 +34,7 @@ export interface Project {
   location_address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  client_name: string | null;
   folder_id: string | null;
   team_id: string | null;
   thumbnail_url: string | null;
@@ -70,6 +72,8 @@ export interface Scene {
   location_address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  /** Auftraggeber — only ever set/shown on is_project_info tiles. */
+  client_name: string | null;
   good_take_filename: string | null;
   number: number;
   letter: string | null;
@@ -98,6 +102,14 @@ export interface Shot {
   status: ShotStatus;
   sort_order: number;
   good_take_filename: string | null;
+  lens: string | null;
+  f_stop: string | null;
+  frame_rate: string | null;
+  shutter_angle: number | null;
+  iso: number | null;
+  codec: string | null;
+  camera_id: string | null;
+  camera_support: CameraSupport | null;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +128,7 @@ export interface Section {
   location_address: string | null;
   location_lat: number | null;
   location_lng: number | null;
+  client_name: string | null;
   todo_lists: TodoList[];
 }
 

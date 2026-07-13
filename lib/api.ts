@@ -94,6 +94,7 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         location_address: string | null;
         location_lat: number | null;
         location_lng: number | null;
+        client_name: string | null;
         folder_id: string | null;
         team_id: string | null;
       }>
@@ -181,6 +182,7 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       body: Partial<{
         name: string; sort_order: number;
         shoot_date: string | null; location_address: string; location_lat: number; location_lng: number;
+        client_name: string | null;
         add_project_info: boolean; remove_project_info: boolean;
       }>
     ) => request<Section>(`sections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),

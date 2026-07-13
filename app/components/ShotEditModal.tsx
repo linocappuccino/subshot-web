@@ -9,7 +9,13 @@ import { ImageDropZone } from "./ui/ImageDropZone";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
 import { ApiError } from "@/lib/api";
-import { PRIORITY_COLORS, PRIORITY_LABELS, type Priority, type Shot } from "@/lib/types";
+import { PRIORITY_COLORS, PRIORITY_LABELS, type CameraSupport, type Priority, type Shot } from "@/lib/types";
+
+const CAMERA_SUPPORT_LABELS: Record<CameraSupport, string> = {
+  gimbal: "Gimbal",
+  handheld: "Handheld",
+  tripod: "Stativ",
+};
 
 export function ShotEditModal({
   open,
@@ -32,6 +38,19 @@ export function ShotEditModal({
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Camera settings (2026-07-13, Lino) — a new shot's Shutterangle starts
+  // pre-filled with "180" (his explicit default), everything else starts
+  // empty rather than guessing a value.
+  const [cameraAngle, setCameraAngle] = useState(shot?.camera_angle ?? "");
+  const [lens, setLens] = useState(shot?.lens ?? "");
+  const [fStop, setFStop] = useState(shot?.f_stop ?? "");
+  const [frameRate, setFrameRate] = useState(shot?.frame_rate ?? "");
+  const [shutterAngle, setShutterAngle] = useState(shot?.shutter_angle?.toString() ?? "180");
+  const [iso, setIso] = useState(shot?.iso?.toString() ?? "");
+  const [codec, setCodec] = useState(shot?.codec ?? "");
+  const [cameraId, setCameraId] = useState(shot?.camera_id ?? "");
+  const [cameraSupport, setCameraSupport] = useState<CameraSupport | null>(shot?.camera_support ?? null);
+
   const [openedFor, setOpenedFor] = useState(shot?.id ?? "");
   if (open && shot && openedFor !== shot.id) {
     setOpenedFor(shot.id);
@@ -40,6 +59,15 @@ export function ShotEditModal({
     setGoodTake(shot.good_take_filename ?? "");
     setImageFile(null);
     setImagePreview(null);
+    setCameraAngle(shot.camera_angle ?? "");
+    setLens(shot.lens ?? "");
+    setFStop(shot.f_stop ?? "");
+    setFrameRate(shot.frame_rate ?? "");
+    setShutterAngle(shot.shutter_angle?.toString() ?? "180");
+    setIso(shot.iso?.toString() ?? "");
+    setCodec(shot.codec ?? "");
+    setCameraId(shot.camera_id ?? "");
+    setCameraSupport(shot.camera_support ?? null);
   }
 
   useEffect(() => {
@@ -71,6 +99,15 @@ export function ShotEditModal({
         clear_priority: priority === null,
         good_take_filename: goodTake.trim() || null,
         clear_good_take: !goodTake.trim(),
+        camera_angle: cameraAngle.trim() || null,
+        lens: lens.trim() || null,
+        f_stop: fStop.trim() || null,
+        frame_rate: frameRate.trim() || null,
+        shutter_angle: shutterAngle.trim() ? Number(shutterAngle) : null,
+        iso: iso.trim() ? parseInt(iso, 10) : null,
+        codec: codec.trim() || null,
+        camera_id: cameraId.trim() || null,
+        camera_support: cameraSupport,
       });
       if (imageFile) updated = await api.uploadShotImage(shot.id, imageFile);
       onUpdated(updated);
@@ -127,6 +164,36 @@ export function ShotEditModal({
             { value: "optional", label: PRIORITY_LABELS.optional, color: PRIORITY_COLORS.optional },
           ]}
         />
+      </FieldGroup>
+      <FieldGroup>
+        <Label>Kamera</Label>
+        <div className="grid grid-cols-2 gap-2">
+          <Input value={cameraId} onChange={(e) => setCameraId(e.target.value)} placeholder="Kamera-ID (A, B, C…)" />
+          <Input value={cameraAngle} onChange={(e) => setCameraAngle(e.target.value)} placeholder="Winkel" />
+          <Input value={lens} onChange={(e) => setLens(e.target.value)} placeholder="Objektiv" />
+          <Input value={fStop} onChange={(e) => setFStop(e.target.value)} placeholder="F-Stop" />
+          <Input value={frameRate} onChange={(e) => setFrameRate(e.target.value)} placeholder="Framerate" />
+          <Input
+            type="number"
+            value={shutterAngle}
+            onChange={(e) => setShutterAngle(e.target.value)}
+            placeholder="Shutterangle"
+          />
+          <Input type="number" value={iso} onChange={(e) => setIso(e.target.value)} placeholder="ISO" />
+          <Input value={codec} onChange={(e) => setCodec(e.target.value)} placeholder="Codec" />
+        </div>
+        <div className="mt-2">
+          <SegmentedControl
+            value={cameraSupport ?? "none"}
+            onChange={(v) => setCameraSupport(v === "none" ? null : (v as CameraSupport))}
+            options={[
+              { value: "none", label: "Keine" },
+              { value: "tripod", label: CAMERA_SUPPORT_LABELS.tripod },
+              { value: "handheld", label: CAMERA_SUPPORT_LABELS.handheld },
+              { value: "gimbal", label: CAMERA_SUPPORT_LABELS.gimbal },
+            ]}
+          />
+        </div>
       </FieldGroup>
       <FieldGroup className="mb-0">
         <Label>Good Take</Label>

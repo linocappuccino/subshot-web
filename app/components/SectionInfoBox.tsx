@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Member, Section } from "@/lib/types";
@@ -7,6 +8,7 @@ import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
 import { DateTimePicker } from "./ui/DateTimePicker";
+import { Input } from "./ui/Field";
 import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -34,6 +36,16 @@ export function SectionInfoBox({
 }) {
   const api = useApi();
   const toast = useToast();
+  const [clientName, setClientName] = useState(section.client_name ?? "");
+
+  async function updateClientName(value: string) {
+    try {
+      const updated = await api.patchSection(section.id, { client_name: value || null });
+      onSectionChange(updated);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    }
+  }
 
   async function removeProjectInfo() {
     try {
@@ -107,6 +119,16 @@ export function SectionInfoBox({
                   lat={section.location_lat}
                   lng={section.location_lng}
                   onChange={updateLocation}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Auftraggeber</div>
+                <Input
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  onBlur={() => updateClientName(clientName)}
+                  placeholder="Name des Auftraggebers"
                 />
               </div>
 

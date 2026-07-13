@@ -89,6 +89,17 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
     }
   }
 
+  /** The switch only ever toggled local `isProtecting` (whether the password
+   * section is expanded) — turning it OFF while a password was already set
+   * never called the backend, so the real page stayed protected even though
+   * the switch looked off. Root cause of "Passwortschutz entfernt aber Seite
+   * immer noch geschützt". Now mirrors clicking "Entfernen" whenever the
+   * switch is turned off with an existing password. */
+  function handleProtectToggle(next: boolean) {
+    setIsProtecting(next);
+    if (!next && hasPassword) clearPassword();
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Link teilen">
       <FieldGroup>
@@ -110,7 +121,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
       </FieldGroup>
 
       <FieldGroup className="mb-2">
-        <Switch checked={isProtecting} onChange={setIsProtecting} label="Mit Passwort schützen" />
+        <Switch checked={isProtecting} onChange={handleProtectToggle} label="Mit Passwort schützen" />
       </FieldGroup>
       {isProtecting && (
         <FieldGroup>

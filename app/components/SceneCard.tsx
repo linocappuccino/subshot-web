@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   DndContext,
@@ -20,7 +20,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
-import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
+import { PALETTE, PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
 import { AuthImage } from "./AuthImage";
 import { Pill, ColorBadge } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
@@ -29,9 +29,44 @@ import { IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { ShotEditModal } from "./ShotEditModal";
 
+/** True from `scheduled_at` until `scheduled_at + duration_minutes` — the
+ * card pulses for exactly this window (Lino: "bei der kachel wo der timer
+ * gerade läuft, soll die ganze kachel leicht pulsieren"). Re-checked every
+ * 15s so the pulse starts/stops on its own without a page reload; no timer
+ * at all (missing scheduled_at or duration_minutes) never pulses. */
+function useSceneTimerRunning(scene: Scene): boolean {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, []);
+  if (scene.completed || !scene.scheduled_at || !scene.duration_minutes) return false;
+  const start = new Date(scene.scheduled_at).getTime();
+  const end = start + scene.duration_minutes * 60000;
+  return now >= start && now < end;
+}
+
 export function googleMapsUrl(scene: Scene): string {
   const query = scene.location_lat != null && scene.location_lng != null ? `${scene.location_lat},${scene.location_lng}` : scene.location_address ?? "";
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+}
+
+/** Renders an address with a `<wbr>` after every comma, so a wrapping
+ * browser prefers breaking at "Strasse 1," / "8001 Zürich" boundaries over
+ * splitting mid-word — falls back to the normal break-words behavior for
+ * any segment still too long to fit on one line. */
+function addressWithCommaBreaks(address: string) {
+  const parts = address.split(", ");
+  return parts.map((part, i) => (
+    <span key={i}>
+      {part}
+      {i < parts.length - 1 && (
+        <>
+          ,<wbr />{" "}
+        </>
+      )}
+    </span>
+  ));
 }
 
 /** Pure — what `shots` (already scoped to one scene) would look like with
@@ -289,13 +324,19 @@ export function SceneCard({
 
   const assignee = members.find((m) => m.user_id === scene.assignee_id);
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
+  const isTimerRunning = useSceneTimerRunning(scene);
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
+      animate={{ opacity: 1, y: 0, scale: isTimerRunning ? [1, 1.015, 1] : 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      transition={{ type: "spring", stiffness: 380, damping: 32 }}
+      transition={{
+        type: "spring",
+        stiffness: 380,
+        damping: 32,
+        scale: isTimerRunning ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 },
+      }}
       // backdrop-blur is safe here (unlike TileShell's photo tiles) — this
       // card has no 3D hover transform (rotateX/rotateY + preserve-3d),
       // which is what caused the earlier "mega verschwommen" compositing
@@ -310,9 +351,8 @@ export function SceneCard({
     >
       <div className="flex items-start gap-2 mb-2">
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
-          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
-            <h3 className="font-semibold flex-1 min-w-0 truncate">{scene.name || "Unbenannte Szene"}</h3>
             {scene.priority && <ColorBadge label={PRIORITY_LABELS[scene.priority]} color={color} />}
             {scene.completed && (
               <Pill tone="good" icon={<CheckIcon />}>
@@ -320,10 +360,11 @@ export function SceneCard({
               </Pill>
             )}
           </div>
+          <h3 className="font-semibold mb-1.5 break-words">{scene.name || "Unbenannte Szene"}</h3>
           {(scene.scheduled_at || scene.location_address) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               {scene.scheduled_at && (
-                <Pill icon={<CalendarIcon />}>
+                <Pill icon={<CalendarIcon />} className="rounded-lg">
                   Start: {new Date(scene.scheduled_at).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   {scene.duration_minutes ? ` · ${scene.duration_minutes} Min.` : ""}
                 </Pill>
@@ -336,8 +377,8 @@ export function SceneCard({
                   onClick={(e) => e.stopPropagation()}
                   className="hover:brightness-125 transition-[filter] max-w-full min-w-0"
                 >
-                  <Pill icon={<PinIcon />} wrap>
-                    {scene.location_address}
+                  <Pill icon={<PinIcon />} wrap className="rounded-lg">
+                    {addressWithCommaBreaks(scene.location_address)}
                   </Pill>
                 </a>
               )}
@@ -447,17 +488,30 @@ export function SceneCard({
           <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${dialogOpen ? "grid-rows-[1fr] mt-1.5" : "grid-rows-[0fr]"}`}>
             <div className="overflow-hidden min-h-0">
               <div className="space-y-1">
-                {scene.dialogues.map((d) => (
-                  <button key={d.id} onClick={() => toggleDialogueLine(d.id, d.done)} className="flex items-start gap-2 text-left w-full group">
-                    <span
-                      className="w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 mt-0.5 transition-colors"
-                      style={{ borderColor: d.done ? "#4caf6d" : "rgba(255,255,255,0.3)", backgroundColor: d.done ? "#4caf6d" : "transparent" }}
+                {scene.dialogues.map((d, i) => {
+                  // Cycles through the shared PALETTE (same swatches as
+                  // project/folder colors) so consecutive lines read as
+                  // visually separate blocks — dezent, not per-speaker
+                  // (SceneDialogue has no speaker field), just enough to
+                  // tell one line apart from the next at a glance.
+                  const lineColor = PALETTE[i % PALETTE.length];
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => toggleDialogueLine(d.id, d.done)}
+                      className="flex items-start gap-2 text-left w-full group rounded-md px-1.5 py-1 -mx-1.5 border-l-2"
+                      style={{ backgroundColor: `${lineColor}14`, borderColor: `${lineColor}80` }}
                     >
-                      {d.done && <CheckIcon />}
-                    </span>
-                    <span className={`text-sm ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
-                  </button>
-                ))}
+                      <span
+                        className="w-3.5 h-3.5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 mt-0.5 transition-colors"
+                        style={{ borderColor: d.done ? "#4caf6d" : "rgba(255,255,255,0.3)", backgroundColor: d.done ? "#4caf6d" : "transparent" }}
+                      >
+                        {d.done && <CheckIcon />}
+                      </span>
+                      <span className={`text-sm ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

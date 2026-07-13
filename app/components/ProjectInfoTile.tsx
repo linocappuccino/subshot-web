@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import type {
   DraggableAttributes,
   DraggableSyntheticListeners,
@@ -12,6 +12,7 @@ import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
 import { DateTimePicker } from "./ui/DateTimePicker";
+import { Input } from "./ui/Field";
 import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -47,6 +48,16 @@ export function ProjectInfoTile({
 }) {
   const api = useApi();
   const toast = useToast();
+  const [clientName, setClientName] = useState(scene.client_name ?? "");
+
+  async function updateClientName(value: string) {
+    try {
+      const updated = await api.patchScene(scene.id, { client_name: value || null });
+      applyScene(updated);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    }
+  }
 
   function applyScene(updated: Scene) {
     onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
@@ -138,6 +149,16 @@ export function ProjectInfoTile({
                   lat={scene.location_lat}
                   lng={scene.location_lng}
                   onChange={updateLocation}
+                />
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Auftraggeber</div>
+                <Input
+                  value={clientName}
+                  onChange={(e) => setClientName(e.target.value)}
+                  onBlur={() => updateClientName(clientName)}
+                  placeholder="Name des Auftraggebers"
                 />
               </div>
 
