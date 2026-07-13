@@ -537,6 +537,11 @@ export function SceneCard({
               <DndContext
                 sensors={shotSensors}
                 collisionDetection={closestCenter}
+                // Faster viewport-edge auto-scroll while dragging (2026-07-13,
+                // Lino: dnd-kit's default acceleration was too slow to reach a
+                // distant drop target) — same values used on the other two
+                // DndContexts in this app (page.tsx, projects/page.tsx).
+                autoScroll={{ acceleration: 40, interval: 5 }}
                 onDragStart={handleShotDragStart}
                 onDragOver={handleShotDragOver}
                 onDragEnd={handleShotDragEnd}

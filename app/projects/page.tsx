@@ -419,6 +419,9 @@ function ProjectsPageContent() {
           <DndContext
             sensors={dndSensors}
             collisionDetection={tileCollisionDetection}
+            // Faster viewport-edge auto-scroll while dragging (2026-07-13,
+            // Lino: default dnd-kit acceleration was too slow).
+            autoScroll={{ acceleration: 40, interval: 5 }}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}

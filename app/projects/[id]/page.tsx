@@ -804,6 +804,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           // top for when the cursor is in the gap between cards (Lino:
           // "man muss mega genau treffen") — see its own comment above.
           collisionDetection={sceneCollisionDetection}
+          // Faster viewport-edge auto-scroll while dragging (2026-07-13,
+          // Lino: default dnd-kit acceleration was too slow).
+          autoScroll={{ acceleration: 40, interval: 5 }}
           onDragStart={handleSceneDragStart}
           onDragOver={handleSceneDragOver}
           onDragEnd={handleSceneDragEnd}
