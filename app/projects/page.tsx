@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   pointerWithin,
   rectIntersection,
@@ -13,6 +14,7 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragStartEvent,
   type DragOverEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
@@ -198,6 +200,10 @@ function ProjectsPageContent() {
   // highlight treatment instead of an insertion line (there's no
   // "before/after" concept for "put this project inside that folder").
   const [fileIntoFolderId, setFileIntoFolderId] = useState<string | null>(null);
+  // Which tile is being dragged, for the DragOverlay preview below (2026-07-13,
+  // Lino: "gezogenes Objekt schwebt nicht mit der Maus mit") — the scene grid
+  // has always had this via DragOverlay, this grid never did.
+  const [activeId, setActiveId] = useState<string | null>(null);
   // Which tile dnd-kit last told us the cursor is "over", and whether a
   // drag is in progress — dnd-kit's onDragOver only fires when the
   // collision result CHANGES (moving onto a DIFFERENT droppable), not
@@ -233,7 +239,8 @@ function ProjectsPageContent() {
     return () => window.removeEventListener("pointermove", onPointerMove);
   }, []);
 
-  function handleDragStart() {
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(String(event.active.id));
     setInsertionIndicator(null);
     setFileIntoFolderId(null);
     activeDragRef.current = true;
@@ -307,6 +314,7 @@ function ProjectsPageContent() {
   function handleDragEnd(event: DragEndEvent) {
     const indicator = insertionIndicator;
     const fileInto = fileIntoFolderId;
+    setActiveId(null);
     setInsertionIndicator(null);
     setFileIntoFolderId(null);
     activeDragRef.current = false;
@@ -351,6 +359,7 @@ function ProjectsPageContent() {
   // true, making the pointermove listener above keep recomputing an
   // indicator for a drag that's no longer happening.
   function handleDragCancel() {
+    setActiveId(null);
     setInsertionIndicator(null);
     setFileIntoFolderId(null);
     activeDragRef.current = false;
@@ -468,6 +477,29 @@ function ProjectsPageContent() {
                 <p className="text-white/40">Noch keine Projekte — leg dein erstes an.</p>
               </div>
             )}
+
+            <DragOverlay>
+              {activeId?.startsWith("project:") &&
+                (() => {
+                  const project = projects.find((p) => p.id === activeId.slice("project:".length));
+                  if (!project) return null;
+                  return (
+                    <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+                      <ProjectTile project={project} onEdit={() => {}} onDelete={() => {}} />
+                    </div>
+                  );
+                })()}
+              {activeId?.startsWith("folder:") &&
+                (() => {
+                  const folder = folders.find((f) => f.id === activeId.slice("folder:".length));
+                  if (!folder) return null;
+                  return (
+                    <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+                      <FolderTile folder={folder} onEdit={() => {}} onDelete={() => {}} />
+                    </div>
+                  );
+                })()}
+            </DragOverlay>
           </DndContext>
         )}
       </div>
