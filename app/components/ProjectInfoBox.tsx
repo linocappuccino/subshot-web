@@ -8,7 +8,7 @@ import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
 import { DateTimePicker } from "./ui/DateTimePicker";
-import { Input } from "./ui/Field";
+import { Textarea } from "./ui/Field";
 import { Avatar } from "./ui/Avatar";
 import { Button } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -36,16 +36,16 @@ export function ProjectInfoBox({
   const api = useApi();
   const toast = useToast();
   const [hasShootDate, setHasShootDate] = useState(Boolean(project.shoot_date));
-  const [clientName, setClientName] = useState(project.client_name ?? "");
+  const [description, setDescription] = useState(project.description ?? "");
   // Same monotonic-request-id guard as updateLocation below — typing fast
   // and having an earlier keystroke's slower response land last would
   // otherwise silently revert the field mid-edit.
-  const clientNameRequestId = useRef(0);
-  async function updateClientName(value: string) {
-    const requestId = ++clientNameRequestId.current;
+  const descriptionRequestId = useRef(0);
+  async function updateDescription(value: string) {
+    const requestId = ++descriptionRequestId.current;
     try {
-      const updated = await api.patchProject(project.id, { client_name: value || null });
-      if (requestId === clientNameRequestId.current) onProjectChange(() => updated);
+      const updated = await api.patchProject(project.id, { description: value || null });
+      if (requestId === descriptionRequestId.current) onProjectChange(() => updated);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
@@ -132,12 +132,13 @@ export function ProjectInfoBox({
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Auftraggeber</div>
-            <Input
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
-              onBlur={() => updateClientName(clientName)}
-              placeholder="Name des Auftraggebers"
+            <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Beschreibung / Idee</div>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              onBlur={() => updateDescription(description)}
+              placeholder="Worum geht's bei diesem Projekt?"
+              rows={3}
             />
           </div>
 

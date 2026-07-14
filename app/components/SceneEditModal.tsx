@@ -224,6 +224,7 @@ export function SceneEditModal({
         priority: priority ?? null,
         clear_priority: priority === null,
         description: description.trim() || null,
+        clear_description: !description.trim(),
         scheduled_at: hasStart ? start.toISOString() : null,
         duration_minutes: hasStart ? duration : null,
         location_address: locationAddress.trim() || null,

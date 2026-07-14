@@ -12,7 +12,7 @@ import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
 import { DateTimePicker } from "./ui/DateTimePicker";
-import { Input } from "./ui/Field";
+import { Textarea } from "./ui/Field";
 import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -48,11 +48,11 @@ export function ProjectInfoTile({
 }) {
   const api = useApi();
   const toast = useToast();
-  const [clientName, setClientName] = useState(scene.client_name ?? "");
+  const [description, setDescription] = useState(scene.description ?? "");
 
-  async function updateClientName(value: string) {
+  async function updateDescription(value: string) {
     try {
-      const updated = await api.patchScene(scene.id, { client_name: value || null });
+      const updated = await api.patchScene(scene.id, { description: value || null, clear_description: !value });
       applyScene(updated);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
@@ -81,7 +81,7 @@ export function ProjectInfoTile({
     const requestId = ++locationRequestId.current;
     try {
       const updated = await api.patchScene(scene.id, {
-        location_address: address || undefined, location_lat: lat ?? undefined, location_lng: lng ?? undefined,
+        location_address: address || null, location_lat: lat, location_lng: lng, clear_location: !address,
       });
       if (requestId === locationRequestId.current) applyScene(updated);
     } catch (e) {
@@ -153,12 +153,13 @@ export function ProjectInfoTile({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Auftraggeber</div>
-                <Input
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  onBlur={() => updateClientName(clientName)}
-                  placeholder="Name des Auftraggebers"
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Beschreibung / Idee</div>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => updateDescription(description)}
+                  placeholder="Worum geht's bei diesem Projekt?"
+                  rows={3}
                 />
               </div>
 

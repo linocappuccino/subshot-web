@@ -8,7 +8,7 @@ import { Collapsible } from "./ui/Collapsible";
 import { Switch } from "./ui/Switch";
 import { LocationPicker } from "./ui/LocationPicker";
 import { DateTimePicker } from "./ui/DateTimePicker";
-import { Input } from "./ui/Field";
+import { Textarea } from "./ui/Field";
 import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
@@ -36,11 +36,11 @@ export function SectionInfoBox({
 }) {
   const api = useApi();
   const toast = useToast();
-  const [clientName, setClientName] = useState(section.client_name ?? "");
+  const [description, setDescription] = useState(section.description ?? "");
 
-  async function updateClientName(value: string) {
+  async function updateDescription(value: string) {
     try {
-      const updated = await api.patchSection(section.id, { client_name: value || null });
+      const updated = await api.patchSection(section.id, { description: value || null });
       onSectionChange(updated);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
@@ -67,8 +67,10 @@ export function SectionInfoBox({
 
   async function updateLocation(address: string, lat: number | null, lng: number | null) {
     try {
+      // null (not undefined) so patchSection recognizes an explicit clear —
+      // see its own comment (matches the identical fix in ProjectInfoBox).
       const updated = await api.patchSection(section.id, {
-        location_address: address || undefined, location_lat: lat ?? undefined, location_lng: lng ?? undefined,
+        location_address: address || null, location_lat: lat, location_lng: lng,
       });
       onSectionChange(updated);
     } catch (e) {
@@ -123,12 +125,13 @@ export function SectionInfoBox({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Auftraggeber</div>
-                <Input
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  onBlur={() => updateClientName(clientName)}
-                  placeholder="Name des Auftraggebers"
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Beschreibung / Idee</div>
+                <Textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onBlur={() => updateDescription(description)}
+                  placeholder="Worum geht's an diesem Drehtag?"
+                  rows={3}
                 />
               </div>
 

@@ -35,6 +35,9 @@ export interface Project {
   location_lat: number | null;
   location_lng: number | null;
   client_name: string | null;
+  /** "Beschreibung / Idee" — replaces client_name in the Projektinfo tile
+   * UI (2026-07-14, Lino). */
+  description: string | null;
   folder_id: string | null;
   team_id: string | null;
   thumbnail_url: string | null;
@@ -129,6 +132,9 @@ export interface Section {
   location_lat: number | null;
   location_lng: number | null;
   client_name: string | null;
+  /** "Beschreibung / Idee" — replaces client_name in the Projektinfo tile
+   * UI (2026-07-14, Lino). */
+  description: string | null;
   todo_lists: TodoList[];
 }
 
@@ -270,4 +276,28 @@ export interface Notification {
   created_at: string;
   updated_at: string;
   read_at: string | null;
+}
+
+export type FeedbackStatus = "open" | "todo" | "in_progress" | "implemented" | "duplicate";
+
+export interface Feedback {
+  id: string;
+  text: string;
+  status: FeedbackStatus;
+  created_at: string;
+  vote_count: number;
+  user_voted: boolean;
+}
+
+/** Admin-only view (see app/main.py's require_admin) — includes who
+ * submitted it and whether it's been approved for public listing yet. */
+export interface FeedbackAdmin {
+  id: string;
+  user_id: string;
+  text: string;
+  status: FeedbackStatus;
+  approved: boolean;
+  created_at: string;
+  implemented_at: string | null;
+  vote_count: number;
 }

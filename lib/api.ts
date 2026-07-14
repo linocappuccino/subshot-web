@@ -2,6 +2,8 @@ import type {
   Annotation,
   Invite,
   Member,
+  Feedback,
+  FeedbackAdmin,
   Notification,
   NotionDatabase,
   Project,
@@ -100,11 +102,12 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         location_lat: number | null;
         location_lng: number | null;
         client_name: string | null;
+        description: string | null;
         folder_id: string | null;
         team_id: string | null;
       }>
     ) => {
-      const { emoji, folder_id, team_id, ...rest } = body;
+      const { emoji, folder_id, team_id, location_address, description, ...rest } = body;
       return request<Project>(`projects/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
@@ -115,6 +118,13 @@ export function createApiClient(getToken: () => Promise<string | null>) {
           clear_folder: folder_id === null,
           team_id: team_id ?? undefined,
           clear_team: team_id === null,
+          // null means "the user cleared this field" — the backend can't
+          // tell that apart from "field omitted" otherwise (both parse to
+          // None), see clear_location/clear_description on ProjectPatch.
+          location_address: location_address ?? undefined,
+          clear_location: location_address === null,
+          description: description ?? undefined,
+          clear_description: description === null,
         }),
       });
     },
@@ -194,11 +204,26 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       id: string,
       body: Partial<{
         name: string; sort_order: number;
-        shoot_date: string | null; location_address: string; location_lat: number; location_lng: number;
+        shoot_date: string | null; location_address: string | null; location_lat: number | null; location_lng: number | null;
         client_name: string | null;
+        description: string | null;
         add_project_info: boolean; remove_project_info: boolean;
       }>
-    ) => request<Section>(`sections/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    ) => {
+      const { location_address, description, ...rest } = body;
+      return request<Section>(`sections/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ...rest,
+          // null means "the user cleared this field", see patchProject's
+          // identical clear_location/clear_description handling.
+          location_address: location_address ?? undefined,
+          clear_location: location_address === null,
+          description: description ?? undefined,
+          clear_description: description === null,
+        }),
+      });
+    },
     deleteSection: (id: string) => request<void>(`sections/${id}`, { method: "DELETE" }),
     moveSection: (id: string, beforeSectionId: string | null) =>
       request<Section>(`sections/${id}/move`, { method: "POST", body: JSON.stringify({ before_section_id: beforeSectionId }) }),
@@ -308,6 +333,17 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       const blob = await res.blob();
       return URL.createObjectURL(blob);
     },
+
+    // ── Feedback ─────────────────────────────────────────────────────────
+    feedback: () => request<Feedback[]>("feedback"),
+    createFeedback: (text: string) => request<Feedback>("feedback", { method: "POST", body: JSON.stringify({ text }) }),
+    voteFeedback: (id: string) => request<{ ok: true; voted: boolean; votes: number }>(`feedback/${id}/vote`, { method: "POST" }),
+    feedbackPending: () => request<FeedbackAdmin[]>("feedback/admin/pending"),
+    approveFeedback: (id: string) => request<{ ok: true }>(`feedback/${id}/approve`, { method: "POST" }),
+    deleteFeedback: (id: string) => request<{ ok: true }>(`feedback/${id}/delete`, { method: "POST" }),
+    blockFeedbackUser: (userId: string) => request<{ ok: true }>(`feedback/block/${userId}`, { method: "POST" }),
+    setFeedbackStatus: (id: string, status: "open" | "todo" | "in_progress" | "implemented" | "reopen") =>
+      request<{ ok: true }>(`feedback/${id}/status`, { method: "POST", body: JSON.stringify({ status }) }),
   };
 }
 
