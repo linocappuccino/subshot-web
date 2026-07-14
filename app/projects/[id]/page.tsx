@@ -1614,7 +1614,21 @@ function SectionDropZone({ sectionId, insertionIndicator }: { sectionId: string 
   return (
     <div
       ref={setNodeRef}
-      className={`h-11 rounded-xl mt-2 border-2 border-dashed transition-colors ${
+      // Taller hit area (was h-11/44px) — 2026-07-14, Lino: dragging a
+      // scene toward the END of its section, right before the NEXT
+      // section's header, landed in that next section instead. Root cause:
+      // sceneCollisionDetection's closestCenter last-resort fallback (see
+      // its own comment) jumps to whichever REAL card's center is nearest
+      // once the cursor is past both this dropzone's rect and any card
+      // rect — with only 44px of hit area here, the cursor crosses into
+      // "closer to the next section's first card" territory almost
+      // immediately after leaving the last card, well before a user
+      // visually feels like they've left this section. A much taller zone
+      // keeps the cursor inside a REAL pointerWithin/rectIntersection hit
+      // (this dropzone) for longer, so the ambiguous cross-section
+      // fallback only ever kicks in once the cursor is unambiguously in
+      // the next section.
+      className={`h-24 rounded-xl mt-2 border-2 border-dashed transition-colors ${
         active ? "border-blue-500 bg-blue-500/10" : "border-transparent"
       }`}
     />
