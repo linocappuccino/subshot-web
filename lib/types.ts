@@ -70,6 +70,7 @@ export interface Scene {
   completed: boolean;
   sort_order: number;
   assignee_id: string | null;
+  assignee_ids: string[];
   section_id: string | null;
   priority: Priority | null;
   location_address: string | null;

@@ -168,7 +168,9 @@ function SceneRow({
   // fight the insertion-line indicator.
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
-  const assignee = members.find((m) => m.user_id === scene.assignee_id);
+  // 2026-07-14: read-only display of possibly several assignees — editing
+  // happens in SceneEditModal's own multi-select, this row just lists them.
+  const assignees = members.filter((m) => (scene.assignee_ids ?? []).includes(m.user_id));
   const dialogues = [...scene.dialogues].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
@@ -271,10 +273,14 @@ function SceneRow({
         )}
       </td>
       <td className="px-3 py-2.5 cursor-pointer" onClick={() => onEditScene(scene)}>
-        {assignee ? (
-          <div className="flex items-center gap-1.5">
-            <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={20} />
-            <span className="text-xs text-white/60 max-w-[90px]">{assignee.name || assignee.email}</span>
+        {assignees.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {assignees.map((a) => (
+              <div key={a.user_id} className="flex items-center gap-1.5">
+                <Avatar name={a.name} email={a.email} avatarUrl={a.avatar_url} size={20} />
+                <span className="text-xs text-white/60 max-w-[90px]">{a.name || a.email}</span>
+              </div>
+            ))}
           </div>
         ) : (
           <span className="text-white/25">—</span>

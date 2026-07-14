@@ -313,16 +313,23 @@ export function SceneCard({
     setNewShotText("");
   }
 
-  async function assignTo(userId: string | null) {
+  // 2026-07-14, Lino: "mehrere Personen auswählen können und auch wieder
+  // entfernen können" — assignee_ids (see lib/types.ts) replaces the old
+  // single assignee_id for editing; toggles one id in/out of the list
+  // rather than replacing the whole selection, so the menu can stay open
+  // across multiple picks.
+  async function toggleAssignee(userId: string) {
+    const current = scene.assignee_ids ?? [];
+    const next = current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId];
     try {
-      const updated = await api.patchScene(scene.id, { assignee_id: userId, clear_assignee: !userId });
+      const updated = await api.patchScene(scene.id, { assignee_ids: next });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
     }
   }
 
-  const assignee = members.find((m) => m.user_id === scene.assignee_id);
+  const assignees = members.filter((m) => (scene.assignee_ids ?? []).includes(m.user_id));
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   const isTimerRunning = useSceneTimerRunning(scene);
 
@@ -332,13 +339,19 @@ export function SceneCard({
           tile itself moving (Lino, 2026-07-13: the old whole-card scale
           pulse "sieht scheisse aus"). Sits behind via -z-10 on a plain div
           in this same stacking context, no separate positioned ancestor
-          needed since SortableSceneCard's wrapper is already `relative`. */}
+          needed since SortableSceneCard's wrapper is already `relative`.
+          Toned way down 2026-07-14 (Lino: "kann den text kaum mehr lesen,
+          soll ein dezentes langsam pulsierendes glowen sein, nur aussen")
+          — 0.5 peak opacity on a blur-xl (bleeds inward a lot) washed out
+          the card's own text. Pushed further out (-inset-5, was -inset-2)
+          so the blur's spread lands outside the card instead of over its
+          content, opacity capped much lower, and a slower cycle. */}
       {isTimerRunning && (
         <motion.div
           aria-hidden
-          className="absolute -inset-2 rounded-3xl bg-white blur-xl pointer-events-none -z-10"
-          animate={{ opacity: [0.15, 0.5, 0.15] }}
-          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -inset-5 rounded-3xl bg-white blur-xl pointer-events-none -z-10"
+          animate={{ opacity: [0.06, 0.18, 0.06] }}
+          transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
       <motion.div
@@ -636,8 +649,25 @@ export function SceneCard({
         <Menu
           align="start"
           trigger={
-            assignee ? (
-              <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={28} className="cursor-pointer" />
+            assignees.length > 0 ? (
+              // Overlapping stack, most recent on top — same idea as
+              // avatar-stack patterns elsewhere, just built inline since
+              // this is the only spot that needs one.
+              <div className="flex items-center cursor-pointer" style={{ paddingRight: Math.min(assignees.length - 1, 2) * 14 }}>
+                {assignees.slice(0, 3).map((m, i) => (
+                  <div key={m.user_id} style={{ marginLeft: i === 0 ? 0 : -14, zIndex: i }}>
+                    <Avatar name={m.name} email={m.email} avatarUrl={m.avatar_url} size={28} className="ring-2 ring-[#1c1c1e]" />
+                  </div>
+                ))}
+                {assignees.length > 3 && (
+                  <div
+                    className="flex items-center justify-center rounded-full bg-white/15 text-[10px] font-semibold text-white/70 ring-2 ring-[#1c1c1e]"
+                    style={{ width: 28, height: 28, marginLeft: -14 }}
+                  >
+                    +{assignees.length - 3}
+                  </div>
+                )}
+              </div>
             ) : (
               <IconButton size={28} className="bg-white/5">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -648,29 +678,29 @@ export function SceneCard({
             )
           }
         >
-          {(close) => (
+          {() => (
             <>
-              {assignee && (
-                <MenuItem
-                  onClick={() => {
-                    assignTo(null);
-                    close();
-                  }}
-                >
-                  Niemand zugewiesen
-                </MenuItem>
-              )}
-              {members.map((m) => (
-                <MenuItem
-                  key={m.user_id}
-                  onClick={() => {
-                    assignTo(m.user_id);
-                    close();
-                  }}
-                >
-                  {m.name || m.email}
-                </MenuItem>
-              ))}
+              {members.map((m) => {
+                const isAssigned = (scene.assignee_ids ?? []).includes(m.user_id);
+                return (
+                  <MenuItem key={m.user_id} onClick={() => toggleAssignee(m.user_id)}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                          isAssigned ? "bg-blue-500 border-blue-500" : "border-white/25"
+                        }`}
+                      >
+                        {isAssigned && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        )}
+                      </span>
+                      {m.name || m.email}
+                    </span>
+                  </MenuItem>
+                );
+              })}
             </>
           )}
         </Menu>

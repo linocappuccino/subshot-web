@@ -87,7 +87,9 @@ export function SceneEditModal({
   const [locationAddress, setLocationAddress] = useState(existing?.location_address ?? "");
   const [locationLat, setLocationLat] = useState<number | null>(existing?.location_lat ?? null);
   const [locationLng, setLocationLng] = useState<number | null>(existing?.location_lng ?? null);
-  const [assigneeId, setAssigneeId] = useState(existing?.assignee_id ?? "");
+  // 2026-07-14, Lino: "mehrere Personen auswählen können" — replaces the
+  // old single assigneeId string with a list, mirroring Scene.assignee_ids.
+  const [assigneeIds, setAssigneeIds] = useState<string[]>(existing?.assignee_ids ?? []);
   const [goodTake, setGoodTake] = useState(existing?.good_take_filename ?? "");
   const [dialogues, setDialogues] = useState<SceneDialogue[]>(existing?.dialogues ?? []);
   const [draftDialogues, setDraftDialogues] = useState<string[]>([]);
@@ -131,7 +133,7 @@ export function SceneEditModal({
     setLocationAddress(existing?.location_address ?? "");
     setLocationLat(existing?.location_lat ?? null);
     setLocationLng(existing?.location_lng ?? null);
-    setAssigneeId(existing?.assignee_id ?? "");
+    setAssigneeIds(existing?.assignee_ids ?? []);
     setGoodTake(existing?.good_take_filename ?? "");
     setDialogues(existing?.dialogues ?? []);
     setDraftDialogues([]);
@@ -231,8 +233,7 @@ export function SceneEditModal({
         location_lat: locationLat,
         location_lng: locationLng,
         clear_location: !locationAddress.trim(),
-        assignee_id: assigneeId || null,
-        clear_assignee: !assigneeId,
+        assignee_ids: assigneeIds,
         good_take_filename: goodTake.trim() || null,
         clear_good_take: !goodTake.trim(),
       };
@@ -471,18 +472,35 @@ export function SceneEditModal({
 
       <FieldGroup>
         <Label>Zuständig</Label>
-        <select
-          value={assigneeId}
-          onChange={(e) => setAssigneeId(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-        >
-          <option value="">Niemand zugewiesen</option>
-          {members.map((m) => (
-            <option key={m.user_id} value={m.user_id}>
-              {m.name || m.email}
-            </option>
-          ))}
-        </select>
+        <div className="flex flex-col gap-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5">
+          {members.length === 0 && <span className="text-sm text-white/40">Keine Mitglieder im Projekt.</span>}
+          {members.map((m) => {
+            const isAssigned = assigneeIds.includes(m.user_id);
+            return (
+              <button
+                key={m.user_id}
+                type="button"
+                onClick={() =>
+                  setAssigneeIds((prev) => (prev.includes(m.user_id) ? prev.filter((id) => id !== m.user_id) : [...prev, m.user_id]))
+                }
+                className="flex items-center gap-2.5 text-left text-sm py-1"
+              >
+                <span
+                  className={`flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                    isAssigned ? "bg-blue-500 border-blue-500" : "border-white/25"
+                  }`}
+                >
+                  {isAssigned && (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  )}
+                </span>
+                {m.name || m.email}
+              </button>
+            );
+          })}
+        </div>
       </FieldGroup>
 
       {!effectiveIsIntermediateStep && (
