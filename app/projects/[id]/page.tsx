@@ -294,12 +294,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
    * one move call per scene. Scenes missing the sort key (e.g. no
    * location_address set) sort to the end, stable otherwise.
    */
-  async function handleSortScenes(sectionId: string | null, criterion: "number" | "time" | "location") {
+  async function handleSortScenes(sectionId: string | null, criterion: "number" | "time" | "location" | "priority") {
     if (!data) return;
     const group = data.scenes.filter((s) => (s.section_id ?? null) === sectionId);
+    // must < should < optional < none (2026-07-14, Lino: "per Prio sortieren
+    // ... evtl. auch die Zeitreihenfolge beachten") — priority is the primary
+    // key, scheduled_at breaks ties within the same priority so same-priority
+    // scenes still land in a sensible chronological order instead of staying
+    // in whatever order they happened to be in before.
+    const priorityRank: Record<string, number> = { must: 0, should: 1, optional: 2 };
     const key = (s: Scene): [number, string | number] => {
       if (criterion === "number") return [0, s.number * 1000 + (s.letter ? s.letter.charCodeAt(0) : 0)];
       if (criterion === "time") return s.scheduled_at ? [0, s.scheduled_at] : [1, ""];
+      if (criterion === "priority") return [s.priority ? priorityRank[s.priority] : 3, s.scheduled_at ?? ""];
       return s.location_address ? [0, s.location_address.toLowerCase()] : [1, ""];
     };
     const sorted = [...group].sort((a, b) => {
@@ -1352,7 +1359,7 @@ function SectionBlock({
   projectId?: string;
   onSectionChange?: (updated: Section) => void;
   onOpenTeam?: () => void;
-  onSortScenes?: (criterion: "number" | "time" | "location") => void;
+  onSortScenes?: (criterion: "number" | "time" | "location" | "priority") => void;
 }) {
   const doneCount = scenes.filter((s) => s.completed).length;
 
@@ -1537,6 +1544,14 @@ function SectionBlock({
                             }}
                           >
                             Nach Ort sortieren
+                          </MenuItem>
+                          <MenuItem
+                            onClick={() => {
+                              onSortScenes("priority");
+                              close();
+                            }}
+                          >
+                            Nach Priorität sortieren
                           </MenuItem>
                         </>
                       )}
