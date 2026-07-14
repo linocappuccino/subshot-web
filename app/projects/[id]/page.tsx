@@ -166,6 +166,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // of insertionIndicator itself.
   const activeSceneDragRef = useRef(false);
   const lastOverIdRef = useRef<string | null>(null);
+  // Mirrors activeSceneId state for the pointermove listener below, which is
+  // set up once (empty-deps effect) and reads refs for fresh values instead
+  // of closing over state — see its own comment for why.
+  const activeSceneIdRef = useRef<string | null>(null);
   useEffect(() => {
     function onPointerMove(e: PointerEvent) {
       pointerPosRef.current = { x: e.clientX, y: e.clientY };
@@ -197,7 +201,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       if (!el) return;
       const rect = el.getBoundingClientRect();
       const overTarget = dataRef.current?.scenes.find((s) => s.id === overId);
-      const overIsFullWidth = overTarget?.is_project_info ?? false;
+      const activeTarget = dataRef.current?.scenes.find((s) => s.id === activeSceneIdRef.current);
+      // A full-width Projektinfo tile only ever has an above/below neighbor,
+      // never a left/right one — true whether IT is the hovered target (no
+      // left/right to straddle) or IT is the tile being dragged (it can only
+      // ever land as a full row, regardless of how narrow the tile it's
+      // currently hovering over is). Checking only the hovered target used
+      // to miss the second case: dragging the Projektinfo tile itself over a
+      // normal-width scene computed a left/right split from the target's
+      // width alone, so the horizontal (top/bottom) line never showed
+      // (Lino, 2026-07-14).
+      const overIsFullWidth = (overTarget?.is_project_info || activeTarget?.is_project_info) ?? false;
       if (overIsFullWidth) {
         const targetCenterY = rect.top + rect.height / 2;
         setInsertionIndicator({ targetId: overId, edge: e.clientY < targetCenterY ? "top" : "bottom" });
@@ -518,6 +532,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // invalid drop can restore it exactly (see handleSceneDragCancel/End).
   function handleSceneDragStart(event: DragStartEvent) {
     setActiveSceneId(String(event.active.id));
+    activeSceneIdRef.current = String(event.active.id);
     dragOriginScenesRef.current = data?.scenes ?? null;
     activeSceneDragRef.current = true;
     lastOverIdRef.current = null;
@@ -574,9 +589,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       // left/right split (like every normal same-row scene tile gets) would
       // point at a spot on the far edge of the row that has nothing to do
       // with where the card would actually land. Compare Y instead whenever
-      // the hovered target itself is a full-width tile.
+      // EITHER the hovered target OR the dragged tile itself is full-width —
+      // dragging the Projektinfo tile over a normal-width scene can only
+      // ever land as a full row too, so it needs the same top/bottom split
+      // even though the target it's currently over is narrow (missing this
+      // half used to mean the horizontal line never showed while dragging
+      // the Projektinfo tile itself, Lino 2026-07-14).
       const overTarget = data?.scenes.find((s) => s.id === overIdStr);
-      const overIsFullWidth = overTarget?.is_project_info ?? false;
+      const activeTarget = data?.scenes.find((s) => s.id === activeId);
+      const overIsFullWidth = (overTarget?.is_project_info || activeTarget?.is_project_info) ?? false;
       if (pointer) {
         if (viewMode === "table" || overIsFullWidth) {
           const targetCenterY = over.rect.top + over.rect.height / 2;
@@ -597,6 +618,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
     setActiveSceneId(null);
+    activeSceneIdRef.current = null;
     activeSceneDragRef.current = false;
     lastOverIdRef.current = null;
     // Captured BEFORE clearing — this indicator is the single source of
@@ -661,6 +683,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // persisted to the backend so a plain state restore is enough.
   function handleSceneDragCancel() {
     setActiveSceneId(null);
+    activeSceneIdRef.current = null;
     activeSceneDragRef.current = false;
     lastOverIdRef.current = null;
     setInsertionIndicator(null);
