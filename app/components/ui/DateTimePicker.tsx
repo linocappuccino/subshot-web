@@ -49,7 +49,23 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
       setOpen(false);
     }
     document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    // Capture phase + stopPropagation (2026-07-14, QA-Agent-Fund: Escape
+    // schloss das GANZE Szenen-Formular statt nur diesen Kalender-Popover) —
+    // Modal.tsx's own Escape handler is a plain bubble-phase document
+    // listener with no idea this popover exists. Capture-phase listeners
+    // always run before bubble-phase ones on the same target regardless of
+    // attach order, so this intercepts Escape and stops it from ever
+    // reaching Modal's handler, closing only the popover.
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      setOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
   }, [open]);
 
   function toggleOpen() {
