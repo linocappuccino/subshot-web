@@ -61,3 +61,38 @@ html {
 * {
   scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
+
+/* Ghost devlog post content (2026-07-14) — raw HTML from Ghost's Content API
+   (see app/devlog/page.tsx), no Tailwind Typography plugin installed, so
+   plain-tag defaults need explicit spacing/link color here instead. */
+.devlog-content {
+  line-height: 1.7;
+}
+.devlog-content > * + * {
+  margin-top: 1em;
+}
+.devlog-content h1,
+.devlog-content h2,
+.devlog-content h3 {
+  font-weight: 700;
+  margin-top: 1.5em;
+}
+.devlog-content a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+.devlog-content img,
+.devlog-content video {
+  border-radius: 1rem;
+  max-width: 100%;
+  height: auto;
+}
+.devlog-content ul,
+.devlog-content ol {
+  padding-left: 1.5em;
+}
+.devlog-content blockquote {
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  padding-left: 1em;
+  color: rgba(255, 255, 255, 0.7);
+}
