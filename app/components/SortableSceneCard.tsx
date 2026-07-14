@@ -1,7 +1,7 @@
 "use client";
 
 import { useSortable } from "@dnd-kit/sortable";
-import type { Member, Scene, Shot } from "@/lib/types";
+import type { Annotation, Member, Scene, Shot } from "@/lib/types";
 import { SceneCard } from "./SceneCard";
 import { ProjectInfoTile } from "./ProjectInfoTile";
 
@@ -22,6 +22,10 @@ export function SortableSceneCard({
   onChange,
   onOpenTeam,
   insertionEdge,
+  dragDisabled,
+  annotations,
+  highlightedAnnotationId,
+  onAnnotationClick,
 }: {
   scene: Scene;
   shots: Shot[];
@@ -38,6 +42,13 @@ export function SortableSceneCard({
    * table view, AND in grid view whenever this card is the full-width
    * Projektinfo tile (col-span-full — no left/right neighbor to straddle). */
   insertionEdge?: "left" | "right" | "top" | "bottom" | null;
+  /** 2026-07-14, comment mode (see page.tsx's showAnnotations) — "man kann
+   * in diesem modus keine kacheln verschieben", passed straight to
+   * useSortable's own disabled option. */
+  dragDisabled?: boolean;
+  annotations?: Annotation[];
+  highlightedAnnotationId?: string | null;
+  onAnnotationClick?: (a: Annotation) => void;
 }) {
   // transform/transition deliberately NOT applied to the style below —
   // dnd-kit's useSortable computes them via rectSortingStrategy to shift
@@ -51,7 +62,7 @@ export function SortableSceneCard({
   // computed against a card rect that dnd-kit was ALSO silently moving out
   // from under it. isDragging/opacity is all this card needs — the actual
   // "am I being dragged" visual is the separate DragOverlay copy.
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, disabled: dragDisabled });
 
   return (
     <div
@@ -95,6 +106,9 @@ export function SortableSceneCard({
           onDuplicate={onDuplicate}
           onChange={onChange}
           dragHandleProps={{ attributes, listeners }}
+          annotations={annotations}
+          highlightedAnnotationId={highlightedAnnotationId}
+          onAnnotationClick={onAnnotationClick}
         />
       )}
     </div>

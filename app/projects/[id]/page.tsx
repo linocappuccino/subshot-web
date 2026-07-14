@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, use as usePromise } from "react";
+import { useEffect, useMemo, useRef, useState, use as usePromise } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -124,6 +124,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [showNotion, setShowNotion] = useState(false);
   const [showAnnotations, setShowAnnotations] = useState(false);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  // 2026-07-14, comment mode in the logged-in app (mirrors the public
+  // preview page's sidebar) — which markup is currently "active" (clicked
+  // in the sidebar, or clicked directly on the page), both places read
+  // this to decide what to visually brighten/pulse.
+  const [highlightedAnnotationId, setHighlightedAnnotationId] = useState<string | null>(null);
+  const annotationsByScene = useMemo(() => {
+    const map = new Map<string, Annotation[]>();
+    for (const a of annotations) {
+      if (a.status !== "open" || !a.scene_id) continue;
+      const list = map.get(a.scene_id) ?? [];
+      list.push(a);
+      map.set(a.scene_id, list);
+    }
+    return map;
+  }, [annotations]);
+  // Shared by both the sidebar (clicking an entry) and a direct click on a
+  // markup on the page — pulses/brightens it and scrolls the OWNING SCENE
+  // CARD into view (not the tiny markup itself, which the pulse animation
+  // already draws the eye to once it's on-screen).
+  function handleAnnotationSelect(annotation: Annotation) {
+    setHighlightedAnnotationId(annotation.id);
+    if (annotation.scene_id) {
+      document.querySelector(`[data-sortable-scene-id="${annotation.scene_id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }
   const [exportingPdf, setExportingPdf] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">(() =>
     typeof window !== "undefined" && window.localStorage.getItem("subshotSceneViewMode") === "table" ? "table" : "grid"
@@ -820,7 +845,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <Button variant="secondary" size="sm" onClick={() => setShowTeam(true)}>
               <UsersIcon /> Team
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowAnnotations(true)} className="relative">
+            <Button
+              variant={showAnnotations ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setShowAnnotations((v) => !v)}
+              className="relative"
+            >
               <CommentIcon /> Kommentare
               {annotations.some((a) => a.status === "open") && (
                 <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
@@ -948,9 +978,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   setEditingSection(s);
                   setEditSectionName(s.name);
                 }}
-                onSectionDragStart={handleSectionDragStart}
-                onSectionDragOver={handleSectionDragOver}
-                onSectionDrop={handleSectionDrop}
+                // undefined (not just a no-op) while comment mode is
+                // active — SectionBlock only renders the drag handle at
+                // all when onSectionDragStart is provided, same "man kann
+                // in diesem modus keine kacheln verschieben" rule as
+                // scenes' dragDisabled.
+                onSectionDragStart={showAnnotations ? undefined : handleSectionDragStart}
+                onSectionDragOver={showAnnotations ? undefined : handleSectionDragOver}
+                onSectionDrop={showAnnotations ? undefined : handleSectionDrop}
                 onSectionDragEnd={handleSectionDragEnd}
                 draggingSectionId={draggingSectionId}
                 sectionInsertionIndicator={sectionInsertionIndicator}
@@ -962,6 +997,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 }
                 onOpenTeam={() => setShowTeam(true)}
                 onSortScenes={(criterion) => handleSortScenes(section.id, criterion)}
+                dragDisabled={showAnnotations}
+                annotationsByScene={showAnnotations ? annotationsByScene : undefined}
+                highlightedAnnotationId={highlightedAnnotationId}
+                onAnnotationClick={handleAnnotationSelect}
               />
             );
           })}
@@ -985,6 +1024,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               insertionIndicator={insertionIndicator}
               viewMode={viewMode}
               onSortScenes={(criterion) => handleSortScenes(null, criterion)}
+              dragDisabled={showAnnotations}
+              annotationsByScene={showAnnotations ? annotationsByScene : undefined}
+              highlightedAnnotationId={highlightedAnnotationId}
+              onAnnotationClick={handleAnnotationSelect}
             />
           )}
 
@@ -1183,6 +1226,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         annotations={annotations}
         onChange={(updater) => setAnnotations(updater)}
         scenes={data.scenes}
+        highlightedAnnotationId={highlightedAnnotationId}
+        onSelect={handleAnnotationSelect}
       />
     </AppShell>
   );
@@ -1339,6 +1384,10 @@ function SectionBlock({
   onSectionChange,
   onOpenTeam,
   onSortScenes,
+  dragDisabled,
+  annotationsByScene,
+  highlightedAnnotationId,
+  onAnnotationClick,
 }: {
   /** Undefined for the "Ohne Abschnitt" bucket — that one has no real
    * SceneSection to drag/attach a project-info box to. */
@@ -1365,6 +1414,12 @@ function SectionBlock({
   onSectionChange?: (updated: Section) => void;
   onOpenTeam?: () => void;
   onSortScenes?: (criterion: "number" | "time" | "location" | "priority") => void;
+  /** 2026-07-14, comment mode (see page.tsx's showAnnotations) — "man kann
+   * in diesem modus keine kacheln verschieben". */
+  dragDisabled?: boolean;
+  annotationsByScene?: Map<string, Annotation[]>;
+  highlightedAnnotationId?: string | null;
+  onAnnotationClick?: (a: Annotation) => void;
 }) {
   const doneCount = scenes.filter((s) => s.completed).length;
 
@@ -1401,6 +1456,10 @@ function SectionBlock({
               onChange={onChange}
               onOpenTeam={onOpenTeam ?? (() => {})}
               insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
+              dragDisabled={dragDisabled}
+              annotations={annotationsByScene?.get(scene.id)}
+              highlightedAnnotationId={highlightedAnnotationId}
+              onAnnotationClick={onAnnotationClick}
             />
           ))}
         </AnimatePresence>

@@ -20,7 +20,7 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from "@dnd-kit/utilities";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
-import { PALETTE, PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
+import { PALETTE, PRIORITY_COLORS, PRIORITY_LABELS, type Annotation, type Member, type Scene, type Shot } from "@/lib/types";
 import { AuthImage } from "./AuthImage";
 import { Pill, ColorBadge } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
@@ -67,6 +67,99 @@ function addressWithCommaBreaks(address: string) {
       )}
     </span>
   ));
+}
+
+/** Wraps the FIRST matching "highlight"-kind annotation's `text` substring
+ * in `.subshot-annot-mark` (2026-07-14, comment mode — mirrors
+ * share_view.py's _wrap_highlights on the public preview page). Only the
+ * first match, not every one that could theoretically match this field —
+ * overlapping highlights on the same field would need interval merging,
+ * out of scope for a first version here (matches the preview page's own
+ * per-scene grouping, which likewise renders one <mark> per matched
+ * substring in encounter order). */
+function renderHighlightedText(
+  text: string,
+  field: string,
+  annotations: Annotation[],
+  highlightedAnnotationId: string | null | undefined,
+  onAnnotationClick: ((a: Annotation) => void) | undefined
+): React.ReactNode {
+  const match = annotations.find((a) => a.field === field && a.text && text.includes(a.text));
+  if (!match || !match.text) return text;
+  const idx = text.indexOf(match.text);
+  const before = text.slice(0, idx);
+  const middle = text.slice(idx, idx + match.text.length);
+  const after = text.slice(idx + match.text.length);
+  return (
+    <>
+      {before}
+      <mark
+        title={match.comment ? `${match.author_name}: ${match.comment}` : match.author_name}
+        onClick={(e) => {
+          e.stopPropagation();
+          onAnnotationClick?.(match);
+        }}
+        className={`subshot-annot-mark ${highlightedAnnotationId === match.id ? "subshot-annot-highlighted subshot-annot-pulse" : ""}`}
+      >
+        {middle}
+      </mark>
+      {after}
+    </>
+  );
+}
+
+function parsePenPath(raw: string): { x: number; y: number }[] {
+  try {
+    const points = JSON.parse(raw);
+    if (Array.isArray(points)) return points;
+  } catch {
+    // malformed pen_path shouldn't take the whole card down
+  }
+  return [];
+}
+
+function penPathD(points: { x: number; y: number }[]): string {
+  if (points.length === 0) return "";
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x * 100} ${p.y * 100}`).join(" ");
+}
+
+/** Freehand pen-stroke markups (2026-07-14, comment mode) — mirrors
+ * share_view.py's _pen_overlay_svg exactly: a 0-100 viewBox with
+ * preserveAspectRatio="none" so pen_path's stored 0.0-1.0-relative points
+ * redraw correctly at THIS card's actual rendered size, whatever that is,
+ * without any per-card pixel math. */
+function PenAnnotationOverlay({
+  annotations,
+  highlightedAnnotationId,
+  onAnnotationClick,
+}: {
+  annotations: Annotation[];
+  highlightedAnnotationId?: string | null;
+  onAnnotationClick?: (a: Annotation) => void;
+}) {
+  return (
+    <svg className="subshot-annot-pen-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+      {annotations.map((a) => {
+        const d = penPathD(parsePenPath(a.pen_path!));
+        if (!d) return null;
+        const isHighlighted = highlightedAnnotationId === a.id;
+        return (
+          <g
+            key={a.id}
+            className={isHighlighted ? "subshot-annot-pulse" : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAnnotationClick?.(a);
+            }}
+          >
+            <title>{a.comment ? `${a.author_name}: ${a.comment}` : a.author_name}</title>
+            <path className="subshot-annot-pen-glow" d={d} />
+            <path className="subshot-annot-pen-core" d={d} />
+          </g>
+        );
+      })}
+    </svg>
+  );
 }
 
 /** Pure — what `shots` (already scoped to one scene) would look like with
@@ -137,6 +230,9 @@ export function SceneCard({
   onDuplicate,
   onChange,
   dragHandleProps,
+  annotations,
+  highlightedAnnotationId,
+  onAnnotationClick,
 }: {
   scene: Scene;
   shots: Shot[];
@@ -146,7 +242,15 @@ export function SceneCard({
   onDelete: () => void;
   onChange: (updater: (data: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
+  /** Open annotations for THIS scene only (2026-07-14, comment mode in the
+   * logged-in app — see page.tsx) — already filtered by the caller, this
+   * component just renders them. */
+  annotations?: Annotation[];
+  highlightedAnnotationId?: string | null;
+  onAnnotationClick?: (a: Annotation) => void;
 }) {
+  const penAnnotations = (annotations ?? []).filter((a) => a.kind === "pen" && a.pen_path);
+  const highlightAnnotations = (annotations ?? []).filter((a) => a.kind === "highlight" && a.field && a.text);
   const api = useApi();
   const toast = useToast();
   const [addingShot, setAddingShot] = useState(false);
@@ -365,12 +469,24 @@ export function SceneCard({
         // bug on the folder/project tiles (see project memory). A real
         // frosted-glass material now, not just a gradient standing in for one
         // (Lino: "der apple glas effekt soll auf ALLEN Kacheln sein").
-        className={`rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
+        className={`relative rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
           scene.completed
             ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
             : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
         }`}
       >
+      {/* Comment-mode pen-stroke overlays (2026-07-14) — see
+          PenAnnotationOverlay's own doc comment. Sits above the card's own
+          background/border (this element is `relative`) but below its
+          actual content buttons, same layering as the public preview
+          page's equivalent. */}
+      {penAnnotations.length > 0 && (
+        <PenAnnotationOverlay
+          annotations={penAnnotations}
+          highlightedAnnotationId={highlightedAnnotationId}
+          onAnnotationClick={onAnnotationClick}
+        />
+      )}
       <div className="flex items-start gap-2 mb-2">
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -382,7 +498,11 @@ export function SceneCard({
               </Pill>
             )}
           </div>
-          <h3 className="font-semibold mb-1.5 break-words">{scene.name || "Unbenannte Szene"}</h3>
+          <h3 className="font-semibold mb-1.5 break-words">
+            {scene.name
+              ? renderHighlightedText(scene.name, "name", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)
+              : "Unbenannte Szene"}
+          </h3>
           {(scene.scheduled_at || scene.location_address) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               {scene.scheduled_at && (
@@ -486,12 +606,18 @@ export function SceneCard({
           </button>
           <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${descriptionOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
             <div className="overflow-hidden min-h-0">
-              <p className="text-sm text-white/80 whitespace-pre-wrap">{scene.description}</p>
+              <p className="text-sm text-white/80 whitespace-pre-wrap">
+                {renderHighlightedText(scene.description, "description", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)}
+              </p>
             </div>
           </div>
         </div>
       )}
-      {scene.dialogue && <p className="text-sm italic text-white/50 mb-1.5">„{scene.dialogue}“</p>}
+      {scene.dialogue && (
+        <p className="text-sm italic text-white/50 mb-1.5">
+          „{renderHighlightedText(scene.dialogue, "dialogue", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)}“
+        </p>
+      )}
 
       {scene.dialogues.length > 0 && (
         <div className="bg-white/[0.03] rounded-lg p-2.5 mb-2">
