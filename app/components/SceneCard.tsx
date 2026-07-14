@@ -327,28 +327,37 @@ export function SceneCard({
   const isTimerRunning = useSceneTimerRunning(scene);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0, scale: isTimerRunning ? [1, 1.015, 1] : 1 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      transition={{
-        type: "spring",
-        stiffness: 380,
-        damping: 32,
-        scale: isTimerRunning ? { duration: 2.2, repeat: Infinity, ease: "easeInOut" } : { duration: 0.2 },
-      }}
-      // backdrop-blur is safe here (unlike TileShell's photo tiles) — this
-      // card has no 3D hover transform (rotateX/rotateY + preserve-3d),
-      // which is what caused the earlier "mega verschwommen" compositing
-      // bug on the folder/project tiles (see project memory). A real
-      // frosted-glass material now, not just a gradient standing in for one
-      // (Lino: "der apple glas effekt soll auf ALLEN Kacheln sein").
-      className={`rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
-        scene.completed
-          ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
-          : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
-      }`}
-    >
+    <div className="relative">
+      {/* Timer-running cue: a pulsing white glow behind the tile, not the
+          tile itself moving (Lino, 2026-07-13: the old whole-card scale
+          pulse "sieht scheisse aus"). Sits behind via -z-10 on a plain div
+          in this same stacking context, no separate positioned ancestor
+          needed since SortableSceneCard's wrapper is already `relative`. */}
+      {isTimerRunning && (
+        <motion.div
+          aria-hidden
+          className="absolute -inset-2 rounded-3xl bg-white blur-xl pointer-events-none -z-10"
+          animate={{ opacity: [0.15, 0.5, 0.15] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+        />
+      )}
+      <motion.div
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+        // backdrop-blur is safe here (unlike TileShell's photo tiles) — this
+        // card has no 3D hover transform (rotateX/rotateY + preserve-3d),
+        // which is what caused the earlier "mega verschwommen" compositing
+        // bug on the folder/project tiles (see project memory). A real
+        // frosted-glass material now, not just a gradient standing in for one
+        // (Lino: "der apple glas effekt soll auf ALLEN Kacheln sein").
+        className={`rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
+          scene.completed
+            ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
+            : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
+        }`}
+      >
       <div className="flex items-start gap-2 mb-2">
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -684,7 +693,8 @@ export function SceneCard({
           onChange((d) => ({ ...d, shots: d.shots.map((s) => (s.id === updated.id ? updated : s)) }));
         }}
       />
-    </motion.div>
+      </motion.div>
+    </div>
   );
 }
 

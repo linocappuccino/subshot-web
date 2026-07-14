@@ -19,11 +19,16 @@
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+/* No background/color/font here on purpose — this app is dark-only
+   (layout.tsx sets bg-[#161616]/text-[#f0f0f0] directly on <body>).
+   This file used to carry the create-next-app boilerplate `body { background:
+   var(--background) }` rule, which is unlayered CSS — per the CSS Cascade
+   Layers spec, unlayered rules always beat @layer'd rules (Tailwind's
+   utilities all live in @layer utilities) regardless of specificity. That
+   silently overrode bg-[#161616]/text-[#f0f0f0] with --background/
+   --foreground (#fff/#171717 whenever the OS/browser is in light color-scheme,
+   #0a0a0a/#ededed only under dark) on every single page — nobody caught it
+   because most real devices/browsers here happen to run in dark mode. */
 
 html {
   scroll-behavior: smooth;

@@ -599,6 +599,16 @@ function TileShell({
       whileHover={{ y: -3 }}
       className="group relative"
     >
+      {/* Picked-color ambient glow behind the tile — same cue as the iOS
+          app's .shadow(color: Color(hex: color).opacity(0.55), radius: 10)
+          on ProjectListView's tiles, which the web version never got. A
+          blurred color layer (not a box-shadow) reads as a proper glow
+          bleeding past the tile edges rather than a tight drop shadow. */}
+      <div
+        aria-hidden
+        className="absolute inset-3 rounded-2xl blur-2xl opacity-40 group-hover:opacity-60 transition-opacity pointer-events-none -z-10"
+        style={{ backgroundColor: color }}
+      />
       <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block">
         <motion.div
           whileHover={hasImage ? { rotateX: -5, rotateY: 7, scale: 1.035 } : undefined}
