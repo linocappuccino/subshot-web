@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
 
@@ -23,6 +24,15 @@ interface DevlogPost {
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export default function DevlogPage() {
+  return (
+    <Suspense fallback={null}>
+      <DevlogPageInner />
+    </Suspense>
+  );
+}
+
+function DevlogPageInner() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<DevlogPost[]>([]);
   const [open, setOpen] = useState<DevlogPost | null>(null);
@@ -31,9 +41,22 @@ export default function DevlogPage() {
   useEffect(() => {
     fetch(`${BASE_URL}/devlog/posts`)
       .then((r) => r.json())
-      .then((data) => setPosts(data.posts ?? []))
+      .then((data) => {
+        const loaded: DevlogPost[] = data.posts ?? [];
+        setPosts(loaded);
+        // Direct-link support (2026-07-14) — the LinkedIn auto-post links
+        // here with ?post=<ghost-id>, same convention as SUBLI's
+        // devlog.html (id="post-"+p.id there, a query param here since
+        // this is a client-rendered list instead of one static page).
+        const wanted = searchParams.get("post");
+        if (wanted) {
+          const match = loaded.find((p) => p.id === wanted);
+          if (match) setOpen(match);
+        }
+      })
       .catch(() => setError(true))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
