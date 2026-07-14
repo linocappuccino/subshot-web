@@ -1483,6 +1483,25 @@ function SectionBlock({
         {section && onSectionDragStart && (
           <span
             draggable
+            // 2026-07-14, Lino: "wenn man einen abschnitt über einen
+            // anderen abschnitt dragen und droppen will funktioniert es
+            // nur 3 von 10 mal" — this whole section list renders INSIDE
+            // the scene-level <DndContext> (see its own comment: shared
+            // across every section's scene grid, dnd-kit's "multiple
+            // containers" pattern), so dnd-kit's PointerSensor listens for
+            // pointerdown anywhere in that subtree, including this native
+            // draggable handle, even though it's never a registered
+            // dnd-kit sortable item. The two systems then race on the same
+            // initiating pointerdown: native HTML5 drag-and-drop needs
+            // an uninterrupted mousedown to initiate, and depending on
+            // which one's handler runs first, dnd-kit's sensor sometimes
+            // wins that race and the native drag never actually starts —
+            // exactly the probabilistic "3 of 10" pattern. Stopping
+            // propagation at the CAPTURE phase, on the handle itself,
+            // keeps this pointerdown from ever reaching dnd-kit's own
+            // (ancestor-attached) listener at all, so only the native
+            // drag mechanism ever sees it.
+            onPointerDownCapture={(e) => e.stopPropagation()}
             onDragStart={(e) => {
               e.dataTransfer.setData("text/subshot-section-id", section.id);
               // Without this the browser shows its default "copy" cursor
