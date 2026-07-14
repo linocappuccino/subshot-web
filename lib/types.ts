@@ -252,7 +252,9 @@ export const PALETTE = ["#3875bd", "#0f7e55", "#4e4295", "#d1504f", "#b9507b", "
 export interface Annotation {
   id: string;
   project_id: string;
-  scene_id: string;
+  /** Null for a page-level pen stroke drawn outside any scene tile
+   * (2026-07-14, on the public share page — see share_view.py). */
+  scene_id: string | null;
   author_name: string;
   kind: "highlight" | "pen";
   field: string | null;
