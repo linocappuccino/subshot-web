@@ -1494,7 +1494,17 @@ function SectionBlock({
 
   return (
     <div
-      className="relative mb-5 transition-transform"
+      // pb-5 (padding), not mb-5 (margin) — 2026-07-15, Lino: "beim
+      // abschnitt dragen... muss man die linie super genau treffen".
+      // onDragOver/onDrop are on THIS div; a margin sits OUTSIDE its own
+      // box and isn't part of its hit-tested area at all, so releasing
+      // anywhere in that ~20px gap between two sections (exactly where a
+      // user intuitively aims when dropping "between" them) landed on
+      // neither wrapper and silently did nothing — the actual "genau
+      // treffen" symptom, not an edge-detection precision issue. Padding
+      // is inside the border-box, so the exact same visual gap is now
+      // part of this wrapper's own drop target.
+      className="relative pb-5 transition-transform"
       // section && ... — without the `section &&` guard this was also true
       // for the "Ohne Abschnitt" bucket (section is undefined there) any
       // time draggingSectionId was ALSO undefined (i.e. nothing being
