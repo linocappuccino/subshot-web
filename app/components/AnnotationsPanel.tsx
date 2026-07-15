@@ -148,13 +148,16 @@ export function AnnotationsPanel({
                     {/* Date-only before (2026-07-15, Lino: "es braucht
                         überall auch eine datum UND zeit information zu
                         jedem kommentar") -- added the time too. */}
-                    <span className="text-[11px] text-white/30 shrink-0">
+                    {/* 2026-07-15, Lino: "die Sachen müssen ein bisschen
+                        besser leserlich sein... auch für den Zeitstempel" —
+                        /30 read as too dim against the dark panel. */}
+                    <span className="text-[11px] text-white/50 shrink-0">
                       {new Date(a.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
                       {" "}
                       {new Date(a.created_at).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
-                  {a.text && <p className="text-xs text-white/50 italic mb-1 break-words">„{a.text}“</p>}
+                  {a.text && <p className="text-xs text-white/65 italic mb-1 break-words">„{a.text}“</p>}
                   {a.comment && <p className="text-sm text-white/85 break-words">{a.comment}</p>}
                   <div className="flex gap-2 mt-2.5" onClick={(e) => e.stopPropagation()}>
                     {a.status !== "resolved" && (
