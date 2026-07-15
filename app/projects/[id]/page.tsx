@@ -122,8 +122,30 @@ const sceneCollisionDetection: CollisionDetection = (args) => {
         range.bottom = Math.max(range.bottom, rect.bottom);
       }
     }
+    // 2026-07-15 follow-up, verified via a real Playwright drag trace: the
+    // raw per-section ranges above still left a real gap unmatched — the
+    // ~20px pb-5 padding AFTER a section's own SectionDropZone before the
+    // next section's wrapper starts. A pointer resting in exactly that
+    // sliver matched no range at all, fell through to the old unscoped
+    // fallback, and closestCenter picked the next section's nearest card —
+    // reproduced landing scenes in the wrong section even after the
+    // original scoping fix. Extending each section's range to the MIDPOINT
+    // with its neighbors (first section's top and last section's bottom
+    // opened to +/-Infinity) guarantees every possible pointerY maps to
+    // exactly one section, with zero gap ever falling outside all ranges —
+    // not just a bigger hit area like the h-24 SectionDropZone attempt.
+    const sorted = [...ranges.entries()].sort((a, b) => a[1].top - b[1].top);
+    const extended = new Map<string, { top: number; bottom: number }>();
+    for (let i = 0; i < sorted.length; i++) {
+      const [key, range] = sorted[i];
+      const prev = sorted[i - 1]?.[1];
+      const next = sorted[i + 1]?.[1];
+      const top = prev ? (prev.bottom + range.top) / 2 : -Infinity;
+      const bottom = next ? (range.bottom + next.top) / 2 : Infinity;
+      extended.set(key, { top, bottom });
+    }
     let matchedKey: string | null = null;
-    for (const [key, range] of ranges) {
+    for (const [key, range] of extended) {
       if (pointerY >= range.top && pointerY <= range.bottom) {
         matchedKey = key;
         break;
@@ -132,9 +154,6 @@ const sceneCollisionDetection: CollisionDetection = (args) => {
     if (matchedKey) {
       scopedContainers = args.droppableContainers.filter((c) => (sectionIdOf(c) ?? "__unsectioned__") === matchedKey);
     }
-    // No match at all (pointer above the first section, below the last, or
-    // in the ~20px inter-section padding gap) — fall through with the full,
-    // unscoped container list, same as before this fix.
   }
   const scopedArgs = scopedContainers === args.droppableContainers ? args : { ...args, droppableContainers: scopedContainers };
 
