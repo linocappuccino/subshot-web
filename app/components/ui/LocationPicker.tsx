@@ -8,14 +8,25 @@ import { Input } from "./Field";
 
 interface GeocodeResult {
   display_name: string;
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
+  place_id: string | null;
 }
 
-/** Address search-as-you-type (free OpenStreetMap/Nominatim search, no paid
- * key - same reasoning as the iOS app using MapKit instead of a Google Maps
- * key) plus a map thumbnail once a result is picked, matching the app's own
- * SceneLocationSection/ProjectInfoBox (map image, tap to open Google Maps). */
+/** Address/business-name search-as-you-type — Google Places Autocomplete
+ * server-side when configured (real business/POI coverage; see
+ * mapping.py's geocode_search doc comment), Nominatim as the automatic
+ * fallback — plus a map thumbnail once a result is picked, matching the
+ * app's own SceneLocationSection/ProjectInfoBox (map image, tap to open
+ * Google Maps).
+ *
+ * A Google result only carries a `place_id`, not coordinates (see the
+ * backend doc comment on why) — picking one needs a second `geocodeResolve`
+ * call. `sessionTokenRef` is one UUID reused across every keystroke of a
+ * single search and passed to both calls, then replaced after a pick or a
+ * field blur/clear — that's what makes Google bill the Autocomplete
+ * keystrokes themselves as free/near-free, with only the one terminating
+ * resolve call actually billed. */
 export function LocationPicker({
   address,
   lat,
@@ -32,10 +43,12 @@ export function LocationPicker({
   const [prevAddress, setPrevAddress] = useState(address);
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [open, setOpen] = useState(false);
+  const [resolving, setResolving] = useState(false);
   const [mapUrl, setMapUrl] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputWrapRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionTokenRef = useRef<string>(crypto.randomUUID());
   // Screen-space position of the results dropdown, recomputed whenever it
   // opens/closes and while scrolling. Used to render the dropdown through a
   // portal (see below) instead of as a normal `position: absolute` child.
@@ -129,28 +142,49 @@ export function LocationPicker({
       return;
     }
     debounceRef.current = setTimeout(async () => {
-      const r = await api.geocodeSearch(value.trim());
+      const r = await api.geocodeSearch(value.trim(), sessionTokenRef.current);
       setResults(r);
       setOpen(true);
     }, 400);
   }
 
-  function pickResult(r: GeocodeResult) {
+  async function pickResult(r: GeocodeResult) {
     setQuery(r.display_name);
-    onChange(r.display_name, r.lat, r.lng);
     setOpen(false);
     setResults([]);
+    // Nominatim results already carry coordinates; a Google result only has
+    // a place_id and needs this second call to resolve them (see the doc
+    // comment above) — this is also the call that terminates the session,
+    // after which a fresh token starts the next search.
+    if (r.place_id) {
+      setResolving(true);
+      try {
+        const resolved = await api.geocodeResolve(r.place_id, sessionTokenRef.current);
+        onChange(resolved.display_name, resolved.lat, resolved.lng);
+      } catch {
+        onChange(r.display_name, null, null);
+      } finally {
+        setResolving(false);
+        sessionTokenRef.current = crypto.randomUUID();
+      }
+    } else {
+      onChange(r.display_name, r.lat, r.lng);
+    }
   }
 
   return (
     <div className="relative" ref={containerRef}>
-      <div ref={inputWrapRef}>
+      <div ref={inputWrapRef} className="relative">
         <Input
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onFocus={() => results.length > 0 && setOpen(true)}
           placeholder="Adresse suchen…"
+          disabled={resolving}
         />
+        {resolving && (
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/40">Lädt…</span>
+        )}
       </div>
       {/* Portaled straight to document.body instead of rendered as a normal
           `position: absolute` child (2026-07-11 fix) — this picker is used

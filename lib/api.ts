@@ -346,9 +346,19 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     removeTeamMember: (teamId: string, membershipId: string) =>
       request<void>(`teams/${teamId}/members/${membershipId}`, { method: "DELETE" }),
 
-    // ── Location (no paid API key - Nominatim search + OSM static tiles,
-    // same reasoning as the iOS app using MapKit instead of a Google key) ──
-    geocodeSearch: (q: string) => request<{ display_name: string; lat: number; lng: number }[]>(`geocode/search?q=${encodeURIComponent(q)}`),
+    // ── Location (Google Places Autocomplete server-side when configured -
+    // real business/POI coverage, e.g. company names Nominatim never had -
+    // OSM static tiles either way). `place_id` is only set on a Google
+    // result (Nominatim gives lat/lng inline, no separate resolve needed) -
+    // see mapping.py's geocode_search doc comment on the backend. ──
+    geocodeSearch: (q: string, sessionToken?: string) =>
+      request<{ display_name: string; lat: number | null; lng: number | null; place_id: string | null }[]>(
+        `geocode/search?q=${encodeURIComponent(q)}${sessionToken ? `&session_token=${sessionToken}` : ""}`
+      ),
+    geocodeResolve: (placeId: string, sessionToken?: string) =>
+      request<{ display_name: string; lat: number; lng: number }>(
+        `geocode/resolve?place_id=${encodeURIComponent(placeId)}${sessionToken ? `&session_token=${sessionToken}` : ""}`
+      ),
     async fetchStaticMapBlobUrl(lat: number, lng: number): Promise<string> {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Nicht angemeldet.");
