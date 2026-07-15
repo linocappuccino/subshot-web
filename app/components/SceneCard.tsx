@@ -90,6 +90,42 @@ function addressWithCommaBreaks(address: string) {
  * out of scope for a first version here (matches the preview page's own
  * per-scene grouping, which likewise renders one <mark> per matched
  * substring in encounter order). */
+/** See share_view.py's .annot-mark.multiline doc comment for the full
+ * reasoning — the highlight's ::before fill is generated exactly ONCE per
+ * element, so a mark whose text wraps across a line break only ever paints
+ * on ONE of its lines with the fancy rotated/oversized ::before look
+ * (2026-07-15, Lino: "skaliert komisch über mehrere zeilen"). Measures
+ * after mount/update (getClientRects().length > 1) and swaps to a plain,
+ * per-line-cloneable background via the .multiline class — same fallback
+ * the preview page uses. */
+function HighlightMark({
+  text,
+  title,
+  highlighted,
+  onClick,
+}: {
+  text: string;
+  title: string;
+  highlighted: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  const [multiline, setMultiline] = useState(false);
+  useEffect(() => {
+    if (ref.current) setMultiline(ref.current.getClientRects().length > 1);
+  }, [text]);
+  return (
+    <mark
+      ref={ref}
+      title={title}
+      onClick={onClick}
+      className={`subshot-annot-mark ${multiline ? "multiline" : ""} ${highlighted ? "subshot-annot-highlighted subshot-annot-pulse" : ""}`}
+    >
+      {text}
+    </mark>
+  );
+}
+
 function renderHighlightedText(
   text: string,
   field: string,
@@ -106,16 +142,15 @@ function renderHighlightedText(
   return (
     <>
       {before}
-      <mark
+      <HighlightMark
+        text={middle}
         title={match.comment ? `${match.author_name}: ${match.comment}` : match.author_name}
+        highlighted={highlightedAnnotationId === match.id}
         onClick={(e) => {
           e.stopPropagation();
           onAnnotationClick?.(match);
         }}
-        className={`subshot-annot-mark ${highlightedAnnotationId === match.id ? "subshot-annot-highlighted subshot-annot-pulse" : ""}`}
-      >
-        {middle}
-      </mark>
+      />
       {after}
     </>
   );
@@ -131,22 +166,86 @@ function parsePenPath(raw: string): { x: number; y: number }[] {
   return [];
 }
 
-function penPathD(points: { x: number; y: number }[]): string {
-  if (points.length === 0) return "";
-  // Points are stored 0-100 already (see share_view.py's addPoint, where
-  // they're captured as a percentage of the tile's own width/height, not a
-  // 0.0-1.0 fraction) -- multiplying by 100 again (2026-07-15 fix, was the
-  // actual bug here) pushed every coordinate up to 10,000, far outside the
-  // 0-100 viewBox, so every pen stroke rendered completely off-screen.
-  // Lino: "jetzt sieht man die gemalten markierungen gar nicht".
-  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+type PenPoint = { x: number; y: number };
+
+// Mirrors share_view.py's _smooth_points/_pen_curve_points/
+// _pen_segment_widths exactly (2026-07-15, Lino: "der stift muss genau so
+// aussehen wie auf der preview app, hier ist noch ein alter style vom
+// stift") -- this used to be a single flat-width stroke, nothing like the
+// preview page's tapered, smoothed look. Same constants, same three-stage
+// pipeline: light smoothing -> Catmull-Rom curve (real curvature between
+// points, not just more points on the same straight lines) -> tapered
+// per-segment widths, grouped under one <g opacity=...> per layer so
+// overlapping segment joints don't compound into visible "dots" (see that
+// Python file's own doc comments for the full reasoning on each step).
+const PEN_TAPER_FRAC = 0.3;
+const PEN_MIN_WIDTH_RATIO = 0.08;
+const PEN_CURVE_SAMPLES_PER_SEGMENT = 10;
+const PEN_CORE_WIDTH = 6.5;
+const PEN_GLOW_WIDTH = 9.5;
+
+function smoothPoints(points: PenPoint[]): PenPoint[] {
+  let pts = points;
+  for (let pass = 0; pass < 2; pass++) {
+    if (pts.length < 3) return pts;
+    const out: PenPoint[] = [pts[0]];
+    for (let i = 1; i < pts.length - 1; i++) {
+      const prev = pts[i - 1], cur = pts[i], next = pts[i + 1];
+      out.push({ x: (prev.x + cur.x * 2 + next.x) / 4, y: (prev.y + cur.y * 2 + next.y) / 4 });
+    }
+    out.push(pts[pts.length - 1]);
+    pts = out;
+  }
+  return pts;
+}
+
+function curvePoints(points: PenPoint[]): PenPoint[] {
+  const n = points.length;
+  if (n < 3) return points;
+  const padded = [points[0], ...points, points[n - 1]];
+  const out: PenPoint[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = padded[i], p1 = padded[i + 1], p2 = padded[i + 2], p3 = padded[i + 3];
+    for (let s = 0; s < PEN_CURVE_SAMPLES_PER_SEGMENT; s++) {
+      const t = s / PEN_CURVE_SAMPLES_PER_SEGMENT, t2 = t * t, t3 = t2 * t;
+      out.push({
+        x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+        y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+      });
+    }
+  }
+  out.push(points[n - 1]);
+  return out;
+}
+
+function segmentWidths(points: PenPoint[], maxWidth: number): number[] {
+  const n = points.length;
+  const dists = [0];
+  for (let i = 1; i < n; i++) {
+    const dx = points[i].x - points[i - 1].x, dy = points[i].y - points[i - 1].y;
+    dists.push(dists[i - 1] + Math.sqrt(dx * dx + dy * dy));
+  }
+  const total = dists[n - 1] || 1;
+  const taperLen = total * PEN_TAPER_FRAC;
+  function smoothstep(t: number) {
+    t = Math.max(0, Math.min(1, t));
+    return t * t * (3 - 2 * t);
+  }
+  function widthAt(d: number) {
+    const near = Math.min(d, total - d);
+    const scale = near >= taperLen ? 1 : PEN_MIN_WIDTH_RATIO + (1 - PEN_MIN_WIDTH_RATIO) * smoothstep(near / taperLen);
+    return maxWidth * scale;
+  }
+  const widths: number[] = [];
+  for (let i = 0; i < n - 1; i++) widths.push(widthAt((dists[i] + dists[i + 1]) / 2));
+  return widths;
 }
 
 /** Freehand pen-stroke markups (2026-07-14, comment mode) — mirrors
  * share_view.py's _pen_overlay_svg exactly: a 0-100 viewBox with
  * preserveAspectRatio="none" so pen_path's stored 0-100-relative points
- * (a percentage of the tile's own width/height, not a 0.0-1.0 fraction —
- * see penPathD) redraw correctly at THIS card's actual rendered size, whatever that is,
+ * (a percentage of the tile's own width/height, not a 0.0-1.0 fraction)
+ * redraw correctly at THIS card's actual rendered size, whatever that is,
  * without any per-card pixel math. */
 function PenAnnotationOverlay({
   annotations,
@@ -160,9 +259,13 @@ function PenAnnotationOverlay({
   return (
     <svg className="subshot-annot-pen-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
       {annotations.map((a) => {
-        const d = penPathD(parsePenPath(a.pen_path!));
-        if (!d) return null;
+        const raw = parsePenPath(a.pen_path!);
+        if (raw.length < 2) return null;
+        const points = curvePoints(smoothPoints(raw));
+        const glowWidths = segmentWidths(points, PEN_GLOW_WIDTH);
+        const coreWidths = segmentWidths(points, PEN_CORE_WIDTH);
         const isHighlighted = highlightedAnnotationId === a.id;
+        const title = a.comment ? `${a.author_name}: ${a.comment}` : a.author_name;
         return (
           <g
             key={a.id}
@@ -172,9 +275,24 @@ function PenAnnotationOverlay({
               onAnnotationClick?.(a);
             }}
           >
-            <title>{a.comment ? `${a.author_name}: ${a.comment}` : a.author_name}</title>
-            <path className="subshot-annot-pen-glow" d={d} />
-            <path className="subshot-annot-pen-core" d={d} />
+            {/* Opacity on each GROUP, never per-segment -- see
+                share_view.py's .annot-pen-core/.annot-pen-glow doc comment
+                for why (overlapping round-cap joints would otherwise
+                compound into visible darker "dots"). */}
+            <g className="subshot-annot-pen-glow">
+              {glowWidths.map((w, i) => (
+                <path key={i} style={{ strokeWidth: w }} d={`M ${points[i].x},${points[i].y} L ${points[i + 1].x},${points[i + 1].y}`}>
+                  <title>{title}</title>
+                </path>
+              ))}
+            </g>
+            <g className="subshot-annot-pen-core">
+              {coreWidths.map((w, i) => (
+                <path key={i} style={{ strokeWidth: w }} d={`M ${points[i].x},${points[i].y} L ${points[i + 1].x},${points[i + 1].y}`}>
+                  <title>{title}</title>
+                </path>
+              ))}
+            </g>
           </g>
         );
       })}

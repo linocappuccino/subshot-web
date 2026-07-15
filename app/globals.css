@@ -132,6 +132,16 @@ html {
 .subshot-annot-mark.subshot-annot-highlighted::before {
   opacity: 0.55;
 }
+/* See HighlightMark's own doc comment — ::before is generated once per
+   element, so a mark that wraps across a line only painted its fill on
+   ONE line. Multi-line marks fall back to a plain, per-line-cloneable
+   background instead of the fancy rotated/oversized ::before look. */
+.subshot-annot-mark.multiline {
+  background: rgba(255, 212, 0, 0.3);
+}
+.subshot-annot-mark.multiline::before {
+  content: none;
+}
 @keyframes subshot-annot-pulse {
   0%, 100% { filter: none; }
   50% { filter: brightness(1.6) saturate(1.4); }
@@ -157,5 +167,12 @@ html {
   pointer-events: stroke;
   cursor: pointer;
 }
-.subshot-annot-pen-core { stroke-width: 8; opacity: 0.7; }
-.subshot-annot-pen-glow { stroke-width: 15; opacity: 0.22; }
+/* 2026-07-15: these two classes now live on the <g> wrapping ALL of one
+   layer's segments (see PenAnnotationOverlay), not on individual <path>s —
+   opacity here composites the whole group once, instead of compounding at
+   every overlapping segment joint (the same "dots" bug share_view.py's
+   own .annot-pen-core/.annot-pen-glow doc comment explains). stroke-width
+   is no longer set here at all -- each segment sets its own via inline
+   style (the tapered "druck vom stift" look), see segmentWidths(). */
+.subshot-annot-pen-core { opacity: 0.88; }
+.subshot-annot-pen-glow { opacity: 0.18; }
