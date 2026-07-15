@@ -349,7 +349,12 @@ export function SceneEditModal({
           {existing && (
             <div className="mt-3">
               <p className="text-xs font-medium text-white/50 mb-2">KI-Bild aus Beschreibung erstellen</p>
-              <div className="flex flex-wrap items-center gap-2">
+              {/* Own row, given real width to breathe (2026-07-15, Lino:
+                  "sieht sehr zusammengequetscht aus") — SegmentedControl's
+                  options are flex-1, so packed into the same flex-wrap row
+                  as the two style buttons it had almost no width to expand
+                  into and rendered as two tiny slivers. */}
+              <div className="w-40 mb-2">
                 <SegmentedControl
                   value={aspectRatio}
                   onChange={(v) => setAspectRatio(v)}
@@ -358,6 +363,8 @@ export function SceneEditModal({
                     { value: "9:16", label: "9:16" },
                   ]}
                 />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
