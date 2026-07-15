@@ -357,6 +357,16 @@ export function SceneEditModal({
               )}
             </div>
           )}
+          {/* 2026-07-15, Lino: cold-start on the RunPod side (kept at 0
+              idle cost, see runpod_image_client.py) can genuinely take a
+              couple minutes on the first generation after a quiet spell —
+              decided to keep that cost tradeoff and just say so up front
+              instead of leaving a bare spinner that reads as hung. */}
+          {generatingStyle && (
+            <p className="text-xs text-white/40 mt-1.5">
+              Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade "kalt" ist (länger nicht genutzt wurde).
+            </p>
+          )}
         </FieldGroup>
       )}
 
