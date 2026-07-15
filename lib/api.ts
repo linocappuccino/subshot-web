@@ -197,6 +197,8 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       form.append("file", file);
       return request<Scene>(`scenes/${id}/image`, { method: "POST", body: form });
     },
+    generateSceneImage: (id: string, style: "realistic" | "sketch") =>
+      request<Scene>(`scenes/${id}/generate-image`, { method: "POST", body: JSON.stringify({ style }) }),
 
     addDialogue: (sceneId: string, text: string, sortOrder = 0) =>
       request<SceneDialogue>(`scenes/${sceneId}/dialogues`, {

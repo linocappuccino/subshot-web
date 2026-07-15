@@ -106,6 +106,13 @@ export function SceneEditModal({
   // 2026-07-15, Lino: no way to remove a scene's image, only replace it.
   const [imageRemoved, setImageRemoved] = useState(false);
   const [saving, setSaving] = useState(false);
+  /** Which AI style is currently generating (null = idle) — 2026-07-15,
+   * Lino: button on an existing scene generates an image straight from its
+   * description text, no separate prompt field. Only ever meaningful for
+   * an already-saved scene (needs a real scene id to call the endpoint
+   * against), same reasoning as uploadSceneImage's own existing-only path
+   * for a brand-new, not-yet-created scene. */
+  const [generatingStyle, setGeneratingStyle] = useState<"realistic" | "sketch" | null>(null);
 
   // This component never unmounts (the page renders it once, unconditionally,
   // and toggles `open` — see Modal, which only hides/shows its CHILDREN, not
@@ -268,6 +275,23 @@ export function SceneEditModal({
     }
   }
 
+  async function generateImage(style: "realistic" | "sketch") {
+    if (!existing || !description.trim()) return;
+    setGeneratingStyle(style);
+    try {
+      const scene = await api.generateSceneImage(existing.id, style);
+      const url = await api.fetchImageBlobUrl(scene.image_url!);
+      setImagePreview(url);
+      setImageFile(null);
+      setImageRemoved(false);
+      onUpdated({ ...scene, dialogues });
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht erstellt werden.");
+    } finally {
+      setGeneratingStyle(null);
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -306,6 +330,33 @@ export function SceneEditModal({
             }
             lockAspectRatio
           />
+          {/* AI image generation (2026-07-15, Lino) — only for an already-
+              saved scene (needs a real id), and only once there's a
+              description to generate FROM (the whole point: no separate
+              prompt field, it's sourced straight from that text). */}
+          {existing && (
+            <div className="flex items-center gap-2 mt-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!description.trim() || generatingStyle !== null}
+                onClick={() => generateImage("realistic")}
+              >
+                {generatingStyle === "realistic" ? "Erstellt…" : "✨ Realistisch"}
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={!description.trim() || generatingStyle !== null}
+                onClick={() => generateImage("sketch")}
+              >
+                {generatingStyle === "sketch" ? "Erstellt…" : "✨ Sketch"}
+              </Button>
+              {!description.trim() && (
+                <span className="text-xs text-white/40">Erst eine Beschreibung eintragen</span>
+              )}
+            </div>
+          )}
         </FieldGroup>
       )}
 
