@@ -11,6 +11,7 @@ import { cn } from "@/lib/cn";
 export function ImageDropZone({
   previewUrl,
   onFile,
+  onRemove,
   uploading,
   emptyLabel = "Bild hinzufügen",
   className,
@@ -18,6 +19,14 @@ export function ImageDropZone({
 }: {
   previewUrl: string | null;
   onFile: (file: File) => void;
+  /** 2026-07-15, Lino: "man muss auch im web app und ios jegliche bilder
+   * die man bei szenen oder ähnlichem eingefügt hat auch wieder
+   * rauslöschen können" — this component had no remove affordance at all,
+   * only add/replace (FolderEditModal built its own separate "Bild
+   * entfernen" button outside this component; Scene/Shot never got an
+   * equivalent). Optional: omit to keep the old add-only behavior
+   * (e.g. project/folder tiles that don't want a delete option here). */
+  onRemove?: () => void;
   uploading?: boolean;
   emptyLabel?: string;
   className?: string;
@@ -75,17 +84,38 @@ export function ImageDropZone({
         onChange={(e) => handleFiles(e.target.files)}
       />
       {previewUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={previewUrl}
-          alt=""
-          className="w-full h-full object-cover absolute inset-0"
-          onLoad={(e) => {
-            if (!lockAspectRatio) return;
-            const img = e.currentTarget;
-            setRatio(img.naturalWidth >= img.naturalHeight ? "16/9" : "9/16");
-          }}
-        />
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt=""
+            className="w-full h-full object-cover absolute inset-0"
+            onLoad={(e) => {
+              if (!lockAspectRatio) return;
+              const img = e.currentTarget;
+              setRatio(img.naturalWidth >= img.naturalHeight ? "16/9" : "9/16");
+            }}
+          />
+          {onRemove && (
+            <button
+              type="button"
+              onClick={(e) => {
+                // Don't let this bubble to the outer div's onClick, which
+                // opens the file picker — removing should never immediately
+                // re-trigger "add a new one".
+                e.stopPropagation();
+                onRemove();
+              }}
+              aria-label="Bild entfernen"
+              title="Bild entfernen"
+              className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/60 hover:bg-red-500/80 text-white/80 hover:text-white flex items-center justify-center transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </>
       ) : (
         <div className="flex flex-col items-center gap-2 text-white/40 py-6">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

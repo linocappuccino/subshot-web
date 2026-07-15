@@ -103,6 +103,8 @@ export function SceneEditModal({
   const [editingDialogueText, setEditingDialogueText] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // 2026-07-15, Lino: no way to remove a scene's image, only replace it.
+  const [imageRemoved, setImageRemoved] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // This component never unmounts (the page renders it once, unconditionally,
@@ -139,6 +141,7 @@ export function SceneEditModal({
     setDraftDialogues([]);
     setImageFile(null);
     setImagePreview(null);
+    setImageRemoved(false);
   }
 
   // Existing cover photo needs the same authenticated fetch as everywhere
@@ -240,7 +243,7 @@ export function SceneEditModal({
 
       let scene: Scene;
       if (existing) {
-        scene = await api.patchScene(existing.id, body);
+        scene = await api.patchScene(existing.id, { ...body, clear_image: imageRemoved && !imageFile });
       } else {
         scene = await api.createScene(projectId, {
           color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder, ...body,
@@ -290,7 +293,17 @@ export function SceneEditModal({
             onFile={(file) => {
               setImageFile(file);
               setImagePreview(URL.createObjectURL(file));
+              setImageRemoved(false);
             }}
+            onRemove={
+              imagePreview
+                ? () => {
+                    setImageFile(null);
+                    setImagePreview(null);
+                    setImageRemoved(true);
+                  }
+                : undefined
+            }
             lockAspectRatio
           />
         </FieldGroup>

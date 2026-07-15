@@ -36,6 +36,8 @@ export function ShotEditModal({
   const [goodTake, setGoodTake] = useState(shot?.good_take_filename ?? "");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // 2026-07-15, Lino: no way to remove a shot's image, only replace it.
+  const [imageRemoved, setImageRemoved] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Camera settings (2026-07-13, Lino) — a new shot's Shutterangle starts
@@ -59,6 +61,7 @@ export function ShotEditModal({
     setGoodTake(shot.good_take_filename ?? "");
     setImageFile(null);
     setImagePreview(null);
+    setImageRemoved(false);
     setCameraAngle(shot.camera_angle ?? "");
     setLens(shot.lens ?? "");
     setFStop(shot.f_stop ?? "");
@@ -108,6 +111,7 @@ export function ShotEditModal({
         codec: codec.trim() || null,
         camera_id: cameraId.trim() || null,
         camera_support: cameraSupport,
+        clear_image: imageRemoved && !imageFile,
       });
       if (imageFile) updated = await api.uploadShotImage(shot.id, imageFile);
       onUpdated(updated);
@@ -144,6 +148,12 @@ export function ShotEditModal({
           onFile={(file) => {
             setImageFile(file);
             setImagePreview(URL.createObjectURL(file));
+            setImageRemoved(false);
+          }}
+          onRemove={() => {
+            setImageFile(null);
+            setImagePreview(null);
+            setImageRemoved(true);
           }}
           className="h-36"
         />
