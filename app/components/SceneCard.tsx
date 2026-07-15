@@ -672,7 +672,11 @@ export function SceneCard({
                       >
                         {d.done && <CheckIcon />}
                       </span>
-                      <span className={`text-sm ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
+                      {/* whitespace-pre-line (2026-07-15, Lino: "dialoge sollen genau so
+                          dargestellt werden wie man sie eingibt, auch mit allen
+                          zeilenschlägen") -- description (above) already had this,
+                          dialogue lines never did. */}
+                      <span className={`text-sm whitespace-pre-line ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
                     </button>
                   );
                 })}

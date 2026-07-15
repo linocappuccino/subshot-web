@@ -257,7 +257,7 @@ function SceneRow({
                     )}
                   </span>
                 </button>
-                <span className={`text-xs ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
+                <span className={`text-xs whitespace-pre-line ${d.done ? "line-through text-white/35" : "text-white/70"}`}>{d.text}</span>
               </li>
             ))}
           </ul>
