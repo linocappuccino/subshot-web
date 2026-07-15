@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { ToastProvider } from "@/app/components/ui/Toast";
+import { TrialExpiredDialog } from "@/app/components/ui/TrialExpiredDialog";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,6 +36,7 @@ export default function RootLayout({
       >
         <body className="min-h-full flex flex-col bg-[#161616] text-[#f0f0f0]">
           <ToastProvider>{children}</ToastProvider>
+          <TrialExpiredDialog />
         </body>
       </html>
     </ClerkProvider>

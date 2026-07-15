@@ -23,7 +23,7 @@ import type {
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
   }
 }
@@ -46,7 +46,31 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new ApiError(res.status, text || res.statusText);
+      // FastAPI's default error shape is {"detail": "..."} (and the trial
+      // gate's own 402 adds {"error": "trial_expired", ...} on top of that)
+      // — every ApiError.message used to be the raw JSON text itself
+      // (`{"detail":"Requires at least 'editor' role"}`) instead of the
+      // actual message, shown as-is in every toast across the app. Parse it
+      // out here once, centrally, instead of at each of the ~30 call sites.
+      let message = text || res.statusText;
+      let code: string | undefined;
+      if (text) {
+        try {
+          const parsed = JSON.parse(text);
+          if (typeof parsed?.detail === "string") message = parsed.detail;
+          if (typeof parsed?.error === "string") code = parsed.error;
+        } catch {
+          // Not JSON (e.g. a plain-text 502 from the proxy) — keep the raw text.
+        }
+      }
+      if (code === "trial_expired" && typeof window !== "undefined") {
+        // One shared dialog (see TrialExpiredDialog) instead of a toast per
+        // failed request — the trial gate blocks EVERY write, and with
+        // fields like LocationPicker firing one PATCH per keystroke, a toast
+        // here would mean a new one appearing on every character typed.
+        window.dispatchEvent(new CustomEvent("subshot:trial-expired", { detail: message }));
+      }
+      throw new ApiError(res.status, message, code);
     }
     if (res.status === 204) return undefined as T;
     return res.json();
