@@ -70,9 +70,17 @@ export function AnnotationsPanel({
     }
   }
 
-  const sorted = [...annotations].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  // 2026-07-15, Lino: "erledigte und abgelehnte kommentare müssen in der
+  // liste immer nach unten wandern" — open items first (newest first,
+  // same as before), resolved/rejected always sink below them regardless
+  // of date, in the "Alle" filter (the "Offen" filter never shows them at
+  // all, unaffected either way).
+  const sorted = [...annotations].sort((a, b) => {
+    const aOpen = a.status === "open" ? 0 : 1;
+    const bOpen = b.status === "open" ? 0 : 1;
+    if (aOpen !== bOpen) return aOpen - bOpen;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
   const shown = filter === "open" ? sorted.filter((a) => a.status === "open") : sorted;
   const openCount = annotations.filter((a) => a.status === "open").length;
 
