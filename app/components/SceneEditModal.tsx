@@ -113,6 +113,13 @@ export function SceneEditModal({
    * against), same reasoning as uploadSceneImage's own existing-only path
    * for a brand-new, not-yet-created scene. */
   const [generatingStyle, setGeneratingStyle] = useState<"realistic" | "sketch" | null>(null);
+  /** 2026-07-15, Lino: "man muss noch auswählen könnne in welchem format
+   * man das Bild haben will... 16:9 oder 9:16". Defaults to 16:9 (matches
+   * actual camera footage aspect — the more likely default for a scene
+   * reference/storyboard image); 9:16 is there for anyone framing a
+   * vertical/mobile shot instead. Either way the app's own image display
+   * already handles both ratios (see ImageDropZone's lockAspectRatio). */
+  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
 
   // This component never unmounts (the page renders it once, unconditionally,
   // and toggles `open` — see Modal, which only hides/shows its CHILDREN, not
@@ -275,18 +282,23 @@ export function SceneEditModal({
     }
   }
 
+  // Fire-and-forget (2026-07-15, Lino: "man muss die möglichkeit haben die
+  // seite zu schliessen und die generierung läuft im hintergrund weiter
+  // und wenn sie fertig ist fügt sie automatisch das bild in die szene
+  // ein") — the POST returns as soon as the backend has queued the job
+  // (202), not once the image is actually ready. Closing this modal right
+  // after starting generation is safe: the scene's image_url updates
+  // server-side once RunPod finishes, and the project page's existing 12s
+  // poll (see page.tsx) picks it up on its own, whether or not this modal
+  // is still open by then.
   async function generateImage(style: "realistic" | "sketch") {
     if (!existing || !description.trim()) return;
     setGeneratingStyle(style);
     try {
-      const scene = await api.generateSceneImage(existing.id, style);
-      const url = await api.fetchImageBlobUrl(scene.image_url!);
-      setImagePreview(url);
-      setImageFile(null);
-      setImageRemoved(false);
-      onUpdated({ ...scene, dialogues });
+      await api.generateSceneImage(existing.id, style, aspectRatio);
+      toast.showSuccess("KI-Bild wird erstellt — landet automatisch im Bildfeld, du kannst weiterarbeiten.");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht erstellt werden.");
+      toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht gestartet werden.");
     } finally {
       setGeneratingStyle(null);
     }
@@ -335,23 +347,34 @@ export function SceneEditModal({
               description to generate FROM (the whole point: no separate
               prompt field, it's sourced straight from that text). */}
           {existing && (
-            <div className="flex items-center gap-2 mt-1">
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!description.trim() || generatingStyle !== null}
-                onClick={() => generateImage("realistic")}
-              >
-                {generatingStyle === "realistic" ? "Erstellt…" : "✨ Realistisch"}
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={!description.trim() || generatingStyle !== null}
-                onClick={() => generateImage("sketch")}
-              >
-                {generatingStyle === "sketch" ? "Erstellt…" : "✨ Sketch"}
-              </Button>
+            <div className="mt-3">
+              <p className="text-xs font-medium text-white/50 mb-2">KI-Bild aus Beschreibung erstellen</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <SegmentedControl
+                  value={aspectRatio}
+                  onChange={(v) => setAspectRatio(v)}
+                  options={[
+                    { value: "16:9", label: "16:9" },
+                    { value: "9:16", label: "9:16" },
+                  ]}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!description.trim() || generatingStyle !== null}
+                  onClick={() => generateImage("realistic")}
+                >
+                  {generatingStyle === "realistic" ? "Erstellt…" : "✨ Realistisch"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!description.trim() || generatingStyle !== null}
+                  onClick={() => generateImage("sketch")}
+                >
+                  {generatingStyle === "sketch" ? "Erstellt…" : "✨ Sketch"}
+                </Button>
+              </div>
               {!description.trim() && (
                 <span className="text-xs text-white/40">Erst eine Beschreibung eintragen</span>
               )}
