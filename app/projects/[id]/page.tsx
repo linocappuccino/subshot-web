@@ -81,15 +81,72 @@ const sceneCollisionDetection: CollisionDetection = (args) => {
   const activeId = args.active.id;
   const isRealCard = (c: { id: string | number }) => c.id !== activeId && !String(c.id).startsWith("section-drop:");
 
-  const pointerHits = pointerWithin(args);
+  // 2026-07-15, Lino: dragging a tile toward the END of a section (right
+  // before the NEXT section starts) was still flaky after the h-24
+  // SectionDropZone fix above — "der indikator springt herum... landet im
+  // abschnitt darunter", and the indicator line visibly touched the NEXT
+  // section's title. Root cause: every fallback below (rectIntersection,
+  // closestCenter) searches across EVERY droppable in the whole page, so
+  // once the cursor left the last real card of section A, "closest card"
+  // could resolve to the FIRST card of section B — which reads on screen
+  // as a "top" edge line sitting ~9px above that card, i.e. functionally
+  // on top of B's own header (SortableSceneCard's insertionEdge==="top"
+  // offset). That's a different, wrong target ("first item of B") from
+  // what the user is aiming for ("last item of A").
+  //
+  // Fix: figure out which section's own vertical span (top of its first
+  // card down through the bottom of ITS OWN SectionDropZone/TableDropZone
+  // — already generously tall, see that component's comment) the pointer
+  // is currently inside, via data.sectionId tagged on every card/dropzone
+  // (see SortableSceneCard/SectionDropZone/TableDropZone), and restrict
+  // every detection strategy to that section's droppables only. A card
+  // from a different section can then never win, no matter how the
+  // fallback chain resolves — the ambiguity is removed before it can
+  // happen, not patched after the fact.
+  let scopedContainers = args.droppableContainers;
+  if (args.pointerCoordinates) {
+    const pointerY = args.pointerCoordinates.y;
+    const sectionIdOf = (c: (typeof args.droppableContainers)[number]) =>
+      (c.data.current as { sectionId?: string | null } | undefined)?.sectionId;
+    const ranges = new Map<string, { top: number; bottom: number }>();
+    for (const c of args.droppableContainers) {
+      const sectionId = sectionIdOf(c);
+      if (sectionId === undefined) continue; // not a section-scoped droppable at all
+      const rect = args.droppableRects.get(c.id);
+      if (!rect) continue;
+      const key = sectionId ?? "__unsectioned__";
+      const range = ranges.get(key);
+      if (!range) ranges.set(key, { top: rect.top, bottom: rect.bottom });
+      else {
+        range.top = Math.min(range.top, rect.top);
+        range.bottom = Math.max(range.bottom, rect.bottom);
+      }
+    }
+    let matchedKey: string | null = null;
+    for (const [key, range] of ranges) {
+      if (pointerY >= range.top && pointerY <= range.bottom) {
+        matchedKey = key;
+        break;
+      }
+    }
+    if (matchedKey) {
+      scopedContainers = args.droppableContainers.filter((c) => (sectionIdOf(c) ?? "__unsectioned__") === matchedKey);
+    }
+    // No match at all (pointer above the first section, below the last, or
+    // in the ~20px inter-section padding gap) — fall through with the full,
+    // unscoped container list, same as before this fix.
+  }
+  const scopedArgs = scopedContainers === args.droppableContainers ? args : { ...args, droppableContainers: scopedContainers };
+
+  const pointerHits = pointerWithin(scopedArgs);
   const pointerCardHits = pointerHits.filter(isRealCard);
   if (pointerCardHits.length > 0) return pointerCardHits;
 
-  const rectHits = rectIntersection(args);
+  const rectHits = rectIntersection(scopedArgs);
   const rectCardHits = rectHits.filter(isRealCard);
   if (rectCardHits.length > 0) return rectCardHits;
 
-  const closestCardHits = closestCenter(args).filter(isRealCard);
+  const closestCardHits = closestCenter(scopedArgs).filter(isRealCard);
   if (closestCardHits.length > 0) return closestCardHits;
 
   // Nothing real anywhere nearby — genuinely an empty/near-empty section,
@@ -1702,7 +1759,7 @@ function SectionBlock({
 // against. Highlight is now driven by the same shared `insertionIndicator`
 // state as every other drop target, so it's the one consistent mechanism.
 function SectionDropZone({ sectionId, insertionIndicator }: { sectionId: string | null; insertionIndicator?: { targetId: string } | null }) {
-  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
+  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}`, data: { sectionId } });
   const active = insertionIndicator?.targetId === `section-drop:${sectionId ?? ""}`;
   return (
     <div

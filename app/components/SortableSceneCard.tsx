@@ -62,7 +62,14 @@ export function SortableSceneCard({
   // computed against a card rect that dnd-kit was ALSO silently moving out
   // from under it. isDragging/opacity is all this card needs — the actual
   // "am I being dragged" visual is the separate DragOverlay copy.
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, disabled: dragDisabled });
+  // data.sectionId lets page.tsx's sceneCollisionDetection scope a drag to
+  // only the section the pointer is currently over — see its own comment
+  // for why (cross-section boundary ambiguity, 2026-07-15).
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({
+    id: scene.id,
+    disabled: dragDisabled,
+    data: { sectionId: scene.section_id ?? null },
+  });
 
   return (
     <div

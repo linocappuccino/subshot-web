@@ -130,7 +130,7 @@ export function SceneTable({
 }
 
 function TableDropZone({ sectionId, insertionIndicator }: { sectionId: string | null; insertionIndicator?: { targetId: string } | null }) {
-  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}` });
+  const { setNodeRef } = useDroppable({ id: `section-drop:${sectionId ?? ""}`, data: { sectionId } });
   const active = insertionIndicator?.targetId === `section-drop:${sectionId ?? ""}`;
   return (
     <tr ref={setNodeRef}>
@@ -166,7 +166,7 @@ function SceneRow({
   // See SortableSceneCard's comment on the same pattern — transform/transition
   // deliberately dropped so dnd-kit's own rectSortingStrategy reflow can't
   // fight the insertion-line indicator.
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id });
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, data: { sectionId: scene.section_id ?? null } });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   // 2026-07-14: read-only display of possibly several assignees — editing
   // happens in SceneEditModal's own multi-select, this row just lists them.
