@@ -145,8 +145,13 @@ export function AnnotationsPanel({
                       {scene && <Pill tone="default">{sceneLabel(scene)}</Pill>}
                       <Pill tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Pill>
                     </div>
+                    {/* Date-only before (2026-07-15, Lino: "es braucht
+                        überall auch eine datum UND zeit information zu
+                        jedem kommentar") -- added the time too. */}
                     <span className="text-[11px] text-white/30 shrink-0">
                       {new Date(a.created_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                      {" "}
+                      {new Date(a.created_at).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
                   {a.text && <p className="text-xs text-white/50 italic mb-1 break-words">„{a.text}“</p>}
