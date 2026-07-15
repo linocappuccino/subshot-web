@@ -80,11 +80,16 @@ export function AnnotationsPanel({
     <AnimatePresence>
       {open && (
         <motion.div
-          initial={{ x: 320, opacity: 0 }}
+          // Widened 320px -> 380px (2026-07-15, Lino: "kann ein wenig
+          // breiter sein, dann kann man das ganze ein bisschen besser
+          // lesen") — the slide-in/out x offset has to match the width,
+          // or the panel would sit partially on-screen at its "closed"
+          // starting position instead of fully off the right edge.
+          initial={{ x: 380, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 320, opacity: 0 }}
+          exit={{ x: 380, opacity: 0 }}
           transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          className="fixed right-0 top-0 bottom-0 z-40 w-[320px] max-w-[90vw] bg-[#1c1c1e] border-l border-white/10 shadow-2xl flex flex-col"
+          className="fixed right-0 top-0 bottom-0 z-40 w-[380px] max-w-[90vw] bg-[#1c1c1e] border-l border-white/10 shadow-2xl flex flex-col"
         >
           <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/8 shrink-0">
             <h2 className="text-sm font-semibold">Kommentare</h2>
