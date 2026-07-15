@@ -54,19 +54,32 @@ export function googleMapsUrl(scene: Scene): string {
 /** Renders an address with a `<wbr>` after every comma, so a wrapping
  * browser prefers breaking at "Strasse 1," / "8001 Zürich" boundaries over
  * splitting mid-word — falls back to the normal break-words behavior for
- * any segment still too long to fit on one line. */
+ * any segment still too long to fit on one line.
+ *
+ * 2026-07-15 fix: this used to return the per-part <span>s as a bare
+ * array, which the caller spreads directly as children of Pill's
+ * `inline-flex` span — every part then became its own FLEX ITEM (with
+ * Pill's own `gap-1.5` between each) instead of flowing as normal inline
+ * text, which read as justified/"Blocksatz" spacing (Lino). Same bug
+ * class as SUBLI's dialogue-list flex-splitting. Wrapped in one outer
+ * <span> so Pill only ever sees ONE flex child; the comma parts are
+ * ordinary nested inline content inside it. */
 function addressWithCommaBreaks(address: string) {
   const parts = address.split(", ");
-  return parts.map((part, i) => (
-    <span key={i}>
-      {part}
-      {i < parts.length - 1 && (
-        <>
-          ,<wbr />{" "}
-        </>
-      )}
+  return (
+    <span>
+      {parts.map((part, i) => (
+        <span key={i}>
+          {part}
+          {i < parts.length - 1 && (
+            <>
+              ,<wbr />{" "}
+            </>
+          )}
+        </span>
+      ))}
     </span>
-  ));
+  );
 }
 
 /** Wraps the FIRST matching "highlight"-kind annotation's `text` substring
