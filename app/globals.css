@@ -98,38 +98,39 @@ html {
 }
 
 /* Reviewer text-highlight markup on scene cards (2026-07-14, comment mode
-   in the logged-in app) — same flat, two-layer look as share_view.py's
-   .annot-mark on the public preview page (see that file's own doc comment
-   for the reasoning/reference photo), so a highlight reads identically in
-   both places. No filter/noise, just two slightly offset semi-transparent
-   rectangles whose natural overlap reads as a darker double-pass strip. */
+   in the logged-in app) — mirrors share_view.py's CURRENT .annot-mark on
+   the public preview page exactly (2026-07-15 rewrite: was a two-layer
+   dark-text version that predated that page's own several redesign
+   rounds and drifted out of sync — Lino: "die textmarkierung muss auch
+   wieder gleich aussehen wie auf der preview-seite"). Single layer,
+   transparent wash, text color NEVER touched (the rule that drove every
+   one of those redesign rounds — the highlight sits BEHIND the
+   unchanged text via z-index:-1, not the other way around). z-index:0 on
+   the mark itself is load-bearing: position:relative alone does NOT
+   create a new stacking context, so without it ::before's z-index:-1
+   would escape to the root stacking context and land behind a card's own
+   opaque background instead of just behind this one mark's own text. */
 .subshot-annot-mark {
   position: relative;
-  color: #1a1a1a;
-  padding: 0.5px 3px;
+  z-index: 0;
+  color: inherit;
+  background: none;
+  padding: 1px 3px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
   cursor: pointer;
 }
-.subshot-annot-mark::before,
-.subshot-annot-mark::after {
+.subshot-annot-mark::before {
   content: "";
   position: absolute;
-  inset: -2px -3px;
-  background: #ffe600;
   z-index: -1;
+  background: #ffd400;
+  inset: -4px -10px -2px 1px;
+  opacity: 0.3;
+  transform: rotate(-0.3deg);
 }
-.subshot-annot-mark::before {
+.subshot-annot-mark.subshot-annot-highlighted::before {
   opacity: 0.55;
-  transform: rotate(-0.6deg);
-}
-.subshot-annot-mark::after {
-  opacity: 0.35;
-  transform: rotate(0.9deg) translateY(1px);
-}
-.subshot-annot-mark.subshot-annot-highlighted::before,
-.subshot-annot-mark.subshot-annot-highlighted::after {
-  opacity: 0.85;
 }
 @keyframes subshot-annot-pulse {
   0%, 100% { filter: none; }

@@ -133,13 +133,20 @@ function parsePenPath(raw: string): { x: number; y: number }[] {
 
 function penPathD(points: { x: number; y: number }[]): string {
   if (points.length === 0) return "";
-  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x * 100} ${p.y * 100}`).join(" ");
+  // Points are stored 0-100 already (see share_view.py's addPoint, where
+  // they're captured as a percentage of the tile's own width/height, not a
+  // 0.0-1.0 fraction) -- multiplying by 100 again (2026-07-15 fix, was the
+  // actual bug here) pushed every coordinate up to 10,000, far outside the
+  // 0-100 viewBox, so every pen stroke rendered completely off-screen.
+  // Lino: "jetzt sieht man die gemalten markierungen gar nicht".
+  return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
 }
 
 /** Freehand pen-stroke markups (2026-07-14, comment mode) — mirrors
  * share_view.py's _pen_overlay_svg exactly: a 0-100 viewBox with
- * preserveAspectRatio="none" so pen_path's stored 0.0-1.0-relative points
- * redraw correctly at THIS card's actual rendered size, whatever that is,
+ * preserveAspectRatio="none" so pen_path's stored 0-100-relative points
+ * (a percentage of the tile's own width/height, not a 0.0-1.0 fraction —
+ * see penPathD) redraw correctly at THIS card's actual rendered size, whatever that is,
  * without any per-card pixel math. */
 function PenAnnotationOverlay({
   annotations,
