@@ -449,12 +449,14 @@ export function SceneCard({
           — 0.5 peak opacity on a blur-xl (bleeds inward a lot) washed out
           the card's own text. Pushed further out (-inset-5, was -inset-2)
           so the blur's spread lands outside the card instead of over its
-          content, opacity capped much lower, and a slower cycle. */}
+          content, opacity capped much lower, and a slower cycle. Dimmed
+          again 2026-07-15 (Lino: "immer noch zu hell") — peak 0.18→0.11,
+          floor 0.06→0.05. Same values on iOS (SceneTimerRunningGlow). */}
       {isTimerRunning && (
         <motion.div
           aria-hidden
           className="absolute -inset-5 rounded-3xl bg-white blur-xl pointer-events-none -z-10"
-          animate={{ opacity: [0.06, 0.18, 0.06] }}
+          animate={{ opacity: [0.05, 0.11, 0.05] }}
           transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
