@@ -357,7 +357,15 @@ export function SceneEditModal({
       await api.generateSceneImage(existing.id, style, aspectRatio);
       toast.showSuccess("KI-Bild wird erstellt — landet automatisch im Bildfeld, du kannst weiterarbeiten.");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht gestartet werden.");
+      // 2026-07-16, Lino: the insufficient-credits case needs to be ONE
+      // clear centered popup (see InsufficientCreditsDialog), not that PLUS
+      // a competing corner toast saying the same thing — api.ts already
+      // dispatched the dialog's event before this catch even runs, so skip
+      // the redundant toast here (same reasoning would apply to
+      // trial_expired, not touched here since Lino only flagged credits).
+      if (!(e instanceof ApiError && e.code === "insufficient_credits")) {
+        toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht gestartet werden.");
+      }
       setGeneratingStyle(null);
     }
   }
