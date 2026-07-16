@@ -332,10 +332,25 @@ export function SceneEditModal({
   // Clears the optimistic local lock once the backend's own persistent flag
   // (survives modal close/reopen + reload, see Scene.image_generating)
   // confirms the job actually finished, not just that it was queued.
+  //
+  // 2026-07-16 fix (Lino: "wenn man ein zweites Bild erstellt passiert gar
+  // nichts mehr"): depending on just `existing?.image_generating` (a single
+  // boolean) meant this effect only re-ran when THAT VALUE changed between
+  // two 12s polls. If a generation finishes faster than 12s (e.g. a warm
+  // RunPod worker right after a first generation) no single poll ever
+  // observes it flip true, so the boolean sits at false→false the whole
+  // time from React's point of view — the effect never re-fires and
+  // generatingStyle (thus the disabled button) stays stuck forever, exactly
+  // matching the reported "second click does nothing" symptom. Depending on
+  // the whole `existing` object instead re-checks the live values on EVERY
+  // poll tick (page.tsx's setData(d) replaces scenes with brand-new object
+  // references from a fresh fetch every 12s, regardless of whether any
+  // field actually changed) instead of only when React thinks the one field
+  // it's watching changed.
   useEffect(() => {
     if (generatingStyle && existing && !existing.image_generating) setGeneratingStyle(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existing?.image_generating]);
+  }, [existing]);
 
   return (
     <Modal
