@@ -4,6 +4,7 @@ import Link from "next/link";
 import { UserButton } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import { NotificationBell } from "./NotificationBell";
+import { CreditsNavLink } from "./CreditsNavLink";
 
 /** Persistent top bar for every signed-in screen — replaces the bare
  * "Subshot" <h1> each page used to render on its own. One shared shell so
@@ -37,6 +38,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </svg>
               Feedback
             </Link>
+            <CreditsNavLink />
             <Link href="/team" className="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />

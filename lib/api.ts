@@ -70,6 +70,12 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         // here would mean a new one appearing on every character typed.
         window.dispatchEvent(new CustomEvent("subshot:trial-expired", { detail: message }));
       }
+      // 2026-07-16, same shared-dialog-not-toast pattern as trial_expired
+      // above — see InsufficientCreditsDialog + generate_scene_image_endpoint's
+      // matching JSONResponse shape.
+      if (code === "insufficient_credits" && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("subshot:insufficient-credits", { detail: message }));
+      }
       throw new ApiError(res.status, message, code);
     }
     if (res.status === 204) return undefined as T;
@@ -206,6 +212,14 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         method: "POST",
         body: JSON.stringify({ style, aspect_ratio: aspectRatio }),
       }),
+
+    // ── AI Credits (2026-07-16) ─────────────────────────────────────────
+    // Credits only, never CHF/Rappen in this app's own UI (Lino) — the
+    // Rappen amount only ever reaches Stripe's own checkout page via
+    // creditCheckout, which the user is handed off to.
+    creditBalance: () => request<{ balance: number }>("credits/balance"),
+    creditCheckout: (credits: number) =>
+      request<{ url: string }>("credits/checkout", { method: "POST", body: JSON.stringify({ credits }) }),
 
     addDialogue: (sceneId: string, text: string, sortOrder = 0) =>
       request<SceneDialogue>(`scenes/${sceneId}/dialogues`, {
