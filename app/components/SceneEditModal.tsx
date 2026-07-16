@@ -12,6 +12,7 @@ import { DateTimePicker } from "./ui/DateTimePicker";
 import { LocationPicker } from "./ui/LocationPicker";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
+import { useAutosave } from "@/lib/useAutosave";
 import { ApiError } from "@/lib/api";
 import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Priority, type Scene, type SceneDialogue } from "@/lib/types";
 
@@ -271,6 +272,31 @@ export function SceneEditModal({
     onUpdated(scene);
     return scene;
   }
+
+  // Autosave (2026-07-16, Lino: "es muss alles was man aendert in allen
+  // Kacheln sofort gespeichert werden") — debounced ~600ms after the last
+  // field change, reusing persistExisting so it's the exact same PATCH
+  // "Fertig" already sent, just fired automatically instead of waiting for
+  // the button. Only for an already-created scene (existing != null) — a
+  // brand-new one has no id to PATCH against yet, stays create-on-Fertig.
+  // See useAutosave's own doc comment for why `existing?.id ?? null` (not
+  // just `Boolean(existing)`) is passed as the reset key: it's what tells
+  // the hook "a DIFFERENT scene just got loaded into these fields" so it
+  // doesn't mistake that reset for a user edit and re-save the freshly
+  // opened scene's own unchanged data back at itself.
+  useAutosave(
+    () => {
+      persistExisting().catch((e) => {
+        toast.showError(e instanceof ApiError ? e.message : "Automatisches Speichern fehlgeschlagen.");
+      });
+    },
+    [
+      name, priority, description, hasStart, start.getTime(), duration,
+      locationAddress, locationLat, locationLng, assigneeIds.join(","), goodTake,
+      imageFile, imageRemoved,
+    ],
+    existing?.id ?? null,
+  );
 
   async function handleSave() {
     setSaving(true);

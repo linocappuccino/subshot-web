@@ -8,6 +8,7 @@ import { SegmentedControl } from "./ui/SegmentedControl";
 import { ImageDropZone } from "./ui/ImageDropZone";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
+import { useAutosave } from "@/lib/useAutosave";
 import { ApiError } from "@/lib/api";
 import { PRIORITY_COLORS, PRIORITY_LABELS, type CameraSupport, type Priority, type Shot } from "@/lib/types";
 
@@ -92,29 +93,50 @@ export function ShotEditModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shot?.id, shot?.image_url]);
 
+  async function persistShot() {
+    if (!shot) return;
+    let updated = await api.patchShot(shot.id, {
+      description: description.trim() || null,
+      priority: priority ?? null,
+      clear_priority: priority === null,
+      good_take_filename: goodTake.trim() || null,
+      clear_good_take: !goodTake.trim(),
+      camera_angle: cameraAngle.trim() || null,
+      lens: lens.trim() || null,
+      f_stop: fStop.trim() || null,
+      frame_rate: frameRate.trim() || null,
+      shutter_angle: shutterAngle.trim() ? Number(shutterAngle) : null,
+      iso: iso.trim() ? parseInt(iso, 10) : null,
+      codec: codec.trim() || null,
+      camera_id: cameraId.trim() || null,
+      camera_support: cameraSupport,
+      clear_image: imageRemoved && !imageFile,
+    });
+    if (imageFile) updated = await api.uploadShotImage(shot.id, imageFile);
+    onUpdated(updated);
+  }
+
+  // Autosave (2026-07-16, Lino: "es muss alles was man aendert in allen
+  // Kacheln sofort gespeichert werden") — same debounced pattern as
+  // SceneEditModal's own autosave, see useAutosave's doc comment.
+  useAutosave(
+    () => {
+      persistShot().catch((e) => {
+        toast.showError(e instanceof ApiError ? e.message : "Automatisches Speichern fehlgeschlagen.");
+      });
+    },
+    [
+      description, priority, goodTake, cameraAngle, lens, fStop, frameRate,
+      shutterAngle, iso, codec, cameraId, cameraSupport, imageFile, imageRemoved,
+    ],
+    shot?.id ?? null,
+  );
+
   async function handleSave() {
     if (!shot) return;
     setSaving(true);
     try {
-      let updated = await api.patchShot(shot.id, {
-        description: description.trim() || null,
-        priority: priority ?? null,
-        clear_priority: priority === null,
-        good_take_filename: goodTake.trim() || null,
-        clear_good_take: !goodTake.trim(),
-        camera_angle: cameraAngle.trim() || null,
-        lens: lens.trim() || null,
-        f_stop: fStop.trim() || null,
-        frame_rate: frameRate.trim() || null,
-        shutter_angle: shutterAngle.trim() ? Number(shutterAngle) : null,
-        iso: iso.trim() ? parseInt(iso, 10) : null,
-        codec: codec.trim() || null,
-        camera_id: cameraId.trim() || null,
-        camera_support: cameraSupport,
-        clear_image: imageRemoved && !imageFile,
-      });
-      if (imageFile) updated = await api.uploadShotImage(shot.id, imageFile);
-      onUpdated(updated);
+      await persistShot();
       onClose();
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
