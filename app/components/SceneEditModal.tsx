@@ -121,6 +121,13 @@ export function SceneEditModal({
    * vertical/mobile shot instead. Either way the app's own image display
    * already handles both ratios (see ImageDropZone's lockAspectRatio). */
   const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
+  /** 2026-07-16, Lino: "realistisch/sketch soll auch ein switch button
+   * sein" — replaces the old two-separate-buttons-double-as-style-picker
+   * design (each button both selected AND fired its own style) with an
+   * explicit style switch next to the aspect-ratio one, plus a single
+   * "Bild generieren" button that fires whichever style is currently
+   * selected. */
+  const [style, setStyle] = useState<"realistic" | "sketch">("realistic");
 
   // This component never unmounts (the page renders it once, unconditionally,
   // and toggles `open` — see Modal, which only hides/shows its CHILDREN, not
@@ -425,35 +432,42 @@ export function SceneEditModal({
               <p className="text-xs font-medium text-white/50 mb-2">KI-Bild aus Beschreibung erstellen</p>
               {/* Own row, given real width to breathe (2026-07-15, Lino:
                   "sieht sehr zusammengequetscht aus") — SegmentedControl's
-                  options are flex-1, so packed into the same flex-wrap row
-                  as the two style buttons it had almost no width to expand
-                  into and rendered as two tiny slivers. */}
-              <div className="w-40 mb-2">
-                <SegmentedControl
-                  value={aspectRatio}
-                  onChange={(v) => setAspectRatio(v)}
-                  options={[
-                    { value: "16:9", label: "16:9" },
-                    { value: "9:16", label: "9:16" },
-                  ]}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
+                  options are flex-1, packed too tight in a narrow row.
+                  2026-07-16, Lino: "realistisch/sketch soll auch ein switch
+                  button sein... daneben nochmals ein button mit Bild
+                  generieren" — Format and Stil are now two side-by-side
+                  switches (both just SELECT, neither fires anything by
+                  itself anymore), with a single explicit "Bild generieren"
+                  button that fires generation for whichever combination is
+                  currently selected. */}
+              <div className="flex flex-wrap items-center gap-3 mb-2">
+                <div className="w-32">
+                  <SegmentedControl
+                    value={aspectRatio}
+                    onChange={(v) => setAspectRatio(v)}
+                    options={[
+                      { value: "16:9", label: "16:9" },
+                      { value: "9:16", label: "9:16" },
+                    ]}
+                  />
+                </div>
+                <div className="w-44">
+                  <SegmentedControl
+                    value={style}
+                    onChange={(v) => setStyle(v)}
+                    options={[
+                      { value: "realistic", label: "Realistisch" },
+                      { value: "sketch", label: "Sketch" },
+                    ]}
+                  />
+                </div>
                 <Button
                   variant="secondary"
                   size="sm"
                   disabled={!description.trim() || generatingStyle !== null || Boolean(existing?.image_generating)}
-                  onClick={() => generateImage("realistic")}
+                  onClick={() => generateImage(style)}
                 >
-                  {generatingStyle === "realistic" ? "Erstellt…" : "✨ Realistisch"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={!description.trim() || generatingStyle !== null || Boolean(existing?.image_generating)}
-                  onClick={() => generateImage("sketch")}
-                >
-                  {generatingStyle === "sketch" ? "Erstellt…" : "✨ Sketch"}
+                  {generatingStyle ? "Erstellt…" : "✨ Bild generieren"}
                 </Button>
               </div>
               {!description.trim() && (
