@@ -67,6 +67,9 @@ export interface Scene {
   scheduled_at: string | null;
   duration_minutes: number | null;
   image_url: string | null;
+  /** Survives modal close/reopen + reload (backend-tracked, not component
+   * state) — see Scene.image_generating in models.py for why. */
+  image_generating: boolean;
   completed: boolean;
   sort_order: number;
   assignee_id: string | null;

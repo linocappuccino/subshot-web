@@ -234,46 +234,60 @@ export function SceneEditModal({
     }
   }
 
+  function buildPatchBody() {
+    return {
+      name: name.trim() || null,
+      priority: priority ?? null,
+      clear_priority: priority === null,
+      description: description.trim() || null,
+      clear_description: !description.trim(),
+      scheduled_at: hasStart ? start.toISOString() : null,
+      duration_minutes: hasStart ? duration : null,
+      location_address: locationAddress.trim() || null,
+      location_lat: locationLat,
+      location_lng: locationLng,
+      clear_location: !locationAddress.trim(),
+      assignee_ids: assigneeIds,
+      good_take_filename: goodTake.trim() || null,
+      clear_good_take: !goodTake.trim(),
+    };
+  }
+
+  // Split out of handleSave (2026-07-16) so generateImage can persist the
+  // field state — description above all — WITHOUT closing the modal first.
+  // Before this split, clicking "✨ Realistisch" right after typing a new
+  // description (without hitting "Fertig" first) generated from whatever
+  // description was last SAVED, not what's currently in the textarea — the
+  // backend sources the prompt from scene.description in the DB (see
+  // generate_scene_image_endpoint in main.py), which this component's local
+  // `description` state hadn't reached yet. Only meaningful for an existing
+  // scene — a brand-new one can't call generate-image anyway (needs a real
+  // id), same reasoning as the AI section's own existing-only render guard.
+  async function persistExisting(): Promise<Scene | null> {
+    if (!existing) return null;
+    let scene = await api.patchScene(existing.id, { ...buildPatchBody(), clear_image: imageRemoved && !imageFile });
+    if (imageFile) scene = await api.uploadSceneImage(existing.id, imageFile);
+    scene = { ...scene, dialogues };
+    onUpdated(scene);
+    return scene;
+  }
+
   async function handleSave() {
-    const trimmedName = name.trim();
     setSaving(true);
     try {
-      const body = {
-        name: trimmedName || null,
-        priority: priority ?? null,
-        clear_priority: priority === null,
-        description: description.trim() || null,
-        clear_description: !description.trim(),
-        scheduled_at: hasStart ? start.toISOString() : null,
-        duration_minutes: hasStart ? duration : null,
-        location_address: locationAddress.trim() || null,
-        location_lat: locationLat,
-        location_lng: locationLng,
-        clear_location: !locationAddress.trim(),
-        assignee_ids: assigneeIds,
-        good_take_filename: goodTake.trim() || null,
-        clear_good_take: !goodTake.trim(),
-      };
-
-      let scene: Scene;
       if (existing) {
-        scene = await api.patchScene(existing.id, { ...body, clear_image: imageRemoved && !imageFile });
+        await persistExisting();
       } else {
-        scene = await api.createScene(projectId, {
-          color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder, ...body,
+        let scene = await api.createScene(projectId, {
+          color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder, ...buildPatchBody(),
         });
         for (const text of draftDialogues) {
           const d = await api.addDialogue(scene.id, text);
           scene = { ...scene, dialogues: [...scene.dialogues, d] };
         }
+        if (imageFile) scene = await api.uploadSceneImage(scene.id, imageFile);
+        onCreated(scene);
       }
-
-      if (imageFile) {
-        scene = existing ? await api.uploadSceneImage(existing.id, imageFile) : await api.uploadSceneImage(scene.id, imageFile);
-      }
-
-      if (existing) onUpdated({ ...scene, dialogues });
-      else onCreated(scene);
       onClose();
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
@@ -291,18 +305,37 @@ export function SceneEditModal({
   // server-side once RunPod finishes, and the project page's existing 12s
   // poll (see page.tsx) picks it up on its own, whether or not this modal
   // is still open by then.
+  //
+  // Two 2026-07-16 fixes bundled in here (Lino): 1) persistExisting() first
+  // so the backend generates from whatever's actually in the description
+  // textarea right now, not the last-saved value (see persistExisting's own
+  // doc comment). 2) generatingStyle is deliberately NOT cleared in a
+  // `finally` here anymore — the POST resolving only means the job was
+  // queued, not that it's done. It now stays set until the effect below
+  // observes existing.image_generating flip back to false via the 12s poll,
+  // which is also what backs the button's disabled state so a second
+  // click — or the same scene reopened in another tab — can't fire a
+  // duplicate job while one's already running.
   async function generateImage(style: "realistic" | "sketch") {
-    if (!existing || !description.trim()) return;
+    if (!existing || !description.trim() || generatingStyle || existing.image_generating) return;
     setGeneratingStyle(style);
     try {
+      await persistExisting();
       await api.generateSceneImage(existing.id, style, aspectRatio);
       toast.showSuccess("KI-Bild wird erstellt — landet automatisch im Bildfeld, du kannst weiterarbeiten.");
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht gestartet werden.");
-    } finally {
       setGeneratingStyle(null);
     }
   }
+
+  // Clears the optimistic local lock once the backend's own persistent flag
+  // (survives modal close/reopen + reload, see Scene.image_generating)
+  // confirms the job actually finished, not just that it was queued.
+  useEffect(() => {
+    if (generatingStyle && existing && !existing.image_generating) setGeneratingStyle(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing?.image_generating]);
 
   return (
     <Modal
@@ -368,7 +401,7 @@ export function SceneEditModal({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!description.trim() || generatingStyle !== null}
+                  disabled={!description.trim() || generatingStyle !== null || Boolean(existing?.image_generating)}
                   onClick={() => generateImage("realistic")}
                 >
                   {generatingStyle === "realistic" ? "Erstellt…" : "✨ Realistisch"}
@@ -376,7 +409,7 @@ export function SceneEditModal({
                 <Button
                   variant="secondary"
                   size="sm"
-                  disabled={!description.trim() || generatingStyle !== null}
+                  disabled={!description.trim() || generatingStyle !== null || Boolean(existing?.image_generating)}
                   onClick={() => generateImage("sketch")}
                 >
                   {generatingStyle === "sketch" ? "Erstellt…" : "✨ Sketch"}
@@ -392,7 +425,7 @@ export function SceneEditModal({
               couple minutes on the first generation after a quiet spell —
               decided to keep that cost tradeoff and just say so up front
               instead of leaving a bare spinner that reads as hung. */}
-          {generatingStyle && (
+          {(generatingStyle || existing?.image_generating) && (
             <p className="text-xs text-white/40 mt-1.5">
               Kann bis zu 2-3 Minuten dauern, falls der KI-Server gerade "kalt" ist (länger nicht genutzt wurde).
             </p>
