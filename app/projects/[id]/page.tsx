@@ -189,6 +189,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // SceneEditModal's isIntermediateStep prop.
   const [creatingIntermediateStep, setCreatingIntermediateStep] = useState(false);
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
+  // Live-refreshed view of editingScene for display purposes ONLY (2026-07-16,
+  // Lino: AI-Bild aktualisiert sich nicht in der offenen Karte) — editingScene
+  // itself is a one-time snapshot from whenever the modal was opened, never
+  // updated again while it stays open (see the 12s poll's setData below,
+  // which never touches editingScene). That's deliberate for
+  // handleSceneUpdated's own before/after cascade-delta comparison further
+  // down (needs the PRE-edit snapshot, see its doc comment), so this doesn't
+  // replace editingScene — it's a separate derived value, re-resolved against
+  // the live `data.scenes` on every render, that's passed to the modal
+  // INSTEAD so it picks up background changes (image_url flipping once an
+  // AI generation finishes, image_generating flipping back to false) without
+  // waiting for the modal to be closed and reopened.
+  const liveEditingScene = editingScene ? (data?.scenes.find((s) => s.id === editingScene.id) ?? editingScene) : null;
   const [deleteScene, setDeleteScene] = useState<Scene | null>(null);
   const [deleteSection, setDeleteSection] = useState<Section | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
@@ -1244,7 +1257,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           setCreatingIntermediateStep(false);
         }}
         projectId={data.id}
-        existing={editingScene}
+        existing={liveEditingScene}
         previousScene={creatingScene || creatingIntermediateStep ? lastScene : null}
         nextSortOrder={(lastScene?.sort_order ?? -1) + 1}
         members={members}
