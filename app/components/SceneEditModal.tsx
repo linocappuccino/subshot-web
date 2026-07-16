@@ -448,7 +448,15 @@ export function SceneEditModal({
                   itself anymore), with a single explicit "Bild generieren"
                   button that fires generation for whichever combination is
                   currently selected. */}
-              <div className="flex flex-wrap items-center gap-3 mb-2">
+              {/* items-stretch (2026-07-16, Lino: "muss die gleiche hoehe
+                  haben wie realistisch/sketch") — SegmentedControl has an
+                  extra p-1 wrapper padding around its own py-1.5 option
+                  buttons that plain <Button size="sm"> doesn't have, so
+                  centering them (items-center) left the button visibly
+                  shorter. Stretching all three flex children to the row's
+                  height (set by the tallest, the SegmentedControls) fixes
+                  it without hand-tuning padding to match by eye. */}
+              <div className="flex flex-wrap items-stretch gap-3 mb-2">
                 <div className="w-32">
                   <SegmentedControl
                     value={aspectRatio}
