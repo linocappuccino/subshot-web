@@ -10,13 +10,25 @@ import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
 import { useAutosave } from "@/lib/useAutosave";
 import { ApiError } from "@/lib/api";
-import { PRIORITY_COLORS, PRIORITY_LABELS, type CameraSupport, type Priority, type Shot } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { PRIORITY_COLORS, type CameraSupport, type Priority, type Shot } from "@/lib/types";
 
-const CAMERA_SUPPORT_LABELS: Record<CameraSupport, string> = {
-  gimbal: "Gimbal",
-  handheld: "Handheld",
-  tripod: "Stativ",
-};
+// 2026-07-18, Lino: "fehlen noch die Auswahlmöglichkeiten bei den einzelnen
+// Feldern... bei Framerate sollen schon vordefinierte Werte drin sein zum
+// auswählen (recherchiere die typischen NTSC und PAL framerates)... bei
+// Objektiv mm-Zahlen von 5-800... F-Stop 1.0-50... ISO in 50er-Schritten von
+// 50-12000" — `<input list="…">` + `<datalist>` statt reiner `<select>`:
+// gibt ein natives Dropdown mit den vordefinierten Werten, lässt aber (wie
+// bisherige Freitextfelder) trotzdem einen abweichenden Custom-Wert zu, ohne
+// eine neue Combobox-Komponente zu brauchen.
+const FRAMERATE_OPTIONS = ["23.976", "24", "25", "29.97", "30", "48", "50", "59.94", "60", "100", "120", "180", "200", "240"];
+const LENS_MM_OPTIONS = [
+  5, 6, 8, 9, 10, 12, 14, 16, 18, 20, 24, 28, 32, 35, 40, 50, 55, 60, 70, 75, 85, 90, 100,
+  105, 120, 135, 150, 180, 200, 210, 235, 250, 270, 300, 400, 500, 600, 700, 800,
+].map(String);
+const F_STOP_OPTIONS = ["1.0", "1.2", "1.4", "1.8", "2.0", "2.5", "2.8", "3.5", "4.0", "4.5", "5.6", "6.3", "8.0", "9.0", "11", "13", "16", "18", "22", "25", "32", "36", "45", "50"];
+const ISO_OPTIONS: string[] = [];
+for (let v = 50; v <= 12000; v += 50) ISO_OPTIONS.push(String(v));
 
 export function ShotEditModal({
   open,
@@ -31,6 +43,13 @@ export function ShotEditModal({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
+
+  const CAMERA_SUPPORT_LABELS: Record<CameraSupport, string> = {
+    gimbal: "Gimbal",
+    handheld: "Handheld",
+    tripod: t("shotEditModal.tripod"),
+  };
 
   const [description, setDescription] = useState(shot?.description ?? "");
   const [priority, setPriority] = useState<Priority | null>(shot?.priority ?? null);
@@ -74,22 +93,11 @@ export function ShotEditModal({
     setCameraSupport(shot.camera_support ?? null);
   }
 
+  // shot.image_url is a presigned R2 URL since #248 (2026-07-22), directly
+  // usable as the preview's src, no fetch needed (see AuthImage.tsx).
   useEffect(() => {
     if (!open || !shot?.image_url) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    api.fetchImageBlobUrl(shot.image_url).then((url) => {
-      if (cancelled) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      objectUrl = url;
-      setImagePreview(url);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    setImagePreview(shot.image_url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, shot?.id, shot?.image_url]);
 
@@ -122,7 +130,7 @@ export function ShotEditModal({
   useAutosave(
     () => {
       persistShot().catch((e) => {
-        toast.showError(e instanceof ApiError ? e.message : "Automatisches Speichern fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("shotEditModal.autosaveFailed"));
       });
     },
     [
@@ -139,7 +147,7 @@ export function ShotEditModal({
       await persistShot();
       onClose();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("shotEditModal.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -151,20 +159,20 @@ export function ShotEditModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Einstellung bearbeiten"
+      title={t("shotEditModal.title")}
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={handleSave} disabled={saving}>
-            {saving ? "Speichert…" : "Fertig"}
+            {saving ? t("common.saving") : t("common.done")}
           </Button>
         </div>
       }
     >
       <FieldGroup>
-        <Label>Bild</Label>
+        <Label>{t("shotEditModal.image")}</Label>
         <ImageDropZone
           previewUrl={imagePreview}
           onFile={(file) => {
@@ -181,45 +189,65 @@ export function ShotEditModal({
         />
       </FieldGroup>
       <FieldGroup>
-        <Label>Beschreibung</Label>
-        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="z.B. Weitwinkel Establishing Shot" autoFocus />
+        <Label>{t("shotEditModal.description")}</Label>
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder={t("shotEditModal.descriptionPlaceholder")} autoFocus />
       </FieldGroup>
       <FieldGroup>
-        <Label>Priorität</Label>
+        <Label>{t("shotEditModal.priority")}</Label>
         <SegmentedControl
           value={priority ?? "none"}
           onChange={(v) => setPriority(v === "none" ? null : (v as Priority))}
           options={[
-            { value: "none", label: "Keine", color: PRIORITY_COLORS.none },
-            { value: "must", label: PRIORITY_LABELS.must, color: PRIORITY_COLORS.must },
-            { value: "should", label: PRIORITY_LABELS.should, color: PRIORITY_COLORS.should },
-            { value: "optional", label: PRIORITY_LABELS.optional, color: PRIORITY_COLORS.optional },
+            { value: "none", label: t("shotEditModal.none"), color: PRIORITY_COLORS.none },
+            { value: "must", label: t("priority.must"), color: PRIORITY_COLORS.must },
+            { value: "should", label: t("priority.should"), color: PRIORITY_COLORS.should },
+            { value: "optional", label: t("priority.optional"), color: PRIORITY_COLORS.optional },
           ]}
         />
       </FieldGroup>
       <FieldGroup>
-        <Label>Kamera</Label>
+        <Label>{t("shotEditModal.camera")}</Label>
         <div className="grid grid-cols-2 gap-2">
-          <Input value={cameraId} onChange={(e) => setCameraId(e.target.value)} placeholder="Kamera-ID (A, B, C…)" />
-          <Input value={cameraAngle} onChange={(e) => setCameraAngle(e.target.value)} placeholder="Winkel" />
-          <Input value={lens} onChange={(e) => setLens(e.target.value)} placeholder="Objektiv" />
-          <Input value={fStop} onChange={(e) => setFStop(e.target.value)} placeholder="F-Stop" />
-          <Input value={frameRate} onChange={(e) => setFrameRate(e.target.value)} placeholder="Framerate" />
+          <Input value={cameraId} onChange={(e) => setCameraId(e.target.value)} placeholder={t("shotEditModal.cameraIdPlaceholder")} />
+          <Input value={cameraAngle} onChange={(e) => setCameraAngle(e.target.value)} placeholder={t("shotEditModal.anglePlaceholder")} />
+          <Input list="shot-lens-options" value={lens} onChange={(e) => setLens(e.target.value)} placeholder={t("shotEditModal.lensPlaceholder")} />
+          <Input list="shot-fstop-options" value={fStop} onChange={(e) => setFStop(e.target.value)} placeholder={t("shotEditModal.fstopPlaceholder")} />
+          <Input list="shot-framerate-options" value={frameRate} onChange={(e) => setFrameRate(e.target.value)} placeholder={t("shotEditModal.frameratePlaceholder")} />
           <Input
             type="number"
             value={shutterAngle}
             onChange={(e) => setShutterAngle(e.target.value)}
-            placeholder="Shutterangle"
+            placeholder={t("shotEditModal.shutterAnglePlaceholder")}
           />
-          <Input type="number" value={iso} onChange={(e) => setIso(e.target.value)} placeholder="ISO" />
-          <Input value={codec} onChange={(e) => setCodec(e.target.value)} placeholder="Codec" />
+          <Input list="shot-iso-options" type="number" step={50} value={iso} onChange={(e) => setIso(e.target.value)} placeholder={t("shotEditModal.isoPlaceholder")} />
+          <Input value={codec} onChange={(e) => setCodec(e.target.value)} placeholder={t("shotEditModal.codecPlaceholder")} />
+          <datalist id="shot-lens-options">
+            {LENS_MM_OPTIONS.map((v) => (
+              <option key={v} value={v}>{v} mm</option>
+            ))}
+          </datalist>
+          <datalist id="shot-fstop-options">
+            {F_STOP_OPTIONS.map((v) => (
+              <option key={v} value={v}>f/{v}</option>
+            ))}
+          </datalist>
+          <datalist id="shot-framerate-options">
+            {FRAMERATE_OPTIONS.map((v) => (
+              <option key={v} value={v}>{v} fps</option>
+            ))}
+          </datalist>
+          <datalist id="shot-iso-options">
+            {ISO_OPTIONS.map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
         </div>
         <div className="mt-2">
           <SegmentedControl
             value={cameraSupport ?? "none"}
             onChange={(v) => setCameraSupport(v === "none" ? null : (v as CameraSupport))}
             options={[
-              { value: "none", label: "Keine" },
+              { value: "none", label: t("shotEditModal.none") },
               { value: "tripod", label: CAMERA_SUPPORT_LABELS.tripod },
               { value: "handheld", label: CAMERA_SUPPORT_LABELS.handheld },
               { value: "gimbal", label: CAMERA_SUPPORT_LABELS.gimbal },
@@ -228,8 +256,8 @@ export function ShotEditModal({
         </div>
       </FieldGroup>
       <FieldGroup className="mb-0">
-        <Label>Good Take</Label>
-        <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder="Dateiname, z.B. A003_C012" />
+        <Label>{t("scene.goodTake")}</Label>
+        <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder={t("shotEditModal.goodTakePlaceholder")} />
       </FieldGroup>
     </Modal>
   );

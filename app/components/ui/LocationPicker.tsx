@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import { useApi } from "@/lib/useApi";
 import { Input } from "./Field";
+import { useLanguage } from "@/lib/i18n";
+import { useClampedPopoverPosition } from "@/lib/useClampedPopoverPosition";
 
 interface GeocodeResult {
   display_name: string;
@@ -39,6 +40,7 @@ export function LocationPicker({
   onChange: (address: string, lat: number | null, lng: number | null) => void;
 }) {
   const api = useApi();
+  const { t } = useLanguage();
   const [query, setQuery] = useState(address);
   const [prevAddress, setPrevAddress] = useState(address);
   const [results, setResults] = useState<GeocodeResult[]>([]);
@@ -64,6 +66,17 @@ export function LocationPicker({
   }
 
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // 2026-08-07, Lino: "das Datumfeld geht über den Browserrand" — same fix
+  // as DateTimePicker, checked across every custom popover in the app.
+  // `left: null` — this dropdown's width always matches its trigger's own
+  // width (see `width: dropdownRect.width` below), so an on-screen trigger
+  // can never push it off the LEFT/RIGHT edge, only vertically past the
+  // bottom (e.g. the Standort field near the end of a long scene form).
+  const clampedDropdown = useClampedPopoverPosition(
+    open && results.length > 0,
+    dropdownRect ? { top: dropdownRect.top, left: null } : null,
+    dropdownRef
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -179,11 +192,11 @@ export function LocationPicker({
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder="Adresse suchen…"
+          placeholder={t("locationPicker.searchPlaceholder")}
           disabled={resolving}
         />
         {resolving && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/40">Lädt…</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/40">{t("locationPicker.loading")}</span>
         )}
       </div>
       {/* Portaled straight to document.body instead of rendered as a normal
@@ -199,38 +212,28 @@ export function LocationPicker({
           (Lino). A portal has no ancestor overflow/clipping to fight —
           position comes from dropdownRect (see its own effect above),
           computed straight from the input's on-screen bounding box. */}
-      {dropdownRect &&
+      {dropdownRect && open && results.length > 0 &&
         createPortal(
-          <AnimatePresence>
-            {open && results.length > 0 && (
-              <motion.div
-                ref={dropdownRef}
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.15 }}
-                style={{ position: "fixed", top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
-                className="z-[70] bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
+          <div
+            ref={dropdownRef}
+            style={{ position: "fixed", top: clampedDropdown?.top ?? dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
+            className="z-[70] bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
+          >
+            {results.map((r, i) => (
+              <button
+                key={i}
+                onClick={() => pickResult(r)}
+                className="w-full text-left px-3.5 py-2.5 text-sm text-white/80 hover:bg-white/8 transition-colors border-b border-white/5 last:border-b-0"
               >
-                {results.map((r, i) => (
-                  <button
-                    key={i}
-                    onClick={() => pickResult(r)}
-                    className="w-full text-left px-3.5 py-2.5 text-sm text-white/80 hover:bg-white/8 transition-colors border-b border-white/5 last:border-b-0"
-                  >
-                    {r.display_name}
-                  </button>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>,
+                {r.display_name}
+              </button>
+            ))}
+          </div>,
           document.body
         )}
 
       {effectiveMapUrl && (
-        <motion.a
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
+        <a
           href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`}
           target="_blank"
           rel="noopener noreferrer"
@@ -239,7 +242,7 @@ export function LocationPicker({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={effectiveMapUrl} alt="" className="w-16 h-16 object-cover rounded-lg shrink-0" />
           <span className="text-sm text-white/70 leading-snug">{address}</span>
-        </motion.a>
+        </a>
       )}
     </div>
   );

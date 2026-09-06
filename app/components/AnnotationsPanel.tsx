@@ -1,28 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { Pill } from "./ui/Badge";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
+import { useLanguage } from "@/lib/i18n";
 import type { Annotation, Scene } from "@/lib/types";
 
-const STATUS_LABELS: Record<Annotation["status"], string> = {
-  open: "Offen",
-  resolved: "Erledigt",
-  rejected: "Abgelehnt",
-};
 const STATUS_TONES: Record<Annotation["status"], "default" | "good" | "danger"> = {
+  // "draft" never actually reaches this panel (list_project_annotations
+  // filters it out server-side, same as list_idea_feedback's status=="sent"
+  // filter) — included here only so the type checker is happy about
+  // Annotation["status"] now allowing it (see that field's own doc comment
+  // in lib/types.ts).
+  draft: "default",
   open: "default",
   resolved: "good",
   rejected: "danger",
 };
-
-function sceneLabel(scene: Scene | undefined): string {
-  if (!scene) return "";
-  return `Szene ${scene.number}${scene.letter || ""}`;
-}
 
 /** Reviewer comments/markups (2026-07-13 on the public preview page, now
  * also here in the logged-in app — 2026-07-14, Lino: "soll rechts am
@@ -59,14 +55,27 @@ export function AnnotationsPanel({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [filter, setFilter] = useState<"open" | "all">("open");
 
-  async function setStatus(annotation: Annotation, status: Annotation["status"]) {
+  const STATUS_LABELS: Record<Annotation["status"], string> = {
+    draft: "",
+    open: t("annotationsPanel.statusOpen"),
+    resolved: t("annotationsPanel.statusResolved"),
+    rejected: t("annotationsPanel.statusRejected"),
+  };
+
+  function sceneLabel(scene: Scene | undefined): string {
+    if (!scene) return "";
+    return `${t("annotationsPanel.sceneLabel", { number: scene.number })}${scene.letter || ""}`;
+  }
+
+  async function setStatus(annotation: Annotation, status: "open" | "resolved" | "rejected") {
     try {
       const updated = await api.patchAnnotation(annotation.id, status);
       onChange((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Status konnte nicht geändert werden.");
+      toast.showError(e instanceof ApiError ? e.message : t("annotationsPanel.updateFailed"));
     }
   }
 
@@ -84,27 +93,15 @@ export function AnnotationsPanel({
   const shown = filter === "open" ? sorted.filter((a) => a.status === "open") : sorted;
   const openCount = annotations.filter((a) => a.status === "open").length;
 
+  if (!open) return null;
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          // Widened 320px -> 380px (2026-07-15, Lino: "kann ein wenig
-          // breiter sein, dann kann man das ganze ein bisschen besser
-          // lesen") — the slide-in/out x offset has to match the width,
-          // or the panel would sit partially on-screen at its "closed"
-          // starting position instead of fully off the right edge.
-          initial={{ x: 380, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: 380, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 380, damping: 34 }}
-          className="fixed right-0 top-0 bottom-0 z-40 w-[380px] max-w-[90vw] bg-[#1c1c1e] border-l border-white/10 shadow-2xl flex flex-col"
-        >
+        <div className="fixed right-0 top-0 bottom-0 z-40 w-[380px] max-w-[90vw] bg-[#1c1c1e] border-l border-white/10 shadow-2xl flex flex-col">
           <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/8 shrink-0">
-            <h2 className="text-sm font-semibold">Kommentare</h2>
+            <h2 className="text-sm font-semibold">{t("annotationsPanel.title")}</h2>
             <button
               onClick={onClose}
               className="rounded-full p-1.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-              aria-label="Schließen"
+              aria-label={t("annotationsPanel.closeAria")}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6 6 18M6 6l12 12" />
@@ -118,7 +115,7 @@ export function AnnotationsPanel({
                 filter === "open" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"
               }`}
             >
-              Offen ({openCount})
+              {t("annotationsPanel.filterOpen", { count: openCount })}
             </button>
             <button
               onClick={() => setFilter("all")}
@@ -126,14 +123,14 @@ export function AnnotationsPanel({
                 filter === "all" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"
               }`}
             >
-              Alle ({annotations.length})
+              {t("annotationsPanel.filterAll", { count: annotations.length })}
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
             {shown.length === 0 && (
               <p className="text-sm text-white/40">
-                {filter === "open" ? "Keine offenen Kommentare." : "Noch keine Kommentare vorhanden."}
+                {filter === "open" ? t("annotationsPanel.noOpenComments") : t("annotationsPanel.noCommentsYet")}
               </p>
             )}
             {shown.map((a) => {
@@ -149,7 +146,9 @@ export function AnnotationsPanel({
                   <div className="flex items-start justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0 flex-wrap">
                       <span className="text-sm font-medium truncate">{a.author_name}</span>
-                      <Pill tone="default">{a.kind === "pen" ? "✏️ Skizze" : "„ “ Textmarkierung"}</Pill>
+                      <Pill tone="default">
+                        {a.kind === "pen" ? t("annotationsPanel.kindSketch") : a.kind === "comment" ? t("annotationsPanel.kindComment") : t("annotationsPanel.kindHighlight")}
+                      </Pill>
                       {scene && <Pill tone="default">{sceneLabel(scene)}</Pill>}
                       <Pill tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Pill>
                     </div>
@@ -167,13 +166,21 @@ export function AnnotationsPanel({
                   </div>
                   {a.text && <p className="text-xs text-white/65 italic mb-1 break-words">„{a.text}“</p>}
                   {a.comment && <p className="text-sm text-white/85 break-words">{a.comment}</p>}
+                  {/* 2026-07-26 (#330) — who triaged this, small/greyed like
+                      every other resolved-by hint in this app (see
+                      IdeaFeedbackPanel's formatEntryDate line). */}
+                  {a.status !== "open" && a.resolved_by_name && (
+                    <p className="text-[11px] text-white/40 mt-1">
+                      {a.status === "rejected" ? "✗" : "✓"} {a.resolved_by_name}
+                    </p>
+                  )}
                   <div className="flex gap-2 mt-2.5" onClick={(e) => e.stopPropagation()}>
                     {a.status !== "resolved" && (
                       <button
                         onClick={() => setStatus(a, "resolved")}
                         className="text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
                       >
-                        Erledigt
+                        {t("annotationsPanel.resolve")}
                       </button>
                     )}
                     {a.status !== "rejected" && (
@@ -181,7 +188,7 @@ export function AnnotationsPanel({
                         onClick={() => setStatus(a, "rejected")}
                         className="text-xs font-medium text-red-400/80 hover:text-red-400 transition-colors"
                       >
-                        Ablehnen
+                        {t("annotationsPanel.reject")}
                       </button>
                     )}
                     {a.status !== "open" && (
@@ -189,7 +196,7 @@ export function AnnotationsPanel({
                         onClick={() => setStatus(a, "open")}
                         className="text-xs font-medium text-white/40 hover:text-white/70 transition-colors"
                       >
-                        Wieder öffnen
+                        {t("annotationsPanel.reopen")}
                       </button>
                     )}
                   </div>
@@ -197,8 +204,6 @@ export function AnnotationsPanel({
               );
             })}
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </div>
   );
 }

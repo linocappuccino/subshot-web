@@ -1,26 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-  type DraggableAttributes,
-  type DraggableSyntheticListeners,
-} from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { type DraggableAttributes, type DraggableSyntheticListeners } from "@dnd-kit/core";
+import { useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
-import { PALETTE, PRIORITY_COLORS, PRIORITY_LABELS, type Annotation, type Member, type Scene, type Shot } from "@/lib/types";
+import { PALETTE, PRIORITY_COLORS, type Annotation, type Member, type Scene, type Shot } from "@/lib/types";
 import { AuthImage } from "./AuthImage";
 import { Pill, ColorBadge } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
@@ -302,10 +289,10 @@ function PenAnnotationOverlay({
 
 /** Pure — what `shots` (already scoped to one scene) would look like with
  * `activeId` moved to `overId`'s position, sort_order reassigned to match.
- * Shared by handleShotDragOver's debounced live preview and
- * handleShotDragEnd's definitive final computation so the two can never
- * disagree about what a given (shots, activeId, overId) triple resolves to. */
-function computeShotReorder(shots: Shot[], activeId: string, overId: string): Shot[] | null {
+ * 2026-07-17: shot reordering moved out of this tile entirely, into
+ * SceneEditModal's own drag handler (see that file's handleShotDragEnd) —
+ * exported so it isn't duplicated there. */
+export function computeShotReorder(shots: Shot[], activeId: string, overId: string): Shot[] | null {
   const oldIndex = shots.findIndex((s) => s.id === activeId);
   const newIndex = shots.findIndex((s) => s.id === overId);
   if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return null;
@@ -391,10 +378,8 @@ export function SceneCard({
   const highlightAnnotations = (annotations ?? []).filter((a) => a.kind === "highlight" && a.field && a.text);
   const api = useApi();
   const toast = useToast();
-  const [addingShot, setAddingShot] = useState(false);
-  const [newShotText, setNewShotText] = useState("");
+  const { t } = useLanguage();
   const [editingShot, setEditingShot] = useState<Shot | null>(null);
-  const [draggingShotId, setDraggingShotId] = useState<string | null>(null);
   // Quick inline good-take editor, bottom-left of the tile — mirrors iOS's
   // sceneGoodTakeButton exactly (same capsule pill, same position in the
   // bottom action row), previously web-only had a read-only badge and the
@@ -409,94 +394,6 @@ export function SceneCard({
   const [descriptionOpen, setDescriptionOpen] = useState(true);
   // ...and for the shot ("Einstellung") list.
   const [shotsOpen, setShotsOpen] = useState(true);
-  // Snapshot of `shots` taken at drag start — restored verbatim on
-  // cancel/invalid-drop, same pattern as the scene grid's drag (see
-  // handleSceneDragCancel in page.tsx).
-  const shotDragOriginRef = useRef<Shot[] | null>(null);
-  // Debounces the live-reorder preview (see handleShotDragOver) — a fast
-  // sweep across several shot rows shouldn't reflow the list on every one
-  // of them, only once near wherever the pointer actually settles.
-  const shotDragOverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const shotSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
-  );
-
-  function handleShotDragStart(event: DragStartEvent) {
-    setDraggingShotId(String(event.active.id));
-    shotDragOriginRef.current = shots;
-  }
-
-  /** Fires on every hover change while dragging. A real drag can fire this
-   * dozens of times a second while sweeping across rows — debounced (like
-   * the scene grid's handleSceneDragOver, see its comment for why) so it
-   * only actually reorders `shots` ~100ms after the hovered row stops
-   * changing, instead of reflowing on every row merely passed over. */
-  function handleShotDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
-    if (!over || active.id === over.id) return;
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    shotDragOverTimeoutRef.current = setTimeout(() => {
-      onChange((d) => {
-        // Same scoping + order as the shotsFor() prop this component
-        // normally receives — d.shots itself isn't guaranteed sorted, and
-        // computeShotReorder needs the current on-screen order to resolve
-        // "move active to over's index" correctly.
-        const currentShots = d.shots
-          .filter((s) => s.scene_id === scene.id && s.status !== "deleted")
-          .sort((a, b) => a.sort_order - b.sort_order);
-        const reordered = computeShotReorder(currentShots, activeId, overId);
-        if (!reordered) return d;
-        return { ...d, shots: d.shots.map((s) => reordered.find((r) => r.id === s.id) ?? s) };
-      });
-    }, 100);
-  }
-
-  /** Never trusts whatever `shots` currently shows (the live preview is
-   * debounced, so it can lag behind) — recomputes the definitive final
-   * order fresh from dnd-kit's actual final `over`, then persists the new
-   * sort_order for every shot whose position changed from the pre-drag
-   * snapshot. The backend has no bulk-reorder endpoint (same constraint
-   * the iOS app works around, see moveShot in ShotListViewModel), so this
-   * is one PATCH per moved shot. */
-  async function handleShotDragEnd(event: DragEndEvent) {
-    setDraggingShotId(null);
-    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
-    const origin = shotDragOriginRef.current;
-    shotDragOriginRef.current = null;
-    const { active, over } = event;
-    if (!over) {
-      if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
-      return;
-    }
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    const finalOrder = activeId === overId ? shots : computeShotReorder(shots, activeId, overId) ?? shots;
-    onChange((d) => ({ ...d, shots: d.shots.map((s) => finalOrder.find((f) => f.id === s.id) ?? s) }));
-    if (activeId === overId) return;
-    // Single server-authoritative move (2026-07-13) — replaces the old
-    // per-changed-shot Promise.all(patchShot) loop, same reasoning as
-    // Section's move above (see move_shot in the backend).
-    const idx = finalOrder.findIndex((s) => s.id === activeId);
-    const beforeId = finalOrder[idx + 1]?.id ?? null;
-    try {
-      await api.moveShot(activeId, beforeId);
-    } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Sortierung fehlgeschlagen.");
-    }
-  }
-
-  /** Drag cancelled (Escape, dropped outside any droppable) — revert the
-   * live preview from handleShotDragOver, nothing was persisted yet. */
-  function handleShotDragCancel() {
-    setDraggingShotId(null);
-    if (shotDragOverTimeoutRef.current) clearTimeout(shotDragOverTimeoutRef.current);
-    const origin = shotDragOriginRef.current;
-    shotDragOriginRef.current = null;
-    if (origin) onChange((d) => ({ ...d, shots: d.shots.map((s) => origin.find((o) => o.id === s.id) ?? s) }));
-  }
 
   async function saveGoodTake() {
     setEditingGoodTake(false);
@@ -506,7 +403,7 @@ export function SceneCard({
       const updated = await api.patchScene(scene.id, { good_take_filename: trimmed || null, clear_good_take: !trimmed });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -515,7 +412,7 @@ export function SceneCard({
       const updated = await api.patchScene(scene.id, { completed: !scene.completed });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -529,7 +426,7 @@ export function SceneCard({
     try {
       await api.patchDialogue(dialogueId, { done: !done });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -538,21 +435,8 @@ export function SceneCard({
       const updated = await api.patchShot(shot.id, { status: shot.status === "done" ? "open" : "done" });
       onChange((d) => ({ ...d, shots: d.shots.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
-  }
-
-  async function addShot() {
-    const description = newShotText.trim();
-    setAddingShot(false);
-    if (!description) return;
-    try {
-      const shot = await api.createShot(scene.project_id, { scene_id: scene.id, description });
-      onChange((d) => ({ ...d, shots: [...d.shots, shot] }));
-    } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
-    }
-    setNewShotText("");
   }
 
   // 2026-07-14, Lino: "mehrere Personen auswählen können und auch wieder
@@ -567,7 +451,7 @@ export function SceneCard({
       const updated = await api.patchScene(scene.id, { assignee_ids: next });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -592,18 +476,17 @@ export function SceneCard({
           peak 0.18→0.11→0.07, floor 0.06→0.05→0.03. Same values on iOS
           (SceneTimerRunningGlow). */}
       {isTimerRunning && (
-        <motion.div
+        // 2026-08-26 — was an infinite pulsing `animate` loop (0.03↔0.07
+        // opacity, ran continuously the entire time a timer was active);
+        // Lino: "wir entfernen uns von Übergangsanimationen, soll super
+        // schnell sein" — static at the pulse's midpoint now, same visual
+        // presence, zero ongoing JS animation cost.
+        <div
           aria-hidden
-          className="absolute -inset-5 rounded-3xl bg-white blur-xl pointer-events-none -z-10"
-          animate={{ opacity: [0.03, 0.07, 0.03] }}
-          transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute -inset-5 rounded-3xl bg-white blur-xl opacity-[0.05] pointer-events-none -z-10"
         />
       )}
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ type: "spring", stiffness: 380, damping: 32 }}
+      <div
         // backdrop-blur is safe here (unlike TileShell's photo tiles) — this
         // card has no 3D hover transform (rotateX/rotateY + preserve-3d),
         // which is what caused the earlier "mega verschwommen" compositing
@@ -632,7 +515,7 @@ export function SceneCard({
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
-            {scene.priority && <ColorBadge label={PRIORITY_LABELS[scene.priority]} color={color} />}
+            {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
             {scene.completed && (
               <Pill tone="good" icon={<CheckIcon />}>
                 IM KASTEN
@@ -642,7 +525,7 @@ export function SceneCard({
           <h3 className="font-semibold mb-1.5 break-words">
             {scene.name
               ? renderHighlightedText(scene.name, "name", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)
-              : "Unbenannte Szene"}
+              : t("scene.unnamed")}
           </h3>
           {(scene.scheduled_at || scene.location_address) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
@@ -673,7 +556,7 @@ export function SceneCard({
             {...dragHandleProps.attributes}
             {...dragHandleProps.listeners}
             className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing p-1.5"
-            aria-label="Szene verschieben"
+            aria-label={t("scene.dragHandle")}
           >
             <svg width="14" height="18" viewBox="0 0 12 16" fill="currentColor">
               <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
@@ -827,64 +710,20 @@ export function SceneCard({
           </button>
           <div className={`grid transition-[grid-template-rows] duration-200 ease-out ${shotsOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}>
             <div className="overflow-hidden min-h-0">
-              <DndContext
-                sensors={shotSensors}
-                collisionDetection={closestCenter}
-                // Faster viewport-edge auto-scroll while dragging (2026-07-13,
-                // Lino: dnd-kit's default acceleration was too slow to reach a
-                // distant drop target) — same values used on the other two
-                // DndContexts in this app (page.tsx, projects/page.tsx).
-                autoScroll={{ acceleration: 40, interval: 5 }}
-                onDragStart={handleShotDragStart}
-                onDragOver={handleShotDragOver}
-                onDragEnd={handleShotDragEnd}
-                onDragCancel={handleShotDragCancel}
-              >
-                <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-1.5">
-                    {shots.map((shot) => (
-                      <SortableShotRow
-                        key={shot.id}
-                        shot={shot}
-                        onToggleDone={() => toggleShotDone(shot)}
-                        onEdit={() => setEditingShot(shot)}
-                      />
-                    ))}
-                  </div>
-                </SortableContext>
-                <DragOverlay>
-                  {draggingShotId && (() => {
-                    const s = shots.find((x) => x.id === draggingShotId);
-                    return s ? (
-                      <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
-                        <ShotRowContent shot={s} onToggleDone={() => {}} onEdit={() => {}} />
-                      </div>
-                    ) : null;
-                  })()}
-                </DragOverlay>
-              </DndContext>
+              {/* 2026-07-17, Lino: die Kachelübersicht zeigt Einstellungen nur
+                  noch read-only zum schnellen Überblick — Reihenfolge ändern
+                  und Hinzufügen leben jetzt ausschliesslich im geöffneten
+                  Bearbeiten-Fenster (SceneEditModal). Kein DndContext mehr
+                  hier; toggleShotDone (Häkchen) und onEdit (öffnet
+                  ShotEditModal) bleiben, da das Status setzen bzw. bearbeiten
+                  ist, kein Umsortieren. */}
+              <div className="space-y-1.5">
+                {shots.map((shot) => (
+                  <ShotRowContent key={shot.id} shot={shot} onToggleDone={() => toggleShotDone(shot)} onEdit={() => setEditingShot(shot)} />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {!scene.is_intermediate_step && (
-        <div className="mb-3">
-          {addingShot ? (
-            <input
-              autoFocus
-              value={newShotText}
-              onChange={(e) => setNewShotText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addShot()}
-              onBlur={addShot}
-              placeholder="Neue Einstellung"
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-            />
-          ) : (
-            <button onClick={() => setAddingShot(true)} className="text-xs font-semibold text-blue-400 hover:text-blue-300">
-              + Einstellung hinzufügen
-            </button>
-          )}
         </div>
       )}
 
@@ -911,7 +750,7 @@ export function SceneCard({
               }`}
             >
               <SdCardIcon />
-              <span className="truncate max-w-[9rem]">{scene.good_take_filename || "Good Take"}</span>
+              <span className="truncate max-w-[9rem]">{scene.good_take_filename || t("scene.goodTake")}</span>
             </button>
           )
         ) : (
@@ -994,12 +833,12 @@ export function SceneCard({
           onChange((d) => ({ ...d, shots: d.shots.map((s) => (s.id === updated.id ? updated : s)) }));
         }}
       />
-      </motion.div>
+      </div>
     </div>
   );
 }
 
-function SortableShotRow({ shot, onToggleDone, onEdit }: { shot: Shot; onToggleDone: () => void; onEdit: () => void }) {
+export function SortableShotRow({ shot, onToggleDone, onEdit }: { shot: Shot; onToggleDone: () => void; onEdit: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: shot.id });
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}>
@@ -1011,7 +850,7 @@ function SortableShotRow({ shot, onToggleDone, onEdit }: { shot: Shot; onToggleD
 /** Plain presentational row, no useSortable of its own - reused as-is for
  * the DragOverlay's floating clone, which must NOT register its own
  * sortable id (dnd-kit doesn't allow two elements claiming the same one). */
-function ShotRowContent({
+export function ShotRowContent({
   shot,
   onToggleDone,
   onEdit,
@@ -1022,18 +861,21 @@ function ShotRowContent({
   onEdit: () => void;
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
 }) {
+  const { t } = useLanguage();
   return (
     <div className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
-      <button
-        {...dragHandleProps?.attributes}
-        {...dragHandleProps?.listeners}
-        className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
-      >
-        <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
-          <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
-          <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />
-        </svg>
-      </button>
+      {dragHandleProps && (
+        <button
+          {...dragHandleProps.attributes}
+          {...dragHandleProps.listeners}
+          className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
+        >
+          <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+            <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
+            <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />
+          </svg>
+        </button>
+      )}
       <button onClick={onToggleDone} className="shrink-0">
         <span
           className="w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center transition-colors"
@@ -1052,7 +894,7 @@ function ShotRowContent({
       )}
       <div className="text-sm min-w-0 flex-1 cursor-pointer" onClick={onEdit}>
         <div className={`truncate ${shot.status === "done" ? "line-through text-white/40" : ""}`}>
-          {shot.description || "Ohne Beschreibung"}
+          {shot.description || t("shot.noDescription")}
         </div>
         {shot.good_take_filename && <div className="text-xs text-emerald-400">{shot.good_take_filename}</div>}
       </div>

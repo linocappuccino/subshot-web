@@ -10,8 +10,9 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
 import type { InviteRole, Member, TeamMember } from "@/lib/types";
+import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
-const ROLE_LABELS: Record<string, string> = { owner: "Besitzer", editor: "Bearbeiter", viewer: "Betrachter" };
+const ROLE_LABEL_KEYS: Record<string, TranslationKey> = { owner: "roles.owner", projektleiter: "roles.projectLead", editor: "roles.editor" };
 
 export function TeamPanel({
   open,
@@ -33,6 +34,7 @@ export function TeamPanel({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InviteRole>("editor");
   const [inviting, setInviting] = useState(false);
@@ -55,10 +57,10 @@ export function TeamPanel({
     setInviting(true);
     try {
       await api.invite(projectId, trimmed, role);
-      toast.showSuccess(`Einladung an ${trimmed} verschickt.`);
+      toast.showSuccess(t("teamPanel.inviteSent", { email: trimmed }));
       setEmail("");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Einladung fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("teamPanel.inviteFailed"));
     } finally {
       setInviting(false);
     }
@@ -70,7 +72,7 @@ export function TeamPanel({
       await api.removeMember(projectId, removeTarget.user_id);
       onChange((prev) => prev.filter((m) => m.user_id !== removeTarget.user_id));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Entfernen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("teamPanel.removeFailed"));
     } finally {
       setRemoveTarget(null);
     }
@@ -78,9 +80,9 @@ export function TeamPanel({
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title="Team">
+      <Modal open={open} onClose={onClose} title={t("nav.team")}>
         <FieldGroup>
-          <Label>Person einladen</Label>
+          <Label>{t("teamPanel.invitePerson")}</Label>
           <div className="flex gap-2">
             {teamId ? (
               <select
@@ -88,7 +90,7 @@ export function TeamPanel({
                 onChange={(e) => setEmail(e.target.value)}
                 className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               >
-                <option value="">Seat-Inhaber auswählen…</option>
+                <option value="">{t("teamPanel.selectSeatHolder")}</option>
                 {invitableSeatHolders.map((m) => (
                   <option key={m.id} value={m.email}>
                     {m.name || m.email}
@@ -101,7 +103,7 @@ export function TeamPanel({
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && sendInvite()}
-                placeholder="email@beispiel.ch"
+                placeholder={t("teamPanel.emailPlaceholder")}
                 className="flex-1"
               />
             )}
@@ -110,34 +112,34 @@ export function TeamPanel({
               onChange={(e) => setRole(e.target.value as InviteRole)}
               className="bg-white/5 border border-white/10 rounded-xl px-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
-              <option value="editor">Bearbeiter</option>
-              <option value="viewer">Betrachter</option>
+              <option value="projektleiter">{t("roles.projectLead")}</option>
+              <option value="editor">{t("roles.editor")}</option>
             </select>
           </div>
           {teamId && invitableSeatHolders.length === 0 && (
-            <p className="text-xs text-white/40 mt-1.5">Niemand im Team hat noch einen freien, unbeteiligten Seat — erst im Team einladen.</p>
+            <p className="text-xs text-white/40 mt-1.5">{t("teamPanel.noFreeSeats")}</p>
           )}
           <Button variant="primary" size="sm" className="mt-2" onClick={sendInvite} disabled={!email.trim() || inviting}>
-            {inviting ? "Sendet…" : "Einladen"}
+            {inviting ? t("teamPanel.sending") : t("teamPanel.invite")}
           </Button>
         </FieldGroup>
 
         <FieldGroup className="mb-0">
-          <Label>Mitglieder</Label>
+          <Label>{t("teamPanel.members")}</Label>
           <div className="space-y-1">
             {members.map((m) => (
               <div key={m.user_id} className="flex items-center gap-2.5 py-1.5">
                 <Avatar name={m.name} email={m.email} avatarUrl={m.avatar_url} size={30} />
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{m.name || m.email}</div>
-                  <div className="text-xs text-white/40">{ROLE_LABELS[m.role] ?? m.role}</div>
+                  <div className="text-xs text-white/40">{ROLE_LABEL_KEYS[m.role] ? t(ROLE_LABEL_KEYS[m.role]) : m.role}</div>
                 </div>
                 {m.role !== "owner" && (
                   <button
                     onClick={() => setRemoveTarget(m)}
                     className="text-xs text-white/30 hover:text-red-400 transition-colors shrink-0"
                   >
-                    Entfernen
+                    {t("common.remove")}
                   </button>
                 )}
               </div>
@@ -148,8 +150,8 @@ export function TeamPanel({
 
       <ConfirmDialog
         open={removeTarget !== null}
-        title="Mitglied entfernen?"
-        message={`${removeTarget?.name || removeTarget?.email} verliert den Zugriff auf dieses Projekt.`}
+        title={t("teamPanel.removeMemberTitle")}
+        message={t("teamPanel.removeMemberMessage", { name: removeTarget?.name || removeTarget?.email || "" })}
         onConfirm={removeMember}
         onCancel={() => setRemoveTarget(null)}
       />

@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
+import { useLanguage } from "@/lib/i18n";
 import type { Feedback, FeedbackAdmin, FeedbackStatus } from "@/lib/types";
 
 // Same idea as SUBLI's feedback board (submit, vote, admin approve/status,
@@ -18,14 +19,6 @@ import type { Feedback, FeedbackAdmin, FeedbackStatus } from "@/lib/types";
 // controls just appear inline for whoever's email matches ADMIN_EMAIL on
 // the backend (any request from someone else gets a 403, so hiding them
 // client-side is purely cosmetic, not the actual gate).
-const STATUS_LABELS: Record<FeedbackStatus, string> = {
-  open: "Offen",
-  todo: "Geplant",
-  in_progress: "In Arbeit",
-  implemented: "Umgesetzt",
-  duplicate: "Duplikat",
-};
-
 const STATUS_TONE: Record<FeedbackStatus, "default" | "good" | "danger"> = {
   open: "default",
   todo: "default",
@@ -37,6 +30,15 @@ const STATUS_TONE: Record<FeedbackStatus, "default" | "good" | "danger"> = {
 export default function FeedbackPage() {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
+
+  const STATUS_LABELS: Record<FeedbackStatus, string> = {
+    open: t("feedbackPage.statusOpen"),
+    todo: t("feedbackPage.statusTodo"),
+    in_progress: t("feedbackPage.statusInProgress"),
+    implemented: t("feedbackPage.statusImplemented"),
+    duplicate: t("feedbackPage.statusDuplicate"),
+  };
 
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -68,7 +70,7 @@ export default function FeedbackPage() {
         setIsAdmin(false);
       }
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -77,22 +79,22 @@ export default function FeedbackPage() {
   async function submit() {
     const value = text.trim();
     if (value.length < 5) {
-      toast.showError("Bitte etwas ausführlicher beschreiben (mind. 5 Zeichen).");
+      toast.showError(t("feedbackPage.tooShort"));
       return;
     }
     setSubmitting(true);
     try {
       await api.createFeedback(value);
       setText("");
-      toast.showSuccess("Danke für dein Feedback!");
+      toast.showSuccess(t("feedbackPage.thanks"));
       load();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        toast.showError("Ähnliches Feedback existiert schon — schau in der Liste nach.");
+        toast.showError(t("feedbackPage.duplicateExists"));
       } else if (e instanceof ApiError && e.status === 429) {
         toast.showError(e.message);
       } else {
-        toast.showError(e instanceof ApiError ? e.message : "Senden fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.sendFailed"));
       }
     } finally {
       setSubmitting(false);
@@ -107,7 +109,7 @@ export default function FeedbackPage() {
     try {
       await api.voteFeedback(id);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Abstimmen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.voteFailed"));
       load();
     }
   }
@@ -117,7 +119,7 @@ export default function FeedbackPage() {
       await api.approveFeedback(id);
       load();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.genericFailed"));
     }
   }
 
@@ -126,7 +128,7 @@ export default function FeedbackPage() {
       await api.setFeedbackStatus(id, status);
       load();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.genericFailed"));
     }
   }
 
@@ -136,7 +138,7 @@ export default function FeedbackPage() {
       await api.deleteFeedback(deleteTarget);
       load();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.genericFailed"));
     } finally {
       setDeleteTarget(null);
     }
@@ -146,10 +148,10 @@ export default function FeedbackPage() {
     if (!blockTarget) return;
     try {
       await api.blockFeedbackUser(blockTarget);
-      toast.showSuccess("Nutzer gesperrt.");
+      toast.showSuccess(t("feedbackPage.userBlocked"));
       load();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("feedbackPage.genericFailed"));
     } finally {
       setBlockTarget(null);
     }
@@ -158,21 +160,21 @@ export default function FeedbackPage() {
   return (
     <AppShell>
       <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 py-8">
-        <h1 className="text-xl font-bold mb-1">Feedback</h1>
+        <h1 className="text-xl font-bold mb-1">{t("feedbackPage.title")}</h1>
         <p className="text-sm text-white/50 mb-6">
-          Wünsche, Ideen, Bugs — was auch immer Subshot besser machen würde.
+          {t("feedbackPage.intro")}
         </p>
 
         <div className="bg-white/[0.035] border border-white/8 rounded-2xl p-4 mb-8">
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Was fehlt dir? Was nervt? Was wäre cool?"
+            placeholder={t("feedbackPage.placeholder")}
             rows={3}
           />
           <div className="flex justify-end mt-3">
             <Button variant="primary" onClick={submit} disabled={submitting || text.trim().length < 5}>
-              Absenden
+              {t("feedbackPage.submit")}
             </Button>
           </div>
         </div>
@@ -180,16 +182,16 @@ export default function FeedbackPage() {
         {isAdmin && (
           <div className="mb-6">
             <Button variant="ghost" size="sm" onClick={() => setShowAdmin((v) => !v)}>
-              {showAdmin ? "Admin-Ansicht ausblenden" : `Admin-Ansicht (${adminItems.filter((f) => !f.approved).length} ungeprüft)`}
+              {showAdmin ? t("feedbackPage.hideAdminView") : t("feedbackPage.showAdminView", { count: adminItems.filter((f) => !f.approved).length })}
             </Button>
           </div>
         )}
 
         {loading ? (
-          <p className="text-sm text-white/40">Lädt…</p>
+          <p className="text-sm text-white/40">{t("common.loading")}</p>
         ) : showAdmin ? (
           <div className="space-y-3">
-            {adminItems.length === 0 && <p className="text-sm text-white/40">Kein Feedback vorhanden.</p>}
+            {adminItems.length === 0 && <p className="text-sm text-white/40">{t("feedbackPage.noFeedbackYet")}</p>}
             {adminItems.map((f) => (
               <div key={f.id} className="bg-white/[0.035] border border-white/8 rounded-2xl p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -199,7 +201,7 @@ export default function FeedbackPage() {
                 <div className="flex items-center gap-1.5 flex-wrap mt-3">
                   {!f.approved && (
                     <Button size="sm" variant="primary" onClick={() => approve(f.id)}>
-                      Freigeben
+                      {t("feedbackPage.approve")}
                     </Button>
                   )}
                   {(["open", "todo", "in_progress", "implemented"] as const).map((s) => (
@@ -213,10 +215,10 @@ export default function FeedbackPage() {
                     </Button>
                   ))}
                   <Button size="sm" variant="ghost" onClick={() => setBlockTarget(f.user_id)}>
-                    Nutzer sperren
+                    {t("feedbackPage.blockUser")}
                   </Button>
                   <Button size="sm" variant="danger" onClick={() => setDeleteTarget(f.id)}>
-                    Löschen
+                    {t("common.delete")}
                   </Button>
                 </div>
               </div>
@@ -224,7 +226,7 @@ export default function FeedbackPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {items.length === 0 && <p className="text-sm text-white/40">Noch kein Feedback — sei der Erste!</p>}
+            {items.length === 0 && <p className="text-sm text-white/40">{t("feedbackPage.emptyState")}</p>}
             {items.map((f) => (
               <div key={f.id} className="bg-white/[0.035] border border-white/8 rounded-2xl p-4 flex items-start gap-3">
                 <button
@@ -234,7 +236,7 @@ export default function FeedbackPage() {
                       ? "bg-blue-600/20 border-blue-500/40 text-blue-400"
                       : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:border-white/20"
                   }`}
-                  aria-label="Abstimmen"
+                  aria-label={t("feedbackPage.voteAria")}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 4l8 9h-5v7H9v-7H4z" /></svg>
                   <span className="text-xs font-semibold mt-0.5">{f.vote_count}</span>
@@ -255,15 +257,15 @@ export default function FeedbackPage() {
 
       <ConfirmDialog
         open={Boolean(deleteTarget)}
-        title="Feedback löschen?"
-        message="Das kann nicht rückgängig gemacht werden."
+        title={t("feedbackPage.deleteTitle")}
+        message={t("feedbackPage.deleteMessage")}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
       <ConfirmDialog
         open={Boolean(blockTarget)}
-        title="Nutzer sperren?"
-        message="Dieser Nutzer kann dann kein Feedback mehr einreichen, sein bisheriges Feedback wird ausgeblendet."
+        title={t("feedbackPage.blockTitle")}
+        message={t("feedbackPage.blockMessage")}
         onConfirm={confirmBlock}
         onCancel={() => setBlockTarget(null)}
       />

@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
+import { useLanguage } from "@/lib/i18n";
 
 // Subshot's own devlog feed (2026-07-14) — same Ghost instance as SUBLI's,
 // filtered server-side to posts tagged "subshot" (see app/main.py's
@@ -32,6 +33,7 @@ export default function DevlogPage() {
 }
 
 function DevlogPageInner() {
+  const { t } = useLanguage();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<DevlogPost[]>([]);
@@ -65,7 +67,7 @@ function DevlogPageInner() {
         {open ? (
           <div>
             <Button variant="ghost" size="sm" onClick={() => setOpen(null)} className="mb-4">
-              ← Zurück
+              {t("devlogPage.back")}
             </Button>
             <h1 className="text-xl font-bold mb-1">{open.title}</h1>
             <p className="text-xs text-white/40 mb-6">{open.date}</p>
@@ -80,14 +82,14 @@ function DevlogPageInner() {
         ) : (
           <>
             <h1 className="text-xl font-bold mb-1">Devlog</h1>
-            <p className="text-sm text-white/50 mb-6">Was sich gerade bei Subshot tut.</p>
+            <p className="text-sm text-white/50 mb-6">{t("devlogPage.subtitle")}</p>
 
             {loading ? (
-              <p className="text-sm text-white/40">Lädt…</p>
+              <p className="text-sm text-white/40">{t("common.loading")}</p>
             ) : error ? (
-              <p className="text-sm text-white/40">Devlog konnte nicht geladen werden.</p>
+              <p className="text-sm text-white/40">{t("devlogPage.loadFailed")}</p>
             ) : posts.length === 0 ? (
-              <p className="text-sm text-white/40">Noch keine Einträge.</p>
+              <p className="text-sm text-white/40">{t("devlogPage.noEntries")}</p>
             ) : (
               <div className="space-y-3">
                 {posts.map((p) => (

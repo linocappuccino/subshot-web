@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import type { Member, TodoList } from "@/lib/types";
@@ -10,6 +9,8 @@ import { Menu, MenuItem } from "./ui/Menu";
 import { IconButton, Button } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { DateTimePicker } from "./ui/DateTimePicker";
+import { useLanguage } from "@/lib/i18n";
 
 export function TodoListsPanel({
   projectId,
@@ -36,6 +37,7 @@ export function TodoListsPanel({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [addingList, setAddingList] = useState(false);
   const [newListName, setNewListName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<{ kind: "list" | "item"; id: string; parentId?: string } | null>(null);
@@ -52,7 +54,7 @@ export function TodoListsPanel({
           : await api.createTodoList(projectId, name, todoLists.length);
       onChange((prev) => [...prev, list]);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
     setNewListName("");
   }
@@ -70,7 +72,7 @@ export function TodoListsPanel({
         );
       }
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     } finally {
       setDeleteTarget(null);
     }
@@ -79,34 +81,26 @@ export function TodoListsPanel({
   return (
     <div className={noMargin ? "" : "mb-10"}>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wide">Todo-Listen</h2>
+        <h2 className="text-xs font-semibold text-white/40 uppercase tracking-wide">{t("todoLists.title")}</h2>
         {!addingList && (
           <button onClick={() => setAddingList(true)} className="text-xs font-semibold text-blue-400 hover:text-blue-300">
-            + Liste
+            {t("todoLists.addList")}
           </button>
         )}
       </div>
 
-      {addingList && (
-        <div className="flex gap-2 mb-3 max-w-sm">
-          <input
-            autoFocus
-            value={newListName}
-            onChange={(e) => setNewListName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addList()}
-            placeholder="Listenname"
-            className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          />
-          <Button size="sm" variant="primary" onClick={addList}>
-            Anlegen
-          </Button>
-        </div>
-      )}
-
-      {todoLists.length > 0 && (
+      {(todoLists.length > 0 || addingList) && (
+        // 2026-07-21, Lino: "drückt man + Liste wird die erste Todoliste
+        // links platziert, richtig, drückt man nochmals + Liste soll das
+        // eingabefeld für den name der Liste Rechts neben der Ersten liste
+        // erscheinen... drückt man nochmals erscheint das eingabefeld rechts
+        // neben der 2. Liste" — war eine eigene volle Zeile ÜBER dem Grid,
+        // jetzt ein normales Grid-Item NACH den bestehenden Listen, damit es
+        // im CSS-Grid-Flow natürlich rechts neben der zuletzt erstellten
+        // Liste landet (bzw. in die nächste Zeile umbricht, sobald die Reihe
+        // voll ist) statt immer fix oben-links zu stehen.
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          <AnimatePresence mode="popLayout">
-            {todoLists.map((list) => (
+          {todoLists.map((list) => (
               <TodoListCard
                 key={list.id}
                 list={list}
@@ -115,15 +109,30 @@ export function TodoListsPanel({
                 onDeleteList={() => setDeleteTarget({ kind: "list", id: list.id })}
                 onDeleteItem={(itemId) => setDeleteTarget({ kind: "item", id: itemId, parentId: list.id })}
               />
-            ))}
-          </AnimatePresence>
+          ))}
+          {addingList && (
+            <div className="bg-white/[0.045] border border-white/8 rounded-2xl p-4 flex flex-col gap-2">
+              <input
+                autoFocus
+                value={newListName}
+                onChange={(e) => setNewListName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addList()}
+                onBlur={() => !newListName.trim() && setAddingList(false)}
+                placeholder={t("todoLists.listNamePlaceholder")}
+                className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              />
+              <Button size="sm" variant="primary" onClick={addList}>
+                {t("todoLists.create")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={deleteTarget?.kind === "list" ? "Liste löschen?" : "Eintrag löschen?"}
-        message="Das kann nicht rückgängig gemacht werden."
+        title={deleteTarget?.kind === "list" ? t("todoLists.deleteListTitle") : t("todoLists.deleteItemTitle")}
+        message={t("todoLists.deleteMessage")}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
       />
@@ -146,11 +155,47 @@ function TodoListCard({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [addingItem, setAddingItem] = useState(false);
   const [newItemText, setNewItemText] = useState("");
+  // 2026-07-22, Lino: "todolisten... müssen mit rein klicken bearbeitbar
+  // sein auch der titel der liste muss mit reinklicken änderbar sein" —
+  // click straight into the text (list title or an item's own text) to
+  // edit it, same optimistic-update-then-persist/revert-on-failure shape
+  // as toggleItem/assignItem above, mirrors VideoTile.tsx's inline-rename
+  // blur/Enter/Escape handling.
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(list.name);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemTextDraft, setItemTextDraft] = useState("");
 
   const items = [...list.items].sort((a, b) => a.sort_order - b.sort_order);
   const doneCount = items.filter((i) => i.done).length;
+
+  async function renameList(name: string) {
+    onChange((lists) => lists.map((l) => (l.id === list.id ? { ...l, name } : l)));
+    try {
+      await api.patchTodoList(list.id, { name });
+    } catch (e) {
+      onChange((lists) => lists.map((l) => (l.id === list.id ? { ...l, name: list.name } : l)));
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
+  async function renameItem(itemId: string, text: string) {
+    const original = items.find((i) => i.id === itemId)?.text;
+    onChange((lists) =>
+      lists.map((l) => (l.id === list.id ? { ...l, items: l.items.map((i) => (i.id === itemId ? { ...i, text } : i)) } : l))
+    );
+    try {
+      await api.patchTodoItem(itemId, { text });
+    } catch (e) {
+      onChange((lists) =>
+        lists.map((l) => (l.id === list.id ? { ...l, items: l.items.map((i) => (i.id === itemId ? { ...i, text: original ?? i.text } : i)) } : l))
+      );
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
 
   async function toggleItem(itemId: string, done: boolean) {
     onChange((lists) =>
@@ -159,7 +204,7 @@ function TodoListCard({
     try {
       await api.patchTodoItem(itemId, { done: !done });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -170,7 +215,23 @@ function TodoListCard({
     try {
       await api.patchTodoItem(itemId, { assignee_id: userId });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
+  // 2026-07-22, Lino: "neben dem user hinzufügen symbol noch ein kleines
+  // uhr symbol... so kann man einzelne todos auch timen" — same
+  // optimistic-update-then-persist shape as assignItem above, one field
+  // over (due_at instead of assignee_id).
+  async function setItemDueDate(itemId: string, dueAt: Date | null) {
+    const iso = dueAt ? dueAt.toISOString() : null;
+    onChange((lists) =>
+      lists.map((l) => (l.id === list.id ? { ...l, items: l.items.map((i) => (i.id === itemId ? { ...i, due_at: iso } : i)) } : l))
+    );
+    try {
+      await api.patchTodoItem(itemId, { due_at: iso });
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -182,22 +243,46 @@ function TodoListCard({
       const item = await api.createTodoItem(list.id, text, undefined, items.length);
       onChange((lists) => lists.map((l) => (l.id === list.id ? { ...l, items: [...l.items, item] } : l)));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
     setNewItemText("");
   }
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className="bg-white/[0.045] border border-white/8 rounded-2xl p-4"
-    >
-      <div className="flex items-center justify-between mb-2.5">
-        <h3 className="font-semibold text-sm">{list.name}</h3>
-        <div className="flex items-center gap-2">
+    <div className="bg-white/[0.045] border border-white/8 rounded-2xl p-4">
+      <div className="flex items-center justify-between mb-2.5 gap-2">
+        {isEditingTitle ? (
+          <input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={() => {
+              const trimmed = titleDraft.trim();
+              if (trimmed && trimmed !== list.name) renameList(trimmed);
+              else setTitleDraft(list.name);
+              setIsEditingTitle(false);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                setTitleDraft(list.name);
+                setIsEditingTitle(false);
+              }
+            }}
+            className="font-semibold text-sm bg-white/10 rounded px-1.5 py-0.5 -mx-1.5 min-w-0 flex-1 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+          />
+        ) : (
+          <h3
+            onClick={() => {
+              setTitleDraft(list.name);
+              setIsEditingTitle(true);
+            }}
+            className="font-semibold text-sm cursor-text truncate rounded px-1.5 py-0.5 -mx-1.5 hover:bg-white/5 transition-colors"
+          >
+            {list.name}
+          </h3>
+        )}
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-[11px] font-semibold text-white/40 bg-white/8 px-2 py-0.5 rounded-full">
             {doneCount}/{items.length}
           </span>
@@ -220,7 +305,7 @@ function TodoListCard({
                   close();
                 }}
               >
-                Liste löschen
+                {t("todoLists.deleteList")}
               </MenuItem>
             )}
           </Menu>
@@ -228,18 +313,14 @@ function TodoListCard({
       </div>
 
       <div className="space-y-1">
-        <AnimatePresence initial={false}>
           {items.map((item) => {
             const assignee = members.find((m) => m.user_id === item.assignee_id);
             return (
-              <motion.div
+              <div
                 key={item.id}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="flex items-center gap-2 group py-1 border-t border-white/5 first:border-t-0"
+                className="flex items-start gap-2 group py-1 border-t border-white/5 first:border-t-0"
               >
-                <button onClick={() => toggleItem(item.id, item.done)} className="shrink-0">
+                <button onClick={() => toggleItem(item.id, item.done)} className="shrink-0 mt-0.5">
                   <span
                     className="w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center transition-colors"
                     style={{
@@ -254,16 +335,69 @@ function TodoListCard({
                     )}
                   </span>
                 </button>
-                <span className={`text-sm flex-1 min-w-0 truncate ${item.done ? "line-through text-white/35" : "text-white/80"}`}>
-                  {item.text}
-                </span>
+                {editingItemId === item.id ? (
+                  <input
+                    autoFocus
+                    value={itemTextDraft}
+                    onChange={(e) => setItemTextDraft(e.target.value)}
+                    onBlur={() => {
+                      const trimmed = itemTextDraft.trim();
+                      if (trimmed && trimmed !== item.text) renameItem(item.id, trimmed);
+                      setEditingItemId(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") setEditingItemId(null);
+                    }}
+                    className="text-sm flex-1 min-w-0 bg-white/10 rounded px-1 py-0.5 -mx-1 focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                  />
+                ) : (
+                  // 2026-07-22, Lino: "todos einträge sollen auch mehrere
+                  // zeilen anzeigen können" — was `truncate` (single-line
+                  // ellipsis, silently cut off anything longer), now wraps
+                  // normally across as many lines as the text needs.
+                  <span
+                    onClick={() => {
+                      setItemTextDraft(item.text);
+                      setEditingItemId(item.id);
+                    }}
+                    className={`text-sm flex-1 min-w-0 whitespace-normal break-words cursor-text rounded px-1 py-0.5 -mx-1 hover:bg-white/5 transition-colors ${item.done ? "line-through text-white/35" : "text-white/80"}`}
+                  >
+                    {item.text}
+                  </span>
+                )}
+                <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                {item.due_at && (
+                  <span className="text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-full px-1.5 py-0.5 shrink-0 whitespace-nowrap">
+                    {new Date(item.due_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}
+                    {" · "}
+                    {new Date(item.due_at).toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+                <DateTimePicker
+                  compact
+                  value={item.due_at ? new Date(item.due_at) : null}
+                  onChange={(d) => setItemDueDate(item.id, d)}
+                  placeholder={t("todoLists.setDueDate")}
+                />
+                {item.due_at && (
+                  <button
+                    onClick={() => setItemDueDate(item.id, null)}
+                    aria-label={t("todoLists.removeDueDate")}
+                    className="text-white/25 hover:text-red-400 transition-colors shrink-0 -ml-1"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                )}
                 <Menu
                   align="end"
                   trigger={
                     assignee ? (
                       <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={20} className="cursor-pointer" />
                     ) : (
-                      <button className="text-white/25 hover:text-white/60 transition-colors shrink-0" title="Zuweisen">
+                      <button className="text-white/25 hover:text-white/60 transition-colors shrink-0" title={t("todoLists.assignAria")}>
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
                           <circle cx="12" cy="8" r="4" />
                           <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
@@ -281,7 +415,7 @@ function TodoListCard({
                             close();
                           }}
                         >
-                          Niemand zugewiesen
+                          {t("todoLists.unassigned")}
                         </MenuItem>
                       )}
                       {members.map((m) => (
@@ -306,10 +440,10 @@ function TodoListCard({
                     <path d="M18 6 6 18M6 6l12 12" />
                   </svg>
                 </button>
-              </motion.div>
+                </div>
+              </div>
             );
           })}
-        </AnimatePresence>
       </div>
 
       {addingItem ? (
@@ -319,14 +453,14 @@ function TodoListCard({
           onChange={(e) => setNewItemText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addItem()}
           onBlur={addItem}
-          placeholder="Neuer Eintrag"
+          placeholder={t("todoLists.newItemPlaceholder")}
           className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-sm w-full mt-2 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
         />
       ) : (
         <button onClick={() => setAddingItem(true)} className="text-xs font-semibold text-blue-400 hover:text-blue-300 mt-2">
-          + Eintrag
+          {t("todoLists.addItem")}
         </button>
       )}
-    </motion.div>
+    </div>
   );
 }

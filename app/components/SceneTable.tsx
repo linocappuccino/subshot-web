@@ -4,7 +4,8 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
-import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Scene, type Shot } from "@/lib/types";
+import { PRIORITY_COLORS, type Member, type Scene, type Shot } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
 import { googleMapsUrl } from "./SceneCard";
 import { ColorBadge, Pill } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
@@ -52,13 +53,14 @@ export function SceneTable({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
 
   async function toggleCompleted(scene: Scene) {
     try {
       const updated = await api.patchScene(scene.id, { completed: !scene.completed });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneTable.toggleFailed"));
     }
   }
 
@@ -72,7 +74,7 @@ export function SceneTable({
     try {
       await api.patchDialogue(dialogueId, { done: !done });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneTable.toggleFailed"));
     }
   }
 
@@ -86,18 +88,18 @@ export function SceneTable({
         <thead>
           <tr className="bg-white/[0.04] text-left text-[11px] font-semibold text-white/40 uppercase tracking-wide">
             <th className="w-6" />
-            <th className="px-3 py-2.5 w-16">Bild</th>
-            <th className="px-3 py-2.5 w-16">Nr.</th>
-            <th className="px-3 py-2.5 min-w-[160px]">Name</th>
-            <th className="px-3 py-2.5 min-w-[110px]">Priorität</th>
-            <th className="px-3 py-2.5 min-w-[110px]">Start</th>
-            <th className="px-3 py-2.5 min-w-[220px]">Standort</th>
-            <th className="px-3 py-2.5 min-w-[320px]">Beschreibung</th>
-            <th className="px-3 py-2.5 min-w-[320px]">Dialog</th>
-            <th className="px-3 py-2.5 min-w-[140px]">Good Take</th>
-            <th className="px-3 py-2.5 min-w-[140px]">Zuständig</th>
-            <th className="px-3 py-2.5 text-center w-16">Einst.</th>
-            <th className="px-3 py-2.5 text-center w-20">Im Kasten</th>
+            <th className="px-3 py-2.5 w-16">{t("sceneTable.colImage")}</th>
+            <th className="px-3 py-2.5 w-16">{t("sceneTable.colNumber")}</th>
+            <th className="px-3 py-2.5 min-w-[160px]">{t("sceneTable.colName")}</th>
+            <th className="px-3 py-2.5 min-w-[110px]">{t("sceneTable.colPriority")}</th>
+            <th className="px-3 py-2.5 min-w-[110px]">{t("sceneTable.colStart")}</th>
+            <th className="px-3 py-2.5 min-w-[220px]">{t("sceneTable.colLocation")}</th>
+            <th className="px-3 py-2.5 min-w-[320px]">{t("sceneTable.colDescription")}</th>
+            <th className="px-3 py-2.5 min-w-[320px]">{t("sceneTable.colDialogue")}</th>
+            <th className="px-3 py-2.5 min-w-[140px]">{t("scene.goodTake")}</th>
+            <th className="px-3 py-2.5 min-w-[140px]">{t("sceneTable.colAssignee")}</th>
+            <th className="px-3 py-2.5 text-center w-16">{t("sceneTable.colShots")}</th>
+            <th className="px-3 py-2.5 text-center w-20">{t("sceneTable.colDone")}</th>
             <th className="w-10" />
           </tr>
         </thead>
@@ -166,6 +168,7 @@ function SceneRow({
   // See SortableSceneCard's comment on the same pattern — transform/transition
   // deliberately dropped so dnd-kit's own rectSortingStrategy reflow can't
   // fight the insertion-line indicator.
+  const { t } = useLanguage();
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, data: { sectionId: scene.section_id ?? null } });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   // 2026-07-14: read-only display of possibly several assignees — editing
@@ -186,7 +189,7 @@ function SceneRow({
           {...attributes}
           {...listeners}
           className="touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
-          aria-label="Szene verschieben"
+          aria-label={t("sceneTable.dragSceneAria")}
         >
           <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
             <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
@@ -205,10 +208,10 @@ function SceneRow({
         <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
       </td>
       <td className="px-3 py-2.5 font-medium cursor-pointer max-w-[160px]" onClick={() => onEditScene(scene)}>
-        {scene.is_project_info ? "Projektinfo" : scene.name || "Unbenannte Szene"}
+        {scene.is_project_info ? t("sceneTable.projectInfo") : scene.name || t("sceneTable.unnamedScene")}
       </td>
       <td className="px-3 py-2.5 cursor-pointer" onClick={() => onEditScene(scene)}>
-        {scene.priority ? <ColorBadge label={PRIORITY_LABELS[scene.priority]} color={color} /> : <span className="text-white/25">—</span>}
+        {scene.priority ? <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} /> : <span className="text-white/25">—</span>}
       </td>
       <td className="px-3 py-2.5 text-white/70 whitespace-nowrap cursor-pointer" onClick={() => onEditScene(scene)}>
         {scene.scheduled_at ? (
@@ -217,7 +220,7 @@ function SceneRow({
             {scene.duration_minutes ? (
               <>
                 <br />
-                {scene.duration_minutes} Min.
+                {t("sceneTable.minutesShort", { count: scene.duration_minutes })}
               </>
             ) : null}
           </>
@@ -236,7 +239,11 @@ function SceneRow({
           </span>
         )}
       </td>
-      <td className="px-3 py-2.5 text-white/70 cursor-pointer" onClick={() => onEditScene(scene)}>
+      {/* 2026-07-19, Lino: Zeilenumbrüche in der Beschreibung (aus einer
+          Idee mit Zeilenumbrüchen im Fliesstext übernommen) sollen auch in
+          der Vorschau/Tabelle sichtbar bleiben — ohne whitespace-pre-wrap
+          kollabiert eine <td> jedes "\n" stillschweigend zu einem Leerzeichen. */}
+      <td className="px-3 py-2.5 text-white/70 cursor-pointer whitespace-pre-wrap" onClick={() => onEditScene(scene)}>
         {scene.description || <span className="text-white/25">—</span>}
       </td>
       <td className="px-3 py-2.5">
@@ -331,7 +338,7 @@ function SceneRow({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("sceneTable.edit")}
               </MenuItem>
               {onDuplicateScene && (
                 <MenuItem
@@ -340,7 +347,7 @@ function SceneRow({
                     close();
                   }}
                 >
-                  Duplizieren
+                  {t("sceneTable.duplicate")}
                 </MenuItem>
               )}
               <MenuItem
@@ -350,7 +357,7 @@ function SceneRow({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}

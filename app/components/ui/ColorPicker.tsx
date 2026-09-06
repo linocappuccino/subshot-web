@@ -1,6 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { PALETTE } from "@/lib/types";
 
@@ -10,14 +9,13 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
       {PALETTE.map((hex) => {
         const selected = value === hex;
         return (
-          <motion.button
+          <button
             key={hex}
             type="button"
-            whileTap={{ scale: 0.88 }}
             onClick={() => onChange(hex)}
             style={{ backgroundColor: hex }}
             className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-offset-2 ring-offset-[#1c1c1e] transition-all",
+              "w-8 h-8 rounded-full flex items-center justify-center ring-2 ring-offset-2 ring-offset-[#1c1c1e] transition-all active:scale-[0.88]",
               selected ? "ring-white/60" : "ring-transparent"
             )}
             aria-label={hex}
@@ -27,7 +25,7 @@ export function ColorPicker({ value, onChange }: { value: string; onChange: (col
                 <path d="M20 6 9 17l-5-5" />
               </svg>
             )}
-          </motion.button>
+          </button>
         );
       })}
     </div>

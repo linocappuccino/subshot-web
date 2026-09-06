@@ -1,8 +1,8 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/cn";
+import { useLanguage } from "@/lib/i18n";
 
 /** Drag-and-drop OR click-to-pick, single image — the web equivalent of the
  * iOS app's ImageSourceButton (which offers camera vs. library; a browser
@@ -13,7 +13,7 @@ export function ImageDropZone({
   onFile,
   onRemove,
   uploading,
-  emptyLabel = "Bild hinzufügen",
+  emptyLabel,
   className,
   lockAspectRatio = false,
 }: {
@@ -38,6 +38,8 @@ export function ImageDropZone({
    * as "komisch" for anything that isn't already close to that ratio. */
   lockAspectRatio?: boolean;
 }) {
+  const { t } = useLanguage();
+  const resolvedEmptyLabel = emptyLabel ?? t("imageDropZone.emptyLabel");
   const [dragOver, setDragOver] = useState(false);
   const [ratio, setRatio] = useState<"16/9" | "9/16" | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,7 +91,15 @@ export function ImageDropZone({
           <img
             src={previewUrl}
             alt=""
-            className="w-full h-full object-cover absolute inset-0"
+            // 2026-07-17, Lino: "es muss schon immer das ganze bild sichtbar
+            // sein im bearbeitungsmodus" — object-cover crops whatever
+            // doesn't fit the locked 16/9-or-9/16 bucket (a real photo is
+            // essentially never EXACTLY that ratio), which visibly cut off
+            // part of the image. object-contain never crops, at the cost
+            // of a thin letterbox bar on off-ratio photos — the right
+            // trade for an editing view where seeing the whole photo
+            // matters more than a flush edge-to-edge crop.
+            className="w-full h-full object-contain absolute inset-0"
             onLoad={(e) => {
               if (!lockAspectRatio) return;
               const img = e.currentTarget;
@@ -106,8 +116,8 @@ export function ImageDropZone({
                 e.stopPropagation();
                 onRemove();
               }}
-              aria-label="Bild entfernen"
-              title="Bild entfernen"
+              aria-label={t("imageDropZone.removeAria")}
+              title={t("imageDropZone.removeAria")}
               className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/60 hover:bg-red-500/80 text-white/80 hover:text-white flex items-center justify-center transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -123,17 +133,13 @@ export function ImageDropZone({
             <circle cx="8.5" cy="10" r="1.7" />
             <path d="m21 16-5-5-9 9" />
           </svg>
-          <span className="text-xs font-medium">{emptyLabel}</span>
+          <span className="text-xs font-medium">{resolvedEmptyLabel}</span>
         </div>
       )}
       {uploading && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 bg-black/50 flex items-center justify-center"
-        >
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
           <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-        </motion.div>
+        </div>
       )}
     </div>
   );

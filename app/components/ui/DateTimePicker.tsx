@@ -2,14 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/cn";
-
-const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
-const MONTHS = [
-  "Januar", "Februar", "März", "April", "Mai", "Juni",
-  "Juli", "August", "September", "Oktober", "November", "Dezember",
-];
+import { useLanguage } from "@/lib/i18n";
+import { useClampedPopoverPosition } from "@/lib/useClampedPopoverPosition";
 
 function startOfMonth(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -24,10 +19,45 @@ function sameDay(a: Date, b: Date) {
 /** Custom calendar + time popover, replacing the plain native
  * `<input type="datetime-local">` - that rendered as a bare, inconsistently
  * styled OS control (looks different per browser, jarring against the rest
- * of this app's design) with no room for a nicer date-picking experience. */
-export function DateTimePicker({ value, onChange }: { value: Date; onChange: (date: Date) => void }) {
+ * of this app's design) with no room for a nicer date-picking experience.
+ *
+ * 2026-07-19, real bug found (not a sorting bug, see postproduction's own
+ * deadline-sort investigation): `value` used to be required `Date`, so
+ * every caller with an optional underlying field (deadline/shoot_date not
+ * yet set) passed `new Date()` as a stand-in just to satisfy the type —
+ * which this component then happily DISPLAYED as if it were a real,
+ * already-set value ("19.07.2026 · 09:37" on a tile with NO deadline at
+ * all). Lino kept reporting "the sort order is wrong" when the real issue
+ * was that a null deadline LOOKED like a concrete one. `value` is now
+ * `Date | null`; `null` shows `placeholder` text instead, and every
+ * internal read of `value` falls back to `new Date()` only for CALENDAR
+ * NAVIGATION / as the base to build a new picked date from — never for
+ * display. */
+export function DateTimePicker({
+  value, onChange, placeholder, compact,
+}: {
+  value: Date | null; onChange: (date: Date) => void; placeholder?: string;
+  /** 2026-07-22 — renders the trigger as a small icon-only button (clock
+   * glyph, tinted blue once a value is set) instead of the default
+   * full-width bar. Same popover/calendar underneath either way — for
+   * compact contexts like a single todo-item row where the full bar would
+   * never fit next to the checkbox/text/assignee icons already there. */
+  compact?: boolean;
+}) {
+  const { t } = useLanguage();
+  const resolvedPlaceholder = placeholder ?? t("dateTimePicker.placeholder");
+  const WEEKDAYS = [
+    t("dateTimePicker.weekdayMon"), t("dateTimePicker.weekdayTue"), t("dateTimePicker.weekdayWed"),
+    t("dateTimePicker.weekdayThu"), t("dateTimePicker.weekdayFri"), t("dateTimePicker.weekdaySat"), t("dateTimePicker.weekdaySun"),
+  ];
+  const MONTHS = [
+    t("dateTimePicker.monthJanuary"), t("dateTimePicker.monthFebruary"), t("dateTimePicker.monthMarch"),
+    t("dateTimePicker.monthApril"), t("dateTimePicker.monthMay"), t("dateTimePicker.monthJune"),
+    t("dateTimePicker.monthJuly"), t("dateTimePicker.monthAugust"), t("dateTimePicker.monthSeptember"),
+    t("dateTimePicker.monthOctober"), t("dateTimePicker.monthNovember"), t("dateTimePicker.monthDecember"),
+  ];
   const [open, setOpen] = useState(false);
-  const [viewMonth, setViewMonth] = useState(startOfMonth(value));
+  const [viewMonth, setViewMonth] = useState(startOfMonth(value ?? new Date()));
   const [coords, setCoords] = useState<{ top: number; left: number; width: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -73,13 +103,25 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
     // time it opens - done here (the actual user action that opens it)
     // rather than in an effect watching `open`, which was flagged as an
     // avoidable synchronous setState-in-effect.
-    setViewMonth(startOfMonth(value));
+    setViewMonth(startOfMonth(value ?? new Date()));
     if (!open && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       setCoords({ top: rect.bottom + 8, left: rect.left, width: rect.width });
     }
     setOpen((v) => !v);
   }
+
+  // 2026-08-07, Lino: "das Datumfeld geht über den Browserrand... man kann
+  // es nicht einstellen" — a trigger near the bottom (or right edge, this
+  // popover's fixed 300px width can be wider than a `compact` icon
+  // trigger) of the viewport used to always open `rect.bottom + 8` down/
+  // `rect.left` right with zero regard for where the actual browser window
+  // ends. See useClampedPopoverPosition's own doc comment for the fix.
+  const clamped = useClampedPopoverPosition(
+    open,
+    coords ? { top: coords.top, left: coords.left } : null,
+    popoverRef
+  );
 
   const firstWeekday = (viewMonth.getDay() + 6) % 7; // Monday-first
   const totalDays = daysInMonth(viewMonth);
@@ -89,54 +131,68 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
   ];
 
   function pickDay(day: Date) {
+    const base = value ?? new Date();
     const next = new Date(day);
-    next.setHours(value.getHours(), value.getMinutes());
+    next.setHours(base.getHours(), base.getMinutes());
     onChange(next);
   }
 
   function setHour(h: number) {
-    const next = new Date(value);
+    const next = new Date(value ?? new Date());
     next.setHours(h);
     onChange(next);
   }
   function setMinute(m: number) {
-    const next = new Date(value);
+    const next = new Date(value ?? new Date());
     next.setMinutes(m);
     onChange(next);
   }
 
   return (
     <div className="relative">
-      <button
-        ref={buttonRef}
-        type="button"
-        onClick={toggleOpen}
-        className="w-full flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm hover:bg-white/8 transition-colors text-left"
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-white/40">
-          <rect x="3" y="4" width="18" height="18" rx="2" />
-          <path d="M16 2v4M8 2v4M3 10h18" />
-        </svg>
-        <span className="font-medium">
-          {value.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })}
-          {" · "}
-          {value.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}
-        </span>
-      </button>
+      {compact ? (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleOpen}
+          title={value ? `${value.toLocaleDateString("de-CH")} · ${value.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}` : resolvedPlaceholder}
+          className={`shrink-0 transition-colors ${value ? "text-blue-400 hover:text-blue-300" : "text-white/25 hover:text-white/60"}`}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 3" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={toggleOpen}
+          className="w-full flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm hover:bg-white/8 transition-colors text-left"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-white/40">
+            <rect x="3" y="4" width="18" height="18" rx="2" />
+            <path d="M16 2v4M8 2v4M3 10h18" />
+          </svg>
+          {value ? (
+            <span className="font-medium">
+              {value.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" })}
+              {" · "}
+              {value.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          ) : (
+            <span className="font-medium text-white/40">{resolvedPlaceholder}</span>
+          )}
+        </button>
+      )}
 
-      {typeof document !== "undefined" && coords &&
+      {typeof document !== "undefined" && coords && open &&
         createPortal(
-          <AnimatePresence>
-            {open && (
-              <motion.div
-                ref={popoverRef}
-                initial={{ opacity: 0, scale: 0.96, y: -6 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: -6 }}
-                transition={{ type: "spring", stiffness: 420, damping: 30 }}
-                style={{ position: "fixed", top: coords.top, left: coords.left }}
-                className="z-[60] w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
-              >
+          <div
+            ref={popoverRef}
+            style={{ position: "fixed", top: clamped?.top ?? coords.top, left: clamped?.left ?? coords.left }}
+            className="z-[60] w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
+          >
             <div className="flex items-center justify-between mb-3">
               <button
                 type="button"
@@ -171,7 +227,7 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
             <div className="grid grid-cols-7 gap-1 mb-3">
               {cells.map((day, i) => {
                 if (!day) return <div key={i} />;
-                const selected = sameDay(day, value);
+                const selected = value ? sameDay(day, value) : false;
                 const today = sameDay(day, new Date());
                 return (
                   <button
@@ -195,7 +251,7 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
                 <path d="M12 7v5l3 3" />
               </svg>
               <select
-                value={value.getHours()}
+                value={(value ?? new Date()).getHours()}
                 onChange={(e) => setHour(Number(e.target.value))}
                 className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               >
@@ -207,7 +263,7 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
               </select>
               <span className="text-white/30">:</span>
               <select
-                value={value.getMinutes() - (value.getMinutes() % 5)}
+                value={(value ?? new Date()).getMinutes() - ((value ?? new Date()).getMinutes() % 5)}
                 onChange={(e) => setMinute(Number(e.target.value))}
                 className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
               >
@@ -218,9 +274,7 @@ export function DateTimePicker({ value, onChange }: { value: Date; onChange: (da
                 ))}
               </select>
             </div>
-              </motion.div>
-            )}
-          </AnimatePresence>,
+          </div>,
           document.body
         )}
     </div>

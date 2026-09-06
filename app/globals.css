@@ -3,6 +3,13 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  /* 2026-08-25 — VideoTile.tsx's desktop height (used by both the authenticated postproduction
+     page and the public /preview/[token] page). Kept as a custom property (not a bare literal) so
+     it stays a single source of truth even though the mobile case below now overrides the tile's
+     WIDTH/HEIGHT directly in VideoTile.tsx's own className instead of through this variable — see
+     that component's comment for why (Lino: mobile should show one full-width tile per row, not a
+     smaller version of the desktop masonry layout). */
+  --video-tile-h: clamp(220px, 22vw, 400px);
 }
 
 @theme inline {
@@ -10,6 +17,47 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* 2026-07-17, Lino: erst Thunder, dann noch am selben Tag "wir wechseln
+     da auf den Font ANTON" — Tailwind utility (font-anton), see layout.tsx
+     for where it loads. Kept for the AppShell logo wordmark only, see
+     2026-07-19 note below. */
+  --font-anton: var(--font-anton);
+  /* 2026-07-19, Lino: nach Sichten von 10 H1-Kandidaten (subshot.ch/fonts)
+     — jedes echte h1 UND jede Stelle, die bewusst wie ein h1 aussehen soll
+     (font-bebas utility), wechselte damals von Anton auf Bricolage
+     Grotesque; 2026-08-06 auf Bebas Neue umgestellt (gleiche Call-Sites).
+     Nur das Logo-Wortzeichen "Subshot" selbst (AppShell.tsx) bleibt Anton. */
+  --font-bebas: var(--font-bebas);
+}
+
+/* Jedes h1 im gesamten Web-App bekommt automatisch Bebas Neue statt Geist —
+   kein separates Setzen an jeder einzelnen Stelle nötig, da es keine
+   gemeinsame H1-Komponente gibt. Logo-Schriftzug (AppShell) setzt
+   font-anton explizit, da er kein <h1> ist und bewusst NICHT mitgewechselt
+   wurde (2026-07-19, Lino: "für das logo wort Subshot bleiben wir bei Anton").
+   2026-07-17, Lino: "Subshot als Logo Text immer alles gross schreiben,
+   auch bei H1" — text-transform statt den Textinhalt selbst zu ändern,
+   damit z.B. Screenreader/SEO weiterhin die normal geschriebene Version
+   sehen. */
+h1 {
+  font-family: var(--font-bebas), var(--font-sans);
+  text-transform: uppercase;
+  /* 2026-07-18, Lino: "bei der schrift ein wenig mehr abstand zwischen den
+     buchstaben.. aber nur wenig" — was tuned for Anton, then re-verified on
+     Bricolage Grotesque; Bebas Neue is itself an already-condensed/tracked
+     display face, re-check this still reads right (2026-08-06). */
+  letter-spacing: 0.015em;
+}
+
+/* 2026-07-18, Todoist #209 — RichTextEditor's slash-menu end-of-block
+   markers ("-- end scene" etc., see closeInnermostBlock/closeTitleMode)
+   render as <code>, small + greyed + plain inherited font (not the
+   browser's default monospace for <code>), same rule mirrored server-side
+   for the public preview page in idea_share_view.py's .idea-text code. */
+.rich-text-editor code {
+  font-family: inherit;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -148,6 +196,21 @@ html {
 }
 .subshot-annot-pulse {
   animation: subshot-annot-pulse 0.6s ease-in-out 2;
+}
+
+/* 2026-07-31 — Textmarker highlights INSIDE IdeaFloatingCard's live "/"
+   RichTextEditor (see that component's own `highlights` prop doc comment):
+   painted via the CSS Custom Highlight API instead of real <mark>
+   elements, since this text stays actively editable underneath. The
+   ::highlight() pseudo only accepts a small property set (no ::before
+   trick, no z-index) — same flat wash color as .subshot-annot-mark's own
+   ".multiline" fallback above, for visual consistency with the public
+   preview's marks. */
+::highlight(subshot-idea-highlight) {
+  background-color: rgba(255, 212, 0, 0.3);
+}
+::highlight(subshot-idea-highlight-active) {
+  background-color: rgba(255, 212, 0, 0.65);
 }
 
 .subshot-annot-pen-overlay {

@@ -7,6 +7,7 @@ import { Button } from "@/app/components/ui/Button";
 import { Label, FieldGroup } from "@/app/components/ui/Field";
 import { Slider } from "@/app/components/ui/Slider";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
 import { MIN_CREDIT_PURCHASE, MAX_CREDIT_PURCHASE, creditsToImages } from "@/lib/credits";
@@ -30,6 +31,7 @@ export default function CreditsPage() {
 function CreditsPageInner() {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const searchParams = useSearchParams();
 
   const [loading, setLoading] = useState(true);
@@ -39,8 +41,19 @@ function CreditsPageInner() {
 
   useEffect(() => {
     const checkout = searchParams.get("checkout");
-    if (checkout === "success") toast.showSuccess("Zahlung erfolgreich — deine Credits werden gleich angezeigt.");
-    if (checkout === "cancel") toast.showError("Kauf abgebrochen.");
+    if (checkout === "success") {
+      toast.showSuccess(t("creditsPage.paymentSuccess"));
+      // 2026-07-18, Lino: "wenn man Credits auflädt muss dies direkt
+      // übernommen und in den Credits korrekt angezeigt werden" — ein
+      // einzelnes load() direkt nach dem Stripe-Redirect kann noch den
+      // ALTEN Stand zeigen, wenn Stripes Webhook den Kauf serverseitig
+      // noch nicht verbucht hat. Statt uns auf den ersten Fetch zu
+      // verlassen: still ein paar Sekunden im Hintergrund nachpollen (ohne
+      // den "…"-Ladezustand erneut zu triggern), bis der Webhook
+      // durchgelaufen ist.
+      pollForFreshBalance();
+    }
+    if (checkout === "cancel") toast.showError(t("creditsPage.purchaseCanceled"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -55,9 +68,21 @@ function CreditsPageInner() {
       const { balance } = await api.creditBalance();
       setBalance(balance);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function pollForFreshBalance() {
+    for (let i = 0; i < 6; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const { balance } = await api.creditBalance();
+        setBalance(balance);
+      } catch {
+        // transient — next tick retries anyway
+      }
     }
   }
 
@@ -67,7 +92,7 @@ function CreditsPageInner() {
       const { url } = await api.creditCheckout(credits);
       window.location.href = url;
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Checkout fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("creditsPage.checkoutFailed"));
       setCheckingOut(false);
     }
   }
@@ -76,22 +101,20 @@ function CreditsPageInner() {
     <AppShell>
       <div className="max-w-lg mx-auto w-full px-4 sm:px-6 py-8">
         <h1 className="text-xl font-semibold mb-1">AI Credits</h1>
-        <p className="text-sm text-white/50 mb-6">
-          Credits werden für die KI-Bildgenerierung bei Szenen verbraucht — unabhängig von deinem Subshot-Abo, kein Verfallsdatum.
-        </p>
+        <p className="text-sm text-white/50 mb-6">{t("creditsPage.description")}</p>
 
         <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-6">
-          <div className="text-xs text-white/50 mb-1">Aktuelles Guthaben</div>
+          <div className="text-xs text-white/50 mb-1">{t("creditsPage.currentBalance")}</div>
           <div className="text-3xl font-semibold">
-            {loading ? "…" : `${balance ?? 0} Credits`}
+            {loading ? "…" : t("creditsPage.creditsCount", { count: balance ?? 0 })}
           </div>
         </div>
 
         <FieldGroup>
-          <Label>Credits kaufen</Label>
+          <Label>{t("creditsPage.buyCredits")}</Label>
           <div className="flex items-baseline justify-between mb-2">
-            <span className="text-2xl font-semibold">{credits} Credits</span>
-            <span className="text-sm text-white/50">≈ {creditsToImages(credits)} Bilder</span>
+            <span className="text-2xl font-semibold">{t("creditsPage.creditsCount", { count: credits })}</span>
+            <span className="text-sm text-white/50">≈ {t("creditsPage.imagesCount", { count: creditsToImages(credits) })}</span>
           </div>
           <Slider
             value={credits}
@@ -107,7 +130,7 @@ function CreditsPageInner() {
         </FieldGroup>
 
         <Button variant="primary" className="w-full mt-5" onClick={startCheckout} disabled={checkingOut}>
-          {checkingOut ? "Weiterleiten…" : "Weiter zur Zahlung"}
+          {checkingOut ? t("creditsPage.redirecting") : t("creditsPage.continueToPayment")}
         </Button>
       </div>
     </AppShell>

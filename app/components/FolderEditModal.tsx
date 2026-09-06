@@ -1,15 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { Input, Label, FieldGroup } from "./ui/Field";
-import { EmojiField } from "./ui/EmojiField";
 import { ColorPicker } from "./ui/ColorPicker";
 import { ImageDropZone } from "./ui/ImageDropZone";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import type { ProjectFolder } from "@/lib/types";
 import { PALETTE } from "@/lib/types";
+
+// 2026-08-31 — perf pass: EmojiField pulls in emojiData.json (~232KB,
+// the full German-localized Apple emoji catalog, see that component's own
+// doc comment) — was a static import, so every visitor to this modal's
+// page shipped that JSON regardless of whether they ever open the emoji
+// picker (rarely). next/dynamic defers loading EmojiField's whole module
+// (JSON included) into its own chunk, fetched only once this modal
+// actually renders it. `ssr: false` since it's purely client-interactive
+// (a Menu-based picker) with nothing meaningful to server-render anyway.
+const EmojiField = dynamic(() => import("./ui/EmojiField").then((m) => m.EmojiField), { ssr: false });
 
 export function FolderEditModal({
   open,
@@ -23,6 +34,7 @@ export function FolderEditModal({
   onSave: (name: string, color: string, emoji: string | null, imageFile: File | null, clearImage: boolean) => Promise<void>;
 }) {
   const api = useApi();
+  const { t } = useLanguage();
   const [name, setName] = useState(existing?.name ?? "");
   const [color, setColor] = useState(existing?.color ?? PALETTE[0]);
   const [emoji, setEmoji] = useState(existing?.emoji ?? "");
@@ -45,25 +57,12 @@ export function FolderEditModal({
     setClearImage(false);
   }
 
-  // Existing background image needs the same authenticated fetch as every
-  // other upload in this app (see AuthImage) - a plain <img src> can't
-  // attach the Bearer token.
+  // Existing background image — background_image_url is a presigned R2 URL
+  // since #248 (2026-07-22), directly usable as the preview's src, no fetch
+  // needed anymore (see AuthImage.tsx's updated doc comment).
   useEffect(() => {
     if (!open || !existing?.background_image_url) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    api.fetchImageBlobUrl(existing.background_image_url).then((url) => {
-      if (cancelled) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      objectUrl = url;
-      setImagePreview(url);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    setImagePreview(existing.background_image_url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, existing?.id, existing?.background_image_url]);
 
@@ -80,21 +79,21 @@ export function FolderEditModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={existing ? "Ordner bearbeiten" : "Neuer Ordner"}>
+    <Modal open={open} onClose={onClose} title={existing ? t("folderEditModal.editTitle") : t("folderEditModal.newTitle")}>
       <FieldGroup>
-        <Label>Name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="z.B. Kunde XY" autoFocus />
+        <Label>{t("folderEditModal.name")}</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("folderEditModal.namePlaceholder")} autoFocus />
       </FieldGroup>
       <FieldGroup>
-        <Label>Emoji</Label>
+        <Label>{t("folderEditModal.emoji")}</Label>
         <EmojiField value={emoji} onChange={setEmoji} />
       </FieldGroup>
       <FieldGroup>
-        <Label>Farbe</Label>
+        <Label>{t("folderEditModal.color")}</Label>
         <ColorPicker value={color} onChange={setColor} />
       </FieldGroup>
       <FieldGroup className="mb-0">
-        <Label>Hintergrundbild</Label>
+        <Label>{t("folderEditModal.backgroundImage")}</Label>
         <ImageDropZone
           previewUrl={imagePreview}
           onFile={(file) => {
@@ -114,16 +113,16 @@ export function FolderEditModal({
             }}
             className="text-xs text-white/40 hover:text-red-400 transition-colors mt-1.5"
           >
-            Bild entfernen
+            {t("folderEditModal.removeImage")}
           </button>
         )}
       </FieldGroup>
       <div className="flex justify-end gap-2 mt-6">
         <Button variant="ghost" onClick={onClose}>
-          Abbrechen
+          {t("common.cancel")}
         </Button>
         <Button variant="primary" onClick={handleSave} disabled={!name.trim() || saving}>
-          {saving ? "Speichert…" : "Speichern"}
+          {saving ? t("common.saving") : t("common.save")}
         </Button>
       </div>
     </Modal>

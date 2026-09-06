@@ -1,6 +1,5 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import { createContext, useCallback, useContext, useState } from "react";
 
 interface Toast {
@@ -36,24 +35,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ showError, showSuccess }}>
       {children}
       <div className="fixed bottom-4 inset-x-0 z-[100] flex flex-col items-center gap-2 px-4 pointer-events-none">
-        <AnimatePresence>
-          {toasts.map((t) => (
-            <motion.div
-              key={t.id}
-              initial={{ opacity: 0, y: 16, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className={`pointer-events-auto max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur border ${
-                t.variant === "error"
-                  ? "bg-red-950/90 border-red-800/50 text-red-200"
-                  : "bg-emerald-950/90 border-emerald-800/50 text-emerald-200"
-              }`}
-            >
-              {t.message}
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`pointer-events-auto max-w-sm rounded-xl px-4 py-3 text-sm font-medium shadow-lg backdrop-blur border ${
+              t.variant === "error"
+                ? "bg-red-950/90 border-red-800/50 text-red-200"
+                : "bg-emerald-950/90 border-emerald-800/50 text-emerald-200"
+            }`}
+          >
+            {t.message}
+          </div>
+        ))}
       </div>
     </ToastContext.Provider>
   );

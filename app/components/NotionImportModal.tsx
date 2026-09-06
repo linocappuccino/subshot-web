@@ -7,17 +7,18 @@ import { Input, Label, FieldGroup } from "./ui/Field";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
+import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { NotionDatabase, Project } from "@/lib/types";
 
-function relativeTime(iso: string): string {
+function relativeTime(iso: string, t: (key: TranslationKey, vars?: Record<string, string | number>) => string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.round(diffMs / 60000);
-  if (minutes < 1) return "gerade eben";
-  if (minutes < 60) return `vor ${minutes} Min.`;
+  if (minutes < 1) return t("notionImportModal.justNow");
+  if (minutes < 60) return t("notionImportModal.minutesAgo", { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `vor ${hours} Std.`;
+  if (hours < 24) return t("notionImportModal.hoursAgo", { count: hours });
   const days = Math.round(hours / 24);
-  return `vor ${days} Tag${days === 1 ? "" : "en"}`;
+  return t("notionImportModal.daysAgo", { count: days });
 }
 
 export function NotionImportModal({
@@ -33,6 +34,7 @@ export function NotionImportModal({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [step, setStep] = useState<"synced" | "token" | "database">(project.notion_database_id ? "synced" : "token");
   const [token, setToken] = useState("");
   const [databases, setDatabases] = useState<NotionDatabase[]>([]);
@@ -73,7 +75,7 @@ export function NotionImportModal({
       setDatabases(dbs);
       setStep("database");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Verbindung fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("notionImportModal.connectFailed"));
     } finally {
       setLoading(false);
     }
@@ -86,7 +88,7 @@ export function NotionImportModal({
       setDatabases(dbs);
       setStep("database");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Verbindung fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("notionImportModal.connectFailed"));
     } finally {
       setLoading(false);
     }
@@ -96,11 +98,11 @@ export function NotionImportModal({
     setImporting(databaseId);
     try {
       const result = await api.importNotion(project.id, databaseId);
-      toast.showSuccess(`${result.imported} neu, ${result.updated} aktualisiert.`);
+      toast.showSuccess(t("notionImportModal.importResult", { imported: result.imported, updated: result.updated }));
       onImported();
       onClose();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Import fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("notionImportModal.importFailed"));
     } finally {
       setImporting(null);
     }
@@ -110,34 +112,33 @@ export function NotionImportModal({
     setImporting(project.notion_database_id);
     try {
       const result = await api.importNotion(project.id);
-      toast.showSuccess(`${result.imported} neu, ${result.updated} aktualisiert.`);
+      toast.showSuccess(t("notionImportModal.importResult", { imported: result.imported, updated: result.updated }));
       onImported();
       onClose();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Synchronisieren fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("notionImportModal.syncFailed"));
     } finally {
       setImporting(null);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Notion-Import">
+    <Modal open={open} onClose={onClose} title={t("notionImportModal.title")}>
       {step === "synced" && (
         <>
           <p className="text-sm text-white/60 mb-4">
             {project.notion_last_synced_at
-              ? `Zuletzt synchronisiert ${relativeTime(project.notion_last_synced_at)}.`
-              : "Mit einer Notion-Datenbank verbunden."}
+              ? t("notionImportModal.lastSynced", { time: relativeTime(project.notion_last_synced_at, t) })
+              : t("notionImportModal.connected")}
           </p>
           <Button variant="primary" className="w-full mb-2" onClick={resync} disabled={importing !== null}>
-            {importing !== null ? "Synchronisiert…" : "Jetzt synchronisieren"}
+            {importing !== null ? t("notionImportModal.syncing") : t("notionImportModal.syncNow")}
           </Button>
           <button onClick={loadDatabases} className="text-xs text-white/40 hover:text-white/70 transition-colors">
-            Andere Datenbank wählen
+            {t("notionImportModal.chooseOtherDatabase")}
           </button>
           <p className="text-xs text-white/30 mt-4">
-            Läuft außerdem automatisch alle 15 Minuten im Hintergrund — neue oder geänderte Zeilen in Notion erscheinen
-            von selbst, ohne dass du hier etwas anklicken musst.
+            {t("notionImportModal.autoSyncHint")}
           </p>
         </>
       )}
@@ -145,27 +146,26 @@ export function NotionImportModal({
       {step === "token" && (
         <>
           <p className="text-sm text-white/60 mb-3">
-            Erstelle eine &quot;Internal Integration&quot; in deinem Notion-Workspace, teile deine Shot-Listen-Datenbank
-            damit, und füge das Secret hier ein.
+            {t("notionImportModal.tokenInstructions")}
           </p>
           <FieldGroup className="mb-0">
-            <Label>Integration Secret</Label>
+            <Label>{t("notionImportModal.integrationSecret")}</Label>
             <Input
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              placeholder="secret_… oder ntn_…"
+              placeholder={t("notionImportModal.secretPlaceholder")}
               onKeyDown={(e) => e.key === "Enter" && connectToken()}
             />
           </FieldGroup>
           <Button variant="primary" className="mt-4 w-full" onClick={connectToken} disabled={!token.trim() || loading}>
-            {loading ? "Verbinde…" : "Verbinden"}
+            {loading ? t("notionImportModal.connecting") : t("notionImportModal.connect")}
           </Button>
         </>
       )}
 
       {step === "database" && (
         <div className="space-y-1.5">
-          {databases.length === 0 && <p className="text-sm text-white/50">Keine Datenbanken gefunden.</p>}
+          {databases.length === 0 && <p className="text-sm text-white/50">{t("notionImportModal.noDatabasesFound")}</p>}
           {databases.map((db) => (
             <button
               key={db.id}

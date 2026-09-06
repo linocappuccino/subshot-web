@@ -8,6 +8,7 @@ import { Switch } from "./ui/Switch";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
+import { useLanguage } from "@/lib/i18n";
 
 /** Manage the project's public share link: fetch/create it, optionally
  * password-protect it (2026-07-10, for client-facing previews where nothing
@@ -16,39 +17,73 @@ import { useToast } from "./ui/Toast";
  * old separate "Link"/"Teilen" quick-action buttons, since password
  * protection needs a place to live and folding it into a one-click button
  * would either bury it or turn every share into a two-click flow anyway. */
-export function ShareLinkModal({ open, onClose, projectId, projectName }: {
+export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard" }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
   projectName: string;
+  /** 2026-07-16 — "ideas" shares the Planungssektor page (idea tiles +
+   * client feedback) instead of the storyboard, a separate live link per
+   * project (see backend ShareLink.kind). "video" (2026-07-17, #11 Schritt
+   * 7) shares the Video-Feedback-Tool page instead. */
+  kind?: "storyboard" | "ideas" | "video";
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [url, setUrl] = useState<string | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isProtecting, setIsProtecting] = useState(false);
   const [password, setPassword] = useState("");
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  // 2026-07-30, Todoist #389 — get_or_create_share_link returns a
+  // structured {"error":"no_ideas_internally_reviewed"} 409 (same
+  // {"error","detail"} shape as insufficient_credits/trial_expired
+  // elsewhere) when kind==="ideas" and NOT A SINGLE idea in the project has
+  // been internally approved yet — narrower than the original #356 gate
+  // (which blocked on ANY unreviewed idea): #386 made get_ideas_preview
+  // itself filter to approved-only, so a link is safe to hand out the
+  // moment at least one idea is ready, this only catches the "would show
+  // the client a literally empty page" case.
+  const [noneReviewed, setNoneReviewed] = useState(false);
+  // 2026-08-09, Lino: "sind hier noch kommentare offen und will man preview
+  // link teilen, ist dies nicht möglich" — same shape as noneReviewed
+  // above, a SEPARATE 409 code (open_idea_comments_exist, see
+  // get_or_create_share_link's own doc comment) checked in addition, not
+  // instead of, the internal-review gate.
+  const [openCommentsExist, setOpenCommentsExist] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setIsLoading(true);
-    api.shareLink(projectId)
+    setNoneReviewed(false);
+    setOpenCommentsExist(false);
+    api.shareLink(projectId, undefined, undefined, kind)
       .then((result) => {
         setUrl(result.url);
         setHasPassword(result.has_password);
         setIsProtecting(result.has_password);
       })
-      .catch((e) => toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen."))
+      .catch((e) => {
+        if (e instanceof ApiError && e.code === "no_ideas_internally_reviewed") {
+          setNoneReviewed(true);
+          return;
+        }
+        if (e instanceof ApiError && e.code === "open_idea_comments_exist") {
+          setOpenCommentsExist(true);
+          return;
+        }
+        toast.showError(e instanceof ApiError ? e.message : t("shareLinkModal.loadFailed"));
+      })
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId]);
+  }, [open, projectId, kind]);
 
   async function copyLink() {
     if (!url) return;
     await navigator.clipboard.writeText(url);
-    toast.showSuccess("Link kopiert");
+    toast.showSuccess(t("shareLinkModal.linkCopied"));
   }
 
   async function shareLink() {
@@ -65,13 +100,13 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
     if (!trimmed) return;
     setIsSavingPassword(true);
     try {
-      const result = await api.shareLink(projectId, trimmed);
+      const result = await api.shareLink(projectId, trimmed, undefined, kind);
       setUrl(result.url);
       setHasPassword(result.has_password);
       setPassword("");
-      toast.showSuccess("Passwort gesetzt");
+      toast.showSuccess(t("shareLinkModal.passwordSet"));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("shareLinkModal.loadFailed"));
     } finally {
       setIsSavingPassword(false);
     }
@@ -79,13 +114,13 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
 
   async function clearPassword() {
     try {
-      const result = await api.shareLink(projectId, undefined, true);
+      const result = await api.shareLink(projectId, undefined, true, kind);
       setUrl(result.url);
       setHasPassword(result.has_password);
       setIsProtecting(false);
       setPassword("");
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("shareLinkModal.loadFailed"));
     }
   }
 
@@ -100,49 +135,77 @@ export function ShareLinkModal({ open, onClose, projectId, projectName }: {
     if (!next && hasPassword) clearPassword();
   }
 
+  if (noneReviewed) {
+    return (
+      <Modal open={open} onClose={onClose} title={t("shareLinkModal.titleIdeas")}>
+        <p className="text-sm text-white/70 leading-relaxed">{t("shareLinkModal.noneInternallyReviewed")}</p>
+      </Modal>
+    );
+  }
+
+  if (openCommentsExist) {
+    return (
+      <Modal open={open} onClose={onClose} title={t("shareLinkModal.titleIdeas")}>
+        <p className="text-sm text-white/70 leading-relaxed">{t("shareLinkModal.openCommentsExist")}</p>
+      </Modal>
+    );
+  }
+
   return (
-    <Modal open={open} onClose={onClose} title="Link teilen">
+    <Modal open={open} onClose={onClose} title={kind === "ideas" ? t("shareLinkModal.titleIdeas") : kind === "video" ? t("shareLinkModal.titleVideo") : t("shareLinkModal.titleDefault")}>
       <FieldGroup>
-        <Label>Öffentlicher Link</Label>
+        <Label>{t("shareLinkModal.publicLink")}</Label>
         {isLoading ? (
-          <div className="text-sm text-white/40 py-2">Lädt…</div>
+          <div className="text-sm text-white/40 py-2">{t("common.loading")}</div>
         ) : url ? (
           <>
             <div className="text-xs text-white/50 break-all mb-2">{url}</div>
             <div className="flex gap-2">
-              <Button variant="secondary" size="sm" onClick={copyLink}>Kopieren</Button>
-              <Button variant="secondary" size="sm" onClick={shareLink}>Teilen</Button>
+              <Button variant="secondary" size="sm" onClick={copyLink}>{t("shareLinkModal.copy")}</Button>
+              <Button variant="secondary" size="sm" onClick={shareLink}>{t("shareLinkModal.share")}</Button>
             </div>
           </>
         ) : null}
         <p className="text-xs text-white/40 mt-2">
-          Jeder mit diesem Link kann die Vorschau ansehen, auch ohne Subshot-Account. Läuft nach 7 Tagen ab.
+          {t("shareLinkModal.linkHint")}
         </p>
+        {/* 2026-07-30, Todoist #386 (Lino): "es soll die Meldung kommen die
+            ca. so heisst: es werde nur intern abgenommene Ideen den Kunden
+            gezeigt" — a standing reminder shown every time this modal is
+            open for an "ideas" link (not just the hard-block dialog above,
+            which only fires when something is CURRENTLY unreviewed) since
+            new, not-yet-reviewed ideas can still be added after the link
+            already exists. */}
+        {kind === "ideas" && (
+          <p className="text-xs text-white/40 mt-1">
+            {t("shareLinkModal.ideasOnlyApprovedHint")}
+          </p>
+        )}
       </FieldGroup>
 
       <FieldGroup className="mb-2">
-        <Switch checked={isProtecting} onChange={handleProtectToggle} label="Mit Passwort schützen" />
+        <Switch checked={isProtecting} onChange={handleProtectToggle} label={t("shareLinkModal.protectWithPassword")} />
       </FieldGroup>
       {isProtecting && (
         <FieldGroup>
           <Input
             type="password"
-            placeholder={hasPassword ? "Neues Passwort (optional)" : "Passwort"}
+            placeholder={hasPassword ? t("shareLinkModal.newPasswordOptional") : t("shareLinkModal.passwordPlaceholder")}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
           <div className="flex gap-2 mt-2">
             <Button variant="primary" size="sm" onClick={savePassword} disabled={!password.trim() || isSavingPassword}>
-              {isSavingPassword ? "Speichert…" : hasPassword ? "Passwort bestätigen" : "Passwort setzen"}
+              {isSavingPassword ? t("common.saving") : hasPassword ? t("shareLinkModal.confirmPassword") : t("shareLinkModal.setPassword")}
             </Button>
             {hasPassword && (
-              <Button variant="danger" size="sm" onClick={clearPassword}>Entfernen</Button>
+              <Button variant="danger" size="sm" onClick={clearPassword}>{t("shareLinkModal.remove")}</Button>
             )}
           </div>
           <p className="text-xs text-white/40 mt-2">
             {hasPassword
-              ? "Aktiv — Besucher müssen das Passwort eingeben, bevor sie die Vorschau sehen."
-              : "Sinnvoll für Projekte/Kunden, wo nichts öffentlich einsehbar sein soll, auch nicht mit dem Link."}
+              ? t("shareLinkModal.protectedHint")
+              : t("shareLinkModal.unprotectedHint")}
           </p>
         </FieldGroup>
       )}

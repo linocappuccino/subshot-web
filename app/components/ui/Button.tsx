@@ -1,6 +1,5 @@
 "use client";
 
-import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -24,13 +23,11 @@ export function Button({
   className,
   children,
   ...props
-}: HTMLMotionProps<"button"> & { variant?: Variant; size?: Size }) {
+}: React.ComponentProps<"button"> & { variant?: Variant; size?: Size }) {
   return (
-    <motion.button
-      whileTap={{ scale: 0.96 }}
-      transition={{ type: "spring", stiffness: 500, damping: 25 }}
+    <button
       className={cn(
-        "inline-flex items-center justify-center rounded-xl font-semibold transition-colors disabled:opacity-40 disabled:pointer-events-none",
+        "inline-flex items-center justify-center rounded-xl font-semibold transition-colors active:scale-[0.96] disabled:opacity-40 disabled:pointer-events-none",
         variants[variant],
         sizes[size],
         className
@@ -38,7 +35,7 @@ export function Button({
       {...props}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }
 
@@ -47,19 +44,17 @@ export function IconButton({
   children,
   size = 36,
   ...props
-}: HTMLMotionProps<"button"> & { size?: number }) {
+}: React.ComponentProps<"button"> & { size?: number }) {
   return (
-    <motion.button
-      whileTap={{ scale: 0.9 }}
-      transition={{ type: "spring", stiffness: 500, damping: 25 }}
+    <button
       style={{ width: size, height: size }}
       className={cn(
-        "inline-flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors",
+        "inline-flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors active:scale-90",
         className
       )}
       {...props}
     >
       {children}
-    </motion.button>
+    </button>
   );
 }

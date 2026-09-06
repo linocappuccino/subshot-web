@@ -13,6 +13,7 @@ import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { TodoListsPanel } from "./TodoListsPanel";
+import { useLanguage } from "@/lib/i18n";
 
 /** Section-scoped counterpart to ProjectInfoBox, for multi-day shoots
  * (2026-07-10): a section can optionally carry its own mini info box (own
@@ -36,6 +37,7 @@ export function SectionInfoBox({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [description, setDescription] = useState(section.description ?? "");
 
   async function updateDescription(value: string) {
@@ -43,7 +45,7 @@ export function SectionInfoBox({
       const updated = await api.patchSection(section.id, { description: value || null });
       onSectionChange(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -52,7 +54,7 @@ export function SectionInfoBox({
       const updated = await api.patchSection(section.id, { remove_project_info: true });
       onSectionChange(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -61,7 +63,7 @@ export function SectionInfoBox({
       const updated = await api.patchSection(section.id, { shoot_date: date ? date.toISOString() : null });
       onSectionChange(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -74,7 +76,7 @@ export function SectionInfoBox({
       });
       onSectionChange(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -93,7 +95,7 @@ export function SectionInfoBox({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <Collapsible
-            title={`Info: ${section.name}`}
+            title={t("sectionInfoBox.infoTitleFor", { name: section.name })}
             defaultOpen={false}
             icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
@@ -106,7 +108,7 @@ export function SectionInfoBox({
                 <Switch
                   checked={Boolean(section.shoot_date)}
                   onChange={(v) => updateShootDate(v ? new Date() : null)}
-                  label="Drehdatum festlegen"
+                  label={t("projectInfoBox.setShootDate")}
                 />
                 {section.shoot_date && (
                   <div className="mt-2">
@@ -116,7 +118,7 @@ export function SectionInfoBox({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Standort</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.location")}</div>
                 <LocationPicker
                   address={section.location_address ?? ""}
                   lat={section.location_lat}
@@ -126,24 +128,24 @@ export function SectionInfoBox({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Beschreibung / Idee</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.descriptionIdea")}</div>
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   onBlur={() => updateDescription(description)}
-                  placeholder="Worum geht's an diesem Drehtag?"
+                  placeholder={t("sectionInfoBox.descriptionPlaceholder")}
                   rows={3}
                 />
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Team</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.team")}</div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {members.map((m) => (
                     <Avatar key={m.user_id} name={m.name} email={m.email} avatarUrl={m.avatar_url} size={30} />
                   ))}
                   <Button variant="ghost" size="sm" onClick={onOpenTeam}>
-                    Verwalten
+                    {t("projectInfoBox.manage")}
                   </Button>
                 </div>
               </div>
@@ -163,7 +165,7 @@ export function SectionInfoBox({
         </div>
         {/* Only added info boxes get this — the original top-level
             ProjectInfoBox has no delete button at all, by design. */}
-        <IconButton size={28} onClick={removeProjectInfo} aria-label="Projektinfo löschen" className="text-white/40 hover:text-red-400">
+        <IconButton size={28} onClick={removeProjectInfo} aria-label={t("projectInfoBox.deleteProjectInfoAria")} className="text-white/40 hover:text-red-400">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" />
           </svg>

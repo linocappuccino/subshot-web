@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, use as usePromise } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, use as usePromise } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -15,14 +16,21 @@ import {
   useSensor,
   useSensors,
   type CollisionDetection,
+  type DragCancelEvent,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+// Aliased to avoid shadowing the browser's global `CSS` (this file uses
+// `document.querySelector` with data attributes elsewhere in the app's
+// history and may again).
+import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
-import type { Annotation, Member, ProjectDetail, Scene, Section, Shot } from "@/lib/types";
+import { setNavCache, takeNavCache } from "@/lib/navCache";
+import type { Annotation, Member, PostproductionStatus, ProjectDetail, Scene, Section, Shot, Video } from "@/lib/types";
 import { SortableSceneCard } from "@/app/components/SortableSceneCard";
 import { SceneCard } from "@/app/components/SceneCard";
 import { SceneEditModal } from "@/app/components/SceneEditModal";
@@ -32,6 +40,9 @@ import { ProjectInfoTile } from "@/app/components/ProjectInfoTile";
 import { TeamPanel } from "@/app/components/TeamPanel";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { ShareLinkModal } from "@/app/components/ShareLinkModal";
+import { EdgeNavButton } from "@/app/components/EdgeNavButton";
+import { TimecodeBar } from "@/app/components/TimecodeBar";
+import { IdeaGrid, type IdeaGridHandle } from "@/app/components/IdeaGrid";
 import { AnnotationsPanel } from "@/app/components/AnnotationsPanel";
 import { Modal } from "@/app/components/ui/Modal";
 import { AppShell } from "@/app/components/AppShell";
@@ -176,19 +187,78 @@ const sceneCollisionDetection: CollisionDetection = (args) => {
   return rectHits.filter((c) => c.id !== activeId);
 };
 
+// 2026-08-26 — the Ideas⇄Scenes swipe transition (was here as
+// viewPanelVariants) is gone, see the "wir entfernen uns von
+// Übergangsanimationen" note further down at activeView's declaration.
+
+// 2026-07-17, Lino: "jeder workflow seite eine andere hintergrundfarbe...",
+// dann 2026-08-07: "hintergrund bei der Ideen seite ist immer noch nicht
+// schwarz" — der dezente Goldton für Ideen wurde wieder verworfen, jede
+// Seite (inkl. Ideen) nutzt jetzt einfach AppShell's transparente
+// Standard-Basis (das globale #161616 aus layout.tsx). Kein eigener Tint
+// mehr nötig.
+
+// 2026-07-31, Lino: "wenn man in den notifications auf einen kommentar
+// klickt, soll es direkt die kachel öffnen ... egal wo man ist auf der
+// seite" — the OLD approach (window.location.search read in a mount-only
+// useEffect, see this page's own now-superseded doc comment) only ever
+// caught a genuinely fresh page load; clicking a notification link while
+// ALREADY on this exact project page changes the URL's query string
+// without remounting the page (same route), so that one-time read never
+// fired again. useSearchParams() IS reactive to a query-only navigation
+// like that — it just needs its own small Suspense boundary, which this
+// isolated read-only watcher provides without wrapping the whole page (the
+// reason this page avoided the hook entirely before now).
+function NotificationParamsWatcher({
+  onParams,
+}: {
+  onParams: (params: { openIdea: string | null; openScene: string | null; openComment: string | null }) => void;
+}) {
+  const searchParams = useSearchParams();
+  const openIdea = searchParams.get("openIdea");
+  const openScene = searchParams.get("openScene");
+  const openComment = searchParams.get("openComment");
+  useEffect(() => {
+    if (!openIdea && !openScene && !openComment) return;
+    onParams({ openIdea, openScene, openComment });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openIdea, openScene, openComment]);
+  return null;
+}
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
+  const router = useRouter();
 
   const [data, setData] = useState<ProjectDetail | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  // 2026-07-27, Todoist #356 — needed to gate the "Intern abgenommen/
+  // abgelehnt" buttons to Projektleiter/Owner only, same pattern as
+  // postproduction/page.tsx's canEditStatus/canEditDeadline.
+  const [myRole, setMyRole] = useState<Member["role"] | null>(null);
   const [creatingScene, setCreatingScene] = useState(false);
   // "Zwischenschritt" (mirrors the iOS app's addSceneButton menu) — a
   // lighter connective-beat scene variant, creation-time choice only, see
   // SceneEditModal's isIntermediateStep prop.
   const [creatingIntermediateStep, setCreatingIntermediateStep] = useState(false);
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
+  // 2026-07-18, Lino: "klickt man auf eine Notification soll man direkt zu
+  // dieser Seite und Kachel kommen" — autoOpenIdeaId is consumed by
+  // IdeaGrid itself once its ideas have loaded (passed straight through as
+  // a prop); autoOpenSceneId/autoOpenCommentId are consumed further down
+  // (see the effect right after handleAnnotationSelect, which needs
+  // goToScenes/goToIdeas/setHighlightedAnnotationId — all declared later
+  // in this component than this point). Fed by NotificationParamsWatcher
+  // (see its own doc comment above for why a reactive useSearchParams()
+  // read replaced the old mount-only window.location.search one — that
+  // version silently did nothing when a notification was clicked while
+  // already on this exact project page).
+  const [autoOpenIdeaId, setAutoOpenIdeaId] = useState<string | null>(null);
+  const [autoOpenSceneId, setAutoOpenSceneId] = useState<string | null>(null);
+  const [autoOpenCommentId, setAutoOpenCommentId] = useState<string | null>(null);
   // Live-refreshed view of editingScene for display purposes ONLY (2026-07-16,
   // Lino: AI-Bild aktualisiert sich nicht in der offenen Karte) — editingScene
   // itself is a one-time snapshot from whenever the modal was opened, never
@@ -204,7 +274,97 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const liveEditingScene = editingScene ? (data?.scenes.find((s) => s.id === editingScene.id) ?? editingScene) : null;
   const [deleteScene, setDeleteScene] = useState<Scene | null>(null);
   const [deleteSection, setDeleteSection] = useState<Section | null>(null);
+  const [sendToPostproduction, setSendToPostproduction] = useState<Section | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
+  async function goToProjectsWithTransition() {
+    // 2026-08-26 — used to set an sessionStorage flag + wait 220ms so
+    // projects/page.tsx could play a matching enter-slide; both sides of
+    // that are gone now (see [[project_subshot_web_speed_and_correctness_2026-08-25]]),
+    // navigation is instant.
+    router.push("/projects");
+  }
+  const ideaGridRef = useRef<IdeaGridHandle>(null);
+  // 2026-07-17, Lino: "rechts ein Pfeil-Button (Script/Shotlist Editor)...
+  // links ein Pfeil-Button (Ideen) zurück" — replaces the old scroll-
+  // position-driven `viewingIdeas` heuristic (the Ideen grid and the
+  // Scripting-Tool used to share one continuously-scrolled page) with an
+  // explicit two-panel view the user switches between (now a plain
+  // conditional render, no transition — see 2026-08-26 note above). Also
+  // still drives the Teilen button's kind (still "always shares whichever
+  // page you're on") and the FAB.
+  // 2026-07-17, Lino: "diese Buttons müssen IMMER sichtbar sein damit man
+  // im Workflow vor und zurück kann" — der "zurück zu Szenen"-Button auf
+  // der Postproduction-Seite (echte eigene Route) hinterlässt hier ein
+  // sessionStorage-Flag statt eines URL-Query-Params (kein Suspense-
+  // Wrapper um useSearchParams auf dieser Seite, siehe postproduction/
+  // page.tsx's eigener Kommentar dazu), damit diese Seite nicht einfach
+  // auf "ideas" zurückfällt, sondern wirklich auf der Szenenansicht landet.
+  const returnViewRef = useRef<string | null | undefined>(undefined);
+  if (returnViewRef.current === undefined) {
+    const v = typeof window !== "undefined" ? sessionStorage.getItem("subshot:returnView") : null;
+    if (v) sessionStorage.removeItem("subshot:returnView");
+    returnViewRef.current = v;
+  }
+  const initialReturnView = returnViewRef.current;
+  const [activeView, setActiveView] = useState<"ideas" | "scenes">(initialReturnView === "scenes" ? "scenes" : "ideas");
+  // 2026-08-30 — Skript-Auswahlübersicht (Lino: die Skript-Seite soll die
+  // abgenommenen Ideen erst als klickbare Kachel-Übersicht zeigen, Klick
+  // öffnet dann die eigentliche Shot-Planung NUR für diesen einen
+  // Abschnitt) — null = Übersicht, sonst die id des geöffneten Abschnitts.
+  // Reset beim Verlassen der Skript-Seite (siehe goToIdeas unten), damit
+  // ein erneuter Besuch immer wieder bei der Übersicht startet.
+  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  const shareKind: "storyboard" | "ideas" = activeView === "ideas" ? "ideas" : "storyboard";
+  function goToScenes() {
+    setActiveView("scenes");
+  }
+  function goToIdeas() {
+    setActiveView("ideas");
+    setOpenSectionId(null);
+  }
+  async function goToPostproductionWithTransition() {
+    // 2026-08-26 — used to flip the scenes panel to its "exit" animation
+    // state first (see [[project_subshot_web_speed_and_correctness_2026-08-25]]
+    // for why that's gone); the prefetch below still fires and is still
+    // awaited (capped at 0.8s), since warming navCache before the target
+    // page mounts is a real speed win independent of any animation — the
+    // target page renders instantly instead of showing its own "Lädt…" on
+    // arrival. Just no longer padded with a 220ms floor to match an exit
+    // animation's duration.
+    const prefetch = (async () => {
+      try {
+        // 2026-08-31 — perf: one bulk listProjectVideos call instead of one
+        // listVideos per postproduction section, same fix as the
+        // Postproduction page's own load() (see its doc comment).
+        const [project, projectMembers, me, projectAnnotations, allVideos] = await Promise.all([
+          api.projectDetail(id),
+          api.members(id),
+          api.me(),
+          api.listAnnotations(id),
+          api.listProjectVideos(id),
+        ]);
+        const videosBySection: Record<string, Video[]> = {};
+        for (const video of allVideos) {
+          (videosBySection[video.section_id] ??= []).push(video);
+        }
+        setNavCache(`postpro:${id}`, {
+          project,
+          members: projectMembers,
+          myUserId: me.id,
+          annotations: projectAnnotations,
+          videosBySection,
+        });
+      } catch {
+        // Reiner Optimierungs-Pfad — schlägt der Prefetch fehl, lädt die
+        // Zielseite beim Mounten einfach ganz normal selbst nach.
+      }
+    })();
+    // Nie länger als ~0.8s auf ein langsames Netz warten — lieber eine
+    // Zielseite, die noch kurz selbst nachladen muss, als eine Navigation,
+    // die spürbar hängt.
+    await Promise.race([prefetch, new Promise((resolve) => setTimeout(resolve, 800))]);
+    router.push(`/projects/${id}/postproduction`);
+  }
   const [creatingSection, setCreatingSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState("");
   const [editingSection, setEditingSection] = useState<Section | null>(null);
@@ -235,9 +395,85 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   function handleAnnotationSelect(annotation: Annotation) {
     setHighlightedAnnotationId(annotation.id);
     if (annotation.scene_id) {
-      document.querySelector(`[data-sortable-scene-id="${annotation.scene_id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      // The scene tile lives in the Scenes panel, which only exists in the
+      // DOM while activeView === "scenes" (AnimatePresence mode="wait"
+      // unmounts the Ideas panel first, then mounts this one) — switch,
+      // then wait for that exit+enter cycle before scrolling to it.
+      goToScenes();
+      setTimeout(() => {
+        document.querySelector(`[data-sortable-scene-id="${annotation.scene_id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 600);
+    } else if (annotation.idea_id) {
+      // 2026-07-22, Lino: "muss man auf den Kommentar in der Seitenleiste
+      // drücken können und es öffnet sich die Kachel mit dem Kommentar und
+      // der Kommentar wird gehighlighted" — same shape as the scene_id
+      // branch above (switch panel, wait for the exit+enter cycle,
+      // ideaGridRef only exists once the Ideas panel is actually mounted),
+      // then IdeaGrid's own openIdea opens IdeaFocusView on that idea;
+      // highlightedAnnotationId flows all the way down to
+      // IdeaFeedbackPanel, which does its own scrollIntoView once the
+      // matching entry is in the DOM.
+      goToIdeas();
+      setTimeout(() => ideaGridRef.current?.openIdea(annotation.idea_id!), 600);
     }
   }
+  // 2026-07-31, Lino: "wenn man in den notifications auf einen kommentar
+  // klickt, soll es direkt die ideenkachel oder szenenkachel ... öffnen mit
+  // dem kommentar" — autoOpenIdeaId already opens the right idea (passed
+  // straight to IdeaGrid as a prop, unrelated to this effect); this only
+  // covers autoOpenSceneId itself. The actual highlight (both idea and
+  // scene) is set by the SEPARATE effect right below, deliberately NOT
+  // combined with this one — IdeaGrid clears autoOpenIdeaId itself via its
+  // own onAutoOpened callback (see that prop wiring below) well before a
+  // delayed highlight-set would fire, and an effect's cleanup cancels any
+  // pending setTimeout the moment ONE of its dependencies changes; keying
+  // the highlight off autoOpenIdeaId too would have that early clear cancel
+  // the highlight before it ever appears. autoOpenCommentId's own lifecycle
+  // is independent of both, so it's safe as the sole trigger.
+  //
+  // Scene case deliberately reuses handleAnnotationSelect's OWN scene
+  // branch (goToScenes + scroll-into-view on the card) rather than the
+  // OLDER "open SceneEditModal" behavior autoOpenSceneId used to trigger
+  // unconditionally — SceneEditModal has no comment UI at all (see this
+  // page's own investigation before this fix), so opening it would show
+  // nothing resembling "the comment". Only falls back to the edit modal
+  // when there's genuinely no comment id (a notification kind that isn't
+  // actually comment-related, or a pre-existing unread notification from
+  // before comment_id existed) — same graceful degradation as everywhere
+  // else in this codebase rather than a broken deep link.
+  useEffect(() => {
+    if (!autoOpenSceneId || !data) return;
+    const scene = data.scenes.find((s) => s.id === autoOpenSceneId);
+    if (!scene) return;
+    if (autoOpenCommentId) {
+      setShowAnnotations(true);
+      goToScenes();
+      setTimeout(() => {
+        document.querySelector(`[data-sortable-scene-id="${scene.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 600);
+    } else {
+      setEditingScene(scene);
+    }
+    setAutoOpenSceneId(null);
+    router.replace(`/projects/${id}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSceneId, data]);
+  // Fires the actual highlight/pulse for EITHER kind, ~700ms after
+  // whichever panel-switch above needs to settle first (idea card opening,
+  // or the scene grid scroll-into-view) — see this block's own doc comment
+  // above for why this has to be fully decoupled from autoOpenIdeaId's own
+  // (much earlier) clearing. Deliberately does NOT clear autoOpenCommentId
+  // itself once consumed — doing that INSIDE this same effect would change
+  // its own dependency, which runs this effect's cleanup (cancelling the
+  // just-scheduled timer) before the 700ms ever elapses, so the highlight
+  // would never actually appear. Leaving it set is harmless: nothing else
+  // reads it, and this effect only re-runs when the VALUE genuinely
+  // changes (a different notification), never just because it's still set.
+  useEffect(() => {
+    if (!autoOpenCommentId) return;
+    const timer = setTimeout(() => setHighlightedAnnotationId(autoOpenCommentId), 700);
+    return () => clearTimeout(timer);
+  }, [autoOpenCommentId]);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">(() =>
     typeof window !== "undefined" && window.localStorage.getItem("subshotSceneViewMode") === "table" ? "table" : "grid"
@@ -341,12 +577,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
   );
-  // Section drag-and-drop (plain HTML5 D&D, not dnd-kit — see reorderSections'
-  // comment further down) — same live-preview-on-hover + origin-snapshot
-  // pattern as scenes/shots above, just driven by native dragover/dragend
-  // events instead of dnd-kit's since native D&D can't reliably read
-  // dataTransfer payloads during dragover (only at drop), so which section
-  // is being dragged has to live in React state instead.
+  const isSectionId = (id: string) => (data?.sections.some((s) => s.id === id) ?? false);
+  // Branches to a plain closestCenter scoped to section ids when a SECTION
+  // is being dragged, leaving sceneCollisionDetection (hardened across many
+  // real bug fixes, see its own comment) completely untouched for scenes —
+  // one shared DndContext now covers both drag types, but the two
+  // detection strategies stay fully independent of each other.
+  const dragCollisionDetection: CollisionDetection = (args) => {
+    if (isSectionId(String(args.active.id))) {
+      return closestCenter({ ...args, droppableContainers: args.droppableContainers.filter((c) => isSectionId(String(c.id))) });
+    }
+    return sceneCollisionDetection(args);
+  };
+  // Section drag-and-drop — 2026-07-21: converted from plain native HTML5
+  // D&D to the SAME dnd-kit DndContext scenes already use (Lino: tiles must
+  // stay draggable LIVE in the normal grid, no separate reorder window —
+  // see [[feedback_no_modal_reorder]]). The native version raced dnd-kit's
+  // own PointerSensor on the section grip handle's pointerdown ("3 von 10"
+  // reliability, #38) since both systems listened to the same subtree;
+  // routing section drags through dnd-kit too (handle-scoped `useSortable`
+  // in SectionBlock, `isSectionId` branching in the shared handlers below)
+  // removes the race entirely — only one drag system is ever active.
+  // Still origin-snapshot + insertion-line-only, same reasoning as scenes.
   const [draggingSectionId, setDraggingSectionId] = useState<string | null>(null);
   // Same insertion-line-only idea as scenes (see handleSceneDragOver's
   // comment) — sections used to live-reflow during the drag itself, which
@@ -364,17 +616,73 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.projectDetail(id), api.members(id), api.listAnnotations(id)]).then(([d, m, a]) => {
+    // 2026-07-17: Rücksprung aus der Postproduction hat das Bundle schon
+    // vorab geladen (siehe postproduction/page.tsx's goBackToScenes) — steht
+    // es bereit, direkt anzeigen statt nochmal auf's Netz zu warten.
+    const cached = takeNavCache<{ project: ProjectDetail; members: Member[]; annotations: Annotation[] }>(`scenes:${id}`);
+    if (cached) {
+      setData(cached.project);
+      setMembers(cached.members);
+      setAnnotations(cached.annotations);
+      // myRole isn't part of this prefetch cache (written by postproduction/
+      // page.tsx's goBackToScenes) — fetch it separately, it's cheap and
+      // this is the only consumer that needs it.
+      api.me().then((me) => {
+        if (!cancelled) setMyRole(cached.members.find((m) => m.user_id === me.id)?.role ?? null);
+      });
+      return;
+    }
+    Promise.all([api.projectDetail(id), api.members(id), api.listAnnotations(id), api.me()]).then(([d, m, a, me]) => {
       if (cancelled) return;
       setData(d);
       setMembers(m);
       setAnnotations(a);
+      setMyRole(m.find((mem) => mem.user_id === me.id)?.role ?? null);
     });
+    // 2026-08-05, Lino: "sind ein paar kacheln auf der ideenseite, laden
+    // die kacheln immer ein wenig später nach" — measured with Playwright:
+    // <IdeaGrid> only mounts once `data` above resolves (this whole page
+    // hard-gates on `if (!data) return <spinner>` further down), so its
+    // own listIdeas() call used to only START after projectDetail/members/
+    // annotations/me had ALL already finished — a needless serial
+    // waterfall (project ~370ms, then ideas another ~580ms on top,
+    // pushing the first idea-cover-photo request to ~2s instead of the
+    // ~600ms it could start at). Firing listIdeas here too, in PARALLEL
+    // with the block above rather than inside its Promise.all (folding it
+    // in would instead delay `data` itself down to ideas' slower ~580ms),
+    // warms lib/api.ts's shared GET cache — IdeaGrid's own later
+    // listIdeas(projectId) call hits that already-in-flight/resolved
+    // promise instead of starting a fresh request from zero. Result is
+    // consumed nowhere here on purpose; IdeaGrid still owns the ideas
+    // state.
+    api.listIdeas(id).catch(() => {});
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 2026-07-19, Lino: Pipeline-Module sind jetzt ein echtes Freischalt-Gate
+  // (vorher rein informativ, siehe types.ts). "Wählt man bei der Projekt-
+  // Erstellung nur Postproduction aus, muss das Projekt auch dort starten,
+  // die anderen Seiten sind NICHT verfügbar ausser man aktiviert sie in den
+  // Projekteinstellungen." Diese Seite deckt Ideen (module_concept) UND
+  // Scripting/Szenen (module_scripting) über dasselbe activeView ab — sind
+  // BEIDE aus, hat diese Route für dieses Projekt gar nichts zu zeigen, also
+  // direkt weiter zur einzig verbleibenden freigeschalteten Seite. Reagiert
+  // auch auf spätere Umschaltungen in den Projekteinstellungen (nicht nur
+  // beim ersten Laden), z.B. wenn man mitten in der Szenenansicht sitzt und
+  // module_scripting dort selbst ausschaltet.
+  useEffect(() => {
+    if (!data) return;
+    if (!data.module_concept && !data.module_scripting) {
+      router.replace(data.module_postproduction ? `/projects/${id}/postproduction` : "/projects");
+      return;
+    }
+    if (activeView === "ideas" && !data.module_concept) setActiveView("scenes");
+    else if (activeView === "scenes" && !data.module_scripting) setActiveView("ideas");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.module_concept, data?.module_scripting, data?.module_postproduction]);
 
   // Lightweight "live updates" (2026-07-10): polls every 12s while this
   // page is open so a teammate's edits show up without anyone reloading —
@@ -385,6 +693,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // flash — no isLoading gate anywhere in this component either.
   useEffect(() => {
     const interval = setInterval(() => {
+      // 2026-08-31 — perf pass: was firing both requests every 12s
+      // regardless of whether the tab was even visible — a backgrounded/
+      // minimized tab (a very common way people actually leave this page
+      // open all day) paid the same network+re-render cost as an actively
+      // watched one, for zero user-facing benefit (nothing to show while
+      // hidden anyway). Skipping while hidden also means the very next
+      // poll after the tab comes back to front fires immediately on the
+      // existing 12s cadence, not after some separate "just returned"
+      // delay — no staleness regression, just fewer wasted background ticks.
+      if (document.visibilityState !== "visible") return;
       api.projectDetail(id).then(setData).catch(() => {});
       api.listAnnotations(id).then(setAnnotations).catch(() => {});
     }, 12000);
@@ -578,80 +896,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  // Section-level reordering (drag the whole section, scenes included) —
-  // same "insert before/after target depending on drag direction" approach
-  // as the iOS app's ShotListViewModel.reorderSection, since the backend
-  // has no dedicated "move section" endpoint (unlike scenes/shots, which
-  // do — see reorderScenes). Plain native HTML5 drag-and-drop (not dnd-kit)
-  // on purpose, kept as an independent mechanism from the scene-level
-  // dnd-kit DndContext below (handleSceneDragEnd) rather than folding
-  // section-dragging into the same DndContext — a section drag-handle is
-  // never a dnd-kit sortable item, so there's no event conflict, and it
-  // avoids having to discriminate "is this drag a scene or a whole
-  // section" inside one shared collision-detection/onDragEnd handler.
-  //
-  // Insertion-line-only, same as scenes (see handleSceneDragOver's
-  // comment) — nothing in `data.sections` moves until drop, only the
-  // indicator line updates during the drag itself.
-  function handleSectionDragStart(id: string) {
-    setDraggingSectionId(id);
-    dragOriginSectionsRef.current = data?.sections ?? null;
-  }
-
-  function handleSectionDragOver(targetId: string, e: React.DragEvent) {
-    if (!draggingSectionId || draggingSectionId === targetId) {
-      setSectionInsertionIndicator(null);
-      return;
-    }
-    const rect = e.currentTarget.getBoundingClientRect();
-    setSectionInsertionIndicator({ targetId, edge: e.clientY < rect.top + rect.height / 2 ? "top" : "bottom" });
-  }
-
-  // Recomputes the definitive final order fresh from the actual drop
-  // event's own cursor position (same reasoning as handleSceneDragEnd —
-  // never trust stale hover state), so what's persisted always matches
-  // exactly what the insertion line last pointed at. computeSectionReorder
-  // is still used for the local array (drives the visible order
-  // immediately), but persistence is now a single api.moveSection call
-  // (2026-07-13) — same server-authoritative move_section endpoint iOS
-  // uses, replacing the old per-changed-section Promise.all(patchSection)
-  // loop (see move_section in the backend for why: one shared computation
-  // instead of two independently-implemented, potentially divergent ones).
-  async function handleSectionDrop(targetId: string, e: React.DragEvent) {
-    setSectionInsertionIndicator(null);
-    const origin = dragOriginSectionsRef.current;
-    dragOriginSectionsRef.current = null;
-    const draggedId = draggingSectionId;
-    setDraggingSectionId(null);
-
-    if (!data || !origin || !draggedId || draggedId === targetId) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const insertAfter = e.clientY >= rect.top + rect.height / 2;
-    const next = computeSectionReorder(data.sections, draggedId, targetId, insertAfter);
-    if (!next) return;
-    setData((prev) => (prev ? { ...prev, sections: next } : prev));
-    const idx = next.findIndex((s) => s.id === draggedId);
-    const beforeId = next[idx + 1]?.id ?? null;
+  // #11 Schritt 5 (Postproduction-Tracking): "Alle Szenen im Kasten? Ab in
+  // die Postproduction?" — explizit pro Section bestaetigt, nicht
+  // automatisch (2026-07-17, Lino), siehe SectionPostproductionPatch-
+  // Kommentar im Backend.
+  async function confirmSendToPostproduction() {
+    if (!sendToPostproduction) return;
     try {
-      await api.moveSection(draggedId, beforeId);
+      const updated = await api.sendSectionToPostproduction(sendToPostproduction.id);
+      setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
+      toast.showSuccess(`"${updated.name}" ist jetzt in der Postproduction.`);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Umsortieren fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+    } finally {
+      setSendToPostproduction(null);
     }
   }
 
-  // Fires on the drag SOURCE after every drag, successful or not (native
-  // D&D always calls dragend). Nothing was ever mutated during the drag
-  // itself (see above), so cancelling just clears the indicator/state —
-  // no revert needed.
-  function handleSectionDragEnd() {
-    setDraggingSectionId(null);
-    setSectionInsertionIndicator(null);
-    dragOriginSectionsRef.current = null;
-  }
+  // Section-level reordering now runs through the shared dnd-kit
+  // DndContext below — see handleSceneDragStart/Over/End/Cancel's
+  // isSectionId branches, and SectionBlock's own useSortable for the
+  // handle. computeSectionReorder (still used by handleSceneDragEnd's
+  // section branch) stays defined further down.
 
   // Scene-level drag start — snapshots the pre-drag order so a cancelled or
   // invalid drop can restore it exactly (see handleSceneDragCancel/End).
   function handleSceneDragStart(event: DragStartEvent) {
+    const id = String(event.active.id);
+    if (isSectionId(id)) {
+      setDraggingSectionId(id);
+      dragOriginSectionsRef.current = data?.sections ?? null;
+      return;
+    }
     setActiveSceneId(String(event.active.id));
     activeSceneIdRef.current = String(event.active.id);
     dragOriginScenesRef.current = data?.scenes ?? null;
@@ -672,8 +948,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // handleSceneDragEnd computes and applies the real result in one step,
   // so the target a user is hovering can never drift away mid-drag. This
   // was Lino's own suggested alternative ("Notion-artige Indikatorlinie").
+  // 2026-07-21: tried live reflow again (matching IdeaImageReorderGrid),
+  // twice — both attempts had real, Lino-confirmed bugs (visual corruption,
+  // then wrong landing positions even after a fix). Reverted back to this
+  // insertion-line design, which IS the confirmed-working baseline.
   function handleSceneDragOver(event: DragOverEvent) {
     const { active, over } = event;
+    if (isSectionId(String(active.id))) {
+      if (!over || active.id === over.id || !isSectionId(String(over.id)) || !data) {
+        setSectionInsertionIndicator(null);
+        return;
+      }
+      // 2026-07-21 fix (real bug, found via console-logged live testing after
+      // Lino reported sections "always snap back to their old position"):
+      // this used to split top/bottom by comparing the CURSOR's Y position
+      // against `over.rect`'s vertical center — but `over.rect` is the whole
+      // SectionBlock wrapper (header + scene grid + padding), not just the
+      // visible grip/title row, so its center sits much lower than where a
+      // user naturally releases while aiming at the title text. Releasing
+      // anywhere near the visible row overwhelmingly resolved to "bottom"
+      // (insert after) — for a simple drag-the-lower-one-up-past-the-upper-
+      // one gesture, "insert after" is a NO-OP (it's already positioned
+      // after), so the drop visibly did nothing, reading exactly like a
+      // snap-back even though the code ran correctly end to end. Fixed by
+      // dropping pixel geometry entirely: compare the dragged section's
+      // CURRENT index to the target's — moving it earlier in the list
+      // inserts it BEFORE the target, moving it later inserts it AFTER,
+      // matching what a user actually just did with their mouse regardless
+      // of exactly where within the target row they released.
+      const activeIdx = sections.findIndex((s) => s.id === String(active.id));
+      const overIdx = sections.findIndex((s) => s.id === String(over.id));
+      const edge: "top" | "bottom" = activeIdx > overIdx ? "top" : "bottom";
+      setSectionInsertionIndicator({ targetId: String(over.id), edge });
+      return;
+    }
     if (!over) {
       lastOverIdRef.current = null;
       setInsertionIndicator(null);
@@ -738,6 +1046,38 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // real final `over` so the result always matches exactly what the
   // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
+    const { active: sectionActive, over: sectionOver } = event;
+    if (isSectionId(String(sectionActive.id))) {
+      setDraggingSectionId(null);
+      const indicator = sectionInsertionIndicator;
+      setSectionInsertionIndicator(null);
+      const origin = dragOriginSectionsRef.current;
+      dragOriginSectionsRef.current = null;
+      if (!data || !origin) return;
+      const draggedId = String(sectionActive.id);
+      const targetId = indicator?.targetId ?? (sectionOver ? String(sectionOver.id) : null);
+      if (!targetId || targetId === draggedId || !isSectionId(targetId)) return;
+      // Same index-direction rule as handleSceneDragOver's indicator (see
+      // its comment) — falls back to it here too on the rare drop that
+      // never got an onDragOver first (e.g. a very fast flick).
+      const insertAfter =
+        indicator?.targetId === targetId
+          ? indicator.edge === "bottom"
+          : sections.findIndex((s) => s.id === draggedId) < sections.findIndex((s) => s.id === targetId);
+      const next = computeSectionReorder(data.sections, draggedId, targetId, insertAfter);
+      if (!next) return;
+      setData((prev) => (prev ? { ...prev, sections: next } : prev));
+      const idx = next.findIndex((s) => s.id === draggedId);
+      const beforeId = next[idx + 1]?.id ?? null;
+      (async () => {
+        try {
+          await api.moveSection(draggedId, beforeId);
+        } catch (e) {
+          toast.showError(e instanceof ApiError ? e.message : "Umsortieren fehlgeschlagen.");
+        }
+      })();
+      return;
+    }
     setActiveSceneId(null);
     activeSceneIdRef.current = null;
     activeSceneDragRef.current = false;
@@ -802,7 +1142,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Drag cancelled (Escape, dropped outside any droppable, etc.) — revert
   // the live preview reordering from handleSceneDragOver, nothing was ever
   // persisted to the backend so a plain state restore is enough.
-  function handleSceneDragCancel() {
+  function handleSceneDragCancel(event: DragCancelEvent) {
+    if (isSectionId(String(event.active.id))) {
+      setDraggingSectionId(null);
+      setSectionInsertionIndicator(null);
+      dragOriginSectionsRef.current = null;
+      return;
+    }
     setActiveSceneId(null);
     activeSceneIdRef.current = null;
     activeSceneDragRef.current = false;
@@ -866,14 +1212,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // 2026-07-13, Lino: "beim Klick auf PDF Export soll zuerst gefragt werden,
   // ob Kachelansicht oder Tabellenansicht exportiert werden soll" — was a
   // single click straight to the (card-only) export before.
-  async function exportPdf(view: "cards" | "table") {
+  // 2026-08-08, Lino: this button always exported the Scenes/shotlist PDF
+  // even when triggered from the Ideas page — irrelevant there (a project
+  // usually has no scenes yet at the ideas stage). Added a third `"ideas"`
+  // view (backend: build_project_pdf_ideas) — one card per Idea with its
+  // full image gallery — and the toolbar below now only offers the
+  // Kachelansicht/Tabellenansicht choice on the Scenes page, a single
+  // one-click export on the Ideas page.
+  async function exportPdf(view: "cards" | "table" | "ideas") {
     if (!data) return;
     setExportingPdf(true);
     try {
       const url = await api.projectPdfUrl(data.id, view);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${data.name || "shotlist"}.pdf`;
+      a.download = `${data.name || (view === "ideas" ? "ideen" : "shotlist")}.pdf`;
       a.click();
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "PDF-Export fehlgeschlagen.");
@@ -882,7 +1235,80 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  if (!data) {
+  // 2026-07-26, Lino: "öffnet man ein projekt flasht IMMER NOCH eine
+  // andere seite... bevor sie dann den content und die richtige seite
+  // lädt" — the module-gate redirect below (useEffect) only ever RUNS
+  // after this component has already rendered+painted once with the
+  // default `activeView` ("ideas"), since effects fire post-paint — a
+  // real (if brief) flash of the wrong page for any project that's about
+  // to redirect away, not just the tile-click path (see projects/page.tsx's
+  // own `targetHref` fix for that one). Extending the existing `!data`
+  // loading gate to ALSO cover "data is here, but we already know this
+  // render will just redirect" means the wrong view is never painted in
+  // the first place — the effect further down still performs the actual
+  // navigation (and still reacts to a LATER module toggle mid-session,
+  // its own original purpose), this only changes what's on screen while
+  // that's in flight.
+  const needsPostproductionRedirect = !!data && !data.module_concept && !data.module_scripting;
+
+  // 2026-08-31 — perf pass: scenesIn/shotsFor/sections/unsectioned/lastScene
+  // used to be plain `const`s recomputed on EVERY render (filtering+sorting
+  // the full scenes/shots arrays from scratch) — since shotsFor is called
+  // once PER SCENE to build its shot list, a project with 50 scenes/200
+  // shots re-scanned the whole shots array 50 times per render, including
+  // every no-op 12s poll tick. Grouped once per actual data change instead
+  // (same "group into a Map, O(1) lookup per call" fix already applied to
+  // the iOS app's ShotListViewModel.scenes(in:)/shots(in:) this same
+  // session), memoized on the underlying arrays so an unrelated state
+  // change elsewhere in this large component doesn't re-run the grouping.
+  // Placed here (before the `!data` early return below) because Hooks must
+  // run unconditionally on every render — data can still be null/undefined
+  // this early, hence the `?? []` fallbacks.
+  const scenesBySectionId = useMemo(() => {
+    const map = new Map<string | null, Scene[]>();
+    const sorted = [...(data?.scenes ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+    for (const s of sorted) {
+      const key = s.section_id;
+      const list = map.get(key);
+      if (list) list.push(s);
+      else map.set(key, [s]);
+    }
+    return map;
+  }, [data?.scenes]);
+  const scenesIn = (sectionId: string | null) => scenesBySectionId.get(sectionId) ?? [];
+
+  const shotsBySceneId = useMemo(() => {
+    const map = new Map<string | null, Shot[]>();
+    const sorted = [...(data?.shots ?? [])]
+      .filter((s) => s.status !== "deleted")
+      .sort((a, b) => a.sort_order - b.sort_order);
+    for (const s of sorted) {
+      const list = map.get(s.scene_id);
+      if (list) list.push(s);
+      else map.set(s.scene_id, [s]);
+    }
+    return map;
+  }, [data?.shots]);
+  const shotsFor = (sceneId: string) => shotsBySceneId.get(sceneId) ?? [];
+
+  // is_unplanned sections (Postproduction's "+ Video" button, #251) are
+  // deliberately invisible everywhere except their own video tile on the
+  // Postproduction page (Lino: "soll KEINE sections box erstellt werden") —
+  // that rule only ever got enforced ON that page; nothing excluded them
+  // from the Scenes overview too, so they leaked through here as an empty,
+  // functionless "0/0" section box. Filtered out same as the Postproduction
+  // page already filters its OWN empty-state placeholder for these.
+  const sections = useMemo(
+    () => [...(data?.sections ?? [])].filter((s) => !s.is_unplanned).sort((a, b) => a.sort_order - b.sort_order),
+    [data?.sections]
+  );
+  const unsectioned = scenesIn(null);
+  const lastScene = useMemo(
+    () => [...(data?.scenes ?? [])].sort((a, b) => a.sort_order - b.sort_order).at(-1) ?? null,
+    [data?.scenes]
+  );
+
+  if (!data || needsPostproductionRedirect) {
     return (
       <AppShell>
         <div className="flex-1 flex items-center justify-center text-white/50">Lädt…</div>
@@ -897,117 +1323,383 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // first position either (Lino, 2026-07-11: "die Info-Kachel kann man
   // jetzt überall platzieren... kann wie eine normale Szenenkachel
   // behandelt werden von der Platzierung her") — plain sort_order for
-  // everything, same as every other scene. Still just sort_order compare
-  // (like shotsFor/sections below) — the backend relationship this data
-  // comes from doesn't guarantee sort_order sequence on its own, so
-  // without this a fresh page load could show scenes in a different order
-  // than whatever was last dragged into place.
-  const scenesIn = (sectionId: string | null) =>
-    data.scenes
-      .filter((s) => s.section_id === sectionId)
-      .sort((a, b) => a.sort_order - b.sort_order);
+  // everything, same as every other scene. scenesIn/shotsFor/sections/
+  // unsectioned/lastScene themselves now live ABOVE the `!data` early
+  // return above (see that block's own doc comment — memoized there since
+  // Hooks can't follow a conditional early return).
 
-  const shotsFor = (sceneId: string) => data.shots.filter((s) => s.scene_id === sceneId && s.status !== "deleted").sort((a, b) => a.sort_order - b.sort_order);
+  // Plain-TXT export of every scene's "Good Take" note, grouped by Section
+  // in the same order as the Kachelansicht (sections' own sort_order, then
+  // each scene's sort_order inside it) — Lino wants an overview list of
+  // just the good takes, not a full shotlist export, so unlike PDF export
+  // this is built client-side (no backend endpoint). Every real scene is
+  // listed even without a good-take note (Lino, 2026-08-08: "sollen auch
+  // trotzdem mit exportiert werden aber mit dem Vermerk 'Nicht
+  // eingetragen'") — only is_intermediate_step scenes are skipped, since
+  // those never show the good-take pill in SceneCard at all (no field to
+  // report on). "Kachel ID" is the number/letter badge printed on the tile
+  // itself (`${scene.number}${scene.letter}`, same as SceneCard's
+  // ColorBadge), NOT the internal scene.id UUID — Lino corrected this
+  // after the first version exported the raw UUID. Exact block layout below
+  // (label + tabs, blank lines, 54-dash separator) matches the reference
+  // file Lino uploaded via /compare 2026-08-08 — "Titel:" gets 2 tabs
+  // (vs. 1 for the other two labels) so all three values land on the same
+  // column under 8-wide tab stops (both "Kachel ID:" and "Good Take:" are
+  // already 10 chars, "Titel:" is only 6).
+  function exportGoodTakes() {
+    if (!data) return;
+    const groups: { label: string; scenes: Scene[] }[] = [
+      ...sections.map((section) => ({ label: section.name || t("workflow.goodTakes"), scenes: scenesIn(section.id) })),
+      { label: "Ohne Abschnitt", scenes: unsectioned },
+    ]
+      .map((g) => ({ label: g.label, scenes: g.scenes.filter((s) => !s.is_intermediate_step) }))
+      .filter((g) => g.scenes.length > 0);
 
-  const sections = [...data.sections].sort((a, b) => a.sort_order - b.sort_order);
-  const unsectioned = scenesIn(null);
-  const lastScene = [...data.scenes].sort((a, b) => a.sort_order - b.sort_order).at(-1) ?? null;
+    if (groups.length === 0) {
+      toast.showError(t("workflow.goodTakesEmpty"));
+      return;
+    }
+
+    const lines: string[] = [`${t("workflow.goodTakes")} – ${data.name}`, ""];
+    groups.forEach(({ label, scenes }) => {
+      lines.push(label);
+      scenes.forEach((scene) => {
+        lines.push(`Kachel ID:\t${scene.number}${scene.letter ?? ""}`);
+        lines.push(`Titel:\t\t${scene.name || "-"}`);
+        lines.push("");
+        lines.push(`Good Take:\t${scene.good_take_filename || "nicht eingetragen"}`);
+        lines.push("");
+        lines.push("-".repeat(54));
+        lines.push("");
+      });
+    });
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${data.name || "good-takes"} - Good Takes.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <AppShell>
+      <Suspense fallback={null}>
+        <NotificationParamsWatcher
+          onParams={({ openIdea, openScene, openComment }) => {
+            if (openIdea) setAutoOpenIdeaId(openIdea);
+            if (openScene) setAutoOpenSceneId(openScene);
+            if (openComment) setAutoOpenCommentId(openComment);
+          }}
+        />
+      </Suspense>
       {/* pb-28 (not just py-8) so the fixed "+ Hinzufügen" FAB never
-          overlaps the last scene/section when scrolled to the bottom. */}
-      <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28">
-        <div className="flex items-start justify-between mb-8 gap-3 flex-wrap">
-          <div>
-            <Link href="/projects" className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1 mb-1">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m15 18-6-6 6-6" />
-              </svg>
-              Projekte
-            </Link>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              {data.emoji && <span>{data.emoji}</span>} {data.name}
-            </h1>
+          overlaps the last scene/section when scrolled to the bottom.
+          2026-07-18, Lino: "Animation von Projektübersicht zur ersten
+          workflow seite ist schrecklick... swipe von rechts nach links wie
+          bei den anderen workflow transitions" — replaces the old flying-
+          tile-morph landing (TileMorphOverlay/finishMorph) with the SAME
+          enter-from-the-right variant used by postproduction/page.tsx's
+          entranceTransition. Deliberately does NOT wrap EdgeNavButton/the
+          "+ Hinzufügen" FAB below (both `position: fixed`, which breaks
+          the moment an ancestor gets a CSS transform from x/scale/filter
+          animate props) — this motion.div closes early, right before that
+          block starts, see the matching comment down there. */}
+      <div
+        className="flex-1 mx-auto w-full px-4 sm:px-6 pt-8 pb-28"
+        // 2026-07-21, Lino: "drückt man den Tabellenmodus, wird die
+        // tabellenbreite viel breiter dargestellt aber so das die
+        // navigationspfeile links und rechts nicht berühre werden" —
+        // EdgeNavButton sitzt fixed 28px vom echten Viewport-Rand + 64px
+        // Klickfläche (siehe EdgeNavButton.tsx). Folgeanfrage (selber Tag):
+        // "muss noch ein wenig breiter sein (100px) und soll sich nach der
+        // Bildschirmgroesse skalieren" — Cap 1900->2000px, Rand-Abzug
+        // 200->160px (noch immer deutlich mehr als die ~92px, die die
+        // EdgeNavButtons tatsächlich brauchen) für spürbar mehr Breite auf
+        // jeder Fensterbreite, nicht nur am Cap. Normale Kachel-/Ideen-
+        // Ansicht bleibt unverändert bei max-w-6xl.
+        style={{ maxWidth: activeView === "scenes" && viewMode === "table" ? "min(2000px, calc(100vw - 160px))" : "72rem" }}
+      >
+        {/* 2026-07-30, Lino: "der pipeline titel soll jeweils horizontal
+            zentriert auf der gleichen höhe wie < projekt und den buttons
+            rechts sein" — the workflow-stage label ("Ideen"/"Script") used
+            to sit left-aligned directly under the back-link, its own row
+            further down than the buttons. Pulled it OUT of the left column
+            into an absolutely-centered layer of this same row (centered
+            against the row's full width AND height, not just the left
+            half), same technique on both this page and postproduction/
+            page.tsx so the header reads identically across every workflow
+            stage. client_name/h1 stay in their own row below, unaffected. */}
+        <div className="relative flex items-center justify-between mb-2 gap-3 flex-wrap">
+          {/* 2026-07-21, Lino: "die animation von einer workflow seite
+              zurück zur projektübersicht ist noch sehr hackelig" — THIS
+              was the actual culprit, not the edge chevron button below
+              (that one already called goToProjectsWithTransition and was
+              fine). This breadcrumb-style link was a plain <Link> — an
+              instant route change with zero exit animation — while it's
+              almost certainly the more-used affordance since it's the
+              one with visible text right next to the title, not an
+              icon-only edge button. Now shares the exact same transition
+              function as the edge button, so both feel identical. */}
+          <button
+            type="button"
+            onClick={goToProjectsWithTransition}
+            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            {t("workflow.backToProjects")}
+          </button>
+          {/* 2026-07-18, Lino: "irgendwo braucht es noch einen grossen
+                Titel der zeigt auf welcher Workflowseite man ist: Ideen/
+                Konzept, Script/Shotlist, Postproduction" — Postproduction
+                hat das schon (ihr eigenes h1 "Postproduction", siehe
+                postproduction/page.tsx), hier fehlte das Pendant für die
+                geteilte Ideen/Szenen-Route. */}
+            {/* 2026-07-18, Lino: "Workflow Titel bitte auch in einem coolen
+                font darstellen" — font-bebas statt reinem font-bold, wie h1
+                (siehe globals.css's h1-Regel). 2026-07-19: gewechselt von
+                font-anton auf font-bricolage zusammen mit der h1-Regel;
+                2026-08-06 zusammen mit der h1-Regel weiter auf Bebas Neue —
+                nur das Logo-Wortzeichen selbst bleibt Anton. */}
+            {/* 2026-07-21, Lino: "den Workflow titel NICHT blau machen... ändere
+                das auf eher was gräuliches" — war text-blue-400, jetzt neutral
+                grau wie das Postproduction-Pendant (postproduction/page.tsx). */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+            <div className="font-bebas text-xl uppercase tracking-wide text-white/40 whitespace-nowrap">
+              {activeView === "ideas" ? t("workflow.ideasConcept") : t("workflow.scriptShotlist")}
+            </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button variant="secondary" size="sm" onClick={() => setShowTeam(true)}>
-              <UsersIcon /> Team
-            </Button>
+          <div className="relative z-10 flex gap-2 flex-wrap">
             <Button
               variant={showAnnotations ? "primary" : "secondary"}
               size="sm"
               onClick={() => setShowAnnotations((v) => !v)}
               className="relative"
             >
-              <CommentIcon /> Kommentare
+              <CommentIcon /> {t("workflow.comments")}
               {annotations.some((a) => a.status === "open") && (
                 <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                   {annotations.filter((a) => a.status === "open").length}
                 </span>
               )}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => setShowNotion(true)}>
-              <NotionIcon /> Notion-Import
-            </Button>
-            <Menu
-              trigger={
-                <Button variant="secondary" size="sm" disabled={exportingPdf}>
-                  <DocIcon /> {exportingPdf ? "Exportiert…" : "PDF"}
-                </Button>
-              }
-            >
-              {(close) => (
-                <>
-                  <MenuItem
-                    onClick={() => {
-                      exportPdf("cards");
-                      close();
-                    }}
-                  >
-                    Kachelansicht
-                  </MenuItem>
-                  <MenuItem
-                    onClick={() => {
-                      exportPdf("table");
-                      close();
-                    }}
-                  >
-                    Tabellenansicht
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
+            {/* 2026-07-17, Lino: "Notion Import brauchen wir auch nicht (nur
+                den button ausblenden, an der funktion arbeiten wir noch
+                weiter)" — Button raus, showNotion-State + NotionImportModal
+                bewusst NICHT entfernt, bleibt fuer die Weiterarbeit
+                bestehen, nur aktuell von nirgendwo mehr erreichbar. */}
+            {activeView === "ideas" ? (
+              <Button variant="secondary" size="sm" disabled={exportingPdf} onClick={() => exportPdf("ideas")}>
+                <DocIcon /> {exportingPdf ? t("workflow.pdfExporting") : t("workflow.pdf")}
+              </Button>
+            ) : (
+              <Menu
+                trigger={
+                  <Button variant="secondary" size="sm" disabled={exportingPdf}>
+                    <DocIcon /> {exportingPdf ? t("workflow.pdfExporting") : t("workflow.pdf")}
+                  </Button>
+                }
+              >
+                {(close) => (
+                  <>
+                    <MenuItem
+                      onClick={() => {
+                        exportPdf("cards");
+                        close();
+                      }}
+                    >
+                      {t("workflow.pdfCardView")}
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        exportPdf("table");
+                        close();
+                      }}
+                    >
+                      {t("workflow.pdfTableView")}
+                    </MenuItem>
+                  </>
+                )}
+              </Menu>
+            )}
+            {activeView === "scenes" && (
+              <Button variant="secondary" size="sm" onClick={exportGoodTakes}>
+                <GoodTakeIcon /> {t("workflow.goodTakes")}
+              </Button>
+            )}
+            {/* 2026-07-17, Lino: "der teilen button soll immer die seite
+                teilen auf der man gerade ist... keine Auswahl beim teilen"
+                — no menu, shareKind already tracks activeView live. */}
             <Button variant="secondary" size="sm" onClick={() => setShowShareModal(true)}>
-              <ShareIcon /> Teilen
+              <ShareIcon /> {t("workflow.share")}
             </Button>
-            <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
-              <button
-                onClick={() => setViewModePersisted("grid")}
-                title="Kachelansicht"
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
-              >
-                <GridIcon />
-              </button>
-              <button
-                onClick={() => setViewModePersisted("table")}
-                title="Tabellenansicht"
-                className={`p-1.5 rounded-lg transition-colors ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
-              >
-                <TableIcon />
-              </button>
-            </div>
+            {/* 2026-07-17, Lino: "auf der Ideenseite braucht es den
+                Tabellenbutton nicht, der soll auf der Szenenübersicht
+                vorhanden sein" — was always visible regardless of which
+                part of the page you were looking at. */}
+            {activeView === "scenes" && (
+              <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
+                <button
+                  onClick={() => setViewModePersisted("grid")}
+                  title="Kachelansicht"
+                  className={`p-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+                >
+                  <GridIcon />
+                </button>
+                <button
+                  onClick={() => setViewModePersisted("table")}
+                  title="Tabellenansicht"
+                  className={`p-1.5 rounded-lg transition-colors ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+                >
+                  <TableIcon />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <ProjectInfoBox
-          project={data}
-          members={members}
-          onProjectChange={(updater) => setData((prev) => (prev ? { ...prev, ...updater(prev) } : prev))}
-          onOpenTeam={() => setShowTeam(true)}
-          todoLists={data.todo_lists}
-          onTodoListsChange={(updater) => setData((prev) => (prev ? { ...prev, todo_lists: updater(prev.todo_lists) } : prev))}
-        />
+        <div className="mb-8">
+          {/* 2026-07-29, Lino: "Auftraggeber und Projektname sollen dann
+              IMMER im header auf den pipelines dargestellt werden" —
+              client_name renders as a line above the h1 whenever a project
+              has one set (most existing real projects don't, since the
+              client used to be informally baked into `name` itself instead
+              — see client_name's own comment in models.py). Same treatment
+              on postproduction/page.tsx's header.
+              2026-07-30, Lino: "auftraggeber soll jeweils grösser dargestellt
+              werden auf den pipeline seiten" — was text-sm, bumped to
+              text-lg so it reads as its own real header line.
+              2026-08-06, Lino: "Auftraggeber werden IMMER mit der auf der
+              Kachel ausgewählten Farbe dargestellt (Textfarbe)" — was a
+              fixed text-white/60 gray, now the project's own color
+              (data.color, same value the tile itself uses). Same treatment
+              ported to postproduction/page.tsx's header and all three
+              public preview pages (project_color in their own response). */}
+          {data.client_name && (
+            <div className="text-lg font-medium mb-0.5" style={{ color: data.color }}>
+              {data.client_name}
+            </div>
+          )}
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            {data.emoji && <span>{data.emoji}</span>} {data.name}
+          </h1>
+        </div>
+
+        {/* 2026-07-17, Lino: "rechts ein Pfeil-Button (Script/Shotlist
+            Editor)... mit einer coolen Swipe-Animation auf die Szenenseite...
+            links ein Pfeil-Button (Ideen) zurück, smooth animiert" — the
+            Ideen-Kachelübersicht (Planungssektor) and the Scripting-Tool
+            (Sections/Scenes below) used to share one continuously-scrolled
+            page; now two swipeable panels, one mounted at a time
+            (AnimatePresence mode="wait", same slide+fade spring feel as
+            IdeaFocusView's own idea-to-idea navigation) instead of a scroll
+            position deciding which one you're "looking at". `perspective`
+            on this wrapping div (CSS perspective only affects a 3D
+            transform on a CHILD, not the element carrying it itself) is
+            what makes the panels' rotateY in viewPanelVariants actually
+            render as a 3D turn instead of a flat skew. */}
+        <div>
+          {activeView === "ideas" ? (
+            <div>
+              <ProjectInfoBox
+                project={data}
+                members={members}
+                onProjectChange={(updater) => setData((prev) => (prev ? { ...prev, ...updater(prev) } : prev))}
+                onOpenTeam={() => setShowTeam(true)}
+                todoLists={data.todo_lists}
+                onTodoListsChange={(updater) => setData((prev) => (prev ? { ...prev, todo_lists: updater(prev.todo_lists) } : prev))}
+                showDateLocation={false}
+              />
+
+              {/* Planungssektor (2026-07-16) — idea tiles + client-approval
+                  share link. Self-contained, own data fetch. */}
+              <IdeaGrid
+                ref={ideaGridRef}
+                projectId={data.id}
+                onIdeaApproved={() => api.projectDetail(data.id).then(setData)}
+                autoOpenIdeaId={autoOpenIdeaId}
+                onAutoOpened={() => {
+                  setAutoOpenIdeaId(null);
+                  router.replace(`/projects/${id}`, { scroll: false });
+                }}
+                annotations={annotations}
+                highlightedAnnotationId={highlightedAnnotationId}
+                onAnnotationUpdated={(updated) => setAnnotations((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))}
+                myRole={myRole}
+              />
+            </div>
+          ) : (
+            <div>
+        {/* 2026-08-07, Lino: "Auf der Script/Shotliste Seite soll keine
+            'Projektinfos' Kachel oben mehr sein!" — removes the #234
+            instance below (Ideas view keeps its own, unaffected). Team-
+            Zugriff bleibt über den Header-Button (onOpenTeam), Todo-Listen
+            bleiben über die Ideen-Ansicht sowie die globale Todo-Sidebar
+            erreichbar. */}
+
+        {/* 2026-08-30 — Skript-Auswahlübersicht (siehe openSectionId's
+            eigener Kommentar oben): ohne geöffneten Abschnitt zeigt die
+            Skript-Seite nur noch eine Kachel-Übersicht der Abschnitte
+            (jeder Abschnitt entspricht einer abgenommenen Idee, siehe
+            approve_idea im Backend) statt sofort aller Szenen aller
+            Abschnitte gleichzeitig. Klick auf eine Kachel öffnet NUR
+            diesen einen Abschnitt in der bestehenden, unveränderten
+            Shot-Planungsansicht darunter (siehe die Filterung von
+            `sections` weiter unten). */}
+        {openSectionId === null ? (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+            {sections.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => setOpenSectionId(section.id)}
+                className="text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
+              >
+                <div className="font-semibold truncate">{section.name}</div>
+                <div className="text-sm text-white/50 mt-1">
+                  {scenesIn(section.id).length} {t("scriptOverview.sceneCount")}
+                </div>
+              </button>
+            ))}
+            {unsectioned.length > 0 && (
+              <button
+                onClick={() => setOpenSectionId(null)}
+                disabled
+                className="text-left p-4 rounded-2xl bg-white/[0.02] border border-white/5 opacity-50 cursor-default"
+                title={t("scriptOverview.unsectionedHint")}
+              >
+                <div className="font-semibold truncate">{t("scriptOverview.unsectionedTitle")}</div>
+                <div className="text-sm text-white/50 mt-1">{unsectioned.length}</div>
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={() => setOpenSectionId(null)}
+              className="mb-4 text-sm text-white/60 hover:text-white flex items-center gap-1.5"
+            >
+              ← {t("scriptOverview.backToOverview")}
+            </button>
+
+            {/* 2026-08-30 — Set-Marker-Feature (Timecode-Leiste), NUR
+                innerhalb der geöffneten Shotlist sichtbar (Lino: "der
+                timecode muss immer in der shotlist selber laufen! NICHT
+                in der uebersicht!! jedes video/projekt braucht ja seinen
+                eigenen timecode!") — `key={section.id}` erzwingt eine
+                frische Komponenten-Instanz (frisches selectedFps etc.) bei
+                jedem Abschnittswechsel, kein Zustand leckt zwischen
+                Abschnitten. `allScenesDone` beendet die laufende Uhr
+                automatisch, sobald jede Szene "im Kasten" ist. */}
+            {(() => {
+              const openSection = sections.find((s) => s.id === openSectionId);
+              if (!openSection) return null;
+              const scenesInSection = scenesIn(openSection.id);
+              const allScenesDone = scenesInSection.length > 0 && scenesInSection.every((s) => s.completed);
+              return <TimecodeBar key={openSection.id} section={openSection} allScenesDone={allScenesDone} />;
+            })()}
 
         {/* One shared DndContext for every section's scene grid (dnd-kit's
             "multiple containers" pattern) — lets a scene be dragged from one
@@ -1030,7 +1722,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           // sceneCollisionDetection layers a rectIntersection fallback on
           // top for when the cursor is in the gap between cards (Lino:
           // "man muss mega genau treffen") — see its own comment above.
-          collisionDetection={sceneCollisionDetection}
+          collisionDetection={dragCollisionDetection}
           // Faster viewport-edge auto-scroll while dragging (2026-07-13,
           // Lino: default dnd-kit acceleration was too slow; bumped again
           // 2026-07-14, still felt "super langsam" at 40 — dnd-kit scrolls
@@ -1044,7 +1736,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           onDragEnd={handleSceneDragEnd}
           onDragCancel={handleSceneDragCancel}
         >
-          {sections.map((section) => {
+          {/* Outer SortableContext for the sections themselves (vertical
+              list) — sibling to each section's own inner scene
+              SortableContext (see SectionBlock), same "multiple containers"
+              shape dnd-kit's docs describe, just one level deeper than the
+              scenes-only version this page already had. */}
+          <SortableContext items={sections.filter((s) => s.id === openSectionId).map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          {sections.filter((section) => section.id === openSectionId).map((section) => {
             // A newly created section starts with zero scenes — it used to be
             // filtered out entirely here, which made it invisible right after
             // creating it (no header, no "+ Szene" row, no way to ever put a
@@ -1067,15 +1765,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   setEditingSection(s);
                   setEditSectionName(s.name);
                 }}
-                // undefined (not just a no-op) while comment mode is
-                // active — SectionBlock only renders the drag handle at
-                // all when onSectionDragStart is provided, same "man kann
-                // in diesem modus keine kacheln verschieben" rule as
-                // scenes' dragDisabled.
-                onSectionDragStart={showAnnotations ? undefined : handleSectionDragStart}
-                onSectionDragOver={showAnnotations ? undefined : handleSectionDragOver}
-                onSectionDrop={showAnnotations ? undefined : handleSectionDrop}
-                onSectionDragEnd={handleSectionDragEnd}
+                onSendToPostproduction={data.module_postproduction ? setSendToPostproduction : undefined}
+                // SectionBlock only renders the drag handle at all when
+                // this is false — same "man kann in diesem modus keine
+                // kacheln verschieben" rule as scenes' dragDisabled.
+                sectionDragDisabled={showAnnotations}
                 draggingSectionId={draggingSectionId}
                 sectionInsertionIndicator={sectionInsertionIndicator}
                 insertionIndicator={insertionIndicator}
@@ -1093,53 +1787,116 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               />
             );
           })}
+          </SortableContext>
 
-          {/* Renders even when currently empty, same reasoning as sections
-              above — with cross-section dragging, "Ohne Abschnitt" needs to
-              stay a valid drop target (SectionDropZone) even with nothing in
-              it yet, or there'd be no way to drag a scene back out of every
-              section. Only fully hidden when there are no sections at all
-              (then unsectioned IS every scene, rendered titleless below). */}
-          {(unsectioned.length > 0 || sections.length > 0) && (
-            <SectionBlock
-              title={sections.length > 0 ? "Ohne Abschnitt" : undefined}
-              scenes={unsectioned}
-              shotsFor={shotsFor}
-              members={members}
-              onChange={updateScenesShots}
-              onEditScene={setEditingScene}
-              onDeleteScene={setDeleteScene}
-              onDuplicateScene={handleDuplicateScene}
-              insertionIndicator={insertionIndicator}
-              viewMode={viewMode}
-              onSortScenes={(criterion) => handleSortScenes(null, criterion)}
-              dragDisabled={showAnnotations}
-              annotationsByScene={showAnnotations ? annotationsByScene : undefined}
-              highlightedAnnotationId={highlightedAnnotationId}
-              onAnnotationClick={handleAnnotationSelect}
-            />
-          )}
+          {/* 2026-08-30 — "Ohne Abschnitt" bewusst NICHT mehr hier gerendert:
+              dieser ganze Zweig ist jetzt nur erreichbar, wenn EIN
+              bestimmter Abschnitt (openSectionId) geöffnet wurde, und
+              nicht-zugeordnete Szenen aus einer anderen Idee hier
+              mitzuzeigen wäre verwirrend, nicht hilfreich. */}
 
-          <DragOverlay>
-            {activeSceneId &&
-              (() => {
-                const activeScene = data.scenes.find((s) => s.id === activeSceneId);
-                if (!activeScene) return null;
-                if (activeScene.is_project_info) {
-                  return (
-                    <div className="w-full shadow-2xl shadow-black/50 cursor-grabbing opacity-90">
-                      <ProjectInfoTile scene={activeScene} members={members} onDelete={() => {}} onChange={() => {}} onOpenTeam={() => {}} />
-                    </div>
-                  );
-                }
-                return (
-                  <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
-                    <SceneCard scene={activeScene} shots={shotsFor(activeScene.id)} members={members} onEdit={() => {}} onDelete={() => {}} onChange={() => {}} />
-                  </div>
-                );
-              })()}
-          </DragOverlay>
+          {/* 2026-07-19, Lino: "greift man die Szene an den 6 Punkten ist die
+              Kachel beim Draggen sehr weit von der Maus entfernt" —
+              DragOverlay positions its floating clone via `position: fixed`
+              internally, which stops being relative to the viewport the
+              moment ANY ancestor has a CSS `transform` (even an identity
+              one) — exactly what this page's own `motion.div key="scenes"`
+              wrapper carries (the spring page-transition animation, still
+              nested around this DndContext). The clone was rendering
+              offset by however far that wrapper sits from the viewport
+              origin instead of tracking the cursor. Rendering it through a
+              portal straight onto `document.body` sidesteps the transformed
+              ancestor entirely — same React tree (still gets DndContext via
+              context, not a prop), different DOM parent. */}
+          {typeof document !== "undefined" &&
+            createPortal(
+              <DragOverlay>
+                {activeSceneId &&
+                  (() => {
+                    const activeScene = data.scenes.find((s) => s.id === activeSceneId);
+                    if (!activeScene) return null;
+                    if (activeScene.is_project_info) {
+                      return (
+                        <div className="w-full shadow-2xl shadow-black/50 cursor-grabbing opacity-90">
+                          <ProjectInfoTile scene={activeScene} members={members} onDelete={() => {}} onChange={() => {}} onOpenTeam={() => {}} />
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+                        <SceneCard scene={activeScene} shots={shotsFor(activeScene.id)} members={members} onEdit={() => {}} onDelete={() => {}} onChange={() => {}} />
+                      </div>
+                    );
+                  })()}
+              </DragOverlay>,
+              document.body
+            )}
         </DndContext>
+          </>
+        )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 2026-07-17, Lino: "rechts am Browser ein schöner Button der nach
+            rechts zeigt (Script / Shotlist Editor)... links ein Pfeil-Button
+            (Ideen)" — fixed to the actual viewport edge (not the content
+            column, unlike the FAB below), vertically centered, one or the
+            other depending on activeView. Two follow-ups same day: 1) "der
+            Button... muss schöner sein, der ist noch zu versteckt" — was a
+            near-invisible flat white/10 chip, first fix made it solid
+            blue-600 instead; 2) "soll den typischen Apple Glaseffekt
+            haben... aber das Glowen finde ich cool" — solid blue lost that
+            glass look, so back to the same Apple-glass recipe as
+            IdeaFloatingCard (translucent white tint + heavy blur+saturate
+            backdrop-filter, inline style since Tailwind has no utility for
+            backdrop-filter's saturate() combo), keeping the pulsing blue
+            glow ring from the previous pass — glass card body, blue accent
+            glow is what actually makes it read as "important" against it. */}
+        {activeView === "ideas" ? (
+          <>
+            <EdgeNavButton
+              side="left"
+              onClick={goToProjectsWithTransition}
+              ariaLabel="Projektübersicht"
+              label="Projektübersicht"
+            />
+            {data.module_scripting && (
+              <EdgeNavButton
+                side="right"
+                onClick={goToScenes}
+                ariaLabel="Script / Shotlist Editor"
+                label="Script / Shotlist Editor"
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {data.module_concept && (
+              <EdgeNavButton
+                side="left"
+                onClick={goToIdeas}
+                ariaLabel="Ideen"
+                label="Ideen"
+              />
+            )}
+            {/* 2026-07-17, Lino: "auf der Szenenansicht braucht es rechts
+                wieder den Button um in den naechsten Workflow-Bereich zu
+                kommen (Postproduction)" — Postproduction ist eine eigene
+                Seite (siehe #11 Schritt 6, eigener Tab statt drittem
+                activeView-Zustand), also ein echter Link statt eines
+                dritten Swipe-Ziels. Nur wenn das Modul genutzt wird (#96). */}
+            {data.module_postproduction && (
+              <EdgeNavButton
+                side="right"
+                onClick={goToPostproductionWithTransition}
+                ariaLabel="Postproduction"
+                label="Postproduction"
+              />
+            )}
+          </>
+        )}
 
         {/* Fixed bottom-right OF THE CONTENT COLUMN, not the viewport edge —
             same max-w-6xl/mx-auto/px as the content div above, so on a wide
@@ -1151,60 +1908,77 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             to reach it on any project with more than a couple of scenes. */}
         <div className="fixed bottom-6 inset-x-0 z-40 pointer-events-none">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-wrap gap-3 justify-end pointer-events-none [&>*]:pointer-events-auto">
-          {/* Mirrors the iOS app's addSceneButton menu exactly (same 4
-              options, same order) — was 3 separate flat buttons before,
-              which had no room for a 4th ("Projektinfo") without cluttering
-              the toolbar further, and iOS already uses one "+" menu for all
-              of these. */}
-          <Menu
-            align="end"
-            direction="up"
-            trigger={
-              <Button variant="primary" className="shadow-2xl shadow-black/50">
-                <PlusIcon /> Hinzufügen
-              </Button>
-            }
-          >
-            {(close) => (
-              <>
-                <MenuItem
-                  onClick={() => {
-                    setCreatingScene(true);
-                    close();
-                  }}
-                >
-                  Neue Szene
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setCreatingIntermediateStep(true);
-                    close();
-                  }}
-                >
-                  Zwischenschritt
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    setCreatingSection(true);
-                    close();
-                  }}
-                >
-                  Abschnitt
-                </MenuItem>
-                <MenuItem
-                  onClick={() => {
-                    createProjectInfoScene();
-                    close();
-                  }}
-                >
-                  Info
-                </MenuItem>
-              </>
-            )}
-          </Menu>
+          {/* 2026-07-17, Lino: "+ Hinzufügen unten braucht es nicht [auf
+              der Ideenseite]... soll durch den + Idee Button ersetzt
+              werden" — while scrolled to the Ideen section, this FAB
+              becomes a single-action "+ Idee" button instead of the
+              scene/section menu (which makes no sense there — you can't
+              add scenes/sections from the Ideen section anyway). Scrolled
+              to the Scripting section, it's back to the original menu,
+              untouched. */}
+          {activeView === "ideas" ? (
+            <Button
+              variant="primary"
+              className="shadow-2xl shadow-black/50"
+              onClick={() => ideaGridRef.current?.createIdea()}
+            >
+              <PlusIcon /> {t("workflow.newIdea")}
+            </Button>
+          ) : (
+            /* Mirrors the iOS app's addSceneButton menu exactly (same 4
+                options, same order) — was 3 separate flat buttons before,
+                which had no room for a 4th ("Projektinfo") without cluttering
+                the toolbar further, and iOS already uses one "+" menu for all
+                of these. */
+            <Menu
+              align="end"
+              direction="up"
+              trigger={
+                <Button variant="primary" className="shadow-2xl shadow-black/50">
+                  <PlusIcon /> Hinzufügen
+                </Button>
+              }
+            >
+              {(close) => (
+                <>
+                  <MenuItem
+                    onClick={() => {
+                      setCreatingScene(true);
+                      close();
+                    }}
+                  >
+                    Neue Szene
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setCreatingIntermediateStep(true);
+                      close();
+                    }}
+                  >
+                    Zwischenschritt
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setCreatingSection(true);
+                      close();
+                    }}
+                  >
+                    Abschnitt
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      createProjectInfoScene();
+                      close();
+                    }}
+                  >
+                    Info
+                  </MenuItem>
+                </>
+              )}
+            </Menu>
+          )}
           </div>
         </div>
-      </div>
 
       {/* Centered modal for the section name, not an inline input next to
           the FAB (Lino, 2026-07-10) — matches every other "name this thing"
@@ -1258,11 +2032,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         }}
         projectId={data.id}
         existing={liveEditingScene}
+        shots={liveEditingScene ? shotsFor(liveEditingScene.id) : []}
         previousScene={creatingScene || creatingIntermediateStep ? lastScene : null}
         nextSortOrder={(lastScene?.sort_order ?? -1) + 1}
         members={members}
         onCreated={handleSceneCreated}
         onUpdated={handleSceneUpdated}
+        onShotCreated={(shot) => updateScenesShots((d) => ({ ...d, shots: [...d.shots, shot] }))}
+        onShotUpdated={(shot) => updateScenesShots((d) => ({ ...d, shots: d.shots.map((s) => (s.id === shot.id ? shot : s)) }))}
         isIntermediateStep={creatingIntermediateStep}
       />
       <ConfirmDialog
@@ -1278,6 +2055,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         message={`"${deleteSection?.name}" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter "Ohne Abschnitt".`}
         onConfirm={confirmDeleteSection}
         onCancel={() => setDeleteSection(null)}
+      />
+      <ConfirmDialog
+        open={sendToPostproduction !== null}
+        title="Alle Szenen im Kasten?"
+        message={`"${sendToPostproduction?.name}" wandert in die Postproduction-Tracking-Liste.`}
+        confirmLabel="Ab in die Postproduction"
+        danger={false}
+        onConfirm={confirmSendToPostproduction}
+        onCancel={() => setSendToPostproduction(null)}
       />
       <ConfirmDialog
         open={cascadeConfirm !== null}
@@ -1308,6 +2094,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onClose={() => setShowShareModal(false)}
         projectId={data.id}
         projectName={data.name}
+        kind={shareKind}
       />
       <AnnotationsPanel
         open={showAnnotations}
@@ -1461,10 +2248,8 @@ function SectionBlock({
   onDuplicateScene,
   onDeleteSection,
   onEditSection,
-  onSectionDragStart,
-  onSectionDragOver,
-  onSectionDrop,
-  onSectionDragEnd,
+  onSendToPostproduction,
+  sectionDragDisabled,
   draggingSectionId,
   sectionInsertionIndicator,
   insertionIndicator,
@@ -1491,11 +2276,13 @@ function SectionBlock({
   onDuplicateScene?: (scene: Scene) => void;
   onDeleteSection?: (section: Section) => void;
   onEditSection?: (section: Section) => void;
+  /** Undefined = das Projekt nutzt das Postproduction-Modul nicht (#96) —
+   * dann taucht der Menüpunkt gar nicht erst auf. */
+  onSendToPostproduction?: (section: Section) => void;
   insertionIndicator?: { targetId: string; edge: "left" | "right" | "top" | "bottom" } | null;
-  onSectionDragStart?: (id: string) => void;
-  onSectionDragOver?: (targetId: string, e: React.DragEvent) => void;
-  onSectionDrop?: (targetId: string, e: React.DragEvent) => void;
-  onSectionDragEnd?: () => void;
+  /** Same "man kann in diesem modus keine kacheln verschieben" rule as
+   * scenes' dragDisabled — hides the grip handle entirely. */
+  sectionDragDisabled?: boolean;
   draggingSectionId?: string | null;
   sectionInsertionIndicator?: { targetId: string; edge: "top" | "bottom" } | null;
   viewMode: "grid" | "table";
@@ -1510,7 +2297,23 @@ function SectionBlock({
   highlightedAnnotationId?: string | null;
   onAnnotationClick?: (a: Annotation) => void;
 }) {
+  const { t } = useLanguage();
+  const postproductionStatusLabels: Record<PostproductionStatus, string> = {
+    wartend: t("postproductionStatus.wartend"),
+    in_bearbeitung: t("postproductionStatus.inBearbeitung"),
+    wartet_auf_feedback: t("postproductionStatus.wartetAufFeedback"),
+    abgeschlossen: t("postproductionStatus.abgeschlossen"),
+    abgelehnt: t("postproductionStatus.abgelehnt"),
+  };
   const doneCount = scenes.filter((s) => s.completed).length;
+
+  // Section-level sortable (2026-07-21) — id is a stable placeholder when
+  // there's no real section (the "Ohne Abschnitt" bucket), `disabled` makes
+  // it fully inert there so it's never a real drag source/target; the id
+  // itself is never added to the page-level SortableContext's `items` list
+  // for that bucket anyway, this is just satisfying the Rules of Hooks
+  // (useSortable must be called unconditionally, section is optional).
+  const sortableSection = useSortable({ id: section?.id ?? "__unsectioned__", disabled: !section || sectionDragDisabled });
 
   // No DndContext/sensors/DragOverlay here anymore — dragging a scene
   // *between* sections needs one shared DndContext spanning every section
@@ -1532,26 +2335,24 @@ function SectionBlock({
           Seitenrand angezeigt" — widen the container, not the cards). */}
       <div className="-mx-4 px-4 overflow-visible">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
-        <AnimatePresence>
-          {scenes.map((scene) => (
-            <SortableSceneCard
-              key={scene.id}
-              scene={scene}
-              shots={shotsFor(scene.id)}
-              members={members}
-              onEdit={() => onEditScene(scene)}
-              onDelete={() => onDeleteScene(scene)}
-              onDuplicate={onDuplicateScene ? () => onDuplicateScene(scene) : undefined}
-              onChange={onChange}
-              onOpenTeam={onOpenTeam ?? (() => {})}
-              insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
-              dragDisabled={dragDisabled}
-              annotations={annotationsByScene?.get(scene.id)}
-              highlightedAnnotationId={highlightedAnnotationId}
-              onAnnotationClick={onAnnotationClick}
-            />
-          ))}
-        </AnimatePresence>
+        {scenes.map((scene) => (
+          <SortableSceneCard
+            key={scene.id}
+            scene={scene}
+            shots={shotsFor(scene.id)}
+            members={members}
+            onEdit={() => onEditScene(scene)}
+            onDelete={() => onDeleteScene(scene)}
+            onDuplicate={onDuplicateScene ? () => onDuplicateScene(scene) : undefined}
+            onChange={onChange}
+            onOpenTeam={onOpenTeam ?? (() => {})}
+            insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
+            dragDisabled={dragDisabled}
+            annotations={annotationsByScene?.get(scene.id)}
+            highlightedAnnotationId={highlightedAnnotationId}
+            onAnnotationClick={onAnnotationClick}
+          />
+        ))}
       </div>
       </div>
       <SectionDropZone sectionId={section?.id ?? null} insertionIndicator={insertionIndicator} />
@@ -1583,16 +2384,13 @@ function SectionBlock({
 
   return (
     <div
+      ref={sortableSection.setNodeRef}
       // pb-5 (padding), not mb-5 (margin) — 2026-07-15, Lino: "beim
-      // abschnitt dragen... muss man die linie super genau treffen".
-      // onDragOver/onDrop are on THIS div; a margin sits OUTSIDE its own
-      // box and isn't part of its hit-tested area at all, so releasing
-      // anywhere in that ~20px gap between two sections (exactly where a
-      // user intuitively aims when dropping "between" them) landed on
-      // neither wrapper and silently did nothing — the actual "genau
-      // treffen" symptom, not an edge-detection precision issue. Padding
-      // is inside the border-box, so the exact same visual gap is now
-      // part of this wrapper's own drop target.
+      // abschnitt dragen... muss man die linie super genau treffen". A
+      // margin sits OUTSIDE the box and isn't part of it for hit-testing,
+      // so the ~20px gap between two sections (exactly where a user
+      // intuitively aims when dropping "between" them) needs to be real
+      // padding, inside the border-box, to stay part of this drop target.
       className="relative pb-5 transition-transform"
       // section && ... — without the `section &&` guard this was also true
       // for the "Ohne Abschnitt" bucket (section is undefined there) any
@@ -1600,23 +2398,11 @@ function SectionBlock({
       // dragged at all, the normal/idle state) — undefined === undefined,
       // permanently dimming the unsectioned bucket even when nothing was
       // being dragged (Lino, 2026-07-10: "sollen NICHT ausgegraut werden").
-      style={section && draggingSectionId === section.id ? { opacity: 0.4 } : undefined}
-      onDragOver={
-        section && onSectionDragOver
-          ? (e) => {
-              e.preventDefault();
-              onSectionDragOver(section.id, e);
-            }
-          : undefined
-      }
-      onDrop={
-        section && onSectionDrop
-          ? (e) => {
-              e.preventDefault();
-              onSectionDrop(section.id, e);
-            }
-          : undefined
-      }
+      style={{
+        transform: DndCSS.Transform.toString(sortableSection.transform),
+        transition: sortableSection.transition,
+        ...(section && draggingSectionId === section.id ? { opacity: 0.4 } : undefined),
+      }}
     >
       {/* Notion-style insertion line, same idea as scenes' left/right —
           sections stack vertically so top/bottom is the meaningful edge.
@@ -1638,37 +2424,19 @@ function SectionBlock({
         <div className="absolute bottom-0 left-0 right-0 h-[3px] rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none" />
       )}
       <div className="flex items-start gap-1">
-        {section && onSectionDragStart && (
+        {section && !sectionDragDisabled && (
           <span
-            draggable
-            // 2026-07-14, Lino: "wenn man einen abschnitt über einen
-            // anderen abschnitt dragen und droppen will funktioniert es
-            // nur 3 von 10 mal" — this whole section list renders INSIDE
-            // the scene-level <DndContext> (see its own comment: shared
-            // across every section's scene grid, dnd-kit's "multiple
-            // containers" pattern), so dnd-kit's PointerSensor listens for
-            // pointerdown anywhere in that subtree, including this native
-            // draggable handle, even though it's never a registered
-            // dnd-kit sortable item. The two systems then race on the same
-            // initiating pointerdown: native HTML5 drag-and-drop needs
-            // an uninterrupted mousedown to initiate, and depending on
-            // which one's handler runs first, dnd-kit's sensor sometimes
-            // wins that race and the native drag never actually starts —
-            // exactly the probabilistic "3 of 10" pattern. Stopping
-            // propagation at the CAPTURE phase, on the handle itself,
-            // keeps this pointerdown from ever reaching dnd-kit's own
-            // (ancestor-attached) listener at all, so only the native
-            // drag mechanism ever sees it.
-            onPointerDownCapture={(e) => e.stopPropagation()}
-            onDragStart={(e) => {
-              e.dataTransfer.setData("text/subshot-section-id", section.id);
-              // Without this the browser shows its default "copy" cursor
-              // (a "+") for the whole drag, which reads as "this will
-              // duplicate something" rather than "this will move it".
-              e.dataTransfer.effectAllowed = "move";
-              onSectionDragStart(section.id);
-            }}
-            onDragEnd={() => onSectionDragEnd?.()}
+            {...sortableSection.attributes}
+            {...sortableSection.listeners}
+            // 2026-07-21: real dnd-kit sortable now (see sortableSection
+            // above), listeners/attributes scoped to just this handle span
+            // (dnd-kit's own documented "drag handle" pattern) — the whole
+            // section list shares ONE DndContext with the scene-level drag
+            // now, so there's no second, independent drag system left to
+            // race against on the same pointerdown. This handle used to be
+            // plain native HTML5 D&D specifically to dodge that race (see
+            // [[project_subshot_architecture]]'s #38 "3 von 10" note) —
+            // converting it removes the race at the root instead.
             className="cursor-grab active:cursor-grabbing text-white/20 hover:text-white/50 shrink-0 p-1.5 mt-0.5 touch-none"
             title="Abschnitt verschieben"
           >
@@ -1682,12 +2450,24 @@ function SectionBlock({
           <Collapsible
             title={title}
             titleClassName="text-sm"
-            subtitle={`${doneCount}/${scenes.length}`}
+            // 2026-08-08, Lino: "Alle Abschnitte sollen immer eingeklappt
+            // sein wenn man die Seite öffnet" — broadened from the
+            // "only if every scene is Im Kasten" version just shipped
+            // minutes earlier to unconditionally every section, on every
+            // page load. Purely the initial mount state (see Collapsible's
+            // own `useState(defaultOpen)`) — a user expanding one manually
+            // during their session is untouched by this.
+            defaultOpen={false}
+            subtitle={
+              section?.in_postproduction && section.postproduction_status
+                ? `${doneCount}/${scenes.length} · ${postproductionStatusLabels[section.postproduction_status]}`
+                : `${doneCount}/${scenes.length}`
+            }
             actions={
               // Menu itself no longer requires a real `section` (2026-07-13:
               // sort-by options are useful for "Ohne Abschnitt" too) -
               // rename/delete stay conditional on one existing.
-              (onSortScenes || (section && onDeleteSection)) && (
+              (onSortScenes || (section && onDeleteSection) || (section && !section.in_postproduction && onSendToPostproduction)) && (
                 <Menu
                   trigger={
                     <IconButton size={24} className="text-white/30 hover:text-white/70">
@@ -1745,6 +2525,16 @@ function SectionBlock({
                           }}
                         >
                           Umbenennen
+                        </MenuItem>
+                      )}
+                      {section && !section.in_postproduction && onSendToPostproduction && (
+                        <MenuItem
+                          onClick={() => {
+                            onSendToPostproduction(section);
+                            close();
+                          }}
+                        >
+                          Ab in die Postproduction
                         </MenuItem>
                       )}
                       {section && onDeleteSection && (
@@ -1831,18 +2621,17 @@ function InfoIcon() {
     </svg>
   );
 }
-function UsersIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="9" cy="7" r="3.5" /><path d="M2 20c0-3.5 3.1-6.2 7-6.2s7 2.7 7 6.2" />
-      <path d="M16.5 4.2a3.5 3.5 0 0 1 0 6.6M22 20c0-2.9-2.1-5.4-5-6.1" />
-    </svg>
-  );
-}
 function DocIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" />
+    </svg>
+  );
+}
+function GoodTakeIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M17 2H9L4 7v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-9 4h2v5H8V6Zm4 0h2v5h-2V6Zm4 0h2v5h-2V6Z" />
     </svg>
   );
 }

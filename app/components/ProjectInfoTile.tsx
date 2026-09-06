@@ -17,6 +17,7 @@ import { Avatar } from "./ui/Avatar";
 import { Button, IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { TodoListsPanel } from "./TodoListsPanel";
+import { useLanguage } from "@/lib/i18n";
 
 /** A "Projektinfo" tile (2026-07-10 redesign) — a scene with
  * is_project_info set, so it drags/reorders/moves-between-sections exactly
@@ -48,6 +49,7 @@ export function ProjectInfoTile({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const [description, setDescription] = useState(scene.description ?? "");
 
   async function updateDescription(value: string) {
@@ -55,7 +57,7 @@ export function ProjectInfoTile({
       const updated = await api.patchScene(scene.id, { description: value || null, clear_description: !value });
       applyScene(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -65,12 +67,20 @@ export function ProjectInfoTile({
 
   async function updateShootDate(date: Date | null) {
     try {
+      // 2026-07-19, Lino: "schaltet man das Datum mit dem Switch an, kann
+      // man den Switch nicht mehr ausschalten" — patch_scene's generic
+      // field loop only ever SETS a field when the value isn't null, so a
+      // plain `scheduled_at: null` was silently ignored server-side, the
+      // scene came back with its old date still set, and the Switch (whose
+      // checked state is derived straight from scene.scheduled_at) just
+      // snapped back on. clear_scheduled_at is the same explicit-clear-flag
+      // pattern already used for description/location below.
       const updated = date
         ? await api.patchScene(scene.id, { scheduled_at: date.toISOString() })
-        : await api.patchScene(scene.id, { scheduled_at: null });
+        : await api.patchScene(scene.id, { clear_scheduled_at: true });
       applyScene(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -85,7 +95,7 @@ export function ProjectInfoTile({
       });
       if (requestId === locationRequestId.current) applyScene(updated);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectInfoBox.genericFailed"));
     }
   }
 
@@ -104,7 +114,7 @@ export function ProjectInfoTile({
             {...dragHandleProps.attributes}
             {...dragHandleProps.listeners}
             className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing p-1.5 mt-0.5"
-            aria-label="Projektinfo verschieben"
+            aria-label={t("projectInfoBox.moveAria")}
           >
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
               <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
@@ -114,7 +124,7 @@ export function ProjectInfoTile({
         )}
         <div className="flex-1 min-w-0">
           <Collapsible
-            title="Info"
+            title={t("projectInfoBox.infoTitle")}
             defaultOpen={false}
             icon={
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40">
@@ -122,7 +132,7 @@ export function ProjectInfoTile({
               </svg>
             }
             actions={
-              <IconButton size={28} onClick={onDelete} aria-label="Projektinfo löschen" className="text-white/40 hover:text-red-400">
+              <IconButton size={28} onClick={onDelete} aria-label={t("projectInfoBox.deleteProjectInfoAria")} className="text-white/40 hover:text-red-400">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" />
                 </svg>
@@ -134,7 +144,7 @@ export function ProjectInfoTile({
                 <Switch
                   checked={Boolean(scene.scheduled_at)}
                   onChange={(v) => updateShootDate(v ? new Date() : null)}
-                  label="Drehdatum festlegen"
+                  label={t("projectInfoBox.setShootDate")}
                 />
                 {scene.scheduled_at && (
                   <div className="mt-2">
@@ -144,7 +154,7 @@ export function ProjectInfoTile({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Standort</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.location")}</div>
                 <LocationPicker
                   address={scene.location_address ?? ""}
                   lat={scene.location_lat}
@@ -154,24 +164,25 @@ export function ProjectInfoTile({
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Beschreibung / Idee</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.descriptionIdea")}</div>
                 <Textarea
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   onBlur={() => updateDescription(description)}
-                  placeholder="Worum geht's bei diesem Projekt?"
+                  placeholder={t("projectInfoBox.descriptionPlaceholder")}
                   rows={3}
+                  autoResize
                 />
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">Team</div>
+                <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.team")}</div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {members.map((m) => (
                     <Avatar key={m.user_id} name={m.name} email={m.email} avatarUrl={m.avatar_url} size={30} />
                   ))}
                   <Button variant="ghost" size="sm" onClick={onOpenTeam}>
-                    Verwalten
+                    {t("projectInfoBox.manage")}
                   </Button>
                 </div>
               </div>

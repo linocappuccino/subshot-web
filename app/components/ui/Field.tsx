@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/cn";
 
 const fieldBase =
@@ -8,8 +9,29 @@ export function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn(fieldBase, props.className)} />;
 }
 
-export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn(fieldBase, "resize-none", props.className)} />;
+/** 2026-07-30, Lino (Projektinfos-Textfeld auf der Ideenseite): "hier wäre
+ * es noch cool wenn sich das Textfenster dem Text anpassen würde, so das
+ * man immer den ganzen Text sieht" — opt-in via `autoResize` so every OTHER
+ * Textarea caller keeps its normal fixed-`rows` behavior. Height is reset
+ * to "auto" before reading scrollHeight on every value change (otherwise a
+ * shrinking value would never shrink the box back down, scrollHeight only
+ * ever grows against the box's current height). useLayoutEffect (not
+ * useEffect) so the resize happens before paint — avoids a visible one-frame
+ * flash of the old, wrong height on first mount with existing text. */
+export function Textarea({ autoResize, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { autoResize?: boolean }) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    if (!autoResize || !ref.current) return;
+    ref.current.style.height = "auto";
+    ref.current.style.height = `${ref.current.scrollHeight}px`;
+  }, [autoResize, props.value]);
+  return (
+    <textarea
+      {...props}
+      ref={ref}
+      className={cn(fieldBase, "resize-none", autoResize && "overflow-hidden", props.className)}
+    />
+  );
 }
 
 export function Label({ children }: { children: React.ReactNode }) {

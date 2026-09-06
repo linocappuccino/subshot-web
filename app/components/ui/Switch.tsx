@@ -1,7 +1,5 @@
 "use client";
 
-import { motion } from "framer-motion";
-
 export function Switch({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
     <button
@@ -16,10 +14,8 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
         className="relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0"
         style={{ backgroundColor: checked ? "#3875bd" : "rgba(255,255,255,0.15)" }}
       >
-        <motion.span
-          layout
-          transition={{ type: "spring", stiffness: 600, damping: 32 }}
-          className="inline-block h-5 w-5 rounded-full bg-white shadow"
+        <span
+          className="inline-block h-5 w-5 rounded-full bg-white shadow transition-[margin] duration-150"
           style={{ marginLeft: checked ? 22 : 2 }}
         />
       </span>

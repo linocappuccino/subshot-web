@@ -1,106 +1,150 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
   pointerWithin,
   rectIntersection,
   PointerSensor,
   useSensor,
   useSensors,
+  useDraggable,
+  useDroppable,
   type CollisionDetection,
   type DragStartEvent,
   type DragOverEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
-import type { Project, ProjectFolder } from "@/lib/types";
+import { setNavCache } from "@/lib/navCache";
+import type { Annotation, Member, Project, ProjectFolder } from "@/lib/types";
 import { AuthImage } from "@/app/components/AuthImage";
 import { AppShell } from "@/app/components/AppShell";
+import { useLanguage } from "@/lib/i18n";
 import { Button, IconButton } from "@/app/components/ui/Button";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { FolderEditModal } from "@/app/components/FolderEditModal";
-import { ProjectEditModal } from "@/app/components/ProjectEditModal";
+import { ProjectEditModal, type ProjectMemberPick, type ProjectModules } from "@/app/components/ProjectEditModal";
+import { TodoSidebar } from "@/app/components/TodoSidebar";
 
-/** Prefixed-id-aware collision detection (2026-07-13), same layered
- * pointerWithin -> rectIntersection -> closestCenter fallback chain as the
- * scene grid's sceneCollisionDetection, adapted for two different tile
- * "kinds" sharing one DndContext:
- * - Dragging a PROJECT: a FOLDER tile is a valid target too (file the
- *   project into it, existing behavior) alongside other project tiles
- *   (reorder).
- * - Dragging a FOLDER: only other folder tiles are valid targets (folders
- *   never nest, and a folder can't be filed into a project).
- * closestCenter as the last resort mirrors the same fix the scene grid
- * needed: without it, a fast/imprecise drop between tiles of different
- * heights can lose collision detection entirely (see project memory). */
+/** Prefixed-id-aware collision detection.
+ *
+ * 2026-08-06, Lino: "sortieren soll man nicht können, aber man soll
+ * projekte in ordner ziehen können und ordner in ordner ziehen können" —
+ * manual reordering (sort_order) removed entirely: list_projects/
+ * list_folders always sort by "most recently opened" (added 2026-07-17)
+ * and never actually read sort_order at all, so the old drag-to-reorder
+ * feature had already been a silent no-op for weeks (confirmed live: a
+ * reorder drag "succeeded" but reverted on the next reload) — nobody had
+ * noticed since it never actually did anything. Rather than fix that dead
+ * code path, dropping it: the only valid drop targets now are FOLDER tiles
+ * — a dragged PROJECT files into it, a dragged FOLDER nests into it
+ * (new — folders could previously only nest via explicit create/edit).
+ *
+ * 2026-08-06 correction, Lino: "zieht man ein Projekt über einen Ordner
+ * und die Markierung kommt, dann wieder weg zieht, landet das Projekt
+ * trotzdem im Ordner" — the old scene-grid-style fallback chain (pointerWithin
+ * -> rectIntersection -> closestCenter) ends in `closestCenter`, which has NO
+ * distance cutoff at all: it always returns whichever droppable is nearest,
+ * no matter how far the cursor actually is, so once you'd dragged near a
+ * folder at all, dragging back away still resolved to "nearest folder" on
+ * drop instead of "no folder". That fallback existed for the OLD reorder
+ * feature (recovering collision on a fast drop between tightly packed
+ * tiles) — no longer needed now that the only valid target is "am I
+ * genuinely, visually over a folder". Dropped `closestCenter` entirely:
+ * `pointerWithin` (cursor literally inside the folder) with `rectIntersection`
+ * as a lenient second tier (the dragged tile/row's own rect overlaps the
+ * folder's) — both still require real, visible overlap. */
 const tileCollisionDetection: CollisionDetection = (args) => {
   const activeId = String(args.active.id);
-  const activeIsProject = activeId.startsWith("project:");
-  const isValidTarget = (c: { id: string | number }) => {
-    if (String(c.id) === activeId) return false;
-    return activeIsProject ? true : String(c.id).startsWith("folder:");
-  };
+  const isValidTarget = (c: { id: string | number }) => String(c.id) !== activeId && String(c.id).startsWith("folder:");
 
   const pointerHits = pointerWithin(args).filter(isValidTarget);
   if (pointerHits.length > 0) return pointerHits;
-  const rectHits = rectIntersection(args).filter(isValidTarget);
-  if (rectHits.length > 0) return rectHits;
-  return closestCenter(args).filter(isValidTarget);
+  return rectIntersection(args).filter(isValidTarget);
 };
 
-/** Pure local array reorder for the immediate optimistic preview — mirrors
- * computeSceneReorder's role on the project detail page, but much simpler
- * (no section-scoping concept here, just one flat sibling list). Actual
- * persistence goes through api.moveProject/moveFolder (server-authoritative,
- * see the backend's move_project/move_folder), this only drives what's
- * shown on screen between drop and that call resolving. */
-function localReorder<T extends { id: string }>(list: T[], activeId: string, overId: string, insertAfter: boolean): T[] | null {
-  const active = list.find((x) => x.id === activeId);
-  if (!active) return null;
-  const without = list.filter((x) => x.id !== activeId);
-  const overIdx = without.findIndex((x) => x.id === overId);
-  if (overIdx === -1) return null;
-  const insertAt = insertAfter ? overIdx + 1 : overIdx;
-  return [...without.slice(0, insertAt), active, ...without.slice(insertAt)];
-}
-
 export default function ProjectsPage() {
-  // useSearchParams() requires a Suspense boundary in the App Router.
+  // useSearchParams() requires a Suspense boundary in the App Router. AppShell
+  // (and the LanguageProvider it mounts) must wrap the Suspense itself, not
+  // just live inside the fallback branch — ProjectsPageContent calls
+  // useLanguage() (and renders its own <AppShell>) from its OWN function
+  // body, which sits as a SIBLING of the fallback's AppShell in the fiber
+  // tree once Suspense resolves, not a descendant of it. That mismatch was
+  // a real, 100%-reproducible bug (not the "Vercel-only" mystery it looked
+  // like — every render past the first fallback frame hit it, we just never
+  // exercised the exact real page structure while investigating), root-caused
+  // 2026-07-22 — see project_subshot_i18n_language_switcher.md.
   return (
-    <Suspense
-      fallback={
-        <AppShell>
-          <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 text-white/50">Lädt…</div>
-        </AppShell>
-      }
-    >
-      <ProjectsPageContent />
-    </Suspense>
+    <AppShell>
+      <Suspense fallback={<div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 text-white/50">Lädt…</div>}>
+        <ProjectsPageContent />
+      </Suspense>
+    </AppShell>
   );
 }
 
 function ProjectsPageContent() {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
   const router = useRouter();
   const searchParams = useSearchParams();
   const folderId = searchParams.get("folder");
-  const currentFolder = useCurrentFolder(folderId);
+  const breadcrumb = useFolderBreadcrumb(folderId);
+  const currentFolder = breadcrumb.length > 0 ? breadcrumb[breadcrumb.length - 1] : null;
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [loading, setLoading] = useState(true);
+  // 2026-07-30, Lino: "wäre noch cool wenn man zwischen listen oder kachel
+  // ansicht wechseln könnte" — persisted per-browser (not per-project, one
+  // preference for the whole Projektübersicht), read once on mount so a
+  // returning user doesn't see a flash of the other mode first. List mode
+  // intentionally skips the whole DndContext/Sortable machinery below (drag
+  // reordering only ever made sense as a spatial grid interaction) — rows
+  // are plain links, same click/edit/delete behavior, no reordering.
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  useEffect(() => {
+    const stored = localStorage.getItem("subshot:projectsViewMode");
+    if (stored === "grid" || stored === "list") setViewMode(stored);
+  }, []);
+  function changeViewMode(mode: "grid" | "list") {
+    setViewMode(mode);
+    localStorage.setItem("subshot:projectsViewMode", mode);
+  }
+  // 2026-07-26, Lino: "klickt man auf ein Projekt oder ordner erscheint für
+  // eine millisekunde immer 6 kacheln, bis die finalen kacheln geladen
+  // wurde" — `loading` used to unconditionally swap the whole grid for
+  // <GridSkeleton/> on EVERY folderId change, including navigating INTO a
+  // folder that was already fetched fast (usually <100ms on this backend),
+  // producing a real-content -> skeleton -> real-content flash each time.
+  // `projects`/`folders` state is never cleared before a fetch starts (only
+  // overwritten on success), so the previous folder's tiles are still sitting
+  // there the whole time — only the FIRST ever load (no prior fetch to fall
+  // back on) actually needs the skeleton. Every subsequent navigation just
+  // dims the still-visible old tiles instead of replacing them with
+  // placeholders.
+  const hasLoadedOnceRef = useRef(false);
+  // 2026-07-17, Lino: "drückt man + Projekt muss man auch definieren wer
+  // zu diesem Projekt hinzugefügt wird" — braucht das eigene Team (falls
+  // vorhanden) fürs Mitglieder-Picker im ProjectEditModal.
+  const [myTeamId, setMyTeamId] = useState<string | null>(null);
 
+  // 2026-08-26 — Lino: "wir entfernen uns von Übergangsanimationen, soll
+  // super schnell sein". This used to be a whole exit/enter swipe-transition
+  // system (page slides+blurs out, waits ~220ms so the animation can play,
+  // THEN navigates; the target page plays a matching slide-in on mount via
+  // a sessionStorage flag) — all of that state/logic is gone. Navigation is
+  // now instant; the `beforeNavigate` prefetch below still fires but no
+  // longer blocks navigation on it (see its own comment).
   const [editingFolder, setEditingFolder] = useState<ProjectFolder | null | "new">(null);
   const [editingProject, setEditingProject] = useState<Project | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<{ kind: "folder" | "project"; id: string; name: string } | null>(
@@ -111,18 +155,21 @@ function ProjectsPageContent() {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      // Folder tiles only make sense at the root — inside a folder it's
-      // just that folder's projects, same as ProjectListView.swift on iOS
-      // (a folder never nests another folder).
+      // 2026-07-19: folders can now nest, so a folder's OWN sub-folders are
+      // fetched the same way root folders are — just scoped to this
+      // folder_id instead of root (same convention as projects).
       try {
-        const [p, f] = await Promise.all([api.projects(folderId ?? undefined), folderId ? Promise.resolve([]) : api.folders()]);
+        const [p, f] = await Promise.all([api.projects(folderId ?? undefined), api.folders(folderId ?? undefined)]);
         if (cancelled) return;
         setProjects(p);
         setFolders(f);
       } catch (e) {
         if (!cancelled) toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          hasLoadedOnceRef.current = true;
+        }
       }
     }
     load();
@@ -132,14 +179,40 @@ function ProjectsPageContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
 
-  async function createOrEditProject(name: string, color: string, emoji: string | null, existing: Project | null) {
+  useEffect(() => {
+    api.myTeams().then((teams) => setMyTeamId(teams[0]?.id ?? null)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function createOrEditProject(
+    name: string,
+    color: string,
+    emoji: string | null,
+    modules: ProjectModules,
+    members: ProjectMemberPick[],
+    existing: Project | null,
+    clientName: string | null
+  ) {
     try {
       if (existing) {
-        const updated = await api.patchProject(existing.id, { name, color, emoji });
+        const updated = await api.patchProject(existing.id, { name, color, emoji, client_name: clientName, ...modules });
         setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
       } else {
-        const created = await api.createProject(name, color, emoji ?? undefined);
+        const created = await api.createProject(name, color, emoji ?? undefined, modules, clientName);
         if (folderId) await api.patchProject(created.id, { folder_id: folderId });
+        // 2026-07-17, Lino: "drückt man + Projekt muss man auch definieren
+        // wer zu diesem Projekt hinzugefügt wird" — Einladungen laufen
+        // NACH der Projekt-Erstellung (brauchen die neue project.id), ein
+        // fehlgeschlagenes Einladen soll das frisch angelegte Projekt
+        // nicht rückgängig machen, darum einzeln statt Promise.all mit
+        // hartem Abbruch.
+        for (const m of members) {
+          try {
+            await api.invite(created.id, m.email, m.role);
+          } catch (e) {
+            toast.showError(`Einladung an ${m.email} fehlgeschlagen: ${e instanceof ApiError ? e.message : "unbekannter Fehler"}`);
+          }
+        }
         setProjects((prev) => [{ ...created, folder_id: folderId }, ...prev]);
         toast.showSuccess("Projekt angelegt.");
       }
@@ -161,7 +234,7 @@ function ProjectsPageContent() {
       if (existing) {
         folder = await api.patchFolder(existing.id, { name, color, emoji, clear_background_image: clearImage });
       } else {
-        folder = await api.createFolder(name, color, emoji ?? undefined, folders.length);
+        folder = await api.createFolder(name, color, emoji ?? undefined, folders.length, folderId ?? undefined);
       }
       if (imageFile) {
         folder = await api.uploadFolderImage(folder.id, imageFile);
@@ -179,114 +252,25 @@ function ProjectsPageContent() {
 
   const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
-  // Real cursor position, tracked independently of dnd-kit — same reasoning
-  // and pattern as the scene grid's pointerPosRef (comparing the DRAGGED
-  // TILE's rect center against a target is a biased proxy for "which side/
-  // edge is my cursor actually near", most visible once you grab a tile
-  // somewhere other than its exact center).
-  const pointerPosRef = useRef<{ x: number; y: number } | null>(null);
-  // Notion-style insertion indicator (same idea as the scene grid's) — but
-  // 4-directional here (left/right/top/bottom), not just left/right: this
-  // grid wraps up to 5 columns depending on viewport width, so "the next
-  // sibling" can sit to the side OR in the row above/below depending on
-  // where in the grid you are. Direction is picked by whichever of the
-  // hovered tile's 4 edges the cursor is nearest to (see handleDragOver) —
-  // left/top mean "insert before this tile", right/bottom mean "insert
-  // after", matching Lino's spec ("Man muss objekte Links, rechts, oben und
-  // unten droppen können, dies muss der indikator auch anzeigen").
-  const [insertionIndicator, setInsertionIndicator] = useState<{ targetId: string; edge: "left" | "right" | "top" | "bottom" } | null>(null);
-  // Separate from insertionIndicator — set only while dragging a PROJECT
-  // over a FOLDER tile (filing, not reordering), which gets its own ring-
-  // highlight treatment instead of an insertion line (there's no
-  // "before/after" concept for "put this project inside that folder").
-  const [fileIntoFolderId, setFileIntoFolderId] = useState<string | null>(null);
-  // Which tile is being dragged, for the DragOverlay preview below (2026-07-13,
-  // Lino: "gezogenes Objekt schwebt nicht mit der Maus mit") — the scene grid
-  // has always had this via DragOverlay, this grid never did.
+  // Which FOLDER a dragged project/folder is currently hovering over — the
+  // only kind of drop that does anything now (manual reordering was removed
+  // entirely, see tileCollisionDetection's doc comment above). Drives the
+  // ring highlight on that folder tile/row, shared by grid AND list mode.
+  const [dropTargetFolderId, setDropTargetFolderId] = useState<string | null>(null);
+  // Which tile/row is being dragged, for the DragOverlay preview (2026-07-13,
+  // Lino: "gezogenes Objekt schwebt nicht mit der Maus mit").
   const [activeId, setActiveId] = useState<string | null>(null);
-  // Which tile dnd-kit last told us the cursor is "over", and whether a
-  // drag is in progress — dnd-kit's onDragOver only fires when the
-  // collision result CHANGES (moving onto a DIFFERENT droppable), not
-  // continuously while the cursor stays over the SAME one (see the scene
-  // grid's identical fix + full writeup in project memory: this is exactly
-  // the bug that made the indicator get stuck on whichever edge you
-  // entered from, most visible for a 4-directional grid like this one
-  // where "did I cross into the top or the left of this tile" genuinely
-  // depends on continuous tracking, confirmed via a real Playwright sweep
-  // here too before adding this). The pointermove listener below (which
-  // DOES fire continuously) recomputes the edge live against a fresh
-  // getBoundingClientRect() of whichever tile dnd-kit most recently told
-  // us we're over, via data-sortable-tile-id (added to both tile wrappers
-  // specifically for this) — dnd-kit only has to get "which tile" right
-  // (works fine on enter/exit), the edge itself never depends on its cadence.
-  const activeDragRef = useRef(false);
-  const lastOverIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    function onPointerMove(e: PointerEvent) {
-      pointerPosRef.current = { x: e.clientX, y: e.clientY };
-      const overId = lastOverIdRef.current;
-      if (!activeDragRef.current || !overId) return;
-      const el = document.querySelector<HTMLElement>(`[data-sortable-tile-id="${CSS.escape(overId)}"]`);
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const relX = (e.clientX - rect.left) / rect.width;
-      const relY = (e.clientY - rect.top) / rect.height;
-      const distances = { left: relX, right: 1 - relX, top: relY, bottom: 1 - relY } as const;
-      const edge = (Object.keys(distances) as Array<keyof typeof distances>).reduce((a, b) => (distances[a] <= distances[b] ? a : b));
-      setInsertionIndicator({ targetId: overId, edge });
-    }
-    window.addEventListener("pointermove", onPointerMove);
-    return () => window.removeEventListener("pointermove", onPointerMove);
-  }, []);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
-    setInsertionIndicator(null);
-    setFileIntoFolderId(null);
-    activeDragRef.current = true;
-    lastOverIdRef.current = null;
+    setDropTargetFolderId(null);
   }
 
+  // tileCollisionDetection already only ever reports FOLDER ids as valid
+  // hits, so `over` here is always either null or a folder — no need to
+  // re-check the prefix.
   function handleDragOver(event: DragOverEvent) {
-    const { active, over } = event;
-    if (!over) {
-      lastOverIdRef.current = null;
-      setInsertionIndicator(null);
-      setFileIntoFolderId(null);
-      return;
-    }
-    const activeId = String(active.id);
-    const overId = String(over.id);
-    if (activeId === overId) {
-      lastOverIdRef.current = null;
-      setInsertionIndicator(null);
-      setFileIntoFolderId(null);
-      return;
-    }
-
-    if (activeId.startsWith("project:") && overId.startsWith("folder:")) {
-      lastOverIdRef.current = null;
-      setInsertionIndicator(null);
-      setFileIntoFolderId(overId.slice("folder:".length));
-      return;
-    }
-    setFileIntoFolderId(null);
-    // Remembered for the pointermove listener above — see its comment for
-    // why the edge itself is recomputed there continuously instead of only
-    // here.
-    lastOverIdRef.current = overId;
-
-    const pointer = pointerPosRef.current;
-    if (!pointer) return;
-    // Nearest-edge-to-cursor (not just left/right like the scene grid) —
-    // this grid genuinely wraps multiple rows, so "insert above/below" is a
-    // real, distinct gesture here, not just a cosmetic variant of left/right.
-    const rect = over.rect;
-    const relX = (pointer.x - rect.left) / rect.width;
-    const relY = (pointer.y - rect.top) / rect.height;
-    const distances = { left: relX, right: 1 - relX, top: relY, bottom: 1 - relY } as const;
-    const edge = (Object.keys(distances) as Array<keyof typeof distances>).reduce((a, b) => (distances[a] <= distances[b] ? a : b));
-    setInsertionIndicator({ targetId: overId, edge });
+    setDropTargetFolderId(event.over ? String(event.over.id).slice("folder:".length) : null);
   }
 
   async function handleProjectDropOnFolder(projectId: string, targetFolderId: string) {
@@ -306,64 +290,42 @@ function ProjectsPageContent() {
     }
   }
 
-  // Persists via the last-DISPLAYED indicator, not a fresh read of dnd-kit's
-  // own final `over` — same reasoning as the scene grid's handleSceneDragEnd
-  // (onDragEnd fires on pointer-up, a physically separate event from the
-  // last onDragOver that drew the indicator; trusting a fresh over here
-  // could land the drop somewhere the indicator never actually showed).
-  function handleDragEnd(event: DragEndEvent) {
-    const indicator = insertionIndicator;
-    const fileInto = fileIntoFolderId;
-    setActiveId(null);
-    setInsertionIndicator(null);
-    setFileIntoFolderId(null);
-    activeDragRef.current = false;
-    lastOverIdRef.current = null;
-    const { active, over } = event;
-    if (!over) return;
-    const activeId = String(active.id);
-
-    if (fileInto) {
-      handleProjectDropOnFolder(activeId.replace("project:", ""), fileInto);
-      return;
-    }
-
-    const overIdStr = indicator ? indicator.targetId : String(over.id);
-    if (overIdStr === activeId) return;
-    const insertAfter = indicator ? indicator.edge === "right" || indicator.edge === "bottom" : false;
-
-    if (activeId.startsWith("project:")) {
-      const rawActiveId = activeId.slice("project:".length);
-      const rawOverId = overIdStr.slice("project:".length);
-      const next = localReorder(projects, rawActiveId, rawOverId, insertAfter);
-      if (!next) return;
-      setProjects(next);
-      const idx = next.findIndex((p) => p.id === rawActiveId);
-      const beforeId = next[idx + 1]?.id ?? null;
-      api.moveProject(rawActiveId, beforeId).catch(() => toast.showError("Verschieben fehlgeschlagen."));
-    } else {
-      const rawActiveId = activeId.slice("folder:".length);
-      const rawOverId = overIdStr.slice("folder:".length);
-      const next = localReorder(folders, rawActiveId, rawOverId, insertAfter);
-      if (!next) return;
-      setFolders(next);
-      const idx = next.findIndex((f) => f.id === rawActiveId);
-      const beforeId = next[idx + 1]?.id ?? null;
-      api.moveFolder(rawActiveId, beforeId).catch(() => toast.showError("Verschieben fehlgeschlagen."));
+  // 2026-08-06, Lino: "ordner in ordner ziehen können" — folders could
+  // previously only nest via explicit create/edit (parent_folder_id), never
+  // by dragging one folder onto another. Mirrors handleProjectDropOnFolder's
+  // optimistic shape exactly; the backend (patch_folder) already has the
+  // cycle guard (can't nest a folder into its own descendant).
+  async function handleFolderDropOnFolder(folderIdToMove: string, targetFolderId: string) {
+    const folder = folders.find((f) => f.id === folderIdToMove);
+    if (!folder || folderIdToMove === targetFolderId) return;
+    setFolders((prev) =>
+      prev.filter((f) => f.id !== folderIdToMove).map((f) => (f.id === targetFolderId ? { ...f, folder_count: f.folder_count + 1 } : f))
+    );
+    try {
+      await api.patchFolder(folderIdToMove, { parent_folder_id: targetFolderId });
+      toast.showSuccess("Ordner verschoben.");
+    } catch (e) {
+      setFolders((prev) => [...prev, folder].map((f) => (f.id === targetFolderId ? { ...f, folder_count: f.folder_count - 1 } : f)));
+      toast.showError(e instanceof ApiError ? e.message : "Verschieben fehlgeschlagen.");
     }
   }
 
-  // Escape / dropped outside any droppable — dnd-kit fires this SEPARATELY
-  // from onDragEnd (which may not fire at all on cancel), so the refs need
-  // resetting here too or a cancelled drag could leave activeDragRef stuck
-  // true, making the pointermove listener above keep recomputing an
-  // indicator for a drag that's no longer happening.
+  function handleDragEnd(event: DragEndEvent) {
+    const targetFolderId = dropTargetFolderId;
+    setActiveId(null);
+    setDropTargetFolderId(null);
+    if (!targetFolderId) return;
+    const activeId = String(event.active.id);
+    if (activeId.startsWith("project:")) {
+      handleProjectDropOnFolder(activeId.slice("project:".length), targetFolderId);
+    } else if (activeId.startsWith("folder:")) {
+      handleFolderDropOnFolder(activeId.slice("folder:".length), targetFolderId);
+    }
+  }
+
   function handleDragCancel() {
     setActiveId(null);
-    setInsertionIndicator(null);
-    setFileIntoFolderId(null);
-    activeDragRef.current = false;
-    lastOverIdRef.current = null;
+    setDropTargetFolderId(null);
   }
 
   async function handleDelete() {
@@ -385,20 +347,28 @@ function ProjectsPageContent() {
   }
 
   return (
-    <AppShell>
-      <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8">
+    <>
+      <div className="flex-1 max-w-[92rem] mx-auto w-full px-4 sm:px-6 py-8 flex gap-6 items-start">
+      <div className="flex-1 min-w-0 max-w-6xl">
         <div className="flex items-center justify-between mb-8 gap-3 flex-wrap">
           <div>
             {folderId ? (
-              <button
-                onClick={() => router.push("/projects")}
-                className="text-sm text-white/40 hover:text-white/70 transition-colors mb-1 flex items-center gap-1"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m15 18-6-6 6-6" />
-                </svg>
-                Alle Projekte
-              </button>
+              <div className="text-sm text-white/40 mb-1 flex items-center gap-1 flex-wrap">
+                <button onClick={() => router.push("/projects")} className="hover:text-white/70 transition-colors flex items-center gap-1">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                  {t("projects.allProjects")}
+                </button>
+                {breadcrumb.slice(0, -1).map((f) => (
+                  <span key={f.id} className="flex items-center gap-1">
+                    <span>/</span>
+                    <button onClick={() => router.push(`/projects?folder=${f.id}`)} className="hover:text-white/70 transition-colors">
+                      {f.emoji || "📁"} {f.name}
+                    </button>
+                  </span>
+                ))}
+              </div>
             ) : null}
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               {currentFolder ? (
@@ -406,25 +376,127 @@ function ProjectsPageContent() {
                   <span>{currentFolder.emoji || "📁"}</span> {currentFolder.name}
                 </>
               ) : (
-                "Projekte"
+                t("projects.title")
               )}
             </h1>
           </div>
           <div className="flex gap-2">
-            {!folderId && (
-              <Button variant="secondary" onClick={() => setEditingFolder("new")}>
-                <PlusIcon /> Ordner
-              </Button>
-            )}
+            <div className="flex items-center rounded-lg bg-white/5 ring-1 ring-white/10 p-0.5 mr-1">
+              <button
+                type="button"
+                onClick={() => changeViewMode("grid")}
+                aria-label={t("projects.gridView")}
+                title={t("projects.gridView")}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === "grid" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+              >
+                <GridIcon />
+              </button>
+              <button
+                type="button"
+                onClick={() => changeViewMode("list")}
+                aria-label={t("projects.listView")}
+                title={t("projects.listView")}
+                className={`p-1.5 rounded-md transition-colors ${viewMode === "list" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
+              >
+                <ListIcon />
+              </button>
+            </div>
+            <Button variant="secondary" onClick={() => setEditingFolder("new")}>
+              <PlusIcon /> {t("projects.newFolder")}
+            </Button>
             <Button variant="primary" onClick={() => setEditingProject("new")}>
-              <PlusIcon /> Projekt
+              <PlusIcon /> {t("projects.newProject")}
             </Button>
           </div>
         </div>
 
-        {loading ? (
+        {loading && !hasLoadedOnceRef.current ? (
           <GridSkeleton />
+        ) : viewMode === "list" ? (
+          <div className={`transition-opacity duration-150 ${loading ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
+            <DndContext
+              sensors={dndSensors}
+              collisionDetection={tileCollisionDetection}
+              autoScroll={{ acceleration: 120, interval: 5 }}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              onDragCancel={handleDragCancel}
+            >
+              {folders.length > 0 && (
+                <>
+                  <SectionLabel>{t("projects.folders")}</SectionLabel>
+                  <ListRows>
+                    {folders.map((folder) => (
+                      <DraggableFolderListRow
+                        key={folder.id}
+                        folder={folder}
+                        filingHighlighted={dropTargetFolderId === folder.id}
+                        onEdit={() => setEditingFolder(folder)}
+                        onDelete={() => setDeleteTarget({ kind: "folder", id: folder.id, name: folder.name })}
+                      />
+                    ))}
+                  </ListRows>
+                </>
+              )}
+              {(folders.length > 0 || projects.length > 0) && <SectionLabel>{t("projects.projects")}</SectionLabel>}
+              <ListRows>
+                {projects.map((project) => (
+                  <DraggableProjectListRow
+                    key={project.id}
+                    project={project}
+                    onEdit={() => setEditingProject(project)}
+                    onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                  />
+                ))}
+              </ListRows>
+              {projects.length === 0 && folders.length === 0 && (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <span className="text-4xl mb-3">🎬</span>
+                  <p className="text-white/40">{t("projects.emptyTitle")}</p>
+                </div>
+              )}
+              {/* 2026-08-06, Lino: "das Projekt/der Ordner ist sehr weit weg
+                  vom Mauszeiger beim draggen" — DragOverlay positions its
+                  floating clone via `position: fixed` internally, which
+                  stops being relative to the viewport the moment ANY
+                  ancestor has a CSS `transform` (even an identity one) —
+                  exactly what this page's own `motion.div` page-transition
+                  wrapper carries. Same fix as the scene grid's identical bug
+                  (projects/[id]/page.tsx): portal straight onto
+                  document.body, sidestepping the transformed ancestor
+                  entirely (still gets DndContext via React context, not a
+                  prop, so the portal doesn't break anything). */}
+              {typeof document !== "undefined" &&
+                createPortal(
+                  <DragOverlay>
+                    {activeId?.startsWith("project:") &&
+                      (() => {
+                        const project = projects.find((p) => p.id === activeId.slice("project:".length));
+                        if (!project) return null;
+                        return (
+                          <div className="shadow-2xl shadow-black/50 cursor-grabbing bg-[#1c1c1e] rounded-xl">
+                            <ProjectListRow project={project} onEdit={() => {}} onDelete={() => {}} />
+                          </div>
+                        );
+                      })()}
+                    {activeId?.startsWith("folder:") &&
+                      (() => {
+                        const folder = folders.find((f) => f.id === activeId.slice("folder:".length));
+                        if (!folder) return null;
+                        return (
+                          <div className="shadow-2xl shadow-black/50 cursor-grabbing bg-[#1c1c1e] rounded-xl">
+                            <FolderListRow folder={folder} onEdit={() => {}} onDelete={() => {}} />
+                          </div>
+                        );
+                      })()}
+                  </DragOverlay>,
+                  document.body
+                )}
+            </DndContext>
+          </div>
         ) : (
+          <div className={`transition-opacity duration-150 ${loading ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
           <DndContext
             sensors={dndSensors}
             collisionDetection={tileCollisionDetection}
@@ -441,70 +513,73 @@ function ProjectsPageContent() {
           >
             {folders.length > 0 && (
               <>
-                <SectionLabel>Ordner</SectionLabel>
-                <SortableContext items={folders.map((f) => `folder:${f.id}`)}>
-                  <TileGrid>
-                    {folders.map((folder) => (
-                      <DroppableFolderTile
-                        key={folder.id}
-                        folder={folder}
-                        insertionEdge={insertionIndicator?.targetId === `folder:${folder.id}` ? insertionIndicator.edge : null}
-                        filingHighlighted={fileIntoFolderId === folder.id}
-                        onEdit={() => setEditingFolder(folder)}
-                        onDelete={() => setDeleteTarget({ kind: "folder", id: folder.id, name: folder.name })}
-                      />
-                    ))}
-                  </TileGrid>
-                </SortableContext>
+                <SectionLabel>{t("projects.folders")}</SectionLabel>
+                <TileGrid key={`folders-${folderId ?? "root"}`}>
+                  {folders.map((folder) => (
+                    <DroppableFolderTile
+                      key={folder.id}
+                      folder={folder}
+                      filingHighlighted={dropTargetFolderId === folder.id}
+                      onEdit={() => setEditingFolder(folder)}
+                      onDelete={() => setDeleteTarget({ kind: "folder", id: folder.id, name: folder.name })}
+                    />
+                  ))}
+                </TileGrid>
               </>
             )}
 
-            {(folders.length > 0 || projects.length > 0) && <SectionLabel>Projekte</SectionLabel>}
-            <SortableContext items={projects.map((p) => `project:${p.id}`)}>
-              <TileGrid>
-                {projects.map((project) => (
-                  <DraggableProjectTile
-                    key={project.id}
-                    project={project}
-                    insertionEdge={insertionIndicator?.targetId === `project:${project.id}` ? insertionIndicator.edge : null}
-                    onEdit={() => setEditingProject(project)}
-                    onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
-                  />
-                ))}
-              </TileGrid>
-            </SortableContext>
+            {(folders.length > 0 || projects.length > 0) && <SectionLabel>{t("projects.projects")}</SectionLabel>}
+            <TileGrid key={`projects-${folderId ?? "root"}`}>
+              {projects.map((project) => (
+                <DraggableProjectTile
+                  key={project.id}
+                  project={project}
+                  onEdit={() => setEditingProject(project)}
+                  onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                />
+              ))}
+            </TileGrid>
 
             {projects.length === 0 && folders.length === 0 && (
               <div className="flex flex-col items-center justify-center py-24 text-center">
                 <span className="text-4xl mb-3">🎬</span>
-                <p className="text-white/40">Noch keine Projekte — leg dein erstes an.</p>
+                <p className="text-white/40">{t("projects.emptyTitle")}</p>
               </div>
             )}
 
-            <DragOverlay>
-              {activeId?.startsWith("project:") &&
-                (() => {
-                  const project = projects.find((p) => p.id === activeId.slice("project:".length));
-                  if (!project) return null;
-                  return (
-                    <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
-                      <ProjectTile project={project} onEdit={() => {}} onDelete={() => {}} />
-                    </div>
-                  );
-                })()}
-              {activeId?.startsWith("folder:") &&
-                (() => {
-                  const folder = folders.find((f) => f.id === activeId.slice("folder:".length));
-                  if (!folder) return null;
-                  return (
-                    <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
-                      <FolderTile folder={folder} onEdit={() => {}} onDelete={() => {}} />
-                    </div>
-                  );
-                })()}
-            </DragOverlay>
+            {/* Same transformed-ancestor DragOverlay fix as list mode above
+                — see that block's doc comment. */}
+            {typeof document !== "undefined" &&
+              createPortal(
+                <DragOverlay>
+                  {activeId?.startsWith("project:") &&
+                    (() => {
+                      const project = projects.find((p) => p.id === activeId.slice("project:".length));
+                      if (!project) return null;
+                      return (
+                        <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+                          <ProjectTile project={project} onEdit={() => {}} onDelete={() => {}} />
+                        </div>
+                      );
+                    })()}
+                  {activeId?.startsWith("folder:") &&
+                    (() => {
+                      const folder = folders.find((f) => f.id === activeId.slice("folder:".length));
+                      if (!folder) return null;
+                      return (
+                        <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
+                          <FolderTile folder={folder} onEdit={() => {}} onDelete={() => {}} />
+                        </div>
+                      );
+                    })()}
+                </DragOverlay>,
+                document.body
+              )}
           </DndContext>
+          </div>
         )}
+      </div>
+      <TodoSidebar />
       </div>
 
       <FolderEditModal
@@ -519,8 +594,9 @@ function ProjectsPageContent() {
         open={editingProject !== null}
         onClose={() => setEditingProject(null)}
         existing={editingProject === "new" ? null : editingProject}
-        onSave={(name, color, emoji) =>
-          createOrEditProject(name, color, emoji, editingProject === "new" ? null : editingProject)
+        teamId={myTeamId}
+        onSave={(name, color, emoji, modules, members, clientName) =>
+          createOrEditProject(name, color, emoji, modules, members, editingProject === "new" ? null : editingProject, clientName)
         }
       />
       <ConfirmDialog
@@ -530,27 +606,44 @@ function ProjectsPageContent() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
-    </AppShell>
+    </>
   );
 }
 
-function useCurrentFolder(folderId: string | null) {
+/** Walks parent_folder_id one fetch at a time from the current folder up to
+ * the root, so nested folders (2026-07-19) get a real breadcrumb trail
+ * instead of just a flat "back to Alle Projekte" link. Returns the chain
+ * root-first; the last entry is always the current folder. Folder depth in
+ * practice is a handful of levels, so sequential fetches (not a dedicated
+ * batch endpoint) are fine. */
+function useFolderBreadcrumb(folderId: string | null) {
   const api = useApi();
-  const [folder, setFolder] = useState<ProjectFolder | null>(null);
+  const [chain, setChain] = useState<ProjectFolder[]>([]);
   useEffect(() => {
-    if (!folderId) return;
+    if (!folderId) {
+      setChain([]);
+      return;
+    }
     let cancelled = false;
-    api.folders().then((all) => {
-      if (!cancelled) setFolder(all.find((f) => f.id === folderId) ?? null);
+    async function load() {
+      const trail: ProjectFolder[] = [];
+      let currentId: string | null = folderId;
+      while (currentId) {
+        const folder: ProjectFolder = await api.folder(currentId);
+        trail.unshift(folder);
+        currentId = folder.parent_folder_id;
+      }
+      if (!cancelled) setChain(trail);
+    }
+    load().catch(() => {
+      if (!cancelled) setChain([]);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
-  // Derived, not stored: a null folderId always means "no current folder",
-  // regardless of whatever the last fetch happened to leave in state.
-  return folderId ? folder : null;
+  return chain;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -559,12 +652,71 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function TileGrid({ children }: { children: React.ReactNode }) {
   return (
-    <motion.div
-      layout
-      className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8"
-    >
-      <AnimatePresence mode="popLayout">{children}</AnimatePresence>
-    </motion.div>
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-8">
+      {children}
+    </div>
+  );
+}
+
+function ListRows({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-1 mb-8">{children}</div>;
+}
+
+/** List-view counterpart to TileShell — same href/menu/edit/delete affordances,
+ * a single horizontal row instead of a photo tile. Menu is always visible (not
+ * hover-reveal like the grid tiles) since a row has no natural hover-only real
+ * estate the way a square tile's corner does. */
+function ListRowShell({
+  href,
+  color,
+  thumbnail,
+  emoji,
+  label,
+  subtitle,
+  badge,
+  menu,
+  onBeforeNavigate,
+}: {
+  href: string;
+  color: string;
+  thumbnail?: React.ReactNode;
+  emoji: string;
+  label: string;
+  subtitle?: string;
+  badge?: React.ReactNode;
+  menu: React.ReactNode;
+  onBeforeNavigate?: (el: HTMLElement) => Promise<void>;
+}) {
+  const router = useRouter();
+  return (
+    <div className="group flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/5 transition-colors">
+      <Link
+        href={href}
+        className="flex items-center gap-3 flex-1 min-w-0"
+        onClick={
+          onBeforeNavigate
+            ? (e) => {
+                e.preventDefault();
+                const el = e.currentTarget;
+                onBeforeNavigate(el).then(() => router.push(href));
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{ backgroundColor: `${color}e6` }}
+          className="w-10 h-10 shrink-0 rounded-lg overflow-hidden flex items-center justify-center ring-1 ring-white/10 [&>img]:w-full [&>img]:h-full [&>img]:object-cover"
+        >
+          {thumbnail ?? <span className="text-base">{emoji}</span>}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold truncate">{label}</div>
+          {subtitle && <div className="text-xs text-white/40 truncate">{subtitle}</div>}
+        </div>
+        {badge}
+      </Link>
+      {menu}
+    </div>
   );
 }
 
@@ -572,10 +724,13 @@ function TileShell({
   href,
   color,
   hasImage,
+  titleEmoji,
   children,
   menu,
+  badge,
   label,
   subtitle,
+  onBeforeNavigate,
 }: {
   href: string;
   color: string;
@@ -587,36 +742,65 @@ function TileShell({
    * grade, so an arbitrary uploaded photo always reads as part of this UI
    * instead of a raw, un-styled image sitting on top of it. */
   hasImage?: boolean;
+  /** 2026-07-17, Lino: "wenn man ein Emoji auswählt, verschwindet das
+   * Thumbnail. das soll aber nicht so sein" — vorher war `children`
+   * entweder das Bild ODER das Emoji (siehe ProjectTile weiter unten).
+   * 2026-07-19, Lino korrigierte die Platzierung: mit Thumbnail wandert
+   * das Emoji an den ANFANG DES TITELS statt zentriert auf dem Bild zu
+   * schweben (vorher `overlayEmoji`, zentriert via eigenem `<span>` im
+   * Bild-Layer — ersetzt durch dieses Präfix). Ohne Thumbnail bleibt das
+   * Emoji wie bisher zentriert in der Kachel-Mitte (das ist `children`
+   * selbst, siehe ProjectTile/FolderTile — kein Duplikat noetig). Caller
+   * übergibt hier also NUR den Wert, wenn hasImage true ist. */
+  titleEmoji?: string | null;
   children: React.ReactNode;
   menu: React.ReactNode;
+  /** 2026-07-19 — Pipeline-Fortschritts-Badge (nur ProjectTile, siehe
+   * dort); anders als `menu` immer sichtbar statt nur bei Hover, da es
+   * Status auf einen Blick zeigen soll, nicht eine versteckte Aktion. */
+  badge?: React.ReactNode;
   label: string;
   subtitle?: string;
+  /** 2026-07-17, Lino: "smoothe transition animation zur ersten kachel" —
+   * nur ProjectTile setzt das (siehe dort); FolderTile navigiert innerhalb
+   * derselben Seite (nur ein Query-Param-Wechsel), da braucht's keinen
+   * Cross-Route-Morph. Bekommt das eigentliche `<a>`-Element + darf die
+   * Navigation per Promise verzögern, bis der Flug weit genug ist. */
+  onBeforeNavigate?: (el: HTMLElement) => Promise<void>;
 }) {
+  const router = useRouter();
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 12, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ type: "spring", stiffness: 380, damping: 30 }}
-      whileHover={{ y: -3 }}
-      className="group relative"
-    >
+    <div className="group relative">
       {/* Picked-color ambient glow behind the tile — same cue as the iOS
           app's .shadow(color: Color(hex: color).opacity(0.55), radius: 10)
           on ProjectListView's tiles, which the web version never got. A
           blurred color layer (not a box-shadow) reads as a proper glow
-          bleeding past the tile edges rather than a tight drop shadow. */}
+          bleeding past the tile edges rather than a tight drop shadow.
+          Opacity dimmed 0.40/0.60 -> 0.07/0.12 (2026-07-20, Lino: "der glow
+          hinter den kacheln ist zu hell", then "immer noch viel zu stark,
+          viel weniger machen" after an intermediate 0.15/0.28 pass), then
+          nudged back up to 0.11/0.18 (2026-07-22, Lino: "der glow hinter
+          den kacheln kann nun ein wenig stärker sein"). */}
       <div
         aria-hidden
-        className="absolute inset-3 rounded-2xl blur-2xl opacity-40 group-hover:opacity-60 transition-opacity pointer-events-none -z-10"
+        className="absolute inset-3 rounded-2xl blur-2xl opacity-[0.11] group-hover:opacity-[0.18] transition-opacity pointer-events-none -z-10"
         style={{ backgroundColor: color }}
       />
-      <Link href={href} style={hasImage ? { perspective: 800 } : undefined} className="block">
-        <motion.div
-          whileHover={hasImage ? { rotateX: -5, rotateY: 7, scale: 1.035 } : undefined}
-          transition={{ type: "spring", stiffness: 260, damping: 18 }}
-          style={{ backgroundColor: `${color}e6`, transformStyle: hasImage ? "preserve-3d" : undefined }}
+      <Link
+        href={href}
+        className="block"
+        onClick={
+          onBeforeNavigate
+            ? (e) => {
+                e.preventDefault();
+                const el = e.currentTarget;
+                onBeforeNavigate(el).then(() => router.push(href));
+              }
+            : undefined
+        }
+      >
+        <div
+          style={{ backgroundColor: `${color}e6` }}
           className={`aspect-[4/3] rounded-2xl overflow-hidden relative flex items-center justify-center ring-1 ring-white/10 transition-shadow ${
             hasImage ? "shadow-xl shadow-black/40 group-hover:shadow-2xl group-hover:shadow-black/50" : "shadow-lg shadow-black/20 group-hover:shadow-xl group-hover:shadow-black/30"
           }`}
@@ -665,7 +849,8 @@ function TileShell({
             </>
           )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
-        </motion.div>
+          {badge && <div className="absolute top-1.5 left-1.5">{badge}</div>}
+        </div>
         {/* NO backdrop-blur on the photo itself, tried twice now (see also
             the pre-existing comment a few lines up on the ring-inset div) —
             ANY blur layer painted over/behind the actual photo softens the
@@ -677,11 +862,14 @@ function TileShell({
             blurring that content. The gradients/rim-light/reflection
             streak above are the entire glass treatment here — genuinely
             sharp photo, glass read carried by light/reflection cues only. */}
-        <div className="mt-2 text-sm font-semibold truncate">{label}</div>
+        <div className="mt-2 text-sm font-semibold truncate">
+          {titleEmoji && <span className="mr-1">{titleEmoji}</span>}
+          {label}
+        </div>
         {subtitle && <div className="text-xs text-white/40">{subtitle}</div>}
       </Link>
       <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">{menu}</div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -694,24 +882,96 @@ function ProjectTile({
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  // Date.now() is impure and isn't allowed directly in a render body (React
-  // flags it since two renders could disagree, e.g. server vs. client) - a
-  // lazy useState initializer is the sanctioned way to grab a one-time
-  // "now" reading; a few ms of staleness across re-renders doesn't matter
-  // for a days-until-deletion countdown.
-  const [now] = useState(() => Date.now());
-  const daysUntilDeletion = Math.max(
-    0,
-    Math.ceil((new Date(project.last_opened_at).getTime() + 30 * 24 * 3600 * 1000 - now) / (24 * 3600 * 1000))
-  );
+  const api = useApi();
+  const { t } = useLanguage();
+
+  const pipelineLabel: Record<Project["pipeline_stage"], string> = {
+    idea: t("pipeline.idea"),
+    scripting: t("pipeline.scripting"),
+    postproduction: t("pipeline.postproduction"),
+    done: t("pipeline.done"),
+  };
+
+  // 2026-07-19, Lino: "auf den Projektkacheln soll man sehn wie weit im
+  // Pipeline Verlauf das Projekt ist" — pipeline_stage kommt fertig
+  // berechnet vom Server (_set_project_pipeline_stage in main.py), hier
+  // nur Label+Farbe pro Stufe. Gleiche Semantik wie anderswo im Web-App:
+  // gelb=Idee/Konzept (IDEAS_TINT-Goldton), blau=Scripting (Standard-
+  // Akzentfarbe der App), violett=Postproduction, grün=Abgeschlossen
+  // (matches the "Abgenommen"-grün, das überall sonst "fertig" bedeutet).
+  // 2026-07-26, Lino: "die status batches an den projektkacheln [müssen]
+  // besser sichtbar sein.. die kachel rechts unten kann man den status
+  // batch kaum lesen" — a light/bright project thumbnail (e.g. a
+  // grayscale mountain photo) behind the old translucent
+  // `bg-{color}-500/20 text-{color}-300` + `backdrop-blur-md` pill left
+  // near-zero contrast, since the blur only softens the image, it never
+  // darkens it. Switched to a near-solid tinted pill (white text, a real
+  // drop shadow) — legible against ANY thumbnail brightness, not just dark
+  // ones, while keeping the same per-stage color coding.
+  const stageStyle: Record<Project["pipeline_stage"], string> = {
+    idea: "bg-amber-600/95 text-white",
+    scripting: "bg-blue-600/95 text-white",
+    postproduction: "bg-violet-600/95 text-white",
+    done: "bg-emerald-600/95 text-white",
+  };
+
+  // 2026-08-26 — used to fire onNavigateStart (triggered the parent's exit-
+  // swipe animation) and BLOCK navigation for 220ms–800ms so that animation
+  // had time to play. No animation left to wait for, so navigation is no
+  // longer gated at all: this only still exists to warm `navCache` before
+  // the destination page mounts, fire-and-forget, same pure-optimization
+  // path as before (a failed/slow prefetch just means the target page loads
+  // its own data on mount, same as if this never ran).
+  function beforeNavigate(_el: HTMLElement) {
+    (async () => {
+      try {
+        const [detail, projectMembers, projectAnnotations] = await Promise.all([
+          api.projectDetail(project.id), api.members(project.id), api.listAnnotations(project.id),
+        ]);
+        setNavCache(`scenes:${project.id}`, { project: detail, members: projectMembers, annotations: projectAnnotations });
+      } catch {
+        // Reiner Optimierungs-Pfad — schlägt der Prefetch fehl, lädt die
+        // Zielseite beim Mounten einfach ganz normal selbst nach.
+      }
+    })();
+    return Promise.resolve();
+  }
+
+  // 2026-07-26, Lino: "drückt man auf ein projekt was NUR die
+  // postproductionpipeline aktiviert hat, springt er zuerst auf die
+  // ideenseite ganz kurz und dann erst auf die postproduction seite.. er
+  // soll aber DIREKT... springen" — `/projects/{id}/page.tsx` already
+  // module-gate-redirects Postproduction-only projects (#251), but only
+  // AFTER its own data fetch resolves client-side, so the Ideas/Scenes
+  // page still paints for a frame before the redirect fires. Since this
+  // tile already has the SAME `Project.module_*` flags in hand right now,
+  // just link straight to the correct first-enabled stage instead of
+  // always `/projects/{id}` — skips that whole detour for the by-far most
+  // common navigation path (clicking a tile). The redirect logic on the
+  // target page itself stays too, as a fallback for paths that don't go
+  // through a tile click (back button, a bookmarked link, a notification
+  // deep link) — see that page's own render-gate fix for how THAT path
+  // avoids painting the wrong view too.
+  const targetHref =
+    project.module_concept || project.module_scripting
+      ? `/projects/${project.id}`
+      : project.module_postproduction
+        ? `/projects/${project.id}/postproduction`
+        : `/projects/${project.id}`;
 
   return (
     <TileShell
-      href={`/projects/${project.id}`}
+      href={targetHref}
       color={project.color}
       hasImage={Boolean(project.thumbnail_url)}
+      titleEmoji={project.thumbnail_url ? project.emoji : null}
       label={project.name}
-      subtitle={`Wird gelöscht in ${daysUntilDeletion} Tagen`}
+      onBeforeNavigate={beforeNavigate}
+      badge={
+        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm shadow-black/30 ring-1 ring-black/10 ${stageStyle[project.pipeline_stage]}`}>
+          {pipelineLabel[project.pipeline_stage]}
+        </span>
+      }
       menu={
         <Menu
           trigger={
@@ -748,7 +1008,17 @@ function ProjectTile({
         </Menu>
       }
     >
-      {project.thumbnail_url ? (
+      {/* 2026-07-18 (Todoist #193, Lino: "Thumbnails kommen ziemlich spät")
+          — thumbnail_data_uri (a small pre-encoded JPEG, see
+          _set_project_thumbnail in main.py) renders immediately with a
+          plain <img>, no separate authenticated blob fetch needed for
+          this low-res list-tile use. Falls back to the old AuthImage path
+          only if that's missing (e.g. a corrupt source file) but
+          thumbnail_url still resolved. */}
+      {project.thumbnail_data_uri ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={project.thumbnail_data_uri} alt={project.name} className="w-full h-full object-cover" />
+      ) : project.thumbnail_url ? (
         <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" />
       ) : (
         <span className="text-3xl">{project.emoji || "🎬"}</span>
@@ -771,8 +1041,13 @@ function FolderTile({
       href={`/projects?folder=${folder.id}`}
       color={folder.color}
       hasImage={Boolean(folder.background_image_url)}
+      titleEmoji={folder.background_image_url ? folder.emoji : null}
       label={folder.name}
-      subtitle={`${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`}
+      subtitle={
+        folder.folder_count > 0
+          ? `${folder.folder_count} Ordner, ${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+          : `${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+      }
       menu={
         <Menu
           trigger={
@@ -827,93 +1102,300 @@ function FolderTile({
   );
 }
 
-/** 4-directional Notion-style insertion line, same visual language as the
- * scene grid's SortableSceneCard indicator — see tileCollisionDetection's
- * doc comment above for why this grid needs all 4 directions, not just
- * left/right (it wraps multiple rows, unlike the scene grid). */
-function TileInsertionIndicator({ edge }: { edge?: "left" | "right" | "top" | "bottom" | null }) {
-  if (!edge) return null;
-  const base = "absolute rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.7)] pointer-events-none z-10";
-  if (edge === "left") return <div className={`${base} -left-[9px] top-0 bottom-0 w-[3px]`} />;
-  if (edge === "right") return <div className={`${base} -right-[9px] top-0 bottom-0 w-[3px]`} />;
-  if (edge === "top") return <div className={`${base} -top-[9px] left-0 right-0 h-[3px]`} />;
-  return <div className={`${base} -bottom-[9px] left-0 right-0 h-[3px]`} />;
-}
-
-/** Always draggable now (2026-07-13) — was gated behind "only if at least
- * one folder exists" back when dragging a project could only ever mean
- * "file it into a folder"; now it also means "reorder among sibling
- * projects", which is always meaningful regardless of whether any folders
- * exist. transform/transition deliberately NOT applied (useSortable would
- * otherwise reflow every sibling toward its predicted post-drop position)
- * — same insertion-line-only design as the scene grid, isDragging/opacity
- * is all this tile needs. */
-function DraggableProjectTile({
+function ProjectListRow({
   project,
-  insertionEdge,
   onEdit,
   onDelete,
 }: {
   project: Project;
-  insertionEdge?: "left" | "right" | "top" | "bottom" | null;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: `project:${project.id}` });
+  const api = useApi();
+  const { t } = useLanguage();
+
+  const pipelineLabel: Record<Project["pipeline_stage"], string> = {
+    idea: t("pipeline.idea"),
+    scripting: t("pipeline.scripting"),
+    postproduction: t("pipeline.postproduction"),
+    done: t("pipeline.done"),
+  };
+  const stageStyle: Record<Project["pipeline_stage"], string> = {
+    idea: "bg-amber-600/95 text-white",
+    scripting: "bg-blue-600/95 text-white",
+    postproduction: "bg-violet-600/95 text-white",
+    done: "bg-emerald-600/95 text-white",
+  };
+
+  // 2026-08-26 — no longer blocks navigation, see ProjectTile's identical
+  // beforeNavigate for why.
+  function beforeNavigate(_el: HTMLElement) {
+    (async () => {
+      try {
+        const [detail, projectMembers, projectAnnotations] = await Promise.all([
+          api.projectDetail(project.id), api.members(project.id), api.listAnnotations(project.id),
+        ]);
+        setNavCache(`scenes:${project.id}`, { project: detail, members: projectMembers, annotations: projectAnnotations });
+      } catch {
+        // Reiner Optimierungs-Pfad, siehe ProjectTile's identische Stelle.
+      }
+    })();
+    return Promise.resolve();
+  }
+
+  const targetHref =
+    project.module_concept || project.module_scripting
+      ? `/projects/${project.id}`
+      : project.module_postproduction
+        ? `/projects/${project.id}/postproduction`
+        : `/projects/${project.id}`;
+
+  return (
+    <ListRowShell
+      href={targetHref}
+      color={project.color}
+      emoji={project.emoji || "🎬"}
+      label={project.name}
+      subtitle={project.client_name || undefined}
+      onBeforeNavigate={beforeNavigate}
+      thumbnail={
+        project.thumbnail_data_uri ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={project.thumbnail_data_uri} alt={project.name} />
+        ) : project.thumbnail_url ? (
+          <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" />
+        ) : undefined
+      }
+      badge={
+        <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm shadow-black/30 ring-1 ring-black/10 ${stageStyle[project.pipeline_stage]}`}>
+          {pipelineLabel[project.pipeline_stage]}
+        </span>
+      }
+      menu={
+        <Menu
+          trigger={
+            <IconButton size={28} className="text-white/40 hover:text-white/80">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </IconButton>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                onClick={() => {
+                  onEdit();
+                  close();
+                }}
+              >
+                Bearbeiten
+              </MenuItem>
+              <MenuItem
+                danger
+                onClick={() => {
+                  onDelete();
+                  close();
+                }}
+              >
+                Löschen
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      }
+    />
+  );
+}
+
+function FolderListRow({
+  folder,
+  onEdit,
+  onDelete,
+}: {
+  folder: ProjectFolder;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <ListRowShell
+      href={`/projects?folder=${folder.id}`}
+      color={folder.color}
+      emoji={folder.emoji || "📁"}
+      label={folder.name}
+      subtitle={
+        folder.folder_count > 0
+          ? `${folder.folder_count} Ordner, ${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+          : `${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+      }
+      thumbnail={
+        folder.background_image_url ? (
+          <AuthImage
+            path={folder.background_image_url}
+            alt={folder.name}
+            className="w-full h-full object-cover"
+            objectPosition={
+              folder.background_image_focus_x != null && folder.background_image_focus_y != null
+                ? `${(folder.background_image_focus_x * 100).toFixed(1)}% ${(folder.background_image_focus_y * 100).toFixed(1)}%`
+                : undefined
+            }
+          />
+        ) : undefined
+      }
+      menu={
+        <Menu
+          trigger={
+            <IconButton size={28} className="text-white/40 hover:text-white/80">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </IconButton>
+          }
+        >
+          {(close) => (
+            <>
+              <MenuItem
+                onClick={() => {
+                  onEdit();
+                  close();
+                }}
+              >
+                Bearbeiten
+              </MenuItem>
+              <MenuItem
+                danger
+                onClick={() => {
+                  onDelete();
+                  close();
+                }}
+              >
+                Löschen
+              </MenuItem>
+            </>
+          )}
+        </Menu>
+      }
+    />
+  );
+}
+
+/** 2026-08-06 — manual reordering removed (see tileCollisionDetection's doc
+ * comment), so this is now plain `useDraggable` (not `useSortable` — there's
+ * no sibling list to reflow/animate anymore, just "pick this row up"). The
+ * dragged row itself stays in place at reduced opacity; DragOverlay below
+ * shows the floating clone that actually follows the cursor. */
+function DraggableProjectListRow({
+  project,
+  onEdit,
+  onDelete,
+}: {
+  project: Project;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `project:${project.id}` });
   return (
     <div
       ref={setNodeRef}
-      data-sortable-tile-id={`project:${project.id}`}
       {...attributes}
       {...listeners}
-      className="relative"
-      style={{
-        opacity: isDragging ? 0.4 : 1,
-        zIndex: isDragging ? 20 : "auto",
-        touchAction: "none",
-        cursor: "grab",
-      }}
+      style={{ opacity: isDragging ? 0.4 : 1, touchAction: "none", cursor: "grab" }}
     >
-      <TileInsertionIndicator edge={insertionEdge} />
-      <ProjectTile project={project} onEdit={onEdit} onDelete={onDelete} />
+      <ProjectListRow project={project} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
 }
 
-/** Sortable AND a filing target (2026-07-13) — folders reorder among
- * themselves (insertion line, same as projects) but also stay droppable
- * FOR a dragged project (ring highlight, driven by fileIntoFolderId rather
- * than dnd-kit's own isOver — isOver would also fire while reordering two
- * folders past each other, which shouldn't show the "file into me" ring). */
-function DroppableFolderTile({
+/** Draggable (onto another folder, to nest) AND droppable (receives a
+ * dragged project OR another dragged folder) at once — same dual role as
+ * DroppableFolderTile below, just for list mode's row shape. Two separate
+ * dnd-kit hooks/refs merged via a shared callback ref, since `useDraggable`
+ * and `useDroppable` don't share one. */
+function DraggableFolderListRow({
   folder,
-  insertionEdge,
   filingHighlighted,
   onEdit,
   onDelete,
 }: {
   folder: ProjectFolder;
-  insertionEdge?: "left" | "right" | "top" | "bottom" | null;
   filingHighlighted: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: `folder:${folder.id}` });
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: `folder:${folder.id}` });
+  const { setNodeRef: setDropRef } = useDroppable({ id: `folder:${folder.id}` });
+  return (
+    <div
+      ref={(el) => {
+        setDragRef(el);
+        setDropRef(el);
+      }}
+      {...attributes}
+      {...listeners}
+      className={`rounded-xl ring-2 transition-all ${filingHighlighted ? "ring-blue-400 ring-offset-2 ring-offset-[#161616]" : "ring-transparent"}`}
+      style={{ opacity: isDragging ? 0.4 : 1, touchAction: "none", cursor: "grab" }}
+    >
+      <FolderListRow folder={folder} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
+/** 2026-08-06 — same simplification as DraggableProjectListRow: plain
+ * useDraggable, no more insertion-line reordering. */
+function DraggableProjectTile({
+  project,
+  onEdit,
+  onDelete,
+}: {
+  project: Project;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `project:${project.id}` });
   return (
     <div
       ref={setNodeRef}
-      data-sortable-tile-id={`folder:${folder.id}`}
       {...attributes}
       {...listeners}
-      className={`relative rounded-2xl ring-2 transition-all ${filingHighlighted ? "ring-blue-400 ring-offset-2 ring-offset-[#161616]" : "ring-transparent"}`}
-      style={{
-        opacity: isDragging ? 0.4 : 1,
-        zIndex: isDragging ? 20 : "auto",
-        touchAction: "none",
-        cursor: "grab",
-      }}
+      style={{ opacity: isDragging ? 0.4 : 1, touchAction: "none", cursor: "grab" }}
     >
-      <TileInsertionIndicator edge={insertionEdge} />
+      <ProjectTile project={project} onEdit={onEdit} onDelete={onDelete} />
+    </div>
+  );
+}
+
+/** Draggable (onto another folder, to nest — new 2026-08-06) AND droppable
+ * (receives a dragged project OR another dragged folder), ring highlight
+ * driven by dropTargetFolderId rather than dnd-kit's own isOver (isOver
+ * would also fire while a folder drag merely passes over without settling). */
+function DroppableFolderTile({
+  folder,
+  filingHighlighted,
+  onEdit,
+  onDelete,
+}: {
+  folder: ProjectFolder;
+  filingHighlighted: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({ id: `folder:${folder.id}` });
+  const { setNodeRef: setDropRef } = useDroppable({ id: `folder:${folder.id}` });
+  return (
+    <div
+      ref={(el) => {
+        setDragRef(el);
+        setDropRef(el);
+      }}
+      {...attributes}
+      {...listeners}
+      className={`rounded-2xl ring-2 transition-all ${filingHighlighted ? "ring-blue-400 ring-offset-2 ring-offset-[#161616]" : "ring-transparent"}`}
+      style={{ opacity: isDragging ? 0.4 : 1, touchAction: "none", cursor: "grab" }}
+    >
       <FolderTile folder={folder} onEdit={onEdit} onDelete={onDelete} />
     </div>
   );
@@ -923,6 +1405,25 @@ function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function GridIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   );
 }

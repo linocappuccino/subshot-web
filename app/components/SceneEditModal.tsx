@@ -1,20 +1,36 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { Input, Textarea, Label, FieldGroup } from "./ui/Field";
 import { Switch } from "./ui/Switch";
 import { SegmentedControl } from "./ui/SegmentedControl";
 import { ImageDropZone } from "./ui/ImageDropZone";
+import { ImageGeneratePopup } from "./ImageGeneratePopup";
 import { DateTimePicker } from "./ui/DateTimePicker";
 import { LocationPicker } from "./ui/LocationPicker";
+import { ShotEditModal } from "./ShotEditModal";
+import { SortableShotRow, ShotRowContent, computeShotReorder } from "./SceneCard";
+import { Avatar } from "./ui/Avatar";
+import { Menu, MenuItem } from "./ui/Menu";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
 import { useAutosave } from "@/lib/useAutosave";
 import { ApiError } from "@/lib/api";
-import { PRIORITY_COLORS, PRIORITY_LABELS, type Member, type Priority, type Scene, type SceneDialogue } from "@/lib/types";
+import { useLanguage } from "@/lib/i18n";
+import { PRIORITY_COLORS, type Member, type Priority, type Scene, type SceneDialogue, type Shot } from "@/lib/types";
 
 const DURATIONS = [null, ...Array.from({ length: 48 }, (_, i) => (i + 1) * 5)];
 
@@ -32,14 +48,22 @@ export function SceneEditModal({
   previousScene,
   nextSortOrder,
   members,
+  shots,
   onCreated,
   onUpdated,
+  onShotCreated,
+  onShotUpdated,
   isIntermediateStep = false,
 }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
   existing: Scene | null;
+  /** This scene's own shots, already filtered+sorted by the caller (same
+   * `shotsFor(scene.id)` page.tsx already computes for SceneCard) — 2026-
+   * 07-17, Lino: viewing/reordering moves into this modal too, not just
+   * adding (see onShotCreated's own doc comment on why adding lives here). */
+  shots: Shot[];
   previousScene: Scene | null;
   /** sort_order to send when CREATING a scene — always "one past the
    * project's current highest sort_order" (see page.tsx), so a new scene
@@ -55,6 +79,16 @@ export function SceneEditModal({
   members: Member[];
   onCreated: (scene: Scene) => void;
   onUpdated: (scene: Scene) => void;
+  /** 2026-07-17, Lino: "+ Einstellung hinzufügen" moved out of the always-
+   * visible tile (SceneCard) into here, under Dialog — only reachable once
+   * the scene is actually open, not from the grid overview. Only fires for
+   * an EXISTING scene (see the gate at the JSX below) since a shot needs a
+   * real scene_id; there's nothing to add it to while still creating one. */
+  onShotCreated?: (shot: Shot) => void;
+  /** Reorder (drag-and-drop, see the shots section below) and ShotEditModal
+   * edits both go through here — same shape as SceneCard's own onChange
+   * shots-updater, just scoped to a single shot at a time. */
+  onShotUpdated?: (shot: Shot) => void;
   /** "Zwischenschritt" (mirrors the iOS app's SceneEditSheet): a lighter
    * connective beat, not a shootable scene — creation-time choice only (an
    * existing scene's `existing.is_intermediate_step` decides this instead,
@@ -64,6 +98,7 @@ export function SceneEditModal({
 }) {
   const api = useApi();
   const toast = useToast();
+  const { t } = useLanguage();
 
   // An existing scene's own field wins once it's been created — the prop is
   // only meaningful for the not-yet-created case (see the prop's doc comment).
@@ -102,6 +137,14 @@ export function SceneEditModal({
   // `dialogues` (and thus the checkbox/strike-through render) until saved.
   const [editingDialogueId, setEditingDialogueId] = useState<string | null>(null);
   const [editingDialogueText, setEditingDialogueText] = useState("");
+  const [addingShot, setAddingShot] = useState(false);
+  const [newShotText, setNewShotText] = useState("");
+  const [editingShot, setEditingShot] = useState<Shot | null>(null);
+  const [draggingShotId, setDraggingShotId] = useState<string | null>(null);
+  const shotSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
+  );
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   // 2026-07-15, Lino: no way to remove a scene's image, only replace it.
@@ -113,21 +156,13 @@ export function SceneEditModal({
    * an already-saved scene (needs a real scene id to call the endpoint
    * against), same reasoning as uploadSceneImage's own existing-only path
    * for a brand-new, not-yet-created scene. */
-  const [generatingStyle, setGeneratingStyle] = useState<"realistic" | "sketch" | null>(null);
-  /** 2026-07-15, Lino: "man muss noch auswählen könnne in welchem format
-   * man das Bild haben will... 16:9 oder 9:16". Defaults to 16:9 (matches
-   * actual camera footage aspect — the more likely default for a scene
-   * reference/storyboard image); 9:16 is there for anyone framing a
-   * vertical/mobile shot instead. Either way the app's own image display
-   * already handles both ratios (see ImageDropZone's lockAspectRatio). */
-  const [aspectRatio, setAspectRatio] = useState<"16:9" | "9:16">("16:9");
-  /** 2026-07-16, Lino: "realistisch/sketch soll auch ein switch button
-   * sein" — replaces the old two-separate-buttons-double-as-style-picker
-   * design (each button both selected AND fired its own style) with an
-   * explicit style switch next to the aspect-ratio one, plus a single
-   * "Bild generieren" button that fires whichever style is currently
-   * selected. */
-  const [style, setStyle] = useState<"realistic" | "sketch">("realistic");
+  const [generatingStyle, setGeneratingStyle] = useState<"realistic" | "sketch" | "funny_sketch" | null>(null);
+  /** 2026-07-17, Lino: "unter der Bild box soll ein Button 'AI Bild
+   * generieren' sein, drückt man darauf kommt ein Pop up" — replaces the
+   * old permanently-visible aspect-ratio/style switches + button row with
+   * a single trigger button opening ImageGeneratePopup (own prompt/format/
+   * style/Generieren all in one place). */
+  const [showGeneratePopup, setShowGeneratePopup] = useState(false);
 
   // This component never unmounts (the page renders it once, unconditionally,
   // and toggles `open` — see Modal, which only hides/shows its CHILDREN, not
@@ -161,30 +196,20 @@ export function SceneEditModal({
     setGoodTake(existing?.good_take_filename ?? "");
     setDialogues(existing?.dialogues ?? []);
     setDraftDialogues([]);
+    setAddingShot(false);
+    setNewShotText("");
+    setEditingShot(null);
     setImageFile(null);
     setImagePreview(null);
     setImageRemoved(false);
   }
 
-  // Existing cover photo needs the same authenticated fetch as everywhere
-  // else (see AuthImage) - a plain <img src> can't attach the Bearer token,
-  // so this loads it once as a blob URL for the drop zone to preview.
+  // Existing cover photo — image_url is a presigned R2 URL since #248
+  // (2026-07-22), directly usable as the drop zone preview's src, no fetch
+  // needed anymore (see AuthImage.tsx's updated doc comment).
   useEffect(() => {
     if (!open || !existing?.image_url) return;
-    let cancelled = false;
-    let objectUrl: string | null = null;
-    api.fetchImageBlobUrl(existing.image_url).then((url) => {
-      if (cancelled) {
-        URL.revokeObjectURL(url);
-        return;
-      }
-      objectUrl = url;
-      setImagePreview(url);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
+    setImagePreview(existing.image_url);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, existing?.id, existing?.image_url]);
 
@@ -197,12 +222,64 @@ export function SceneEditModal({
         const created = await api.addDialogue(existing.id, text);
         setDialogues((prev) => [...prev, created]);
       } catch (e) {
-        toast.showError(e instanceof ApiError ? e.message : "Dialog konnte nicht hinzugefügt werden.");
+        toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.addDialogueFailed"));
       }
     } else {
       setDraftDialogues((prev) => [...prev, text]);
     }
     setNewDialogueText("");
+  }
+
+  async function addShot() {
+    const description = newShotText.trim();
+    setAddingShot(false);
+    if (!description || !existing) return;
+    try {
+      const shot = await api.createShot(existing.project_id, { scene_id: existing.id, description });
+      onShotCreated?.(shot);
+      // 2026-07-17, Lino: "dann geht direkt das Fenster auf wo man die
+      // Einstellungen für die neue erweiterte Einstellung machen kann" —
+      // straight into ShotEditModal right after naming it, same flow the
+      // iOS app's commitNewShot already has (camera settings etc.
+      // immediately enterable instead of having to find/reopen the shot
+      // afterward).
+      setEditingShot(shot);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+    setNewShotText("");
+  }
+
+  async function toggleShotDone(shot: Shot) {
+    try {
+      const updated = await api.patchShot(shot.id, { status: shot.status === "done" ? "open" : "done" });
+      onShotUpdated?.(updated);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
+  /** Simplified compared to SceneCard's own handleShotDragOver/-End pair —
+   * no debounced live-reorder preview, just a direct final-order
+   * computation on drop. This modal's shot list is small/contained enough
+   * that the extra complexity SceneCard needs (a full-page grid, dozens of
+   * shots, drag sweeps across many rows) doesn't apply here. */
+  async function handleShotDragEnd(event: DragEndEvent) {
+    setDraggingShotId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    const reordered = computeShotReorder(shots, activeId, overId);
+    if (!reordered) return;
+    reordered.forEach((s) => onShotUpdated?.(s));
+    const idx = reordered.findIndex((s) => s.id === activeId);
+    const beforeId = reordered[idx + 1]?.id ?? null;
+    try {
+      await api.moveShot(activeId, beforeId);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.reorderFailed"));
+    }
   }
 
   async function toggleDialogueLine(d: SceneDialogue) {
@@ -211,7 +288,7 @@ export function SceneEditModal({
       await api.patchDialogue(d.id, { done: !d.done });
     } catch (e) {
       setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, done: d.done } : x)));
-      toast.showError(e instanceof ApiError ? e.message : "Konnte nicht aktualisiert werden.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.updateFailed"));
     }
   }
 
@@ -220,7 +297,7 @@ export function SceneEditModal({
     try {
       await api.deleteDialogue(d.id);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.deleteDialogueFailed"));
     }
   }
 
@@ -238,7 +315,7 @@ export function SceneEditModal({
       await api.patchDialogue(d.id, { text });
     } catch (e) {
       setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, text: d.text } : x)));
-      toast.showError(e instanceof ApiError ? e.message : "Konnte nicht gespeichert werden.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.dialogueSaveFailed"));
     }
   }
 
@@ -294,7 +371,7 @@ export function SceneEditModal({
   useAutosave(
     () => {
       persistExisting().catch((e) => {
-        toast.showError(e instanceof ApiError ? e.message : "Automatisches Speichern fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.autosaveFailed"));
       });
     },
     [
@@ -323,7 +400,7 @@ export function SceneEditModal({
       }
       onClose();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -349,13 +426,13 @@ export function SceneEditModal({
   // which is also what backs the button's disabled state so a second
   // click — or the same scene reopened in another tab — can't fire a
   // duplicate job while one's already running.
-  async function generateImage(style: "realistic" | "sketch") {
-    if (!existing || !description.trim() || generatingStyle || existing.image_generating) return;
+  async function generateImage(prompt: string, style: "realistic" | "sketch" | "funny_sketch", aspectRatioArg: "16:9" | "9:16") {
+    if (!existing || generatingStyle || existing.image_generating) return;
     setGeneratingStyle(style);
     try {
       await persistExisting();
-      await api.generateSceneImage(existing.id, style, aspectRatio);
-      toast.showSuccess("KI-Bild wird erstellt — landet automatisch im Bildfeld, du kannst weiterarbeiten.");
+      await api.generateSceneImage(existing.id, style, aspectRatioArg, prompt);
+      toast.showSuccess(t("sceneEditModal.aiImageStarted"));
     } catch (e) {
       // 2026-07-16, Lino: the insufficient-credits case needs to be ONE
       // clear centered popup (see InsufficientCreditsDialog), not that PLUS
@@ -364,7 +441,7 @@ export function SceneEditModal({
       // the redundant toast here (same reasoning would apply to
       // trial_expired, not touched here since Lino only flagged credits).
       if (!(e instanceof ApiError && e.code === "insufficient_credits")) {
-        toast.showError(e instanceof ApiError ? e.message : "KI-Bild konnte nicht gestartet werden.");
+        toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.aiImageFailed"));
       }
       setGeneratingStyle(null);
     }
@@ -394,25 +471,26 @@ export function SceneEditModal({
   }, [existing]);
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
-      title={existing ? "Szene bearbeiten" : effectiveIsIntermediateStep ? "Neuer Zwischenschritt" : "Neue Szene"}
+      title={existing ? t("sceneEditModal.editTitle") : effectiveIsIntermediateStep ? t("sceneEditModal.newIntermediateTitle") : t("sceneEditModal.newTitle")}
       wide
       footer={
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={handleSave} disabled={saving}>
-            {saving ? "Speichert…" : "Fertig"}
+            {saving ? t("common.saving") : t("common.done")}
           </Button>
         </div>
       }
     >
       {!effectiveIsIntermediateStep && (
         <FieldGroup>
-          <Label>Bild</Label>
+          <Label>{t("sceneEditModal.image")}</Label>
           <ImageDropZone
             previewUrl={imagePreview}
             onFile={(file) => {
@@ -432,105 +510,58 @@ export function SceneEditModal({
             lockAspectRatio
           />
           {/* AI image generation (2026-07-15, Lino) — only for an already-
-              saved scene (needs a real id), and only once there's a
-              description to generate FROM (the whole point: no separate
-              prompt field, it's sourced straight from that text). */}
+              saved scene (needs a real id). 2026-07-17: single trigger
+              button, opens ImageGeneratePopup (own prompt/format/style/
+              Generieren all in one place) instead of a permanently-visible
+              switches row. */}
           {existing && (
             <div className="mt-3">
-              <p className="text-xs font-medium text-white/50 mb-2">KI-Bild aus Beschreibung erstellen</p>
-              {/* Own row, given real width to breathe (2026-07-15, Lino:
-                  "sieht sehr zusammengequetscht aus") — SegmentedControl's
-                  options are flex-1, packed too tight in a narrow row.
-                  2026-07-16, Lino: "realistisch/sketch soll auch ein switch
-                  button sein... daneben nochmals ein button mit Bild
-                  generieren" — Format and Stil are now two side-by-side
-                  switches (both just SELECT, neither fires anything by
-                  itself anymore), with a single explicit "Bild generieren"
-                  button that fires generation for whichever combination is
-                  currently selected. */}
-              {/* items-stretch (2026-07-16, Lino: "muss die gleiche hoehe
-                  haben wie realistisch/sketch") — SegmentedControl has an
-                  extra p-1 wrapper padding around its own py-1.5 option
-                  buttons that plain <Button size="sm"> doesn't have, so
-                  centering them (items-center) left the button visibly
-                  shorter. Stretching all three flex children to the row's
-                  height (set by the tallest, the SegmentedControls) fixes
-                  it without hand-tuning padding to match by eye. */}
-              <div className="flex flex-wrap items-stretch gap-3 mb-2">
-                <div className="w-32">
-                  <SegmentedControl
-                    value={aspectRatio}
-                    onChange={(v) => setAspectRatio(v)}
-                    options={[
-                      { value: "16:9", label: "16:9" },
-                      { value: "9:16", label: "9:16" },
-                    ]}
-                  />
-                </div>
-                <div className="w-44">
-                  <SegmentedControl
-                    value={style}
-                    onChange={(v) => setStyle(v)}
-                    options={[
-                      { value: "realistic", label: "Realistisch" },
-                      { value: "sketch", label: "Sketch" },
-                    ]}
-                  />
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={!description.trim() || generatingStyle !== null || Boolean(existing?.image_generating)}
-                  onClick={() => generateImage(style)}
-                >
-                  {generatingStyle ? "Erstellt…" : "✨ Bild generieren"}
-                </Button>
-              </div>
-              {!description.trim() && (
-                <span className="text-xs text-white/40">Erst eine Beschreibung eintragen</span>
-              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={generatingStyle !== null || Boolean(existing?.image_generating)}
+                onClick={() => setShowGeneratePopup(true)}
+              >
+                {generatingStyle ? t("sceneEditModal.generating") : t("sceneEditModal.generateAiImage")}
+              </Button>
             </div>
           )}
         </FieldGroup>
       )}
 
       <FieldGroup>
-        <Label>Name</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="z.B. Küche, Aussen Tag 1" autoFocus />
+        <Label>{t("sceneEditModal.name")}</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("sceneEditModal.namePlaceholder")} autoFocus />
       </FieldGroup>
 
       {!effectiveIsIntermediateStep && (
         <FieldGroup>
-          <Label>Priorität</Label>
+          <Label>{t("sceneEditModal.priority")}</Label>
           <SegmentedControl
             value={priority ?? "none"}
             onChange={(v) => setPriority(v === "none" ? null : (v as Priority))}
             options={[
-              { value: "none", label: "Keine", color: PRIORITY_COLORS.none },
-              { value: "must", label: PRIORITY_LABELS.must, color: PRIORITY_COLORS.must },
-              { value: "should", label: PRIORITY_LABELS.should, color: PRIORITY_COLORS.should },
-              { value: "optional", label: PRIORITY_LABELS.optional, color: PRIORITY_COLORS.optional },
+              { value: "none", label: t("sceneEditModal.none"), color: PRIORITY_COLORS.none },
+              { value: "must", label: t("priority.must"), color: PRIORITY_COLORS.must },
+              { value: "should", label: t("priority.should"), color: PRIORITY_COLORS.should },
+              { value: "optional", label: t("priority.optional"), color: PRIORITY_COLORS.optional },
             ]}
           />
         </FieldGroup>
       )}
 
       <FieldGroup>
-        <Label>Beschreibung</Label>
-        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="z.B. Handlung, Notizen" />
+        <Label>{t("sceneEditModal.description")}</Label>
+        <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder={t("sceneEditModal.descriptionPlaceholder")} />
       </FieldGroup>
 
       {!effectiveIsIntermediateStep && (
       <FieldGroup>
-        <Label>Dialog</Label>
+        <Label>{t("sceneEditModal.dialog")}</Label>
         <div className="space-y-1.5">
-          <AnimatePresence initial={false}>
             {dialogues.map((d) => (
-              <motion.div
+              <div
                 key={d.id}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
                 className="flex items-center gap-2 group"
               >
                 <button onClick={() => toggleDialogueLine(d)} className="shrink-0 mt-0.5">
@@ -565,7 +596,7 @@ export function SceneEditModal({
                     <button
                       onClick={() => saveEditedDialogue(d)}
                       className="shrink-0 text-white/40 hover:text-emerald-400 transition-colors"
-                      aria-label="Dialogzeile speichern"
+                      aria-label={t("sceneEditModal.saveDialogueLineAria")}
                     >
                       <CheckIcon />
                     </button>
@@ -582,23 +613,22 @@ export function SceneEditModal({
                   onClick={() => deleteDialogueLine(d)}
                   className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity text-xs shrink-0"
                 >
-                  Löschen
+                  {t("common.delete")}
                 </button>
-              </motion.div>
+              </div>
             ))}
             {draftDialogues.map((text, i) => (
-              <motion.div key={`draft-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 group">
+              <div key={`draft-${i}`} className="flex items-center gap-2 group">
                 <CheckCircle done={false} />
                 <span className="text-sm flex-1 whitespace-pre-wrap text-white/80">{text}</span>
                 <button
                   onClick={() => setDraftDialogues((prev) => prev.filter((_, idx) => idx !== i))}
                   className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-red-400 transition-opacity text-xs"
                 >
-                  Löschen
+                  {t("common.delete")}
                 </button>
-              </motion.div>
+              </div>
             ))}
-          </AnimatePresence>
           {addingDialogue ? (
             <Textarea
               autoFocus
@@ -616,7 +646,7 @@ export function SceneEditModal({
                 }
               }}
               onBlur={addDialogueLine}
-              placeholder="Neuer Dialog (Shift+Enter für Zeilenumbruch)"
+              placeholder={t("sceneEditModal.newDialoguePlaceholder")}
               rows={2}
               className="py-1.5 text-sm"
             />
@@ -625,17 +655,75 @@ export function SceneEditModal({
               onClick={() => setAddingDialogue(true)}
               className="text-xs font-semibold text-blue-400 hover:text-blue-300 flex items-center gap-1 pt-1"
             >
-              + Dialog
+              {t("sceneEditModal.addDialogueButton")}
             </button>
           )}
         </div>
       </FieldGroup>
       )}
 
+      {/* 2026-07-17, Lino: "+ Einstellung hinzufügen" gehört nicht mehr in
+          die Kachelübersicht, sondern hierhin — nur sichtbar wenn die
+          Kachel geöffnet ist (existing != null, keine neue Szene), direkt
+          unter Dialog. Die vorhandenen Einstellungen selbst bleiben zum
+          schnellen Überblick weiterhin auf der Kachel sichtbar — nur das
+          Hinzufügen ist jetzt hier. */}
+      {existing && !effectiveIsIntermediateStep && (
+        <FieldGroup>
+          <Label>{t("sceneEditModal.shots")}</Label>
+          {shots.length > 0 && (
+            <DndContext
+              sensors={shotSensors}
+              collisionDetection={closestCenter}
+              onDragStart={(e) => setDraggingShotId(String(e.active.id))}
+              onDragEnd={handleShotDragEnd}
+              onDragCancel={() => setDraggingShotId(null)}
+            >
+              <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-1.5 mb-2">
+                  {shots.map((shot) => (
+                    <SortableShotRow
+                      key={shot.id}
+                      shot={shot}
+                      onToggleDone={() => toggleShotDone(shot)}
+                      onEdit={() => setEditingShot(shot)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+              <DragOverlay>
+                {draggingShotId && (() => {
+                  const s = shots.find((x) => x.id === draggingShotId);
+                  return s ? (
+                    <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
+                      <ShotRowContent shot={s} onToggleDone={() => {}} onEdit={() => {}} />
+                    </div>
+                  ) : null;
+                })()}
+              </DragOverlay>
+            </DndContext>
+          )}
+          {addingShot ? (
+            <Input
+              autoFocus
+              value={newShotText}
+              onChange={(e) => setNewShotText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addShot()}
+              onBlur={addShot}
+              placeholder={t("sceneEditModal.newShotPlaceholder")}
+            />
+          ) : (
+            <button onClick={() => setAddingShot(true)} className="text-xs font-semibold text-blue-400 hover:text-blue-300">
+              {t("sceneEditModal.addShotButton")}
+            </button>
+          )}
+        </FieldGroup>
+      )}
+
       <FieldGroup>
-        <Switch checked={hasStart} onChange={setHasStart} label="Start festlegen" />
+        <Switch checked={hasStart} onChange={setHasStart} label={t("sceneEditModal.setStart")} />
         {hasStart && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="mt-3 flex gap-2">
+          <div className="mt-3 flex gap-2">
             <div className="flex-1">
               <DateTimePicker value={start} onChange={setStart} />
             </div>
@@ -646,16 +734,16 @@ export function SceneEditModal({
             >
               {DURATIONS.map((d) => (
                 <option key={d ?? "none"} value={d ?? ""}>
-                  {d ? `${d} Min.` : "–"}
+                  {d ? t("sceneEditModal.minutesShort", { count: d }) : "–"}
                 </option>
               ))}
             </select>
-          </motion.div>
+          </div>
         )}
       </FieldGroup>
 
       <FieldGroup>
-        <Label>Standort</Label>
+        <Label>{t("sceneEditModal.location")}</Label>
         <LocationPicker
           address={locationAddress}
           lat={locationLat}
@@ -669,45 +757,108 @@ export function SceneEditModal({
       </FieldGroup>
 
       <FieldGroup>
-        <Label>Zuständig</Label>
-        <div className="flex flex-col gap-1 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5">
-          {members.length === 0 && <span className="text-sm text-white/40">Keine Mitglieder im Projekt.</span>}
-          {members.map((m) => {
-            const isAssigned = assigneeIds.includes(m.user_id);
-            return (
-              <button
-                key={m.user_id}
-                type="button"
-                onClick={() =>
-                  setAssigneeIds((prev) => (prev.includes(m.user_id) ? prev.filter((id) => id !== m.user_id) : [...prev, m.user_id]))
-                }
-                className="flex items-center gap-2.5 text-left text-sm py-1"
-              >
-                <span
-                  className={`flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
-                    isAssigned ? "bg-blue-500 border-blue-500" : "border-white/25"
-                  }`}
-                >
-                  {isAssigned && (
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M20 6 9 17l-5-5" />
-                    </svg>
+        <Label>{t("sceneEditModal.assignee")}</Label>
+        {/* 2026-07-18 (Todoist #188, Lino: "zeigt bei mehreren zugewiesenen
+            Personen aktuell eine lange, unschöne Liste") — this field used
+            to render every project member as its own always-expanded
+            checkbox row, growing tall with the team size regardless of how
+            many were actually assigned. Replaced with the same collapsible
+            avatar-stack + dropdown pattern SceneCard.tsx's own "Zuständig"
+            trigger already uses on the tile itself, so both places behave
+            consistently. `portal` is needed here (unlike SceneCard's) since
+            this field lives inside Modal.tsx's own scrollable body, which
+            would otherwise clip a tall member list — the exact bug already
+            fixed once before for the emoji field, see Menu.tsx's own doc
+            comment on that prop. */}
+        <Menu
+          align="start"
+          portal
+          trigger={
+            <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 cursor-pointer hover:bg-white/[0.07] transition-colors">
+              {assigneeIds.length === 0 ? (
+                <span className="text-sm text-white/40">{t("sceneEditModal.noneAssigned")}</span>
+              ) : (
+                <div className="flex items-center" style={{ paddingRight: Math.min(assigneeIds.length - 1, 2) * 14 }}>
+                  {members
+                    .filter((m) => assigneeIds.includes(m.user_id))
+                    .slice(0, 5)
+                    .map((m, i) => (
+                      <div key={m.user_id} style={{ marginLeft: i === 0 ? 0 : -14, zIndex: i }}>
+                        <Avatar name={m.name} email={m.email} avatarUrl={m.avatar_url} size={26} className="ring-2 ring-[#1c1c1e]" />
+                      </div>
+                    ))}
+                  {assigneeIds.length > 5 && (
+                    <div
+                      className="flex items-center justify-center rounded-full bg-white/15 text-[10px] font-semibold text-white/70 ring-2 ring-[#1c1c1e]"
+                      style={{ width: 26, height: 26, marginLeft: -14 }}
+                    >
+                      +{assigneeIds.length - 5}
+                    </div>
                   )}
-                </span>
-                {m.name || m.email}
-              </button>
-            );
-          })}
-        </div>
+                </div>
+              )}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white/40 shrink-0">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </div>
+          }
+        >
+          {() => (
+            <>
+              {members.length === 0 && <div className="px-3.5 py-2 text-sm text-white/40">{t("sceneEditModal.noMembers")}</div>}
+              {members.map((m) => {
+                const isAssigned = assigneeIds.includes(m.user_id);
+                return (
+                  <MenuItem
+                    key={m.user_id}
+                    onClick={() =>
+                      setAssigneeIds((prev) => (prev.includes(m.user_id) ? prev.filter((id) => id !== m.user_id) : [...prev, m.user_id]))
+                    }
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className={`flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                          isAssigned ? "bg-blue-500 border-blue-500" : "border-white/25"
+                        }`}
+                      >
+                        {isAssigned && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6 9 17l-5-5" />
+                          </svg>
+                        )}
+                      </span>
+                      {m.name || m.email}
+                    </span>
+                  </MenuItem>
+                );
+              })}
+            </>
+          )}
+        </Menu>
       </FieldGroup>
 
       {!effectiveIsIntermediateStep && (
         <FieldGroup className="mb-0">
-          <Label>Good Take</Label>
-          <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder="Dateiname, z.B. A003_C012" />
+          <Label>{t("scene.goodTake")}</Label>
+          <Input value={goodTake} onChange={(e) => setGoodTake(e.target.value)} placeholder={t("sceneEditModal.goodTakePlaceholder")} />
         </FieldGroup>
       )}
     </Modal>
+    {existing && (
+      <ImageGeneratePopup
+        open={showGeneratePopup}
+        onClose={() => setShowGeneratePopup(false)}
+        initialPrompt={description}
+        onGenerate={(prompt, style, aspectRatio) => generateImage(prompt, style, aspectRatio)}
+      />
+    )}
+    <ShotEditModal
+      open={editingShot !== null}
+      onClose={() => setEditingShot(null)}
+      shot={editingShot}
+      onUpdated={(updated) => onShotUpdated?.(updated)}
+    />
+    </>
   );
 }
 

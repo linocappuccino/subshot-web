@@ -32,6 +32,14 @@ export function CreditsNavLink() {
   }, []);
 
   return (
+    // 2026-07-18, Lino: "die ganze navigation wackelt kurz" beim Klicken —
+    // Ursache war, dass dieser Link je nach Ladezustand einen anderen Text
+    // rendert ("Credits" vs. "1250 Credits"), was seine Breite ändert und
+    // dadurch Team/Glocke/UserButton daneben verschiebt (jede Navigation
+    // mountet AppShell + diesen Link neu, siehe AppShell-Kommentar). Fix:
+    // Label bleibt IMMER "Credits", die Zahl lebt in einer eigenen,
+    // fest-breiten Spalte daneben — deren Inhalt wechselt (leer→Zahl), aber
+    // die reservierte Breite tut es nicht, also kein Layout-Shift mehr.
     <Link
       href="/credits"
       className="hidden sm:flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
@@ -39,7 +47,8 @@ export function CreditsNavLink() {
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="8" /><path d="M12 8v8M9 10.5a2.5 2.5 0 0 1 2.5-2.5h1a2 2 0 0 1 0 4h-1a2 2 0 0 0 0 4h1a2.5 2.5 0 0 0 2.5-2.5" />
       </svg>
-      {balance === null ? "Credits" : `${balance} Credits`}
+      <span>Credits</span>
+      <span className="tabular-nums text-white/40 min-w-[3.5ch]">{balance === null ? "" : balance}</span>
     </Link>
   );
 }
