@@ -21,7 +21,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 // Aliased to avoid shadowing the browser's global `CSS` (this file uses
 // `document.querySelector` with data attributes elsewhere in the app's
 // history and may again).
@@ -525,6 +525,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // the grid actually moves until drop (see handleSceneDragOver/End), so
   // this line is the sole "where will it land" signal while dragging.
   const [insertionIndicator, setInsertionIndicator] = useState<{ targetId: string; edge: "left" | "right" | "top" | "bottom" } | null>(null);
+  // 2026-09-09 — same Notion-style indicator, own state because the
+  // Shot-Reihenfolge view (see its own DndContext below) is a completely
+  // separate, isolated drag from the Szenen-Reihenfolge's — reusing
+  // `insertionIndicator` itself would have the two views fight over the
+  // same piece of state whenever a user switches between them mid-drag-
+  // adjacent interactions.
+  const [shotOrderInsertionIndicator, setShotOrderInsertionIndicator] = useState<{ targetId: string; edge: "left" | "right" | "top" | "bottom" } | null>(null);
   // Snapshot of data.scenes taken at drag start, restored verbatim on
   // cancel/invalid-drop (see handleSceneDragCancel) and used at drag end to
   // figure out which section the scene actually started in.
@@ -1985,13 +1992,54 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   if (b.shooting_order != null) return 1;
                   return a.sort_order - b.sort_order;
                 });
-                function handleShotOrderDragEnd(event: DragEndEvent) {
+                // Same Notion-style insertion-line computation as
+                // handleSceneDragOver's scene branch (own comment there
+                // explains the pointer-vs-tile-rect reasoning and the
+                // is_project_info full-width special case), just scoped
+                // to this one isolated single-section drag instead of the
+                // page's cross-section one — own state
+                // (shotOrderInsertionIndicator), see its own doc comment.
+                function handleShotOrderDragOver(event: DragOverEvent) {
                   const { active, over } = event;
-                  if (!over || active.id === over.id) return;
-                  const oldIndex = scenesInSection.findIndex((s) => s.id === active.id);
-                  const newIndex = scenesInSection.findIndex((s) => s.id === over.id);
-                  if (oldIndex === -1 || newIndex === -1) return;
-                  const orderedSceneIds = arrayMove(scenesInSection, oldIndex, newIndex).map((s) => s.id);
+                  if (!over || active.id === over.id) {
+                    setShotOrderInsertionIndicator(null);
+                    return;
+                  }
+                  const overIdStr = String(over.id);
+                  const pointer = pointerPosRef.current;
+                  if (!pointer) return;
+                  const overTarget = scenesInSection.find((s) => s.id === overIdStr);
+                  const activeTarget = scenesInSection.find((s) => s.id === String(active.id));
+                  const overIsFullWidth = (overTarget?.is_project_info || activeTarget?.is_project_info) ?? false;
+                  if (viewMode === "table" || overIsFullWidth) {
+                    const targetCenterY = over.rect.top + over.rect.height / 2;
+                    setShotOrderInsertionIndicator({ targetId: overIdStr, edge: pointer.y < targetCenterY ? "top" : "bottom" });
+                  } else {
+                    const targetCenterX = over.rect.left + over.rect.width / 2;
+                    setShotOrderInsertionIndicator({ targetId: overIdStr, edge: pointer.x < targetCenterX ? "left" : "right" });
+                  }
+                }
+                function handleShotOrderDragEnd(event: DragEndEvent) {
+                  const indicator = shotOrderInsertionIndicator;
+                  setShotOrderInsertionIndicator(null);
+                  const { active, over } = event;
+                  const activeId = String(active.id);
+                  const overIdStr = indicator?.targetId ?? (over ? String(over.id) : null);
+                  if (!overIdStr || overIdStr === activeId) return;
+                  if (!scenesInSection.some((s) => s.id === overIdStr)) return;
+                  // insertAfter mirrors the insertion-line indicator exactly
+                  // (left/top half of the hovered card = insert before it,
+                  // right/bottom half = after) — same "preview and actual
+                  // result must always agree" rule as computeSceneReorder's
+                  // own doc comment, just against this isolated list instead
+                  // of section_id/sort_order.
+                  const insertAfter = indicator?.targetId === overIdStr ? indicator.edge === "right" || indicator.edge === "bottom" : false;
+                  const without = scenesInSection.filter((s) => s.id !== activeId);
+                  const targetIdx = without.findIndex((s) => s.id === overIdStr);
+                  const insertAt = insertAfter ? targetIdx + 1 : targetIdx;
+                  const reordered = [...without];
+                  reordered.splice(insertAt, 0, scenesInSection.find((s) => s.id === activeId)!);
+                  const orderedSceneIds = reordered.map((s) => s.id);
                   // Optimistic — mirrors the order the user just dropped
                   // locally, same reasoning handleSortScenes/duplicate's
                   // own local reindex already use elsewhere on this page.
@@ -2007,7 +2055,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   });
                 }
                 return (
-                  <DndContext sensors={sceneSensors} collisionDetection={closestCenter} onDragEnd={handleShotOrderDragEnd}>
+                  <DndContext
+                    sensors={sceneSensors}
+                    collisionDetection={closestCenter}
+                    onDragOver={handleShotOrderDragOver}
+                    onDragEnd={handleShotOrderDragEnd}
+                    onDragCancel={() => setShotOrderInsertionIndicator(null)}
+                  >
                     <SectionBlock
                       section={openSection}
                       scenes={scenesInSection}
@@ -2019,6 +2073,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       onDeleteScene={setDeleteScene}
                       onDuplicateScene={handleDuplicateScene}
                       viewMode={viewMode}
+                      insertionIndicator={shotOrderInsertionIndicator}
                       onOpenTeam={() => setShowTeam(true)}
                       dragDisabled={showAnnotations}
                       annotationsByScene={showAnnotations ? annotationsByScene : undefined}
