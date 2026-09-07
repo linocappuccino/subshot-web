@@ -133,6 +133,13 @@ export interface Shot {
   priority: Priority | null;
   status: ShotStatus;
   sort_order: number;
+  /** 2026-09-07 — independent "Shot-Reihenfolge" (actual filming order,
+   * spans every shot across every scene in one Section), separate from
+   * `sort_order` (scoped to this shot's own scene, drives the scene-
+   * grouped view). Null until the flat shot-order view has actually been
+   * reordered once — see firstShotOrderFallback in the Shot-Reihenfolge
+   * view for the (scene.sort_order, shot.sort_order) fallback used then. */
+  shooting_order: number | null;
   good_take_filename: string | null;
   lens: string | null;
   f_stop: string | null;

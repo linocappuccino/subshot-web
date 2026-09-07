@@ -147,6 +147,9 @@ const translations = {
     "scriptOverview.backToOverview": "Zur Übersicht",
     "scriptOverview.unsectionedTitle": "Ohne Abschnitt",
     "scriptOverview.unsectionedHint": "Szenen ohne Abschnitt — noch keiner Idee zugeordnet.",
+    "scriptOverview.sceneOrderTab": "Szenen-Reihenfolge",
+    "scriptOverview.shotOrderTab": "Shot-Reihenfolge",
+    "shotOrderView.empty": "Noch keine Einstellungen in dieser Shotlist.",
 
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
@@ -1028,6 +1031,9 @@ const translations = {
     "scriptOverview.backToOverview": "Back to overview",
     "scriptOverview.unsectionedTitle": "No section",
     "scriptOverview.unsectionedHint": "Scenes without a section — not yet assigned to an idea.",
+    "scriptOverview.sceneOrderTab": "Scene order",
+    "scriptOverview.shotOrderTab": "Shot order",
+    "shotOrderView.empty": "No shots in this shotlist yet.",
 
     "common.save": "Save",
     "common.cancel": "Cancel",

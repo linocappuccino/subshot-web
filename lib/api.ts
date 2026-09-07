@@ -372,6 +372,14 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         method: "POST",
         body: JSON.stringify({ section_id: sectionId, ordered_scene_ids: orderedSceneIds }),
       }),
+    // 2026-09-07 — independent "Shot-Reihenfolge" view (see Shot.shooting_order's
+    // own doc comment): every shot across every scene in one Section, reordered
+    // as a flat list, separate from reorderScenes/moveShot's scene-scoped sort_order.
+    reorderShotsShootingOrder: (sectionId: string, orderedShotIds: string[]) =>
+      request<Shot[]>(`sections/${sectionId}/shots/reorder-shooting-order`, {
+        method: "POST",
+        body: JSON.stringify({ ordered_shot_ids: orderedShotIds }),
+      }),
     uploadSceneImage: (id: string, file: File) => {
       const form = new FormData();
       form.append("file", file);
