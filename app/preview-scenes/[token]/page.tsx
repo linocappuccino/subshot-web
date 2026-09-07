@@ -317,7 +317,18 @@ function PreviewScenesPageInner() {
   const sectionsSorted = useMemo(() => (data ? [...data.sections].sort((a, b) => a.sort_order - b.sort_order) : []), [data]);
   const unsectioned = scenesFor(null);
 
-  function renderScenes(scenes: typeof unsectioned) {
+  // 2026-09-07 fix, Lino: "und drückt man auf eine markierung muss es in
+  // der sidebar der kommentar gehighlighted werden" — clicking an existing
+  // mark used to unconditionally flip `mode` to "highlight" (opening the
+  // separate PublicAnnotationsSidebar), the only place highlights showed
+  // before. Now that an open shotlist's own highlights render right in
+  // PublicSectionComments (see `sectionHighlightAnnotations` below), forcing
+  // that OTHER sidebar open too would just be a second, redundant panel
+  // fighting the section sidebar for the same screen edge — so `onMark`
+  // defaults to the old behavior (no open section to show them in any other
+  // way) but the open-section render below passes its own override that
+  // just pulses the entry in place instead.
+  function renderScenes(scenes: typeof unsectioned, onMark?: (ann: Annotation) => void) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
         {scenes.map((scene) => (
@@ -329,10 +340,13 @@ function PreviewScenesPageInner() {
             memberById={memberById}
             token={token}
             unlockToken={unlockToken}
-            onMarkClick={(ann) => {
-              setMode("highlight");
-              pulseAnnotation(ann.id);
-            }}
+            onMarkClick={
+              onMark ??
+              ((ann) => {
+                setMode("highlight");
+                pulseAnnotation(ann.id);
+              })
+            }
           />
         ))}
       </div>
@@ -483,6 +497,13 @@ function PreviewScenesPageInner() {
                 const openSection = sectionsSorted.find((s) => s.id === openSectionId);
                 if (!openSection) return null;
                 const scenes = scenesFor(openSection.id);
+                // 2026-09-07, Lino: "die markierungskommentare müssen doch
+                // auch rechts in der sidebar auftauchen unter den normalen
+                // kommentaren" — every highlight-kind annotation belonging
+                // to a scene IN this open shotlist, same grouping
+                // annotationsByScene already does per-scene, just flattened
+                // back across every scene in this section.
+                const sectionHighlightAnnotations = scenes.flatMap((s) => annotationsByScene.get(s.id) ?? []);
                 return (
                   <div>
                     <button
@@ -492,53 +513,37 @@ function PreviewScenesPageInner() {
                       ← {t("scriptOverview.backToOverview")}
                     </button>
                     <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
-                    {renderScenes(scenes)}
-                    {/* 2026-09-07 fix, Lino: "die kommentarfunktion muss
-                        immer rechts als sidebar verfügbar sein und nicht
-                        wie jetzt oben" — first attempt kept it in normal
-                        document flow (a `sticky` column next to the scene
-                        grid) specifically to avoid overlapping
-                        PublicAnnotationsSidebar's own `fixed right-0`
-                        highlight-mode panel. Lino corrected that: "die
-                        kommentar sidebar ist KEINE kachel sondern eine
-                        richtige sidebar" + "soll komplett rechts am
-                        browser rand sein und nicht die grösse der kacheln
-                        beeinflussen" — sharing the flex row with the scene
-                        grid was squeezing every tile's column width down
-                        to fit both in the SAME centered max-w-6xl content
-                        column, instead of the sidebar just floating in
-                        whatever margin the viewport actually has outside
-                        it (or over the content on a narrow one) — exactly
-                        how PublicAnnotationsSidebar already behaves. Kept
-                        one z-step above it (z-[71] vs. z-[70]) as a plain
-                        tie-break for the rare case both are open at once
-                        (selecting text in a scene description while a
-                        shotlist is open), rather than the scene grid ever
-                        changing shape depending on whether this is open. */}
-                    {/* 2026-09-07 fix, Lino: "die feedbackbox in der
-                        sidebar muss unten sein und nicht oben" — this
-                        wrapper used `overflow-y-auto` on the WHOLE sidebar
-                        (heading + history + compose box together), so the
-                        compose box just sat wherever the history's height
-                        happened to push it, all the way at the top on a
-                        shotlist with little/no feedback yet. No overflow
-                        here anymore — PublicSectionComments now handles its
-                        own internal chat-style layout (history scrolls in
-                        its own middle region, compose box `shrink-0`
-                        pinned at the bottom), this wrapper just needs to
-                        actually give it the full fixed height to lay
-                        that out in. */}
-                    {/* 2026-09-07 fix, Lino: "jetzt werden die buttons von
-                        der kommentarbox von 'kommentare aus und
-                        textmarker' überblendet" — the Kommentar-Toolbar
-                        below is `fixed right-[18px] bottom-[18px] z-[80]`,
-                        sitting exactly in this sidebar's own bottom-right
-                        corner at a HIGHER z-index, so the compose box's
-                        pinned-at-the-bottom Speichern/Senden buttons ended
-                        up right underneath it. `pb-24` matches the
+                    {renderScenes(scenes, (ann) => pulseAnnotation(ann.id))}
+                    {/* 2026-09-07, several rounds of Lino feedback on this
+                        one sidebar, in order: (1) "muss immer rechts als
+                        sidebar verfügbar sein" — `fixed right-0`, not a
+                        card in the document flow. (2) "soll komplett rechts
+                        am browser rand sein und nicht die grösse der
+                        kacheln beeinflussen" — NOT sharing a flex row with
+                        the scene grid (that squeezed every tile's column
+                        width to fit both in the same max-w-6xl column);
+                        floats independently like PublicAnnotationsSidebar
+                        already does, one z-step above it (z-[71] vs
+                        [70]) as a tie-break for the rare case both are
+                        open. (3) "die feedbackbox muss unten sein" —
+                        PublicSectionComments itself now lays out as a
+                        fixed header + scrolling history + a compose box
+                        pinned at the very bottom, chat-style; this wrapper
+                        just hands it the full fixed height to do that in,
+                        no overflow of its own. (4) "buttons... werden von
+                        kommentare aus/textmarker überblendet" — pb-24
+                        clears the bottom-right Kommentar-Toolbar's own
+                        `fixed right-[18px] bottom-[18px]` footprint, same
                         clearance PublicAnnotationsSidebar already reserves
-                        at its own bottom edge for this exact toolbar (was
-                        `pb-4`, nowhere near enough). */}
+                        for it. (5) "die markierungskommentare müssen auch
+                        rechts in der sidebar auftauchen unter den normalen
+                        kommentaren" — highlight-kind annotations for every
+                        scene in this shotlist now render in this same
+                        sidebar too (sectionHighlightAnnotations above),
+                        which is also why renderScenes above gets a custom
+                        onMark override: a mark click pulses the entry
+                        right here instead of switching `mode` to open the
+                        separate, now-redundant PublicAnnotationsSidebar. */}
                     <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 px-3">
                       {/* Lino's explicit ask: leaving feedback here works
                           "exactly like the Ideas page" — one comment
@@ -547,6 +552,10 @@ function PreviewScenesPageInner() {
                       <PublicSectionComments
                         section={openSection}
                         comments={commentsBySection.get(openSection.id) ?? []}
+                        highlightAnnotations={sectionHighlightAnnotations}
+                        highlightedId={highlightedId}
+                        onSelectHighlight={(ann) => pulseAnnotation(ann.id)}
+                        onDeleteHighlight={handleDeleteAnnotation}
                         token={token}
                         unlockToken={unlockToken}
                         onCommentsChanged={(updater) =>

@@ -22,23 +22,42 @@ function persistedName(): string {
   }
 }
 
-/** 2026-08-31, Todoist #96 — Section counterpart of PublicSceneComments,
- * same draft/send/round-lock mechanic, just scoped to a whole opened
- * Section ("Skript"/Shotlist) instead of one scene tile — Lino's explicit
- * ask was for this to work "exactly like the Ideas page". Simpler than
- * PublicSceneComments in one respect: a Section has no highlight-kind
- * annotations to merge in (no text field on a section tile to select a
- * substring of), so every round entry here is a plain comment. Rendered
- * once, at the top of the opened section (not per-scene), in
- * preview-scenes/[token]/page.tsx. */
+/** 2026-08-31, Todoist #96 — feedback for a whole opened Section
+ * ("Skript"/Shotlist), draft/send/round-lock mechanic, Lino's explicit ask
+ * was for this to work "exactly like the Ideas page". Rendered as a fixed
+ * right-edge sidebar (see preview-scenes/[token]/page.tsx's own comment on
+ * that wrapper) — this component owns the internal chat-style layout
+ * (heading, scrolling history, compose box pinned at the bottom) so the
+ * parent just needs to give it a definite height.
+ *
+ * 2026-09-07 fix, Lino: "die markierungskommentare müssen doch auch rechts
+ * in der sidebar auftauchen unter den normalen kommentaren" — this used to
+ * be plain-comments-only (a Section itself has no text field to select a
+ * substring of), but every scene WITHIN the opened shotlist can have its
+ * own highlight-kind annotations (select a bit of scene text, leave a
+ * note) — those used to only ever show in the separate
+ * PublicAnnotationsSidebar (global, all scenes, `mode === "highlight"`
+ * only). Now every highlight belonging to a scene in THIS shotlist also
+ * renders here, below the round-grouped comments, so both kinds of
+ * feedback for one shotlist live in the one sidebar instead of two
+ * competing panels. `highlightedId`/`onSelectHighlight` mirror
+ * PublicAnnotationsSidebar's own props exactly — same `pulseAnnotation`
+ * call at the page level drives both (matches on `data-annotation-id`,
+ * present on entries in either sidebar). */
 export function PublicSectionComments({
-  section, comments, token, unlockToken, onCommentsChanged,
+  section, comments, highlightAnnotations, highlightedId, onSelectHighlight, onDeleteHighlight, token, unlockToken, onCommentsChanged,
 }: {
   section: Section;
   /** This section's non-draft kind="comment" annotations — the parent page
    * owns the fetched list (same one it already fetches for scene comments/
    * highlights). */
   comments: Annotation[];
+  /** Every highlight-kind annotation belonging to any scene in this
+   * shotlist — see this component's own 2026-09-07 doc comment above. */
+  highlightAnnotations: Annotation[];
+  highlightedId: string | null;
+  onSelectHighlight: (annotation: Annotation) => void;
+  onDeleteHighlight?: (annotation: Annotation) => void;
   token: string;
   unlockToken: string | null;
   onCommentsChanged: (updater: (comments: Annotation[]) => Annotation[]) => void;
@@ -46,15 +65,30 @@ export function PublicSectionComments({
   const { t } = useLanguage();
   const [authorName, setAuthorName] = useState(persistedName);
   const [draft, setDraft] = useState("");
-  // Same client-only-draft shape as PublicSceneComments' myDrafts — a draft
-  // is private to whoever just wrote it (list_share_annotations excludes
-  // status="draft" server-side).
+  // A draft is private to whoever just wrote it (list_share_annotations
+  // excludes status="draft" server-side) — kept purely client-side.
   const [myDrafts, setMyDrafts] = useState<Annotation[]>([]);
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
   const [confirmingSend, setConfirmingSend] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Two-step confirm (tap once to arm, again within a few seconds to
+  // actually delete) for highlight annotations — same pattern
+  // PublicAnnotationsSidebar already uses for the exact same action, no
+  // real ownership check on the backend so this is the only guard against
+  // an accidental tap.
+  const [confirmingHighlightId, setConfirmingHighlightId] = useState<string | null>(null);
+
+  function handleDeleteHighlightClick(ann: Annotation) {
+    if (confirmingHighlightId !== ann.id) {
+      setConfirmingHighlightId(ann.id);
+      setTimeout(() => setConfirmingHighlightId((cur) => (cur === ann.id ? null : cur)), 4000);
+      return;
+    }
+    setConfirmingHighlightId(null);
+    onDeleteHighlight?.(ann);
+  }
 
   const locked = isSectionFeedbackLocked(section, comments);
 
@@ -141,7 +175,7 @@ export function PublicSectionComments({
       </h2>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 px-1">
-        {rounds.length === 0 && myDrafts.length === 0 && (
+        {rounds.length === 0 && myDrafts.length === 0 && highlightAnnotations.length === 0 && (
           <p className="text-xs text-white/35">{t("publicIdeaLightbox.noFeedbackYet")}</p>
         )}
 
@@ -171,6 +205,56 @@ export function PublicSectionComments({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* 2026-09-07, Lino: "die markierungskommentare müssen doch auch
+            rechts in der sidebar auftauchen unter den normalen
+            kommentaren" — see this component's own doc comment. Same card
+            layout PublicAnnotationsSidebar already uses for these
+            (quoted text + comment + author + date), `data-annotation-id`
+            is what `pulseAnnotation` (preview-scenes/[token]/page.tsx)
+            scrolls to and pulses on a mark click. */}
+        {highlightAnnotations.length > 0 && (
+          <div className="flex flex-col gap-1.5 pt-1">
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-white/35 px-0.5">
+              {t("publicAnnotationsSidebar.title", { count: highlightAnnotations.length })}
+            </h3>
+            {[...highlightAnnotations]
+              .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+              .map((ann) => (
+                <div
+                  key={ann.id}
+                  data-annotation-id={ann.id}
+                  className={`relative rounded-xl border p-3 pr-8 transition-colors ${
+                    highlightedId === ann.id ? "border-blue-500/60 bg-blue-500/[0.08]" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <button type="button" onClick={() => onSelectHighlight(ann)} className="block w-full text-left">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: authorColor(ann.author_name) }}>
+                      {ann.author_name}
+                    </div>
+                    {ann.text && <p className="text-xs text-yellow-400/90 italic mt-1 truncate">„{ann.text.slice(0, 80)}“</p>}
+                    <p className="text-xs text-white/75 mt-1 break-words">
+                      {ann.comment || <em className="text-white/40">{t("publicAnnotationsSidebar.noComment")}</em>}
+                    </p>
+                    <p className="text-[11px] text-white/40 mt-1.5">{formatEntryDate(ann.created_at)}</p>
+                  </button>
+                  {onDeleteHighlight && (
+                    <button
+                      type="button"
+                      title={confirmingHighlightId === ann.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : t("common.delete")}
+                      aria-label={t("common.delete")}
+                      onClick={() => handleDeleteHighlightClick(ann)}
+                      className={`absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center text-sm transition-colors ${
+                        confirmingHighlightId === ann.id ? "bg-red-600 text-white" : "bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white"
+                      }`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
           </div>
         )}
       </div>
