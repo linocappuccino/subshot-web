@@ -2783,14 +2783,15 @@ function SectionBlock({
           <Collapsible
             title={title}
             titleClassName="text-sm"
-            // 2026-08-08, Lino: "Alle Abschnitte sollen immer eingeklappt
-            // sein wenn man die Seite öffnet" — broadened from the
-            // "only if every scene is Im Kasten" version just shipped
-            // minutes earlier to unconditionally every section, on every
-            // page load. Purely the initial mount state (see Collapsible's
-            // own `useState(defaultOpen)`) — a user expanding one manually
-            // during their session is untouched by this.
-            defaultOpen={false}
+            // 2026-09-07, Lino: reversed the 2026-08-08 "immer eingeklappt"
+            // rule — since the 2026-08-30 tile-overview redesign only ONE
+            // section is ever rendered at a time (see the `openSectionId`
+            // filter above), so a collapsed default meant every tile click
+            // needed a second click just to see its scenes. Sections should
+            // always start open when you open them; a user collapsing one
+            // manually during their session is untouched by this (fresh
+            // `useState(defaultOpen)` per mount via SectionBlock's `key`).
+            defaultOpen={true}
             subtitle={
               section?.in_postproduction && section.postproduction_status
                 ? `${doneCount}/${scenes.length} · ${postproductionStatusLabels[section.postproduction_status]}`
