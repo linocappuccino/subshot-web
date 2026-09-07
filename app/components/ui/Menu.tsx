@@ -46,8 +46,20 @@ export function Menu({
 
   useEffect(() => {
     if (!open) return;
+    // 2026-09-07 fix, Lino: in `portal` mode the dropdown renders into
+    // document.body (see the createPortal call below), a completely
+    // separate DOM subtree from `ref` (which only wraps the trigger). This
+    // check used to only look at `ref.current`, so it treated every click
+    // INSIDE the portaled dropdown itself as an "outside" click — the
+    // dropdown started closing on the very same mousedown that was
+    // supposed to pick an option, before the option's own onClick ever got
+    // a chance to fire (real symptom: EmojiField's grid, and any other
+    // `portal` Menu's MenuItem list, silently doing nothing on click).
     function onClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const insideTrigger = ref.current?.contains(target) ?? false;
+      const insideDropdown = portal && (dropdownRef.current?.contains(target) ?? false);
+      if (!insideTrigger && !insideDropdown) setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") setOpen(false);

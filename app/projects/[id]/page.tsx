@@ -1663,15 +1663,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </button>
             ))}
+            {/* 2026-09-07 fix, Lino: neu angelegte Szenen/Zwischenschritte
+                landen standardmässig immer hier (kein section_id gesetzt) —
+                bei einem frischen Projekt ohne Ideen/Abschnitte (z.B. reines
+                Scripting-Modul, module_concept aus) war diese Kachel bisher
+                fest `disabled`, wodurch JEDE hier erstellte Szene faktisch
+                unerreichbar wurde: sie speicherte serverseitig einwandfrei,
+                tauchte aber nirgends in der UI mehr auf ("Speichern tut
+                nichts"). Jetzt genauso klickbar wie eine echte Abschnitts-
+                Kachel, öffnet dieselbe Shot-Planungsansicht unten (siehe
+                openSectionId === "__unsectioned__" weiter unten). */}
             {unsectioned.length > 0 && (
               <button
-                onClick={() => setOpenSectionId(null)}
-                disabled
-                className="text-left p-4 rounded-2xl bg-white/[0.02] border border-white/5 opacity-50 cursor-default"
+                onClick={() => setOpenSectionId("__unsectioned__")}
+                className="text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
                 title={t("scriptOverview.unsectionedHint")}
               >
                 <div className="font-semibold truncate">{t("scriptOverview.unsectionedTitle")}</div>
-                <div className="text-sm text-white/50 mt-1">{unsectioned.length}</div>
+                <div className="text-sm text-white/50 mt-1">
+                  {unsectioned.length} {t("scriptOverview.sceneCount")}
+                </div>
               </button>
             )}
           </div>
@@ -1789,11 +1800,46 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           })}
           </SortableContext>
 
-          {/* 2026-08-30 — "Ohne Abschnitt" bewusst NICHT mehr hier gerendert:
-              dieser ganze Zweig ist jetzt nur erreichbar, wenn EIN
-              bestimmter Abschnitt (openSectionId) geöffnet wurde, und
-              nicht-zugeordnete Szenen aus einer anderen Idee hier
-              mitzuzeigen wäre verwirrend, nicht hilfreich. */}
+          {/* 2026-09-07 fix, Lino: "Ohne Abschnitt" ist jetzt über die
+              gleichnamige Kachel in der Übersicht (openSectionId ===
+              "__unsectioned__") genauso erreichbar wie ein echter
+              Abschnitt — der 2026-08-30-Kommentar hier hatte diesen Zweig
+              bewusst entfernt, weil ein UNGEÖFFNETER Mix aus mehreren
+              Ideen verwirrend wäre, aber übersah dabei, dass neu erstellte
+              Szenen/Zwischenschritte (Menu unten: "Neue Szene"/
+              "Zwischenschritt") IMMER ohne section_id starten — bei einem
+              Projekt ohne jede Idee/Abschnitt (z.B. reines Scripting-Modul)
+              landete dadurch jede einzelne Szene in einem UI-Zustand, der
+              nie mehr geöffnet werden konnte. section={"undefined"} ist von
+              SectionBlock selbst schon immer unterstützt worden (siehe
+              dessen eigenen "Ohne Abschnitt"-Kommentar), nur dieser
+              Aufruf hier fehlte. */}
+          {openSectionId === "__unsectioned__" && (
+            <SectionBlock
+              key="__unsectioned__"
+              section={undefined}
+              title={t("scriptOverview.unsectionedTitle")}
+              scenes={unsectioned}
+              shotsFor={shotsFor}
+              members={members}
+              onChange={updateScenesShots}
+              onEditScene={setEditingScene}
+              onDeleteScene={setDeleteScene}
+              onDuplicateScene={handleDuplicateScene}
+              sectionDragDisabled={showAnnotations}
+              draggingSectionId={draggingSectionId}
+              sectionInsertionIndicator={sectionInsertionIndicator}
+              insertionIndicator={insertionIndicator}
+              viewMode={viewMode}
+              projectId={data.id}
+              onOpenTeam={() => setShowTeam(true)}
+              onSortScenes={(criterion) => handleSortScenes(null, criterion)}
+              dragDisabled={showAnnotations}
+              annotationsByScene={showAnnotations ? annotationsByScene : undefined}
+              highlightedAnnotationId={highlightedAnnotationId}
+              onAnnotationClick={handleAnnotationSelect}
+            />
+          )}
 
           {/* 2026-07-19, Lino: "greift man die Szene an den 6 Punkten ist die
               Kachel beim Draggen sehr weit von der Maus entfernt" —
