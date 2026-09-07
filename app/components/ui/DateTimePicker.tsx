@@ -191,7 +191,15 @@ export function DateTimePicker({
           <div
             ref={popoverRef}
             style={{ position: "fixed", top: clamped?.top ?? coords.top, left: clamped?.left ?? coords.left }}
-            className="z-[60] w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
+            // 2026-09-07 fix, Lino: "die Datum und Zeit Auswahl liegt nun
+            // hinter der Kachel" — Modal.tsx wurde am 2026-07-17 von z-50
+            // auf z-[80] angehoben (ein Modal, das aus einem anderen
+            // Overlay heraus geöffnet wird, muss darüber gewinnen), dieses
+            // hier per z-[60] genutzte Popover aber nie mit angepasst.
+            // Jedes Mal, wenn dieser Picker aus dem SceneEditModal (oder
+            // jedem anderen Modal) geöffnet wird, rendert er seither
+            // unsichtbar/unklickbar HINTER dessen z-[80]-Karte.
+            className="z-[90] w-[300px] bg-[#242426] border border-white/10 rounded-2xl shadow-2xl p-4"
           >
             <div className="flex items-center justify-between mb-3">
               <button

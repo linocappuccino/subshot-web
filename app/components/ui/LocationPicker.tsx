@@ -217,7 +217,11 @@ export function LocationPicker({
           <div
             ref={dropdownRef}
             style={{ position: "fixed", top: clampedDropdown?.top ?? dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
-            className="z-[70] bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
+            // 2026-09-07 fix, Lino: same z-index gap as DateTimePicker's own
+            // fix (see its comment) — Modal.tsx is z-[80] since 2026-07-17,
+            // this dropdown's old z-[70] left it rendering behind any Modal
+            // (e.g. SceneEditModal's Location field) it was opened from.
+            className="z-[90] bg-[#242426] border border-white/10 rounded-xl shadow-xl overflow-hidden max-h-56 overflow-y-auto"
           >
             {results.map((r, i) => (
               <button
