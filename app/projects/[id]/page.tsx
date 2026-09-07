@@ -1963,30 +1963,32 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               (() => {
                 const openSection = sections.find((s) => s.id === openSectionId);
                 if (!openSection) return null;
-                const sceneIdsInSection = new Set(scenesIn(openSection.id).map((s) => s.id));
-                const sceneById = new Map(scenesIn(openSection.id).map((s) => [s.id, s]));
-                // Falls back to the scene-grouped view's own de-facto order
-                // for any shot that's never been touched in this view yet
-                // (shooting_order still null) — matches exactly what the
-                // Szenen-Reihenfolge view already shows until someone
-                // actually drags something here.
-                const flatShots = [...data.shots]
-                  .filter((s) => s.scene_id && sceneIdsInSection.has(s.scene_id) && s.status !== "deleted")
-                  .sort((a, b) => {
-                    if (a.shooting_order != null && b.shooting_order != null) return a.shooting_order - b.shooting_order;
-                    if (a.shooting_order != null) return -1;
-                    if (b.shooting_order != null) return 1;
-                    const sceneA = sceneById.get(a.scene_id!)!;
-                    const sceneB = sceneById.get(b.scene_id!)!;
-                    if (sceneA.sort_order !== sceneB.sort_order) return sceneA.sort_order - sceneB.sort_order;
-                    return a.sort_order - b.sort_order;
-                  });
+                // 2026-09-09, Lino: "die szenen-reihefolge zeigt quasi die
+                // szenen wie sie im fertigen video nacheinander gezeigt
+                // werden... die shot-reihenfolge zeigt die reihenfolge wie
+                // sie am set gefilmt wird, [...] man muss die szenen
+                // verschieben können und sie müssen die nummer von der
+                // szenen-reihenfolge behalten" — the unit reordered here is
+                // the whole SCENE (its own shots stay in their normal
+                // per-scene order), via the independent Scene.shooting_order
+                // field, NOT individual shots (superseded 2026-09-07
+                // attempt). Every scene always appears here regardless of
+                // whether it has shots yet (Lino: "ALLE szenen... müssen
+                // IMMER in beiden drin sein... die reihenfolge option ist
+                // nur da um zu sortieren, für nichts anderes").
+                const scenesInSection = [...scenesIn(openSection.id)].sort((a, b) => {
+                  if (a.shooting_order != null && b.shooting_order != null) return a.shooting_order - b.shooting_order;
+                  if (a.shooting_order != null) return -1;
+                  if (b.shooting_order != null) return 1;
+                  return a.sort_order - b.sort_order;
+                });
                 return (
                   <ShotOrderView
-                    shots={flatShots}
-                    sceneById={sceneById}
+                    scenes={scenesInSection}
+                    shotsFor={shotsFor}
                     sceneNumberById={sceneNumberIn(openSection.id)}
                     onEditShot={setEditingFlatShot}
+                    onEditScene={setEditingScene}
                     onToggleDone={async (shot) => {
                       try {
                         const updated = await api.patchShot(shot.id, { status: shot.status === "done" ? "open" : "done" });
@@ -1995,19 +1997,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                         toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
                       }
                     }}
-                    onReorder={async (orderedShotIds) => {
+                    onReorder={async (orderedSceneIds) => {
                       // Optimistic — mirrors the order the user just dropped
                       // locally, same reasoning handleSortScenes/duplicate's
                       // own local reindex already use elsewhere on this page.
                       updateScenesShots((d) => ({
                         ...d,
-                        shots: d.shots.map((s) => {
-                          const idx = orderedShotIds.indexOf(s.id);
+                        scenes: d.scenes.map((s) => {
+                          const idx = orderedSceneIds.indexOf(s.id);
                           return idx === -1 ? s : { ...s, shooting_order: idx };
                         }),
                       }));
                       try {
-                        await api.reorderShotsShootingOrder(openSection.id, orderedShotIds);
+                        await api.reorderScenesShootingOrder(openSection.id, orderedSceneIds);
                       } catch (e) {
                         toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
                       }

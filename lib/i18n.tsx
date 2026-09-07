@@ -150,6 +150,7 @@ const translations = {
     "scriptOverview.sceneOrderTab": "Szenen-Reihenfolge",
     "scriptOverview.shotOrderTab": "Shot-Reihenfolge",
     "shotOrderView.empty": "Noch keine Einstellungen in dieser Shotlist.",
+    "shotOrderView.noShotsYet": "Noch keine Einstellungen",
 
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
@@ -1034,6 +1035,7 @@ const translations = {
     "scriptOverview.sceneOrderTab": "Scene order",
     "scriptOverview.shotOrderTab": "Shot order",
     "shotOrderView.empty": "No shots in this shotlist yet.",
+    "shotOrderView.noShotsYet": "No shots yet",
 
     "common.save": "Save",
     "common.cancel": "Cancel",

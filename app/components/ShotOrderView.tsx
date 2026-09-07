@@ -13,47 +13,46 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AuthImage } from "./AuthImage";
+import { ShotRowContent } from "./SceneCard";
 import { useLanguage } from "@/lib/i18n";
-import type { DraggableAttributes } from "@dnd-kit/core";
-import type { DraggableSyntheticListeners } from "@dnd-kit/core";
 import type { Scene, Shot } from "@/lib/types";
 
-/** 2026-09-07, Lino: "2 sortierfunktionien 1. die Szenenreihenfolge 2.
- * Shotreihenfolge. diese 2 sortierungen kann man unabhäng voneinander
- * sortieren" — flat list of EVERY shot across EVERY scene in one opened
- * Section, in Shot.shooting_order (see that field's own doc comment on
- * Shot in models.py) — the actual filming order, completely independent
- * of the scene-grouped view's sort_order-within-scene. Reordering here
- * never touches which scene a shot belongs to or the scene-grouped view's
- * own order, only this separate field. Same drag pattern SectionBlock's
- * per-scene shot list already uses (SortableShotRow/ShotRowContent in
- * SceneCard.tsx), just flattened across scenes and showing which scene
- * each shot came from since they're now interleaved. */
+/** 2026-09-09, Lino: "die szenen-reihefolge zeigt quasi die szenen wie sie
+ * im fertigen video nacheinander gezeigt werden... die shot-reihenfolge
+ * zeigt die reihenfolge wie sie am set gefilmt wird, [...] man muss die
+ * szenen verschieben können und sie müssen die nummer von der
+ * szenen-reihenfolge behalten... so kann man sich die shot-reihefolge für
+ * den drehtag zurechtlegen" — supersedes the 2026-09-07 first attempt at
+ * this view, which flattened and freely interleaved individual SHOTS.
+ * The real unit for a shooting-day schedule is the whole SCENE (its own
+ * shots stay in their normal per-scene order, just along for the ride) —
+ * this is that reorder, backed by Scene.shooting_order (independent of
+ * sort_order, which drives the Szenen-Reihenfolge and never changes here). */
 export function ShotOrderView({
-  shots,
-  sceneById,
+  scenes,
+  shotsFor,
   sceneNumberById,
   onReorder,
   onToggleDone,
   onEditShot,
+  onEditScene,
 }: {
-  /** Already sorted (shooting_order, falling back to (scene.sort_order,
-   * shot.sort_order) for shots that don't have one yet) — see the caller,
-   * projects/[id]/page.tsx. */
-  shots: Shot[];
-  sceneById: Map<string, Scene>;
-  /** 2026-09-07, Lino: "in der shot reihenfolge sollen die nummern von
-   * der szenenreihenfolge für die szenen übernommen werden und sich NICHT
-   * ändern wenn man sie verzieht" — the SAME position-in-section count the
-   * Szenen-Reihenfolge view shows (see sceneNumberBySectionId's doc
-   * comment in page.tsx), not the old scene.number/letter identity.
-   * Derived purely from scene order, so reordering SHOTS here (only ever
-   * touches Shot.shooting_order) can never change it. */
+  /** Already sorted (shooting_order, falling back to sort_order for
+   * scenes that don't have one yet) — see the caller, projects/[id]/page.tsx. */
+  scenes: Scene[];
+  shotsFor: (sceneId: string) => Shot[];
+  /** Position-in-section count from the Szenen-Reihenfolge (see
+   * sceneNumberBySectionId's own doc comment in page.tsx) — dragging
+   * scene BLOCKS around in here (Scene.shooting_order) never touches
+   * Scene.sort_order, so this number is untouched by it. */
   sceneNumberById: Map<string, number>;
-  onReorder: (orderedShotIds: string[]) => void;
+  onReorder: (orderedSceneIds: string[]) => void;
   onToggleDone: (shot: Shot) => void;
   onEditShot: (shot: Shot) => void;
+  /** Clicking a shot-less scene's block opens the normal scene editor —
+   * same as clicking its tile in the Szenen-Reihenfolge would — so adding
+   * its first shot is one click away. */
+  onEditScene: (scene: Scene) => void;
 }) {
   const { t } = useLanguage();
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -66,15 +65,15 @@ export function ShotOrderView({
     setDraggingId(null);
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = shots.findIndex((s) => s.id === active.id);
-    const newIndex = shots.findIndex((s) => s.id === over.id);
+    const oldIndex = scenes.findIndex((s) => s.id === active.id);
+    const newIndex = scenes.findIndex((s) => s.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
-    onReorder(arrayMove(shots, oldIndex, newIndex).map((s) => s.id));
+    onReorder(arrayMove(scenes, oldIndex, newIndex).map((s) => s.id));
   }
 
-  const draggingShot = draggingId ? shots.find((s) => s.id === draggingId) : null;
+  const draggingScene = draggingId ? scenes.find((s) => s.id === draggingId) : null;
 
-  if (shots.length === 0) {
+  if (scenes.length === 0) {
     return <p className="text-sm text-white/40 py-10 text-center">{t("shotOrderView.empty")}</p>;
   }
 
@@ -86,30 +85,31 @@ export function ShotOrderView({
       onDragEnd={handleDragEnd}
       onDragCancel={() => setDraggingId(null)}
     >
-      <SortableContext items={shots.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-        <div className="space-y-1.5">
-          {shots.map((shot, i) => (
-            <SortableFlatShotRow
-              key={shot.id}
-              index={i}
-              shot={shot}
-              scene={shot.scene_id ? sceneById.get(shot.scene_id) : undefined}
-              sceneNumber={shot.scene_id ? sceneNumberById.get(shot.scene_id) : undefined}
-              onToggleDone={() => onToggleDone(shot)}
-              onEdit={() => onEditShot(shot)}
+      <SortableContext items={scenes.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+        <div className="space-y-3">
+          {scenes.map((scene) => (
+            <SortableSceneBlock
+              key={scene.id}
+              scene={scene}
+              shots={shotsFor(scene.id)}
+              sceneNumber={sceneNumberById.get(scene.id)}
+              onToggleDone={onToggleDone}
+              onEditShot={onEditShot}
+              onEditScene={() => onEditScene(scene)}
             />
           ))}
         </div>
       </SortableContext>
       <DragOverlay>
-        {draggingShot && (
-          <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-lg overflow-hidden">
-            <FlatShotRowContent
-              shot={draggingShot}
-              scene={draggingShot.scene_id ? sceneById.get(draggingShot.scene_id) : undefined}
-              sceneNumber={draggingShot.scene_id ? sceneNumberById.get(draggingShot.scene_id) : undefined}
+        {draggingScene && (
+          <div className="shadow-2xl shadow-black/50 cursor-grabbing rounded-xl overflow-hidden opacity-90">
+            <SceneBlockContent
+              scene={draggingScene}
+              shots={shotsFor(draggingScene.id)}
+              sceneNumber={sceneNumberById.get(draggingScene.id)}
               onToggleDone={() => {}}
-              onEdit={() => {}}
+              onEditShot={() => {}}
+              onEditScene={() => {}}
             />
           </div>
         )}
@@ -118,92 +118,80 @@ export function ShotOrderView({
   );
 }
 
-function SortableFlatShotRow({
-  index, shot, scene, sceneNumber, onToggleDone, onEdit,
+function SortableSceneBlock({
+  scene, shots, sceneNumber, onToggleDone, onEditShot, onEditScene,
 }: {
-  index: number;
-  shot: Shot;
-  scene: Scene | undefined;
+  scene: Scene;
+  shots: Shot[];
   sceneNumber: number | undefined;
-  onToggleDone: () => void;
-  onEdit: () => void;
+  onToggleDone: (shot: Shot) => void;
+  onEditShot: (shot: Shot) => void;
+  onEditScene: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: shot.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: scene.id });
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}>
-      <FlatShotRowContent
-        index={index}
-        shot={shot}
+      <SceneBlockContent
         scene={scene}
+        shots={shots}
         sceneNumber={sceneNumber}
         onToggleDone={onToggleDone}
-        onEdit={onEdit}
+        onEditShot={onEditShot}
+        onEditScene={onEditScene}
         dragHandleProps={{ attributes, listeners }}
       />
     </div>
   );
 }
 
-/** Plain presentational row, no useSortable of its own — reused as-is for
- * the DragOverlay's floating clone, same reasoning as ShotRowContent in
- * SceneCard.tsx (two elements can't both claim the same sortable id). */
-function FlatShotRowContent({
-  index, shot, scene, sceneNumber, onToggleDone, onEdit, dragHandleProps,
+/** Plain presentational block, no useSortable of its own — reused as-is
+ * for the DragOverlay's floating clone, same reasoning as ShotRowContent
+ * itself (two elements can't both claim the same sortable id). */
+function SceneBlockContent({
+  scene, shots, sceneNumber, onToggleDone, onEditShot, onEditScene, dragHandleProps,
 }: {
-  index?: number;
-  shot: Shot;
-  scene: Scene | undefined;
+  scene: Scene;
+  shots: Shot[];
   sceneNumber: number | undefined;
-  onToggleDone: () => void;
-  onEdit: () => void;
-  dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
+  onToggleDone: (shot: Shot) => void;
+  onEditShot: (shot: Shot) => void;
+  onEditScene: () => void;
+  dragHandleProps?: { attributes: ReturnType<typeof useSortable>["attributes"]; listeners: ReturnType<typeof useSortable>["listeners"] };
 }) {
   const { t } = useLanguage();
   return (
-    <div className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
-      {dragHandleProps && (
-        <button
-          {...dragHandleProps.attributes}
-          {...dragHandleProps.listeners}
-          className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
-        >
-          <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
-            <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
-            <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />
-          </svg>
+    <div className="rounded-xl bg-white/[0.03] border border-white/8 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        {dragHandleProps && (
+          <button
+            {...dragHandleProps.attributes}
+            {...dragHandleProps.listeners}
+            className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing"
+          >
+            <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
+              <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
+              <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />
+            </svg>
+          </button>
+        )}
+        <button onClick={onEditScene} className="flex items-center gap-2 min-w-0 flex-1 text-left">
+          <span className="shrink-0 text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-white/10 text-white/70">
+            {sceneNumber ?? `${scene.number}${scene.letter ?? ""}`}
+          </span>
+          <span className="text-sm font-semibold truncate">{scene.name || t("scene.unnamed")}</span>
+        </button>
+      </div>
+      {shots.length > 0 ? (
+        <div className="space-y-1.5">
+          {shots.map((shot) => (
+            <ShotRowContent key={shot.id} shot={shot} onToggleDone={() => onToggleDone(shot)} onEdit={() => onEditShot(shot)} />
+          ))}
+        </div>
+      ) : (
+        <button onClick={onEditScene} className="text-xs text-white/40 italic py-1.5 hover:text-white/60 transition-colors">
+          {t("shotOrderView.noShotsYet")}
         </button>
       )}
-      {index != null && <span className="shrink-0 w-5 text-xs text-white/30 font-mono text-right">{index + 1}</span>}
-      <button onClick={onToggleDone} className="shrink-0">
-        <span
-          className="w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center transition-colors"
-          style={{
-            borderColor: shot.status === "done" ? "#4caf6d" : "rgba(255,255,255,0.3)",
-            backgroundColor: shot.status === "done" ? "#4caf6d" : "transparent",
-          }}
-        >
-          {shot.status === "done" && (
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 6 9 17l-5-5" />
-            </svg>
-          )}
-        </span>
-      </button>
-      {shot.image_url ? (
-        <AuthImage path={shot.image_url} alt="" className="w-14 h-10 object-cover rounded-md shrink-0" />
-      ) : (
-        <div className="w-14 h-10 rounded-md shrink-0 bg-white/5" />
-      )}
-      <div className="text-sm min-w-0 flex-1 cursor-pointer" onClick={onEdit}>
-        <div className={`truncate ${shot.status === "done" ? "line-through text-white/40" : ""}`}>
-          {shot.description || t("shot.noDescription")}
-        </div>
-        {scene && (
-          <div className="text-xs text-white/40 truncate">
-            {sceneNumber ?? `${scene.number}${scene.letter ?? ""}`} · {scene.name || t("scene.unnamed")}
-          </div>
-        )}
-      </div>
     </div>
   );
 }

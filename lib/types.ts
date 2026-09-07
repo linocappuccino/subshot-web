@@ -104,6 +104,13 @@ export interface Scene {
   good_take_filename: string | null;
   number: number;
   letter: string | null;
+  /** 2026-09-09 — independent "Shot-Reihenfolge" (shooting-day order of
+   * whole SCENE blocks within one Section, each scene's own shots stay in
+   * their normal order), separate from `sort_order` (narrative order,
+   * drives the Szenen-Reihenfolge). Null until the flat shooting-order
+   * view has actually been reordered once — falls back to `sort_order`
+   * until then, same de-facto order the Szenen-Reihenfolge already shows. */
+  shooting_order: number | null;
   is_intermediate_step: boolean;
   /** A "Projektinfo" tile (2026-07-10 redesign, replaces the old
    * Section.has_project_info attached-box concept) — behaves exactly like
@@ -133,13 +140,6 @@ export interface Shot {
   priority: Priority | null;
   status: ShotStatus;
   sort_order: number;
-  /** 2026-09-07 — independent "Shot-Reihenfolge" (actual filming order,
-   * spans every shot across every scene in one Section), separate from
-   * `sort_order` (scoped to this shot's own scene, drives the scene-
-   * grouped view). Null until the flat shot-order view has actually been
-   * reordered once — see firstShotOrderFallback in the Shot-Reihenfolge
-   * view for the (scene.sort_order, shot.sort_order) fallback used then. */
-  shooting_order: number | null;
   good_take_filename: string | null;
   lens: string | null;
   f_stop: string | null;
