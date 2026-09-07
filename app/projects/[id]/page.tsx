@@ -2039,15 +2039,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           // top for when the cursor is in the gap between cards (Lino:
           // "man muss mega genau treffen") — see its own comment above.
           collisionDetection={dragCollisionDetection}
-          // Faster viewport-edge auto-scroll while dragging (2026-07-13,
-          // Lino: default dnd-kit acceleration was too slow; bumped again
-          // 2026-07-14, still felt "super langsam" at 40; bumped again
-          // 2026-09-07 ("VIEL VIEL schneller") from 120 to 400 — dnd-kit
-          // scrolls scrollBy(speed) every `interval` ms, speed maxing out
-          // at `acceleration` px only right at the very edge of the 20%
-          // threshold zone, so this is the actual top speed once the
-          // cursor is fully at the viewport edge).
-          autoScroll={{ acceleration: 400, interval: 5 }}
+          // Viewport-edge auto-scroll while dragging. All earlier tuning
+          // (40, then 120, then 400 on 2026-09-07) happened while
+          // globals.css' `html { scroll-behavior: smooth }` was silently
+          // throttling every scrollBy() dnd-kit issued (see
+          // handleSceneDragStart's own comment on suspending it for the
+          // drag) — those numbers all measured a THROTTLED speed, not the
+          // real one, which is why "too slow" at 120 became "way too
+          // fast" at 400 the moment the throttle was actually removed.
+          // 60 is the first real (unthrottled) calibration point.
+          autoScroll={{ acceleration: 60, interval: 5 }}
           onDragStart={handleSceneDragStart}
           onDragOver={handleSceneDragOver}
           onDragEnd={handleSceneDragEnd}
