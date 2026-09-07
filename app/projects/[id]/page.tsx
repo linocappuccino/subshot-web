@@ -259,18 +259,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [autoOpenIdeaId, setAutoOpenIdeaId] = useState<string | null>(null);
   const [autoOpenSceneId, setAutoOpenSceneId] = useState<string | null>(null);
   const [autoOpenCommentId, setAutoOpenCommentId] = useState<string | null>(null);
-  // Live-refreshed view of editingScene for display purposes ONLY (2026-07-16,
-  // Lino: AI-Bild aktualisiert sich nicht in der offenen Karte) — editingScene
-  // itself is a one-time snapshot from whenever the modal was opened, never
-  // updated again while it stays open (see the 12s poll's setData below,
-  // which never touches editingScene). That's deliberate for
-  // handleSceneUpdated's own before/after cascade-delta comparison further
-  // down (needs the PRE-edit snapshot, see its doc comment), so this doesn't
-  // replace editingScene — it's a separate derived value, re-resolved against
-  // the live `data.scenes` on every render, that's passed to the modal
-  // INSTEAD so it picks up background changes (image_url flipping once an
-  // AI generation finishes, image_generating flipping back to false) without
-  // waiting for the modal to be closed and reopened.
+  // Live-refreshed view of editingScene (2026-07-16, Lino: AI-Bild
+  // aktualisiert sich nicht in der offenen Karte) — editingScene itself is
+  // just a one-time snapshot of WHICH scene id got opened (see the 12s
+  // poll's setData below, which never touches editingScene directly), so
+  // this re-resolves it against the live `data.scenes` on every render
+  // instead. Passed to the modal so it picks up background changes
+  // (image_url flipping once an AI generation finishes, image_generating
+  // flipping back to false) without waiting for the modal to be closed and
+  // reopened. Originally "display purposes ONLY" (handleSceneUpdated's own
+  // before/after cascade-delta comparison further down used the frozen
+  // `editingScene` instead) — 2026-09-07 fix: that was actually a bug, not
+  // a deliberate choice — a scene can autosave+call handleSceneUpdated
+  // MULTIPLE times in one still-open session, and `editingScene` staying
+  // frozen at session-open meant a SECOND time edit computed its cascade
+  // delta as the cumulative change since the modal opened rather than
+  // since the last save. `liveEditingScene` (this variable) is exactly the
+  // right baseline for that too, see handleSceneUpdated's own comment.
   const liveEditingScene = editingScene ? (data?.scenes.find((s) => s.id === editingScene.id) ?? editingScene) : null;
   const [deleteScene, setDeleteScene] = useState<Scene | null>(null);
   const [deleteSection, setDeleteSection] = useState<Section | null>(null);
@@ -780,10 +785,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Time-cascade offer (2026-07-11, Lino, spec corrected 2026-07-13): "ändert
   // man die Zeit in der ersten Szene, passen sich alle folgenden Szenen
   // (UND Zwischenschritte) die am gleichen Tag stattfinden an" — only
-  // asked/confirmed via dialog, never silently. `editingScene` still holds
-  // the PRE-edit scene here (SceneEditModal's onUpdated fires before the
-  // page clears it in its own onClose), so it's the only place that knows
-  // both the old and new start time.
+  // asked/confirmed via dialog, never silently. `liveEditingScene` (see its
+  // own doc comment above — freshest known state of the scene being edited,
+  // re-resolved from `data.scenes` every render, NOT the frozen `editingScene`
+  // snapshot from whenever the modal opened, see the 2026-09-07 fix note in
+  // handleSceneUpdated below for why that distinction actually matters here)
+  // is what knows both the old and new start time.
   //
   // The actual shifting itself moved server-side (2026-07-13) — see
   // ScenePatch.cascade_shift_seconds / patch_scene in the backend — so web
@@ -798,7 +805,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [cascadeConfirm, setCascadeConfirm] = useState<{ sceneId: string; deltaSeconds: number } | null>(null);
 
   async function handleSceneUpdated(scene: Scene) {
-    const previous = editingScene;
+    // 2026-09-07 fix, Lino: verifying the cascade feature surfaced a real
+    // bug here — this used to read `editingScene` (frozen at whenever the
+    // modal was OPENED, never updated again, see its own doc comment above)
+    // instead of `liveEditingScene` (re-resolved from `data.scenes` every
+    // render). Fine for the FIRST time edit in a session (both are equal
+    // then), but autosave means a scene can save+call this MULTIPLE times
+    // in one still-open modal session — on a SECOND time edit, `editingScene`
+    // was still the pre-FIRST-edit value, so deltaSeconds came out as the
+    // cumulative change since the modal opened, not just since the last
+    // save/cascade. Confirming that second (inflated) cascade would shift
+    // already-shifted-once siblings AGAIN by the full cumulative delta.
+    // `liveEditingScene` already tracks exactly "the freshest known state
+    // of the scene being edited" (that's what its own comment describes it
+    // for), which is precisely the right baseline here too.
+    const previous = liveEditingScene;
     setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((s) => (s.id === scene.id ? scene : s)) } : prev));
 
     const timeChanged = previous?.scheduled_at && scene.scheduled_at && previous.scheduled_at !== scene.scheduled_at;
