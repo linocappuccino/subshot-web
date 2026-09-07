@@ -348,6 +348,7 @@ function SdCardIcon() {
 
 export function SceneCard({
   scene,
+  displayNumber,
   shots,
   members,
   onEdit,
@@ -360,6 +361,10 @@ export function SceneCard({
   onAnnotationClick,
 }: {
   scene: Scene;
+  /** Position-in-section count, 1..N (see sceneNumberBySectionId in
+   * page.tsx) — falls back to the old stable scene.number/letter identity
+   * if a caller ever omits it. */
+  displayNumber?: number;
   shots: Shot[];
   members: Member[];
   onEdit: () => void;
@@ -514,7 +519,7 @@ export function SceneCard({
       <div className="flex items-start gap-2 mb-2">
         <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
+            <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
             {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
             {scene.completed && (
               <Pill tone="good" icon={<CheckIcon />}>

@@ -33,6 +33,7 @@ import type { Scene, Shot } from "@/lib/types";
 export function ShotOrderView({
   shots,
   sceneById,
+  sceneNumberById,
   onReorder,
   onToggleDone,
   onEditShot,
@@ -42,6 +43,14 @@ export function ShotOrderView({
    * projects/[id]/page.tsx. */
   shots: Shot[];
   sceneById: Map<string, Scene>;
+  /** 2026-09-07, Lino: "in der shot reihenfolge sollen die nummern von
+   * der szenenreihenfolge für die szenen übernommen werden und sich NICHT
+   * ändern wenn man sie verzieht" — the SAME position-in-section count the
+   * Szenen-Reihenfolge view shows (see sceneNumberBySectionId's doc
+   * comment in page.tsx), not the old scene.number/letter identity.
+   * Derived purely from scene order, so reordering SHOTS here (only ever
+   * touches Shot.shooting_order) can never change it. */
+  sceneNumberById: Map<string, number>;
   onReorder: (orderedShotIds: string[]) => void;
   onToggleDone: (shot: Shot) => void;
   onEditShot: (shot: Shot) => void;
@@ -85,6 +94,7 @@ export function ShotOrderView({
               index={i}
               shot={shot}
               scene={shot.scene_id ? sceneById.get(shot.scene_id) : undefined}
+              sceneNumber={shot.scene_id ? sceneNumberById.get(shot.scene_id) : undefined}
               onToggleDone={() => onToggleDone(shot)}
               onEdit={() => onEditShot(shot)}
             />
@@ -97,6 +107,7 @@ export function ShotOrderView({
             <FlatShotRowContent
               shot={draggingShot}
               scene={draggingShot.scene_id ? sceneById.get(draggingShot.scene_id) : undefined}
+              sceneNumber={draggingShot.scene_id ? sceneNumberById.get(draggingShot.scene_id) : undefined}
               onToggleDone={() => {}}
               onEdit={() => {}}
             />
@@ -108,11 +119,12 @@ export function ShotOrderView({
 }
 
 function SortableFlatShotRow({
-  index, shot, scene, onToggleDone, onEdit,
+  index, shot, scene, sceneNumber, onToggleDone, onEdit,
 }: {
   index: number;
   shot: Shot;
   scene: Scene | undefined;
+  sceneNumber: number | undefined;
   onToggleDone: () => void;
   onEdit: () => void;
 }) {
@@ -123,6 +135,7 @@ function SortableFlatShotRow({
         index={index}
         shot={shot}
         scene={scene}
+        sceneNumber={sceneNumber}
         onToggleDone={onToggleDone}
         onEdit={onEdit}
         dragHandleProps={{ attributes, listeners }}
@@ -135,11 +148,12 @@ function SortableFlatShotRow({
  * the DragOverlay's floating clone, same reasoning as ShotRowContent in
  * SceneCard.tsx (two elements can't both claim the same sortable id). */
 function FlatShotRowContent({
-  index, shot, scene, onToggleDone, onEdit, dragHandleProps,
+  index, shot, scene, sceneNumber, onToggleDone, onEdit, dragHandleProps,
 }: {
   index?: number;
   shot: Shot;
   scene: Scene | undefined;
+  sceneNumber: number | undefined;
   onToggleDone: () => void;
   onEdit: () => void;
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
@@ -186,7 +200,7 @@ function FlatShotRowContent({
         </div>
         {scene && (
           <div className="text-xs text-white/40 truncate">
-            {scene.number}{scene.letter ?? ""} · {scene.name || t("scene.unnamed")}
+            {sceneNumber ?? `${scene.number}${scene.letter ?? ""}`} · {scene.name || t("scene.unnamed")}
           </div>
         )}
       </div>

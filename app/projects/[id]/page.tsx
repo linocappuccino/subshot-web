@@ -1388,6 +1388,32 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return map;
   }, [data?.scenes]);
   const scenesIn = (sectionId: string | null) => scenesBySectionId.get(sectionId) ?? [];
+  // 2026-09-07, Lino: "bei der szenen reihenfolge, müssen die zahlen für
+  // die szenen sich anpassen und von 1 hochzählen... in der shot
+  // reihenfolge sollen die nummern von der szenenreihenfolge für die
+  // szenen übernommen werden und sich NICHT ändern wenn man sie verzieht"
+  // — replaces the old screenplay-style scene.number/letter badge (stable
+  // identity, deliberately non-renumbering — see _assign_scene_number in
+  // main.py) with a live position-in-section count, 1..N, recomputed
+  // straight off scenesBySectionId above (already sort_order-first) so it
+  // updates the instant a scene drag reorders that array. Keyed by
+  // section id (null for "Ohne Abschnitt") purely because SectionBlock
+  // only ever renders ONE section at a time — a scene's number never
+  // needs to account for any OTHER section's scenes. Consumed by both the
+  // scene grid/table (SectionBlock) AND the flat Shot-Reihenfolge view
+  // (ShotOrderView) so the two stay in lockstep — shot drags there only
+  // ever touch Shot.shooting_order, never a scene's position in this map,
+  // so the badge shown per shot is untouched by reordering shots.
+  const sceneNumberBySectionId = useMemo(() => {
+    const map = new Map<string | null, Map<string, number>>();
+    for (const [sectionId, list] of scenesBySectionId) {
+      const numbers = new Map<string, number>();
+      list.forEach((s, i) => numbers.set(s.id, i + 1));
+      map.set(sectionId, numbers);
+    }
+    return map;
+  }, [scenesBySectionId]);
+  const sceneNumberIn = (sectionId: string | null) => sceneNumberBySectionId.get(sectionId) ?? new Map<string, number>();
   // 2026-09-07, Lino: same "erstes Thumbnail für die Übersicht" ask as the
   // public preview page's own identical helper (see its doc comment) —
   // scenesIn is already sort_order-first (see scenesBySectionId above), so
@@ -1959,6 +1985,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   <ShotOrderView
                     shots={flatShots}
                     sceneById={sceneById}
+                    sceneNumberById={sceneNumberIn(openSection.id)}
                     onEditShot={setEditingFlatShot}
                     onToggleDone={async (shot) => {
                       try {
@@ -2044,6 +2071,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 section={section}
                 title={section.name}
                 scenes={group}
+                sceneNumberById={sceneNumberIn(section.id)}
                 shotsFor={shotsFor}
                 members={members}
                 onChange={updateScenesShots}
@@ -2099,6 +2127,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               section={undefined}
               title={t("scriptOverview.unsectionedTitle")}
               scenes={unsectioned}
+              sceneNumberById={sceneNumberIn(null)}
               shotsFor={shotsFor}
               members={members}
               onChange={updateScenesShots}
@@ -2149,7 +2178,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                     }
                     return (
                       <div className="rotate-2 shadow-2xl shadow-black/50 cursor-grabbing">
-                        <SceneCard scene={activeScene} shots={shotsFor(activeScene.id)} members={members} onEdit={() => {}} onDelete={() => {}} onChange={() => {}} />
+                        <SceneCard
+                          scene={activeScene}
+                          displayNumber={sceneNumberIn(activeScene.section_id ?? null).get(activeScene.id)}
+                          shots={shotsFor(activeScene.id)}
+                          members={members}
+                          onEdit={() => {}}
+                          onDelete={() => {}}
+                          onChange={() => {}}
+                        />
                       </div>
                     );
                   })()}
@@ -2587,6 +2624,7 @@ function SectionBlock({
   section,
   title,
   scenes,
+  sceneNumberById,
   shotsFor,
   members,
   onChange,
@@ -2615,6 +2653,10 @@ function SectionBlock({
   section?: Section;
   title?: string;
   scenes: Scene[];
+  /** Position-in-section count, 1..N, keyed by scene id — see its own
+   * doc comment on sceneNumberBySectionId in the parent. Replaces the old
+   * screenplay-style scene.number/letter badge everywhere in this block. */
+  sceneNumberById: Map<string, number>;
   shotsFor: (sceneId: string) => Shot[];
   members: Member[];
   onChange: (updater: (d: { scenes: Scene[]; shots: Shot[] }) => { scenes: Scene[]; shots: Shot[] }) => void;
@@ -2686,6 +2728,7 @@ function SectionBlock({
           <SortableSceneCard
             key={scene.id}
             scene={scene}
+            displayNumber={sceneNumberById.get(scene.id)}
             shots={shotsFor(scene.id)}
             members={members}
             onEdit={() => onEditScene(scene)}
@@ -2710,6 +2753,7 @@ function SectionBlock({
     viewMode === "table" ? (
       <SceneTable
         scenes={scenes}
+        sceneNumberById={sceneNumberById}
         shotsFor={shotsFor}
         members={members}
         onEditScene={onEditScene}

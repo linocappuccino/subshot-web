@@ -30,6 +30,7 @@ import { IconButton } from "./ui/Button";
  * table view (see project memory). */
 export function SceneTable({
   scenes,
+  sceneNumberById,
   shotsFor,
   members,
   onEditScene,
@@ -40,6 +41,9 @@ export function SceneTable({
   insertionIndicator,
 }: {
   scenes: Scene[];
+  /** Position-in-section count, 1..N — see sceneNumberBySectionId's own
+   * doc comment in page.tsx. */
+  sceneNumberById: Map<string, number>;
   shotsFor: (sceneId: string) => Shot[];
   members: Member[];
   onEditScene: (scene: Scene) => void;
@@ -109,6 +113,7 @@ export function SceneTable({
               <SceneRow
                 key={scene.id}
                 scene={scene}
+                displayNumber={sceneNumberById.get(scene.id)}
                 shots={shotsFor(scene.id)}
                 members={members}
                 onEditScene={onEditScene}
@@ -143,6 +148,7 @@ function TableDropZone({ sectionId, insertionIndicator }: { sectionId: string | 
 
 function SceneRow({
   scene,
+  displayNumber,
   shots,
   members,
   onEditScene,
@@ -153,6 +159,7 @@ function SceneRow({
   insertionEdge,
 }: {
   scene: Scene;
+  displayNumber?: number;
   shots: Shot[];
   members: Member[];
   onEditScene: (scene: Scene) => void;
@@ -205,7 +212,7 @@ function SceneRow({
         )}
       </td>
       <td className="px-3 py-2.5 cursor-pointer" onClick={() => onEditScene(scene)}>
-        <ColorBadge label={`${scene.number}${scene.letter ?? ""}`} color={color} />
+        <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
       </td>
       <td className="px-3 py-2.5 font-medium cursor-pointer max-w-[160px]" onClick={() => onEditScene(scene)}>
         {scene.is_project_info ? t("sceneTable.projectInfo") : scene.name || t("sceneTable.unnamedScene")}

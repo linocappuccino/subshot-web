@@ -14,6 +14,7 @@ import { ProjectInfoTile } from "./ProjectInfoTile";
  * keeps every button/menu/input on the card clickable. */
 export function SortableSceneCard({
   scene,
+  displayNumber,
   shots,
   members,
   onEdit,
@@ -28,6 +29,11 @@ export function SortableSceneCard({
   onAnnotationClick,
 }: {
   scene: Scene;
+  /** Position-in-section count, 1..N — see sceneNumberBySectionId's own
+   * doc comment in page.tsx. Undefined only for the transient window
+   * before that map has ever been computed (never happens in practice,
+   * SceneCard falls back to scene.number/letter). */
+  displayNumber?: number;
   shots: Shot[];
   members: Member[];
   onEdit: () => void;
@@ -106,6 +112,7 @@ export function SortableSceneCard({
       ) : (
         <SceneCard
           scene={scene}
+          displayNumber={displayNumber}
           shots={shots}
           members={members}
           onEdit={onEdit}
