@@ -46,6 +46,7 @@ import { IdeaGrid, type IdeaGridHandle } from "@/app/components/IdeaGrid";
 import { AnnotationsPanel } from "@/app/components/AnnotationsPanel";
 import { Modal } from "@/app/components/ui/Modal";
 import { AppShell } from "@/app/components/AppShell";
+import { AuthImage } from "@/app/components/AuthImage";
 import { Button, IconButton } from "@/app/components/ui/Button";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
@@ -1330,6 +1331,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return map;
   }, [data?.scenes]);
   const scenesIn = (sectionId: string | null) => scenesBySectionId.get(sectionId) ?? [];
+  // 2026-09-07, Lino: same "erstes Thumbnail für die Übersicht" ask as the
+  // public preview page's own identical helper (see its doc comment) —
+  // scenesIn is already sort_order-first (see scenesBySectionId above), so
+  // this just needs to skip past any early scene that has no cover photo.
+  const firstThumbnailFor = (sectionId: string) => scenesIn(sectionId).find((s) => s.image_url)?.image_url ?? null;
 
   const shotsBySceneId = useMemo(() => {
     const map = new Map<string | null, Shot[]>();
@@ -1705,18 +1711,51 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             `sections` weiter unten). */}
         {openSectionId === null ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-            {sections.map((section) => (
-              <button
-                key={section.id}
-                onClick={() => setOpenSectionId(section.id)}
-                className="text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
-              >
-                <div className="font-semibold truncate">{section.name}</div>
-                <div className="text-sm text-white/50 mt-1">
-                  {scenesIn(section.id).length} {t("scriptOverview.sceneCount")}
+            {sections.map((section) => {
+              const thumbnailUrl = firstThumbnailFor(section.id);
+              return (
+                <div key={section.id} className="relative group">
+                  <button
+                    onClick={() => setOpenSectionId(section.id)}
+                    className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
+                  >
+                    {thumbnailUrl && (
+                      <div className="mb-3 rounded-xl overflow-hidden aspect-video bg-white/5">
+                        <AuthImage path={thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="font-semibold truncate pr-6">{section.name}</div>
+                    <div className="text-sm text-white/50 mt-1">
+                      {scenesIn(section.id).length} {t("scriptOverview.sceneCount")}
+                    </div>
+                  </button>
+                  {/* 2026-09-07, Lino: "man muss hier auch ganze shotlisten
+                      löschen können (in der Übersicht)" — explicitly only
+                      for logged-in users here in the authenticated app, NOT
+                      on the public preview link (Lino: "nur die
+                      eingeloggten sollen löschen können") — reuses the
+                      exact same delete flow (setDeleteSection + the
+                      ConfirmDialog below) SectionBlock's own dropdown menu
+                      already has for an OPENED section, just also reachable
+                      straight from the overview tile now. A sibling
+                      button, not nested inside the tile's own <button> —
+                      button-in-button is invalid HTML and browsers silently
+                      hoist the inner one out, breaking its click handler. */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteSection(section);
+                    }}
+                    aria-label={t("common.delete")}
+                    className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white/50 opacity-0 group-hover:opacity-100 hover:!text-red-400 hover:bg-black/60 transition-all"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z" />
+                    </svg>
+                  </button>
                 </div>
-              </button>
-            ))}
+              );
+            })}
             {/* 2026-09-07 fix, Lino: neu angelegte Szenen/Zwischenschritte
                 landen standardmässig immer hier (kein section_id gesetzt) —
                 bei einem frischen Projekt ohne Ideen/Abschnitte (z.B. reines
