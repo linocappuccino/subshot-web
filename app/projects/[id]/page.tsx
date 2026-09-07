@@ -314,6 +314,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Reset beim Verlassen der Skript-Seite (siehe goToIdeas unten), damit
   // ein erneuter Besuch immer wieder bei der Übersicht startet.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  // 2026-09-07 fix, Lino: "wenn ich einen Abschnitt erstelle und in diesen
+  // hinein gehen, müssen ALLE neuen Szenen in das geöffnete Projekt [sic,
+  // gemeint: den geöffneten Abschnitt]" — the FAB's "Neue Szene"/
+  // "Zwischenschritt"/"Info" never told SceneEditModal/createProjectInfoScene
+  // which section (if any) was currently open, so every new scene always
+  // landed unsectioned regardless of which section's shotlist you were
+  // actually looking at. "__unsectioned__" (the sentinel for the "Ohne
+  // Abschnitt" bucket, see its own SectionBlock render below) deliberately
+  // maps to `null` here too — same as the overview (openSectionId === null),
+  // a new scene created from either place has no real section to inherit.
+  const currentSectionId = openSectionId && openSectionId !== "__unsectioned__" ? openSectionId : null;
   const shareKind: "storyboard" | "ideas" = activeView === "ideas" ? "ideas" : "storyboard";
   function goToScenes() {
     setActiveView("scenes");
@@ -1202,6 +1213,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     try {
       const scene = await api.createScene(data.id, {
         project_id: data.id, color: "#3875bd", is_project_info: true, sort_order: data.scenes.length,
+        section_id: currentSectionId,
       });
       setData((prev) => (prev ? { ...prev, scenes: [...prev.scenes, scene] } : prev));
     } catch (e) {
@@ -2081,6 +2093,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         shots={liveEditingScene ? shotsFor(liveEditingScene.id) : []}
         previousScene={creatingScene || creatingIntermediateStep ? lastScene : null}
         nextSortOrder={(lastScene?.sort_order ?? -1) + 1}
+        sectionId={currentSectionId}
         members={members}
         onCreated={handleSceneCreated}
         onUpdated={handleSceneUpdated}

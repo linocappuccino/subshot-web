@@ -47,6 +47,7 @@ export function SceneEditModal({
   existing,
   previousScene,
   nextSortOrder,
+  sectionId,
   members,
   shots,
   onCreated,
@@ -76,6 +77,16 @@ export function SceneEditModal({
    * own next integer (Lino: "die erste Szene ist 1, die zweite 1A, dann
    * 1B"). */
   nextSortOrder: number;
+  /** 2026-09-07 fix, Lino: "wenn ich einen Abschnitt erstelle und in diesen
+   * hinein gehe, müssen ALLE neuen Szenen in diesen Abschnitt" — the id of
+   * whichever section's shotlist is currently open on the page (null for
+   * the section-less "Ohne Abschnitt" bucket or the overview itself, see
+   * page.tsx's own currentSectionId), so a scene created from the FAB
+   * inherits the section you're actually looking at instead of always
+   * landing unsectioned regardless of context. Only read when CREATING
+   * (existing === null) — editing never moves a scene between sections
+   * from here, that's drag-and-drop's job. */
+  sectionId: string | null;
   members: Member[];
   onCreated: (scene: Scene) => void;
   onUpdated: (scene: Scene) => void;
@@ -389,7 +400,8 @@ export function SceneEditModal({
         await persistExisting();
       } else {
         let scene = await api.createScene(projectId, {
-          color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder, ...buildPatchBody(),
+          color: "#3875bd", is_intermediate_step: isIntermediateStep, sort_order: nextSortOrder,
+          section_id: sectionId, ...buildPatchBody(),
         });
         for (const text of draftDialogues) {
           const d = await api.addDialogue(scene.id, text);
