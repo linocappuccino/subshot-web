@@ -515,7 +515,20 @@ function PreviewScenesPageInner() {
                         (selecting text in a scene description while a
                         shotlist is open), rather than the scene grid ever
                         changing shape depending on whether this is open. */}
-                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 overflow-y-auto pt-16 pb-6 px-3">
+                    {/* 2026-09-07 fix, Lino: "die feedbackbox in der
+                        sidebar muss unten sein und nicht oben" — this
+                        wrapper used `overflow-y-auto` on the WHOLE sidebar
+                        (heading + history + compose box together), so the
+                        compose box just sat wherever the history's height
+                        happened to push it, all the way at the top on a
+                        shotlist with little/no feedback yet. No overflow
+                        here anymore — PublicSectionComments now handles its
+                        own internal chat-style layout (history scrolls in
+                        its own middle region, compose box `shrink-0`
+                        pinned at the bottom), this wrapper just needs to
+                        actually give it the full fixed height to lay
+                        that out in. */}
+                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-4 px-3">
                       {/* Lino's explicit ask: leaving feedback here works
                           "exactly like the Ideas page" — one comment
                           thread for the whole opened shotlist, not per

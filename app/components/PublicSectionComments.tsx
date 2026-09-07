@@ -123,13 +123,27 @@ export function PublicSectionComments({
     .sort((a, b) => a[0] - b[0]);
 
   return (
-    <div className="rounded-2xl bg-[#212121] border border-white/[0.06] p-4 mb-4" onClick={(e) => e.stopPropagation()}>
-      <h2 className="text-sm font-bold text-white/80 mb-3">
+    // 2026-09-07 fix, Lino: "die feedbackbox in der sidebar muss unten sein
+    // und nicht oben in der sidebar" — this used to be one plain top-to-
+    // bottom flow (heading, history, THEN the compose box), so on a
+    // shotlist with little/no feedback yet the compose box landed right up
+    // top; on a long one it just got pushed further and further down,
+    // needing a scroll to reach. Chat-style layout now: heading fixed at
+    // the top, history scrolls in its own middle region, compose box
+    // pinned at the very bottom of the sidebar (`shrink-0`, outside the
+    // scrolling area) — always in the same, always-visible spot regardless
+    // of how much history exists. `h-full` so this actually fills the
+    // fixed-height sidebar the parent page renders it into (see that
+    // wrapper's own comment).
+    <div className="h-full flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <h2 className="text-sm font-bold text-white/80 shrink-0 px-1 pb-3">
         {t("publicIdeaLightbox.feedbackHeading")}{comments.length > 0 ? ` (${comments.length})` : ""}
       </h2>
 
-      <div className="flex flex-col gap-2">
-        {error && <p className="text-[12px] text-red-300 bg-red-900/30 rounded-lg px-2.5 py-1.5">{error}</p>}
+      <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 px-1">
+        {rounds.length === 0 && myDrafts.length === 0 && (
+          <p className="text-xs text-white/35">{t("publicIdeaLightbox.noFeedbackYet")}</p>
+        )}
 
         {rounds.map(([round, entries]) => (
           <SectionRoundBlock
@@ -159,7 +173,10 @@ export function PublicSectionComments({
             ))}
           </div>
         )}
+      </div>
 
+      <div className="shrink-0 px-1 pt-3 mt-1 border-t border-white/8">
+        {error && <p className="text-[12px] text-red-300 bg-red-900/30 rounded-lg px-2.5 py-1.5 mb-2">{error}</p>}
         {locked ? (
           <p className="text-[12px] text-white/45">{t("publicIdeaLightbox.roundClosedMessage")}</p>
         ) : (
