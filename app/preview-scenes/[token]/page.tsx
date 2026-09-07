@@ -8,6 +8,7 @@ import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import type { Annotation, ScenesPreviewData, Shot } from "@/lib/types";
 import { PublicSceneCard } from "@/app/components/PublicSceneCard";
+import { PublicSceneMedia } from "@/app/components/PublicSceneMedia";
 import { PublicSectionComments } from "@/app/components/PublicSectionComments";
 import { PublicMapThumb } from "@/app/components/PublicMapThumb";
 import { PublicTodoLists } from "@/app/components/PublicTodoLists";
@@ -303,6 +304,26 @@ function PreviewScenesPageInner() {
     return [...filtered.filter((s) => !s.completed), ...filtered.filter((s) => s.completed)];
   }
 
+  // 2026-09-07, Lino: "muss auf der in der shotlist übersicht das erste
+  // thumbnail übernommen werden, ansonsten ist es schwierig die projekte
+  // auseinander zu halten" — the Skript-Auswahlübersicht tiles below only
+  // ever showed a name + count, indistinguishable at a glance across
+  // several shared shotlists. Plain sort_order order (NOT scenesFor's own
+  // completed-sinks-to-the-end reordering — "first" should mean first in
+  // the shotlist, unaffected by what's already been shot), first scene
+  // that actually HAS a cover photo wins (skips past an early scene with
+  // no image rather than showing nothing just because scene #1 happens to
+  // be bare).
+  function firstThumbnailFor(sectionId: string): string | null {
+    if (!data) return null;
+    return (
+      data.scenes
+        .filter((s) => s.section_id === sectionId)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .find((s) => s.image_url)?.image_url ?? null
+    );
+  }
+
   const sectionsSorted = useMemo(() => (data ? [...data.sections].sort((a, b) => a.sort_order - b.sort_order) : []), [data]);
   const unsectioned = scenesFor(null);
 
@@ -446,12 +467,18 @@ function PreviewScenesPageInner() {
                 {sectionsSorted.map((section) => {
                   const scenes = scenesFor(section.id);
                   const doneCount = scenes.filter((s) => s.completed).length;
+                  const thumbnailUrl = firstThumbnailFor(section.id);
                   return (
                     <button
                       key={section.id}
                       onClick={() => setOpenSectionId(section.id)}
                       className="text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
                     >
+                      {thumbnailUrl && (
+                        <div className="mb-3 rounded-xl overflow-hidden aspect-video bg-white/5">
+                          <PublicSceneMedia imageUrl={thumbnailUrl} className="w-full h-full object-cover" />
+                        </div>
+                      )}
                       <div className="font-semibold truncate">{section.name}</div>
                       <div className="text-sm text-white/50 mt-1">
                         {doneCount}/{scenes.length} {t("scriptOverview.sceneCount")}
@@ -484,23 +511,45 @@ function PreviewScenesPageInner() {
                       ← {t("scriptOverview.backToOverview")}
                     </button>
                     <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
-                    {/* Lino's explicit ask: leaving feedback here works
-                        "exactly like the Ideas page" — one comment thread
-                        for the whole opened shotlist, not per scene. */}
-                    <PublicSectionComments
-                      section={openSection}
-                      comments={commentsBySection.get(openSection.id) ?? []}
-                      token={token}
-                      unlockToken={unlockToken}
-                      onCommentsChanged={(updater) =>
-                        setAnnotations((prev) => {
-                          const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
-                          const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
-                          return [...others, ...updated];
-                        })
-                      }
-                    />
-                    {renderScenes(scenes)}
+                    {/* 2026-09-07 fix, Lino: "die kommentarfunktion muss
+                        immer rechts als sidebar verfügbar sein und nicht
+                        wie jetzt oben" — used to render full-width ABOVE
+                        the scene list (pushed further down the further you
+                        scrolled), easy to lose track of while reviewing a
+                        long shotlist. `lg:sticky lg:top-4` keeps it in view
+                        alongside the scenes as you scroll, stacking back
+                        below the list on narrower screens where a 360px
+                        sidebar wouldn't leave the scenes any room. Plain
+                        flow position (not `fixed`, unlike
+                        PublicAnnotationsSidebar's identical-looking
+                        highlight-mode sidebar) deliberately — this can be
+                        open AT THE SAME TIME as that one (selecting text in
+                        a scene description while a shotlist is open is a
+                        completely normal thing to do), and two competing
+                        `fixed right-0` panels would just stack on top of
+                        each other. */}
+                    <div className="flex flex-col lg:flex-row-reverse gap-4 items-start">
+                      <div className="w-full lg:w-[360px] lg:shrink-0 lg:sticky lg:top-4">
+                        {/* Lino's explicit ask: leaving feedback here works
+                            "exactly like the Ideas page" — one comment
+                            thread for the whole opened shotlist, not per
+                            scene. */}
+                        <PublicSectionComments
+                          section={openSection}
+                          comments={commentsBySection.get(openSection.id) ?? []}
+                          token={token}
+                          unlockToken={unlockToken}
+                          onCommentsChanged={(updater) =>
+                            setAnnotations((prev) => {
+                              const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
+                              const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
+                              return [...others, ...updated];
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">{renderScenes(scenes)}</div>
+                    </div>
                   </div>
                 );
               })()
