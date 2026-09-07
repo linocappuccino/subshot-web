@@ -528,7 +528,18 @@ function PreviewScenesPageInner() {
                         pinned at the bottom), this wrapper just needs to
                         actually give it the full fixed height to lay
                         that out in. */}
-                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-4 px-3">
+                    {/* 2026-09-07 fix, Lino: "jetzt werden die buttons von
+                        der kommentarbox von 'kommentare aus und
+                        textmarker' überblendet" — the Kommentar-Toolbar
+                        below is `fixed right-[18px] bottom-[18px] z-[80]`,
+                        sitting exactly in this sidebar's own bottom-right
+                        corner at a HIGHER z-index, so the compose box's
+                        pinned-at-the-bottom Speichern/Senden buttons ended
+                        up right underneath it. `pb-24` matches the
+                        clearance PublicAnnotationsSidebar already reserves
+                        at its own bottom edge for this exact toolbar (was
+                        `pb-4`, nowhere near enough). */}
+                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 px-3">
                       {/* Lino's explicit ask: leaving feedback here works
                           "exactly like the Ideas page" — one comment
                           thread for the whole opened shotlist, not per
