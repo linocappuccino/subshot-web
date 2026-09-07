@@ -1020,6 +1020,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Scene-level drag start — snapshots the pre-drag order so a cancelled or
   // invalid drop can restore it exactly (see handleSceneDragCancel/End).
   function handleSceneDragStart(event: DragStartEvent) {
+    // 2026-09-07, Lino: bumping autoScroll's `acceleration` (see DndContext
+    // above) had NO visible effect — root cause found here, not there:
+    // globals.css sets `html { scroll-behavior: smooth }` for normal
+    // in-page navigation, but dnd-kit's autoScroll calls plain
+    // `element.scrollBy(x, y)` on an interval, which per spec is STILL
+    // governed by the scrolling element's CSS scroll-behavior — every one
+    // of those calls was kicking off a new smooth-scroll animation that
+    // the next tick (5ms later) immediately interrupted, capping the net
+    // scroll speed regardless of `acceleration`. Suspended for the
+    // duration of the drag, restored in handleSceneDragEnd/-Cancel.
+    document.documentElement.style.scrollBehavior = "auto";
     const id = String(event.active.id);
     if (isSectionId(id)) {
       setDraggingSectionId(id);
@@ -1144,6 +1155,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // real final `over` so the result always matches exactly what the
   // insertion line last pointed at.
   function handleSceneDragEnd(event: DragEndEvent) {
+    document.documentElement.style.scrollBehavior = "";
     const { active: sectionActive, over: sectionOver } = event;
     if (isSectionId(String(sectionActive.id))) {
       setDraggingSectionId(null);
@@ -1241,6 +1253,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // the live preview reordering from handleSceneDragOver, nothing was ever
   // persisted to the backend so a plain state restore is enough.
   function handleSceneDragCancel(event: DragCancelEvent) {
+    document.documentElement.style.scrollBehavior = "";
     if (isSectionId(String(event.active.id))) {
       setDraggingSectionId(null);
       setSectionInsertionIndicator(null);
