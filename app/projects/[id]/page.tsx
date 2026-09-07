@@ -21,7 +21,7 @@ import {
   type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 // Aliased to avoid shadowing the browser's global `CSS` (this file uses
 // `document.querySelector` with data attributes elsewhere in the app's
 // history and may again).
@@ -33,8 +33,6 @@ import { setNavCache, takeNavCache } from "@/lib/navCache";
 import type { Annotation, Member, PostproductionStatus, ProjectDetail, Scene, Section, Shot, Video } from "@/lib/types";
 import { SortableSceneCard } from "@/app/components/SortableSceneCard";
 import { SceneCard } from "@/app/components/SceneCard";
-import { ShotOrderView } from "@/app/components/ShotOrderView";
-import { ShotEditModal } from "@/app/components/ShotEditModal";
 import { SceneEditModal } from "@/app/components/SceneEditModal";
 import { SceneTable } from "@/app/components/SceneTable";
 import { ProjectInfoBox } from "@/app/components/ProjectInfoBox";
@@ -301,7 +299,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // showing the shot-order view of a section you weren't even looking at
   // would be confusing) by being reset in the "back to overview" handler.
   const [shotOrderMode, setShotOrderMode] = useState(false);
-  const [editingFlatShot, setEditingFlatShot] = useState<Shot | null>(null);
   const [sendToPostproduction, setSendToPostproduction] = useState<Section | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   async function goToProjectsWithTransition() {
@@ -1399,11 +1396,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // updates the instant a scene drag reorders that array. Keyed by
   // section id (null for "Ohne Abschnitt") purely because SectionBlock
   // only ever renders ONE section at a time — a scene's number never
-  // needs to account for any OTHER section's scenes. Consumed by both the
-  // scene grid/table (SectionBlock) AND the flat Shot-Reihenfolge view
-  // (ShotOrderView) so the two stay in lockstep — shot drags there only
-  // ever touch Shot.shooting_order, never a scene's position in this map,
-  // so the badge shown per shot is untouched by reordering shots.
+  // needs to account for any OTHER section's scenes. Consumed by
+  // SectionBlock for both the narrative Szenen-Reihenfolge AND (2026-09-09)
+  // the Shot-Reihenfolge, which reuses that same SectionBlock verbatim
+  // (see its call site below) just fed a Scene.shooting_order-sorted list
+  // — dragging there only ever touches shooting_order, never a scene's
+  // position in THIS map, so the badge shown per scene stays put.
   const sceneNumberBySectionId = useMemo(() => {
     const map = new Map<string | null, Map<string, number>>();
     for (const [sectionId, list] of scenesBySectionId) {
@@ -1963,58 +1961,71 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               (() => {
                 const openSection = sections.find((s) => s.id === openSectionId);
                 if (!openSection) return null;
-                // 2026-09-09, Lino: "die szenen-reihefolge zeigt quasi die
-                // szenen wie sie im fertigen video nacheinander gezeigt
-                // werden... die shot-reihenfolge zeigt die reihenfolge wie
-                // sie am set gefilmt wird, [...] man muss die szenen
-                // verschieben können und sie müssen die nummer von der
-                // szenen-reihenfolge behalten" — the unit reordered here is
-                // the whole SCENE (its own shots stay in their normal
-                // per-scene order), via the independent Scene.shooting_order
-                // field, NOT individual shots (superseded 2026-09-07
-                // attempt). Every scene always appears here regardless of
-                // whether it has shots yet (Lino: "ALLE szenen... müssen
-                // IMMER in beiden drin sein... die reihenfolge option ist
-                // nur da um zu sortieren, für nichts anderes").
+                const sectionId = openSection.id;
+                // 2026-09-09, Lino: "wieso wird die shot-reihenfolge
+                // anderst dargestellt?? sie soll doch genau gleich
+                // dargestellt werden!! NUR DIE REIHENFOLGE SOLL MAN
+                // SELBER VON DEN SZENEN wählen können" — a first attempt
+                // built a whole separate card design here (ShotOrderView's
+                // own SceneBlockContent); this reuses the EXACT same
+                // SectionBlock the Szenen-Reihenfolge itself renders with
+                // (grid or table, whichever `viewMode` is active), just
+                // fed the shooting-order-sorted scene list and wrapped in
+                // its own, isolated DndContext so a drag here writes
+                // Scene.shooting_order instead of Scene.sort_order — see
+                // Scene.shooting_order's own doc comment for the fuller
+                // "Szenen-Reihenfolge = narrative order, Shot-Reihenfolge
+                // = shooting-day order of the same scenes" explanation.
+                // No `title` passed -> SectionBlock's own early-return
+                // skips its header/section-menu chrome entirely, leaving
+                // just the bare scene cards.
                 const scenesInSection = [...scenesIn(openSection.id)].sort((a, b) => {
                   if (a.shooting_order != null && b.shooting_order != null) return a.shooting_order - b.shooting_order;
                   if (a.shooting_order != null) return -1;
                   if (b.shooting_order != null) return 1;
                   return a.sort_order - b.sort_order;
                 });
+                function handleShotOrderDragEnd(event: DragEndEvent) {
+                  const { active, over } = event;
+                  if (!over || active.id === over.id) return;
+                  const oldIndex = scenesInSection.findIndex((s) => s.id === active.id);
+                  const newIndex = scenesInSection.findIndex((s) => s.id === over.id);
+                  if (oldIndex === -1 || newIndex === -1) return;
+                  const orderedSceneIds = arrayMove(scenesInSection, oldIndex, newIndex).map((s) => s.id);
+                  // Optimistic — mirrors the order the user just dropped
+                  // locally, same reasoning handleSortScenes/duplicate's
+                  // own local reindex already use elsewhere on this page.
+                  updateScenesShots((d) => ({
+                    ...d,
+                    scenes: d.scenes.map((s) => {
+                      const idx = orderedSceneIds.indexOf(s.id);
+                      return idx === -1 ? s : { ...s, shooting_order: idx };
+                    }),
+                  }));
+                  api.reorderScenesShootingOrder(sectionId, orderedSceneIds).catch((e) => {
+                    toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+                  });
+                }
                 return (
-                  <ShotOrderView
-                    scenes={scenesInSection}
-                    shotsFor={shotsFor}
-                    sceneNumberById={sceneNumberIn(openSection.id)}
-                    onEditShot={setEditingFlatShot}
-                    onEditScene={setEditingScene}
-                    onToggleDone={async (shot) => {
-                      try {
-                        const updated = await api.patchShot(shot.id, { status: shot.status === "done" ? "open" : "done" });
-                        updateScenesShots((d) => ({ ...d, shots: d.shots.map((s) => (s.id === updated.id ? updated : s)) }));
-                      } catch (e) {
-                        toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
-                      }
-                    }}
-                    onReorder={async (orderedSceneIds) => {
-                      // Optimistic — mirrors the order the user just dropped
-                      // locally, same reasoning handleSortScenes/duplicate's
-                      // own local reindex already use elsewhere on this page.
-                      updateScenesShots((d) => ({
-                        ...d,
-                        scenes: d.scenes.map((s) => {
-                          const idx = orderedSceneIds.indexOf(s.id);
-                          return idx === -1 ? s : { ...s, shooting_order: idx };
-                        }),
-                      }));
-                      try {
-                        await api.reorderScenesShootingOrder(openSection.id, orderedSceneIds);
-                      } catch (e) {
-                        toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
-                      }
-                    }}
-                  />
+                  <DndContext sensors={sceneSensors} collisionDetection={closestCenter} onDragEnd={handleShotOrderDragEnd}>
+                    <SectionBlock
+                      section={openSection}
+                      scenes={scenesInSection}
+                      sceneNumberById={sceneNumberIn(openSection.id)}
+                      shotsFor={shotsFor}
+                      members={members}
+                      onChange={updateScenesShots}
+                      onEditScene={setEditingScene}
+                      onDeleteScene={setDeleteScene}
+                      onDuplicateScene={handleDuplicateScene}
+                      viewMode={viewMode}
+                      onOpenTeam={() => setShowTeam(true)}
+                      dragDisabled={showAnnotations}
+                      annotationsByScene={showAnnotations ? annotationsByScene : undefined}
+                      highlightedAnnotationId={highlightedAnnotationId}
+                      onAnnotationClick={handleAnnotationSelect}
+                    />
+                  </DndContext>
                 );
               })()
             ) : (
@@ -2430,18 +2441,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         message={`${unsectioned.length} Szene${unsectioned.length === 1 ? "" : "n"} ohne Abschnitt werden endgültig gelöscht.`}
         onConfirm={confirmDeleteUnsectioned}
         onCancel={() => setDeleteUnsectioned(false)}
-      />
-      {/* 2026-09-07 — the flat Shot-Reihenfolge view (ShotOrderView above)
-          lives at the page level, not nested inside any one SceneCard the
-          way shot editing normally is (each scene's own SectionBlock/
-          SceneCard already has its own ShotEditModal instance) — its own
-          rows can belong to ANY scene in the open section, so it needs
-          this separate instance instead. */}
-      <ShotEditModal
-        open={editingFlatShot !== null}
-        onClose={() => setEditingFlatShot(null)}
-        shot={editingFlatShot}
-        onUpdated={(updated) => updateScenesShots((d) => ({ ...d, shots: d.shots.map((s) => (s.id === updated.id ? updated : s)) }))}
       />
       <ConfirmDialog
         open={sendToPostproduction !== null}
