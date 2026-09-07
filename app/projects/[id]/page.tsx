@@ -2001,12 +2001,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           collisionDetection={dragCollisionDetection}
           // Faster viewport-edge auto-scroll while dragging (2026-07-13,
           // Lino: default dnd-kit acceleration was too slow; bumped again
-          // 2026-07-14, still felt "super langsam" at 40 — dnd-kit scrolls
-          // scrollBy(speed) every `interval` ms, speed maxing out at
-          // `acceleration` px only right at the very edge of the 20%
+          // 2026-07-14, still felt "super langsam" at 40; bumped again
+          // 2026-09-07 ("VIEL VIEL schneller") from 120 to 400 — dnd-kit
+          // scrolls scrollBy(speed) every `interval` ms, speed maxing out
+          // at `acceleration` px only right at the very edge of the 20%
           // threshold zone, so this is the actual top speed once the
           // cursor is fully at the viewport edge).
-          autoScroll={{ acceleration: 120, interval: 5 }}
+          autoScroll={{ acceleration: 400, interval: 5 }}
           onDragStart={handleSceneDragStart}
           onDragOver={handleSceneDragOver}
           onDragEnd={handleSceneDragEnd}
