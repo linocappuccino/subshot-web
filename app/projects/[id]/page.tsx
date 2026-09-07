@@ -852,19 +852,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
-  // Full refetch rather than patching local state (2026-07-11) — the
-  // backend shifts sort_order on every sibling from the duplicate's
-  // insertion point onward (see duplicate_scene in main.py) to make room
-  // right next to the original, and duplicating is infrequent enough
-  // (unlike dragging) that a plain refetch is simpler and safer than trying
-  // to mirror that shift locally and risking the same kind of drift bug
-  // that plagued the drag-and-drop reorder logic before it got a backend
-  // source of truth.
+  // 2026-09-07 fix, Lino: "wenn ich eine Kachel duplizieren will geht das
+  // sehr sehr lange!!! alles muss schnell und direkt passieren" — this used
+  // to await the duplicate POST and then a SECOND full projectDetail()
+  // refetch (every scene/dialogue/shot/todo-list in the whole project) just
+  // to pick up the sort_order shift duplicate_scene applies to the
+  // duplicate's siblings (see that endpoint's own comment in main.py) —
+  // two full round trips from the browser for what should feel instant.
+  // Mirrors that exact renumbering locally instead (same section, contiguous
+  // reindex: siblings-before + original + copy + siblings-after) so this is
+  // ONE request. The exact numeric sort_order values only need to preserve
+  // relative order, not bit-for-bit match the server's own — this local
+  // guess is naturally overwritten by the next 12s poll regardless, so even
+  // a missed edge case here self-heals within seconds instead of silently
+  // drifting forever (the actual risk the old full-refetch approach was
+  // guarding against, and still isn't possible here for that reason).
   async function handleDuplicateScene(scene: Scene) {
     try {
-      await api.duplicateScene(scene.id);
-      const fresh = await api.projectDetail(data!.id);
-      setData(fresh);
+      const copy = await api.duplicateScene(scene.id);
+      setData((prev) => {
+        if (!prev) return prev;
+        const sectionId = scene.section_id ?? null;
+        const siblings = prev.scenes
+          .filter((s) => s.id !== scene.id && (s.section_id ?? null) === sectionId)
+          .sort((a, b) => a.sort_order - b.sort_order);
+        const insertAt = siblings.findIndex((s) => s.sort_order >= scene.sort_order);
+        const idx = insertAt === -1 ? siblings.length : insertAt;
+        const before = siblings.slice(0, idx).map((s, i) => ({ ...s, sort_order: i }));
+        const after = siblings.slice(idx).map((s, i) => ({ ...s, sort_order: idx + 2 + i }));
+        const reindexedOriginal = { ...scene, sort_order: idx };
+        const reindexedCopy = { ...copy, sort_order: idx + 1 };
+        const touched = new Set([scene.id, copy.id, ...before.map((s) => s.id), ...after.map((s) => s.id)]);
+        const untouched = prev.scenes.filter((s) => !touched.has(s.id));
+        return { ...prev, scenes: [...untouched, ...before, reindexedOriginal, reindexedCopy, ...after] };
+      });
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Duplizieren fehlgeschlagen.");
     }
