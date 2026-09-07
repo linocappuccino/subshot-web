@@ -511,44 +511,47 @@ function PreviewScenesPageInner() {
                       ← {t("scriptOverview.backToOverview")}
                     </button>
                     <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
+                    {renderScenes(scenes)}
                     {/* 2026-09-07 fix, Lino: "die kommentarfunktion muss
                         immer rechts als sidebar verfügbar sein und nicht
-                        wie jetzt oben" — used to render full-width ABOVE
-                        the scene list (pushed further down the further you
-                        scrolled), easy to lose track of while reviewing a
-                        long shotlist. `lg:sticky lg:top-4` keeps it in view
-                        alongside the scenes as you scroll, stacking back
-                        below the list on narrower screens where a 360px
-                        sidebar wouldn't leave the scenes any room. Plain
-                        flow position (not `fixed`, unlike
-                        PublicAnnotationsSidebar's identical-looking
-                        highlight-mode sidebar) deliberately — this can be
-                        open AT THE SAME TIME as that one (selecting text in
-                        a scene description while a shotlist is open is a
-                        completely normal thing to do), and two competing
-                        `fixed right-0` panels would just stack on top of
-                        each other. */}
-                    <div className="flex flex-col lg:flex-row-reverse gap-4 items-start">
-                      <div className="w-full lg:w-[360px] lg:shrink-0 lg:sticky lg:top-4">
-                        {/* Lino's explicit ask: leaving feedback here works
-                            "exactly like the Ideas page" — one comment
-                            thread for the whole opened shotlist, not per
-                            scene. */}
-                        <PublicSectionComments
-                          section={openSection}
-                          comments={commentsBySection.get(openSection.id) ?? []}
-                          token={token}
-                          unlockToken={unlockToken}
-                          onCommentsChanged={(updater) =>
-                            setAnnotations((prev) => {
-                              const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
-                              const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
-                              return [...others, ...updated];
-                            })
-                          }
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">{renderScenes(scenes)}</div>
+                        wie jetzt oben" — first attempt kept it in normal
+                        document flow (a `sticky` column next to the scene
+                        grid) specifically to avoid overlapping
+                        PublicAnnotationsSidebar's own `fixed right-0`
+                        highlight-mode panel. Lino corrected that: "die
+                        kommentar sidebar ist KEINE kachel sondern eine
+                        richtige sidebar" + "soll komplett rechts am
+                        browser rand sein und nicht die grösse der kacheln
+                        beeinflussen" — sharing the flex row with the scene
+                        grid was squeezing every tile's column width down
+                        to fit both in the SAME centered max-w-6xl content
+                        column, instead of the sidebar just floating in
+                        whatever margin the viewport actually has outside
+                        it (or over the content on a narrow one) — exactly
+                        how PublicAnnotationsSidebar already behaves. Kept
+                        one z-step above it (z-[71] vs. z-[70]) as a plain
+                        tie-break for the rare case both are open at once
+                        (selecting text in a scene description while a
+                        shotlist is open), rather than the scene grid ever
+                        changing shape depending on whether this is open. */}
+                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 overflow-y-auto pt-16 pb-6 px-3">
+                      {/* Lino's explicit ask: leaving feedback here works
+                          "exactly like the Ideas page" — one comment
+                          thread for the whole opened shotlist, not per
+                          scene. */}
+                      <PublicSectionComments
+                        section={openSection}
+                        comments={commentsBySection.get(openSection.id) ?? []}
+                        token={token}
+                        unlockToken={unlockToken}
+                        onCommentsChanged={(updater) =>
+                          setAnnotations((prev) => {
+                            const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
+                            const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
+                            return [...others, ...updated];
+                          })
+                        }
+                      />
                     </div>
                   </div>
                 );

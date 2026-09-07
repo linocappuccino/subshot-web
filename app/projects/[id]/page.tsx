@@ -280,6 +280,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const liveEditingScene = editingScene ? (data?.scenes.find((s) => s.id === editingScene.id) ?? editingScene) : null;
   const [deleteScene, setDeleteScene] = useState<Scene | null>(null);
   const [deleteSection, setDeleteSection] = useState<Section | null>(null);
+  // 2026-09-07, Lino: "ich kann 'ohne abschnitte' nicht löschen, das muss
+  // man auch löschen können!" — "Ohne Abschnitt" isn't a real Section row
+  // (see the "__unsectioned__" sentinel elsewhere on this page), so there's
+  // nothing for deleteSection/confirmDeleteSection's own DELETE /sections/
+  // {id} to target. "Deleting" it means bulk-deleting every scene currently
+  // sitting in that bucket — plain boolean (not a Scene[] snapshot) since
+  // the confirm handler below always re-reads the CURRENT `unsectioned`
+  // list at click time, not whatever it was when the dialog opened.
+  const [deleteUnsectioned, setDeleteUnsectioned] = useState(false);
   const [sendToPostproduction, setSendToPostproduction] = useState<Section | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
   async function goToProjectsWithTransition() {
@@ -947,6 +956,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
     } finally {
       setDeleteSection(null);
+    }
+  }
+
+  // "Ohne Abschnitt" has no Section row to send a single DELETE for (see
+  // deleteUnsectioned's own doc comment) — deletes every currently-
+  // unsectioned scene one request at a time, same api.deleteScene single-
+  // scene endpoint confirmDeleteScene above already uses. Sequential, not
+  // Promise.all — this is a rare, deliberate bulk action (not a hot path
+  // worth parallelizing), and sequential means a mid-batch failure still
+  // leaves every scene deleted SO FAR correctly reflected in local state
+  // rather than an all-or-nothing race against a partially-applied setData.
+  async function confirmDeleteUnsectioned() {
+    const toDelete = unsectioned;
+    setDeleteUnsectioned(false);
+    for (const scene of toDelete) {
+      try {
+        await api.deleteScene(scene.id);
+        setData((prev) => (prev ? { ...prev, scenes: prev.scenes.filter((s) => s.id !== scene.id) } : prev));
+      } catch (e) {
+        toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+        return;
+      }
     }
   }
 
@@ -1714,7 +1745,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             {sections.map((section) => {
               const thumbnailUrl = firstThumbnailFor(section.id);
               return (
-                <div key={section.id} className="relative group">
+                <div key={section.id} className="relative">
                   <button
                     onClick={() => setOpenSectionId(section.id)}
                     className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
@@ -1729,30 +1760,45 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       {scenesIn(section.id).length} {t("scriptOverview.sceneCount")}
                     </div>
                   </button>
-                  {/* 2026-09-07, Lino: "man muss hier auch ganze shotlisten
-                      löschen können (in der Übersicht)" — explicitly only
-                      for logged-in users here in the authenticated app, NOT
-                      on the public preview link (Lino: "nur die
-                      eingeloggten sollen löschen können") — reuses the
-                      exact same delete flow (setDeleteSection + the
-                      ConfirmDialog below) SectionBlock's own dropdown menu
-                      already has for an OPENED section, just also reachable
-                      straight from the overview tile now. A sibling
-                      button, not nested inside the tile's own <button> —
-                      button-in-button is invalid HTML and browsers silently
-                      hoist the inner one out, breaking its click handler. */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteSection(section);
-                    }}
-                    aria-label={t("common.delete")}
-                    className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white/50 opacity-0 group-hover:opacity-100 hover:!text-red-400 hover:bg-black/60 transition-all"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16Z" />
-                    </svg>
-                  </button>
+                  {/* 2026-09-07 fix, Lino: "man muss hier auch ganze
+                      shotlisten löschen können (in der Übersicht)" —
+                      explicitly only for logged-in users here, NOT on the
+                      public preview link ("nur die eingeloggten sollen
+                      löschen können"). First attempt was a plain absolutely-
+                      positioned sibling <button> — Lino confirmed the icon
+                      showed but clicking it did nothing (never reached the
+                      backend, see the DELETE /sections/{id} logs). Rebuilt
+                      on the shared Menu component instead, the exact same
+                      proven "…" pattern SceneCard already uses for its own
+                      Bearbeiten/Duplizieren/Löschen — Menu's own trigger
+                      wrapper already does preventDefault+stopPropagation
+                      correctly, no more hand-rolled click-isolation to get
+                      subtly wrong. Reuses the same setDeleteSection +
+                      ConfirmDialog SectionBlock's dropdown menu already
+                      has for an OPENED section. */}
+                  <div className="absolute top-2 right-2">
+                    <Menu
+                      trigger={
+                        <IconButton size={28} className="bg-black/40 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/60">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+                          </svg>
+                        </IconButton>
+                      }
+                    >
+                      {(close) => (
+                        <MenuItem
+                          danger
+                          onClick={() => {
+                            setDeleteSection(section);
+                            close();
+                          }}
+                        >
+                          {t("common.delete")}
+                        </MenuItem>
+                      )}
+                    </Menu>
+                  </div>
                 </div>
               );
             })}
@@ -1767,16 +1813,46 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 Kachel, öffnet dieselbe Shot-Planungsansicht unten (siehe
                 openSectionId === "__unsectioned__" weiter unten). */}
             {unsectioned.length > 0 && (
-              <button
-                onClick={() => setOpenSectionId("__unsectioned__")}
-                className="text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
-                title={t("scriptOverview.unsectionedHint")}
-              >
-                <div className="font-semibold truncate">{t("scriptOverview.unsectionedTitle")}</div>
-                <div className="text-sm text-white/50 mt-1">
-                  {unsectioned.length} {t("scriptOverview.sceneCount")}
+              <div className="relative">
+                <button
+                  onClick={() => setOpenSectionId("__unsectioned__")}
+                  className="w-full text-left p-4 rounded-2xl bg-white/[0.04] border border-white/10 hover:bg-white/[0.07] hover:border-white/20 transition-colors"
+                  title={t("scriptOverview.unsectionedHint")}
+                >
+                  <div className="font-semibold truncate pr-6">{t("scriptOverview.unsectionedTitle")}</div>
+                  <div className="text-sm text-white/50 mt-1">
+                    {unsectioned.length} {t("scriptOverview.sceneCount")}
+                  </div>
+                </button>
+                {/* 2026-09-07, Lino: "ich kann 'ohne abschnitte' nicht
+                    löschen, das muss man auch löschen können!" — see
+                    deleteUnsectioned's own doc comment: no Section row
+                    exists to delete here, this bulk-deletes every scene
+                    currently in the bucket instead. */}
+                <div className="absolute top-2 right-2">
+                  <Menu
+                    trigger={
+                      <IconButton size={28} className="bg-black/40 backdrop-blur-sm text-white/60 hover:text-white hover:bg-black/60">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="5" cy="12" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="19" cy="12" r="1.8" />
+                        </svg>
+                      </IconButton>
+                    }
+                  >
+                    {(close) => (
+                      <MenuItem
+                        danger
+                        onClick={() => {
+                          setDeleteUnsectioned(true);
+                          close();
+                        }}
+                      >
+                        {t("common.delete")}
+                      </MenuItem>
+                    )}
+                  </Menu>
                 </div>
-              </button>
+              </div>
             )}
           </div>
         ) : (
@@ -2195,6 +2271,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         message={`"${deleteSection?.name}" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter "Ohne Abschnitt".`}
         onConfirm={confirmDeleteSection}
         onCancel={() => setDeleteSection(null)}
+      />
+      <ConfirmDialog
+        open={deleteUnsectioned}
+        title={t("scriptOverview.unsectionedTitle") + " löschen?"}
+        message={`${unsectioned.length} Szene${unsectioned.length === 1 ? "" : "n"} ohne Abschnitt werden endgültig gelöscht.`}
+        onConfirm={confirmDeleteUnsectioned}
+        onCancel={() => setDeleteUnsectioned(false)}
       />
       <ConfirmDialog
         open={sendToPostproduction !== null}
