@@ -82,37 +82,49 @@ export function AuthImage({
   }, [pathIdentity]);
 
   return (
-    <>
-      {!loaded && <div className={`${className ?? ""} bg-white/5 animate-pulse`} />}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={path}
-        alt={alt}
-        // 2026-08-31 — perf pass: this is THE way every scene/shot/folder/
-        // idea cover photo renders app-wide (see this component's own doc
-        // comment) — native lazy-loading means a photo well below the fold
-        // (a long scene list, a big folder grid) doesn't start downloading
-        // until it's actually about to scroll into view, instead of every
-        // cover photo on the page competing for bandwidth immediately on
-        // load. No next/image migration needed for this alone — the
-        // attribute works on a plain <img> in every browser this app targets.
-        loading="lazy"
-        className={className}
-        style={{
-          display: loaded ? undefined : "none",
-          ...(lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined),
-          ...(objectPosition ? { objectPosition } : undefined),
-        }}
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          const isLandscape = img.naturalWidth >= img.naturalHeight;
-          if (lockAspectRatio) setRatio(isLandscape ? "16 / 9" : "9 / 16");
-          onOrientation?.(isLandscape ? "landscape" : "portrait");
-          if (img.naturalHeight > 0) onAspectRatio?.(img.naturalWidth / img.naturalHeight);
-          setLoaded(true);
-        }}
-        onError={() => setLoaded(false)}
-      />
-    </>
+    // 2026-09-07 fix, Lino: "lädt man ein Bild in einer Szenenkachel hoch,
+    // wird es in der Kachelübersicht nicht angezeigt" (auch nach Reload) —
+    // `display: none` auf dem <img> selbst (die alte "zeig den Pulse-
+    // Platzhalter ODER das Bild" Umsetzung) nimmt es komplett aus dem Layout
+    // heraus, d.h. es hat gar keine Bounding Box mehr. `loading="lazy"`
+    // (2026-08-31 — siehe dessen eigenen Kommentar unten) berechnet seine
+    // "ist das nah genug am Viewport" Entscheidung aber genau über diese Box
+    // — ohne sie wird der eigentliche Fetch nie ausgelöst: ein Deadlock (kein
+    // Fetch ohne Box, keine Box ohne geladenes Bild), der jedes NEU
+    // hinzugefügte Bild dauerhaft unsichtbar lässt, sobald es nicht schon
+    // beim ersten Layout-Pass im/nahe am Viewport war. Fix: das <img> bleibt
+    // IMMER normal gelayoutet (Pulse-Look jetzt als Klasse/Style AUF dem img
+    // selbst, kein separates Platzhalter-Element mehr, das display umschaltet)
+    // — nur noch opacity ändert sich, die Box (und damit die Lazy-Load-
+    // Berechnung) existiert die ganze Zeit.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={path}
+      alt={alt}
+      // 2026-08-31 — perf pass: this is THE way every scene/shot/folder/
+      // idea cover photo renders app-wide (see this component's own doc
+      // comment) — native lazy-loading means a photo well below the fold
+      // (a long scene list, a big folder grid) doesn't start downloading
+      // until it's actually about to scroll into view, instead of every
+      // cover photo on the page competing for bandwidth immediately on
+      // load. No next/image migration needed for this alone — the
+      // attribute works on a plain <img> in every browser this app targets.
+      loading="lazy"
+      className={`${className ?? ""} ${loaded ? "" : "bg-white/5 animate-pulse"}`}
+      style={{
+        opacity: loaded ? 1 : 0,
+        ...(lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined),
+        ...(objectPosition ? { objectPosition } : undefined),
+      }}
+      onLoad={(e) => {
+        const img = e.currentTarget;
+        const isLandscape = img.naturalWidth >= img.naturalHeight;
+        if (lockAspectRatio) setRatio(isLandscape ? "16 / 9" : "9 / 16");
+        onOrientation?.(isLandscape ? "landscape" : "portrait");
+        if (img.naturalHeight > 0) onAspectRatio?.(img.naturalWidth / img.naturalHeight);
+        setLoaded(true);
+      }}
+      onError={() => setLoaded(false)}
+    />
   );
 }
