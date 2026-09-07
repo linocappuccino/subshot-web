@@ -1,7 +1,6 @@
 import type { Annotation, Member, Scene, Shot } from "@/lib/types";
 import { PublicSceneMedia } from "./PublicSceneMedia";
 import { PublicMapThumb } from "./PublicMapThumb";
-import { PublicSceneComments } from "./PublicSceneComments";
 import { wrapHighlights } from "./PublicHighlightedText";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
@@ -90,23 +89,27 @@ function ShotRow({
  * is already filtered to this one scene's OPEN highlight annotations by the
  * caller (mirrors _scene_html's own `ann.status == "open"` filter — the
  * public page never shows resolved/rejected annotations as marks, only in
- * status changes which never happen here anyway since triage is app-only). */
+ * status changes which never happen here anyway since triage is app-only).
+ *
+ * 2026-09-07 fix, Lino: "in der preview von einer shotlist soll man NICHT
+ * pro kachel eine kommentar box haben!" — used to render its own
+ * PublicSceneComments (name/textarea/send, plus the round-grouped comment
+ * list) at the bottom of every single tile, on top of the section-level
+ * comment sidebar (preview-scenes/[token]/page.tsx) that now covers
+ * feedback for the whole opened shotlist. Removed entirely — inline
+ * highlight-annotation MARKUP (the yellow-underline "select text, leave a
+ * note" flow via wrapHighlights/onMarkClick above) is untouched, that's a
+ * completely separate mechanism from the comment box this dropped. */
 export function PublicSceneCard({
-  scene, shots, annotations, comments, memberById, token, unlockToken, onMarkClick, onCommentsChanged, onDeleteAnnotation,
+  scene, shots, annotations, memberById, token, unlockToken, onMarkClick,
 }: {
   scene: Scene;
   shots: Shot[];
   annotations: Annotation[];
-  /** 2026-07-27 — this scene's non-draft kind="comment" rows, see
-   * PublicSceneComments' own doc comment for the round/lock system this
-   * feeds. */
-  comments: Annotation[];
   memberById: Map<string, Member>;
   token: string;
   unlockToken: string | null;
   onMarkClick: (annotation: Annotation) => void;
-  onCommentsChanged: (updater: (comments: Annotation[]) => Annotation[]) => void;
-  onDeleteAnnotation?: (annotation: Annotation) => void;
 }) {
   const { t } = useLanguage();
   const color = scene.priority ? PRIORITY_COLORS[scene.priority] : "#7a7a7a";
@@ -252,16 +255,6 @@ export function PublicSceneCard({
         </div>
       )}
 
-      <PublicSceneComments
-        scene={scene}
-        highlightAnnotations={annotations}
-        comments={comments}
-        token={token}
-        unlockToken={unlockToken}
-        onCommentsChanged={onCommentsChanged}
-        onSelectAnnotation={onMarkClick}
-        onDeleteAnnotation={onDeleteAnnotation}
-      />
     </div>
   );
 }

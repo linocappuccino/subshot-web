@@ -252,9 +252,11 @@ function PreviewScenesPageInner() {
     : null;
 
   // Highlight-kind only (field-scoped text marks, drives byField/
-  // wrapHighlights in PublicSceneCard/ShotRow) — commentsByScene below
-  // holds the plain kind="comment" rows separately, they have no `field`
-  // to wrap anything with.
+  // wrapHighlights in PublicSceneCard/ShotRow) — plain kind="comment" rows
+  // now only ever render in the section-level sidebar (commentsBySection
+  // below), see PublicSceneCard's own 2026-09-07 doc comment for why the
+  // per-scene comment box (and its matching commentsByScene grouping) was
+  // removed.
   const annotationsByScene = useMemo(() => {
     const map = new Map<string, Annotation[]>();
     for (const a of annotations) {
@@ -269,21 +271,9 @@ function PreviewScenesPageInner() {
     return map;
   }, [annotations, pendingAnnotation]);
 
-  // 2026-07-27 — plain scene comments (kind="comment"), fed to
-  // PublicSceneComments below, grouped by scene the same way.
-  const commentsByScene = useMemo(() => {
-    const map = new Map<string, Annotation[]>();
-    for (const a of annotations) {
-      if (!a.scene_id || a.kind !== "comment") continue;
-      if (!map.has(a.scene_id)) map.set(a.scene_id, []);
-      map.get(a.scene_id)!.push(a);
-    }
-    return map;
-  }, [annotations]);
-
   // 2026-08-31, Todoist #96 — plain section comments (kind="comment",
   // section_id set), fed to PublicSectionComments below, grouped by section
-  // the same way commentsByScene groups scene comments.
+  // the same way annotationsByScene above groups highlight annotations.
   const commentsBySection = useMemo(() => {
     const map = new Map<string, Annotation[]>();
     for (const a of annotations) {
@@ -336,7 +326,6 @@ function PreviewScenesPageInner() {
             scene={scene}
             shots={shotsByScene.get(scene.id) ?? []}
             annotations={annotationsByScene.get(scene.id) ?? []}
-            comments={commentsByScene.get(scene.id) ?? []}
             memberById={memberById}
             token={token}
             unlockToken={unlockToken}
@@ -344,14 +333,6 @@ function PreviewScenesPageInner() {
               setMode("highlight");
               pulseAnnotation(ann.id);
             }}
-            onCommentsChanged={(updater) =>
-              setAnnotations((prev) => {
-                const others = prev.filter((a) => !(a.scene_id === scene.id && a.kind === "comment"));
-                const updated = updater(prev.filter((a) => a.scene_id === scene.id && a.kind === "comment"));
-                return [...others, ...updated];
-              })
-            }
-            onDeleteAnnotation={handleDeleteAnnotation}
           />
         ))}
       </div>
