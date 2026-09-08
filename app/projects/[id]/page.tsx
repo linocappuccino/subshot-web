@@ -1897,19 +1897,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             diesen einen Abschnitt in der bestehenden, unveränderten
             Shot-Planungsansicht darunter (siehe die Filterung von
             `sections` weiter unten). */}
-        {openSectionId === null && data && (
-          // 2026-09-08, Lino: "ganz oben in einer Shotlist soll man ein
-          // Beispielvideo hochladen können, das man als Referenz abspielen
-          // lassen kann... ganz oben über dem ersten Abschnitt" — one
-          // reference video for the whole project's shotlist, shown above
-          // the Abschnitt tile grid below (only on the overview, not inside
-          // an opened shotlist — it's project-wide, not per-section).
-          <ReferenceVideoBlock
-            projectId={data.id}
-            project={data}
-            onUpdate={(patch) => setData((prev) => (prev ? { ...prev, ...patch } : prev))}
-          />
-        )}
         {openSectionId === null ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {sections.map((section) => {
@@ -2053,6 +2040,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               const allScenesDone = scenesInSection.length > 0 && scenesInSection.every((s) => s.completed);
               return <TimecodeBar key={openSection.id} section={openSection} allScenesDone={allScenesDone} />;
             })()}
+
+            {/* 2026-09-08, Lino: "unter der framerate und timecode funktion
+                kommt das scribble video, dann die szenen sortierung, und
+                dann der abschnitt mit den szenen" — one reference video for
+                the whole project (not per Abschnitt), shown inside whichever
+                shotlist is currently open, between the TimecodeBar above and
+                the Szenen-/Shot-Reihenfolge toggle below. */}
+            {data && (
+              <ReferenceVideoBlock
+                projectId={data.id}
+                project={data}
+                onUpdate={(patch) => setData((prev) => (prev ? { ...prev, ...patch } : prev))}
+              />
+            )}
 
             {/* 2026-09-07, Lino: "2 sortierfunktionien 1. die
                 Szenenreihenfolge 2. Shotreihenfolge. diese 2 sortierungen
