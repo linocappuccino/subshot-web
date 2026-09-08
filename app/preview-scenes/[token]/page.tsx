@@ -461,7 +461,15 @@ function PreviewScenesPageInner() {
     );
   }
 
-  const highlightSidebarReserve = mode === "highlight" ? (highlightSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : HIGHLIGHT_SIDEBAR_WIDTH) : 0;
+  // 2026-09-08 follow-up audit fix: PublicAnnotationsSidebar is now only
+  // ever rendered when no shotlist is open (see its render condition below —
+  // it used to also pop up on top of the section-comments sidebar if a
+  // visitor clicked "Textmarker" while a shotlist was already open, two
+  // opaque `fixed right-0` panels stacking and blocking each other's
+  // buttons). Reserve calc mirrors that same condition so it never reserves
+  // space for a sidebar that in fact isn't showing.
+  const highlightSidebarReserve =
+    mode === "highlight" && openSectionId === null ? (highlightSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : HIGHLIGHT_SIDEBAR_WIDTH) : 0;
   const sectionSidebarReserve = openSectionId !== null ? (sectionSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : SECTION_SIDEBAR_WIDTH) : 0;
   const contentSidebarReserve = Math.max(highlightSidebarReserve, sectionSidebarReserve);
 
@@ -469,7 +477,12 @@ function PreviewScenesPageInner() {
     <div className="min-h-screen bg-[#161616] text-white" style={{ "--accent": data?.project_color ?? "#3875bd" } as React.CSSProperties}>
       <div
         className="max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28 transition-[padding-right] duration-200"
-        style={contentSidebarReserve ? { paddingRight: `min(${contentSidebarReserve}px, 45vw)` } : undefined}
+        // 2026-09-08 follow-up audit fix: was capped at 45vw while the
+        // sidebars themselves clamp at `max-w-[92vw]` — on anything narrower
+        // than ~800px (i.e. exactly the "kleine Bildschirme" this feature
+        // targets) the reserve was smaller than the sidebar's real on-screen
+        // width, so content was still partly covered. Cap now matches.
+        style={contentSidebarReserve ? { paddingRight: `min(${contentSidebarReserve}px, 92vw)` } : undefined}
       >
         <a href="https://subshot.ch" className="inline-flex items-baseline gap-1.5 mb-1 hover:opacity-80 transition-opacity">
           {data?.team_logo_url ? (
@@ -640,13 +653,21 @@ function PreviewScenesPageInner() {
                         separate, now-redundant PublicAnnotationsSidebar. */}
                     <div
                       className={`fixed right-0 top-0 bottom-0 z-[71] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
-                        sectionSidebarCollapsed ? "w-12 overflow-hidden" : "w-[380px] max-w-[92vw] px-3"
+                        sectionSidebarCollapsed ? "w-12" : "w-[380px] max-w-[92vw] px-3"
                       }`}
                     >
                       {/* 2026-09-08, Lino: sidebar overlapped the shotlist
                           tiles on small screens — collapse tab shrinks this
                           to a slim edge strip, mirrored as right-padding on
-                          the content column above (contentSidebarReserve). */}
+                          the content column above (contentSidebarReserve).
+                          Follow-up fix same day: arrow direction was
+                          backwards (open = pointing right into the panel,
+                          collapsed = pointing left to invite re-opening),
+                          and the parent's overflow-hidden while collapsed
+                          was clipping this button itself (it pokes out past
+                          the left edge via `-left-3`) — dropped, nothing
+                          left to overflow once the content div below is
+                          hidden instead of unmounted. */}
                       <button
                         type="button"
                         onClick={() => setSectionSidebarCollapsed((v) => !v)}
@@ -655,34 +676,41 @@ function PreviewScenesPageInner() {
                         className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          {sectionSidebarCollapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+                          {sectionSidebarCollapsed ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
                         </svg>
                       </button>
-                      {!sectionSidebarCollapsed && (
-                        <>
-                          {/* Lino's explicit ask: leaving feedback here works
-                              "exactly like the Ideas page" — one comment
-                              thread for the whole opened shotlist, not per
-                              scene. */}
-                          <PublicSectionComments
-                            section={openSection}
-                            comments={commentsBySection.get(openSection.id) ?? []}
-                            highlightAnnotations={sectionHighlightAnnotations}
-                            highlightedId={highlightedId}
-                            onSelectHighlight={(ann) => pulseAnnotation(ann.id)}
-                            onDeleteHighlight={handleDeleteAnnotation}
-                            token={token}
-                            unlockToken={unlockToken}
-                            onCommentsChanged={(updater) =>
-                              setAnnotations((prev) => {
-                                const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
-                                const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
-                                return [...others, ...updated];
-                              })
-                            }
-                          />
-                        </>
-                      )}
+                      {/* 2026-09-08 follow-up audit fix: was conditionally
+                          MOUNTING/unmounting PublicSectionComments itself on
+                          collapse, which wiped its local draft/myDrafts/
+                          confirm-timer state — a typed-but-unsaved comment
+                          (or an already-saved-but-not-yet-sent draft) would
+                          silently vanish from the UI on collapse. Stays
+                          mounted always now, same "hide via a CSS class"
+                          approach PublicAnnotationsSidebar already uses for
+                          its own collapse. */}
+                      <div className={sectionSidebarCollapsed ? "hidden" : "h-full"}>
+                        {/* Lino's explicit ask: leaving feedback here works
+                            "exactly like the Ideas page" — one comment
+                            thread for the whole opened shotlist, not per
+                            scene. */}
+                        <PublicSectionComments
+                          section={openSection}
+                          comments={commentsBySection.get(openSection.id) ?? []}
+                          highlightAnnotations={sectionHighlightAnnotations}
+                          highlightedId={highlightedId}
+                          onSelectHighlight={(ann) => pulseAnnotation(ann.id)}
+                          onDeleteHighlight={handleDeleteAnnotation}
+                          token={token}
+                          unlockToken={unlockToken}
+                          onCommentsChanged={(updater) =>
+                            setAnnotations((prev) => {
+                              const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
+                              const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
+                              return [...others, ...updated];
+                            })
+                          }
+                        />
+                      </div>
                     </div>
                   </div>
                 );
@@ -712,7 +740,16 @@ function PreviewScenesPageInner() {
         </button>
       </div>
 
-      {mode === "highlight" && (
+      {/* 2026-09-08 follow-up audit fix: gated on openSectionId===null too —
+          this sidebar is redundant (and, worse, visually stacks on top of
+          and blocks) the section-comments sidebar whenever a shotlist is
+          open, since that one already shows the same highlights inline (see
+          `sectionHighlightAnnotations` above). The "Textmarker" toolbar
+          button/mode still needs to stay active while a shotlist is open —
+          it's what enables selecting text to CREATE a new highlight
+          (handleMouseUp effect above) — only the separate sidebar itself is
+          suppressed. */}
+      {mode === "highlight" && openSectionId === null && (
         <PublicAnnotationsSidebar
           annotations={annotations}
           onDelete={handleDeleteAnnotation}

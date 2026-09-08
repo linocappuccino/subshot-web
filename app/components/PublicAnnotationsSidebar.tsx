@@ -49,9 +49,17 @@ export function PublicAnnotationsSidebar({
   return (
     <div
       className={`fixed right-0 top-0 bottom-0 z-[70] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
-        collapsed ? "w-12 overflow-hidden" : "w-[340px] max-w-[92vw] overflow-y-auto px-3"
+        collapsed ? "w-12" : "w-[340px] max-w-[92vw] overflow-y-auto px-3"
       }`}
     >
+      {/* 2026-09-08, Lino: two fixes — (1) arrow direction was backwards
+          (open should point "into" the panel, i.e. right since it's on the
+          right edge; collapsed should point left to invite re-opening it),
+          (2) the parent's `overflow-hidden` (only needed while expanded, to
+          clip the scrolling list) was ALSO clipping this button itself
+          while collapsed, since it pokes out past the parent's left edge
+          via `-left-3` — dropped overflow-hidden from the collapsed state
+          entirely (nothing left to overflow once the list below is hidden). */}
       <button
         type="button"
         onClick={onToggleCollapsed}
@@ -60,7 +68,7 @@ export function PublicAnnotationsSidebar({
         className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          {collapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+          {collapsed ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
         </svg>
       </button>
       {collapsed ? (
