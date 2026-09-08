@@ -73,6 +73,15 @@ export interface Project {
   reference_video_status: "uploading" | "ready" | null;
   reference_video_original_filename: string | null;
   reference_video_duration_seconds: number | null;
+  /** 2026-09-08, Lino: "das video thumbnail soll dann auch immer ein
+   * zentriertes gesicht sein" — generated async by a background task
+   * (_generate_reference_video_thumbnail in main.py) shortly after upload,
+   * null until then. `reference_video_thumbnail_focus_x/y` (0..1 fraction,
+   * same convention as Folder.background_image_focus_x/y) is null when no
+   * face was detected — client falls back to a plain center crop. */
+  reference_video_thumbnail_url: string | null;
+  reference_video_thumbnail_focus_x: number | null;
+  reference_video_thumbnail_focus_y: number | null;
 }
 
 export interface SceneDialogue {

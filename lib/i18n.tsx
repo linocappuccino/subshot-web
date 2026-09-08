@@ -157,6 +157,7 @@ const translations = {
     // reference_video_* (see Project.reference_video_url in models.py).
     "referenceVideo.upload": "Scribble Video hinzufügen",
     "referenceVideo.replace": "Scribble Video ersetzen",
+    "referenceVideo.play": "Scribble Video abspielen",
     "referenceVideo.unsupportedType": "Nicht unterstützter Dateityp — nur MP4, MOV oder WebM.",
     "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
     "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
@@ -1052,6 +1053,7 @@ const translations = {
 
     "referenceVideo.upload": "Add scribble video",
     "referenceVideo.replace": "Replace scribble video",
+    "referenceVideo.play": "Play scribble video",
     "referenceVideo.unsupportedType": "Unsupported file type — MP4, MOV, or WebM only.",
     "referenceVideo.uploadFailed": "Upload failed.",
     "referenceVideo.deleteFailed": "Delete failed.",
