@@ -576,6 +576,14 @@ export interface ScenesPreviewData {
   shots: Shot[];
   todo_lists: TodoList[];
   team: Member[];
+  /** 2026-09-08 — read-only counterpart to Project's own reference_video_*
+   * fields (see ReferenceVideoBlock.tsx), only ever set when
+   * reference_video_status is "ready" (server-side gate, see
+   * get_scenes_preview in main.py — a mid-upload video never leaks here). */
+  reference_video_url: string | null;
+  reference_video_thumbnail_url: string | null;
+  reference_video_thumbnail_focus_x: number | null;
+  reference_video_thumbnail_focus_y: number | null;
 }
 
 // ── Deliver (2026-09-06) ────────────────────────────────────────────────────

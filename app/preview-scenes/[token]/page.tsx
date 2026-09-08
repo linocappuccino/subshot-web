@@ -14,6 +14,7 @@ import { PublicMapThumb } from "@/app/components/PublicMapThumb";
 import { PublicTodoLists } from "@/app/components/PublicTodoLists";
 import { PublicAnnotationPopup } from "@/app/components/PublicAnnotationPopup";
 import { PublicAnnotationsSidebar } from "@/app/components/PublicAnnotationsSidebar";
+import { PublicReferenceVideoBlock } from "@/app/components/PublicReferenceVideoBlock";
 import { PENDING_ANNOTATION_ID } from "@/app/components/PublicHighlightedText";
 import { SegmentedControl } from "@/app/components/ui/SegmentedControl";
 import { subscribeToChanges } from "@/lib/realtime";
@@ -610,6 +611,14 @@ function PreviewScenesPageInner() {
                       ← {t("scriptOverview.backToOverview")}
                     </button>
                     <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
+                    {data && (
+                      <PublicReferenceVideoBlock
+                        url={data.reference_video_url}
+                        thumbnailUrl={data.reference_video_thumbnail_url}
+                        thumbnailFocusX={data.reference_video_thumbnail_focus_x}
+                        thumbnailFocusY={data.reference_video_thumbnail_focus_y}
+                      />
+                    )}
                     <div className="mb-4 max-w-xs">
                       <SegmentedControl
                         value={shotOrderMode ? "shots" : "scenes"}

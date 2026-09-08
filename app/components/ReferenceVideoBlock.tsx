@@ -38,7 +38,7 @@ type ReferenceVideoFields = Pick<
  * query-string signature/expiry changes) so React never sees a changed
  * `src` prop for as long as it's genuinely still the same object; only a
  * real replace/delete (different path) is let through. */
-function usePinnedUrl(url: string | null | undefined): string | null {
+export function usePinnedUrl(url: string | null | undefined): string | null {
   const ref = useRef<{ path: string; url: string } | null>(null);
   if (!url) {
     ref.current = null;
@@ -251,7 +251,7 @@ export function ReferenceVideoBlock({
  * reference file) nor PublicIdeaLightbox (idea-feedback-specific) — just
  * the shared backdrop/close-button/Escape convention those two already
  * use, around a plain native <video controls autoPlay>. */
-function ReferenceVideoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+export function ReferenceVideoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
   const { t } = useLanguage();
 
   useEffect(() => {
