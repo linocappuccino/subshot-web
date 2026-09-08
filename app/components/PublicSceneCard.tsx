@@ -101,9 +101,17 @@ function ShotRow({
  * note" flow via wrapHighlights/onMarkClick above) is untouched, that's a
  * completely separate mechanism from the comment box this dropped. */
 export function PublicSceneCard({
-  scene, shots, annotations, memberById, token, unlockToken, onMarkClick,
+  scene, displayNumber, shots, annotations, memberById, token, unlockToken, onMarkClick,
 }: {
   scene: Scene;
+  /** 2026-09-08, Lino: "die müssen genau die gleichen nummern haben wie in
+   * der shotlist selber" — the authenticated app's own live
+   * position-in-section count (see sceneNumberBySectionId in
+   * projects/[id]/page.tsx and its mirror on preview-scenes/[token]/
+   * page.tsx), NOT the stable scene.number/letter DB field below (which
+   * drifts the moment a scene is inserted/reordered/deleted). Same
+   * optional-with-fallback shape as the app's own SceneCard.tsx. */
+  displayNumber?: number;
   shots: Shot[];
   annotations: Annotation[];
   memberById: Map<string, Member>;
@@ -128,8 +136,7 @@ export function PublicSceneCard({
     <div data-scene-id={scene.id} className="relative rounded-2xl bg-[#212121] border border-white/[0.06] p-4 shadow-sm">
       <div className="flex items-center gap-2 flex-wrap mb-2.5">
         <span className="text-[11px] font-bold text-white rounded-full px-2.5 py-1 whitespace-nowrap" style={{ background: color }}>
-          {scene.number}
-          {scene.letter || ""}
+          {displayNumber != null ? displayNumber : `${scene.number}${scene.letter || ""}`}
         </span>
         <h3 className="text-[15px] font-bold flex-1 min-w-0" data-field="name">
           {wrapHighlights(scene.name || t("scene.unnamed"), byField("name"), onMarkClick)}

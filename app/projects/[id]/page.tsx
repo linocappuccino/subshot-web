@@ -241,6 +241,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // abgelehnt" buttons to Projektleiter/Owner only, same pattern as
   // postproduction/page.tsx's canEditStatus/canEditDeadline.
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
+  // 2026-09-08, Lino: "man darf NUR eingeloggt kommentare löschen können!
+  // und das auch nur als admin" — deleting a comment regardless of status
+  // (AnnotationsPanel/IdeaFeedbackPanel below) needs the TEAM-wide "admin"
+  // role (Member["role"]/myRole above is only the project-level owner/
+  // projektleiter/editor floor, a different axis — see _get_team_role on
+  // the backend, which this mirrors: the team owner is always synthesized
+  // as role="admin" in list_team_members too). A project with no team at
+  // all has no admin concept, so its own literal owner (myRole === "owner")
+  // is the only one who can. UI-only gate — the backend endpoints
+  // (_require_comment_delete_permission) enforce the real check regardless.
+  const [isTeamAdmin, setIsTeamAdmin] = useState(false);
   const [creatingScene, setCreatingScene] = useState(false);
   // "Zwischenschritt" (mirrors the iOS app's addSceneButton menu) — a
   // lighter connective-beat scene variant, creation-time choice only, see
@@ -712,6 +723,27 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // 2026-09-08 — isTeamAdmin fetch, see its own doc comment above. Only
+  // fires once the project's team_id is known (a team-less project has no
+  // admin concept at all, myRole === "owner" alone covers it).
+  useEffect(() => {
+    if (!data?.team_id) {
+      setIsTeamAdmin(false);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([api.me(), api.teamMembers(data.team_id)])
+      .then(([me, teamMembers]) => {
+        if (!cancelled) setIsTeamAdmin(teamMembers.some((m) => m.user_id === me.id && m.role === "admin"));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.team_id]);
+  const canDeleteComments = myRole === "owner" || isTeamAdmin;
 
   // 2026-07-19, Lino: Pipeline-Module sind jetzt ein echtes Freischalt-Gate
   // (vorher rein informativ, siehe types.ts). "Wählt man bei der Projekt-
@@ -1833,9 +1865,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 }}
                 annotations={annotations}
                 highlightedAnnotationId={highlightedAnnotationId}
-                onDeleteAnnotation={handleDeleteAnnotation}
+                onDeleteAnnotation={canDeleteComments ? handleDeleteAnnotation : undefined}
                 onAnnotationUpdated={(updated) => setAnnotations((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))}
                 myRole={myRole}
+                canDeleteComments={canDeleteComments}
               />
             </div>
           ) : (
@@ -2491,6 +2524,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         scenes={data.scenes}
         highlightedAnnotationId={highlightedAnnotationId}
         onSelect={handleAnnotationSelect}
+        canDelete={canDeleteComments}
       />
     </AppShell>
   );

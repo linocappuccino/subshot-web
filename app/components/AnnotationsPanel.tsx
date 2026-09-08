@@ -38,6 +38,7 @@ export function AnnotationsPanel({
   scenes,
   highlightedAnnotationId,
   onSelect,
+  canDelete,
 }: {
   open: boolean;
   onClose: () => void;
@@ -52,6 +53,11 @@ export function AnnotationsPanel({
   /** Pulses the matching markup on the page and scrolls it into view —
    * see page.tsx's handleAnnotationSelect. */
   onSelect?: (annotation: Annotation) => void;
+  /** 2026-09-08, Lino: "man darf NUR eingeloggt kommentare löschen können!
+   * und das auch nur als admin" — page.tsx's own isTeamAdmin/myRole
+   * === "owner" check, UI-only (the DELETE endpoint enforces the real
+   * permission itself), just hides a button that would otherwise 403. */
+  canDelete: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -225,13 +231,15 @@ export function AnnotationsPanel({
                         {t("annotationsPanel.reopen")}
                       </button>
                     )}
-                    <button
-                      onClick={() => handleDelete(a)}
-                      title={confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : undefined}
-                      className="text-xs font-medium text-red-400/60 hover:text-red-400 transition-colors ml-auto"
-                    >
-                      {confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : t("common.delete")}
-                    </button>
+                    {canDelete && (
+                      <button
+                        onClick={() => handleDelete(a)}
+                        title={confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : undefined}
+                        className="text-xs font-medium text-red-400/60 hover:text-red-400 transition-colors ml-auto"
+                      >
+                        {confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : t("common.delete")}
+                      </button>
+                    )}
                   </div>
                 </div>
               );

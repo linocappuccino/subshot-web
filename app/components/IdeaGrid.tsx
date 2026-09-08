@@ -86,7 +86,13 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
    * IdeaFloatingCard to gate the "Intern abgenommen/abgelehnt" buttons to
    * Projektleiter/Owner (visible to everyone, clickable only for those). */
   myRole?: Member["role"] | null;
-}>(function IdeaGrid({ projectId, onIdeaApproved, autoOpenIdeaId, onAutoOpened, annotations, highlightedAnnotationId, onDeleteAnnotation, onAnnotationUpdated, myRole }, ref) {
+  /** 2026-09-08, Lino: "man darf NUR eingeloggt kommentare löschen können!
+   * und das auch nur als admin" — passed straight through to
+   * IdeaFocusView/IdeaFloatingCard/IdeaFeedbackPanel, gates the plain
+   * IdeaFeedback delete button the same way onDeleteAnnotation's own
+   * presence already gates HighlightEntry's. */
+  canDeleteComments?: boolean;
+}>(function IdeaGrid({ projectId, onIdeaApproved, autoOpenIdeaId, onAutoOpened, annotations, highlightedAnnotationId, onDeleteAnnotation, onAnnotationUpdated, myRole, canDeleteComments }, ref) {
   const api = useApi();
   const toast = useToast();
   const { t } = useLanguage();
@@ -279,6 +285,7 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
           onDeleteAnnotation={onDeleteAnnotation}
           onAnnotationUpdated={onAnnotationUpdated}
           myRole={myRole}
+          canDeleteComments={canDeleteComments}
         />
       )}
 

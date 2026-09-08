@@ -43,6 +43,7 @@ export function IdeaFloatingCard({
   onDeleteAnnotation,
   onAnnotationUpdated,
   myRole,
+  canDeleteComments,
 }: {
   idea: Idea;
   /** True right after this idea was created via the "+" button — selects
@@ -67,6 +68,10 @@ export function IdeaFloatingCard({
    * buttons to Projektleiter/Owner; every member still SEES the status
    * (read-only) regardless of role. */
   myRole?: MemberRole | null;
+  /** 2026-09-08 — passed straight through to IdeaFeedbackPanel, gates the
+   * plain-feedback delete button the same way onDeleteAnnotation's own
+   * presence already gates HighlightEntry's. */
+  canDeleteComments?: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -678,6 +683,7 @@ export function IdeaFloatingCard({
         onDeleteAnnotation={onDeleteAnnotation}
         onSelectAnnotation={handleSelectAnnotation}
         onAnnotationUpdated={onAnnotationUpdated}
+        canDeleteComments={canDeleteComments}
       />
     </div>
   );

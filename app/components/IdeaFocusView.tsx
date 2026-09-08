@@ -28,6 +28,7 @@ export function IdeaFocusView({
   onDeleteAnnotation,
   onAnnotationUpdated,
   myRole,
+  canDeleteComments,
 }: {
   ideas: Idea[];
   index: number;
@@ -45,6 +46,8 @@ export function IdeaFocusView({
   onAnnotationUpdated?: (annotation: Annotation) => void;
   /** 2026-07-27, Todoist #356 — passed straight through to IdeaFloatingCard. */
   myRole?: Member["role"] | null;
+  /** 2026-09-08 — passed straight through to IdeaFloatingCard/IdeaFeedbackPanel. */
+  canDeleteComments?: boolean;
 }) {
   const { t } = useLanguage();
   const creatingRef = useRef(false);
@@ -207,6 +210,7 @@ export function IdeaFocusView({
               onDeleteAnnotation={onDeleteAnnotation}
               onAnnotationUpdated={onAnnotationUpdated}
               myRole={myRole}
+              canDeleteComments={canDeleteComments}
             />
           </div>
         </div>

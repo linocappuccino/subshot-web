@@ -28,7 +28,7 @@ function formatEntryDate(iso: string): string {
  * fixed corner spot on the whole card, not inline at the end of this
  * scrollable list), this panel only ever shows/manages feedback. */
 export function IdeaFeedbackPanel({
-  idea, onAllResolvedChange, annotations = [], highlightedAnnotationId = null, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
+  idea, onAllResolvedChange, annotations = [], highlightedAnnotationId = null, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated, canDeleteComments = false,
 }: {
   idea: Idea;
   /** 2026-07-18, Lino: "man kann erst Abgenommen drücken wenn man alle
@@ -59,6 +59,13 @@ export function IdeaFeedbackPanel({
    * `annotations` state, same shape `updateOne` below already uses for
    * IdeaFeedback. */
   onAnnotationUpdated?: (annotation: Annotation) => void;
+  /** 2026-09-08, Lino: "man darf NUR eingeloggt kommentare löschen können!
+   * und das auch nur als admin" — gates FeedbackEntry's plain-feedback
+   * delete button the same way onDeleteAnnotation's own presence already
+   * gates HighlightEntry's (that one comes from page.tsx conditionally;
+   * this is a plain boolean since FeedbackEntry's delete call is
+   * self-contained here, not bubbled up through a callback prop). */
+  canDeleteComments?: boolean;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -174,6 +181,7 @@ export function IdeaFeedbackPanel({
             ideaId={idea.id}
             onUpdated={updateOne}
             onDeleted={deleteOne}
+            canDeleteComments={canDeleteComments}
             highlightedAnnotationId={highlightedAnnotationId}
             onDeleteAnnotation={onDeleteAnnotation}
             onSelectAnnotation={onSelectAnnotation}
@@ -191,13 +199,14 @@ export function IdeaFeedbackPanel({
  * per-ROUND per 2026-07-18's follow-up spec). Defaults open, click the
  * title row to collapse/expand the whole round. */
 function FeedbackRound({
-  round, entries, ideaId, onUpdated, onDeleted, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
+  round, entries, ideaId, onUpdated, onDeleted, canDeleteComments, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
 }: {
   round: number;
   entries: RoundEntry[];
   ideaId: string;
   onUpdated: (feedback: IdeaFeedback) => void;
   onDeleted: (feedbackId: string) => void;
+  canDeleteComments: boolean;
   highlightedAnnotationId?: string | null;
   onDeleteAnnotation?: (annotation: Annotation) => void;
   onSelectAnnotation?: (annotation: Annotation) => void;
@@ -242,7 +251,7 @@ function FeedbackRound({
                   feedback={entry.feedback}
                   ideaId={ideaId}
                   onUpdated={onUpdated}
-                  onDeleted={onDeleted}
+                  onDeleted={canDeleteComments ? onDeleted : undefined}
                   highlighted={highlightedAnnotationId === entry.feedback.id}
                 />
               );
@@ -370,9 +379,12 @@ function FeedbackEntry({
   ideaId: string;
   onUpdated: (feedback: IdeaFeedback) => void;
   /** 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
-   * egal was für einen status sie haben" — no resolved/unresolved gate on
-   * the delete button below, same as HighlightEntry's own onDelete. */
-  onDeleted: (feedbackId: string) => void;
+   * egal was für einen status sie haben" (later narrowed: "NUR eingeloggt
+   * ... und das auch nur als admin") — no resolved/unresolved gate on the
+   * delete button below, same as HighlightEntry's own onDelete; presence
+   * of this prop (undefined when the caller's canDeleteComments is false)
+   * is what gates it. */
+  onDeleted?: (feedbackId: string) => void;
   /** 2026-07-31 — plain feedback never had this at all (only HighlightEntry
    * did), so clicking a notification/deep-link for a PLAIN comment had
    * nothing to scroll/pulse to even though IdeaFeedbackPanel's own
@@ -400,6 +412,7 @@ function FeedbackEntry({
   }
 
   async function handleDelete() {
+    if (!onDeleted) return;
     setDeleting(true);
     try {
       await api.deleteIdeaFeedback(ideaId, feedback.id);
@@ -442,15 +455,17 @@ function FeedbackEntry({
           )}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleting}
-        aria-label={t("common.delete")}
-        className="absolute top-0.5 right-0 w-5 h-5 rounded-full bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white flex items-center justify-center text-sm transition-colors disabled:opacity-50"
-      >
-        ×
-      </button>
+      {onDeleted && (
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          aria-label={t("common.delete")}
+          className="absolute top-0.5 right-0 w-5 h-5 rounded-full bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white flex items-center justify-center text-sm transition-colors disabled:opacity-50"
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

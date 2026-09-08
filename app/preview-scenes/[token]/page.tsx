@@ -6,7 +6,7 @@ import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { publicScenesPreviewApi } from "@/lib/publicScenesPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
-import type { Annotation, ScenesPreviewData, Shot } from "@/lib/types";
+import type { Annotation, Scene, ScenesPreviewData, Shot } from "@/lib/types";
 import { PublicSceneCard } from "@/app/components/PublicSceneCard";
 import { PublicSceneMedia } from "@/app/components/PublicSceneMedia";
 import { PublicSectionComments } from "@/app/components/PublicSectionComments";
@@ -295,6 +295,38 @@ function PreviewScenesPageInner() {
 
   const memberById = useMemo(() => new Map((data?.team ?? []).map((m) => [m.user_id, m])), [data]);
 
+  // 2026-09-08, Lino: "warum haben die szenen andere nummern auf der
+  // preview seite, die müssen genau die gleichen nummern haben wie in der
+  // shotlist selber" — the authenticated app replaced the old stable
+  // scene.number/letter screenplay badge with a LIVE position-in-section
+  // count, 1..N (see sceneNumberBySectionId in projects/[id]/page.tsx),
+  // computed off the plain sort_order list — NOT the "completed sinks to
+  // the end" display order scenesFor below still applies (that reordering
+  // is preview-only, share_view.py's own rule, and deliberately untouched
+  // here — see scenesFor's own comment). This page still rendered the old
+  // scene.number/letter field directly (PublicSceneCard), which drifted
+  // from the app's numbers the moment a scene was inserted/reordered/
+  // deleted. Mirrors sceneNumberBySectionId exactly so the number shown
+  // per scene is IDENTICAL to the app's, even though this page may place
+  // the tile itself in a different spot (completed sunk to the bottom).
+  const sceneNumberBySectionId = useMemo(() => {
+    const bySection = new Map<string | null, Scene[]>();
+    for (const s of data?.scenes ?? []) {
+      const key = s.section_id;
+      if (!bySection.has(key)) bySection.set(key, []);
+      bySection.get(key)!.push(s);
+    }
+    const map = new Map<string | null, Map<string, number>>();
+    for (const [sectionId, list] of bySection) {
+      const sorted = [...list].sort((a, b) => a.sort_order - b.sort_order);
+      const numbers = new Map<string, number>();
+      sorted.forEach((s, i) => numbers.set(s.id, i + 1));
+      map.set(sectionId, numbers);
+    }
+    return map;
+  }, [data]);
+  const sceneNumberIn = (sectionId: string | null) => sceneNumberBySectionId.get(sectionId) ?? new Map<string, number>();
+
   function scenesFor(sectionId: string | null) {
     if (!data) return [];
     const filtered = data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => a.sort_order - b.sort_order);
@@ -362,6 +394,7 @@ function PreviewScenesPageInner() {
           <PublicSceneCard
             key={scene.id}
             scene={scene}
+            displayNumber={sceneNumberIn(scene.section_id).get(scene.id)}
             shots={shotsByScene.get(scene.id) ?? []}
             annotations={annotationsByScene.get(scene.id) ?? []}
             memberById={memberById}
