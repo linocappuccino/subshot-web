@@ -15,13 +15,21 @@ import type { Annotation } from "@/lib/types";
  * of a native confirm(), same reasoning as every other public preview page
  * on this app. */
 export function PublicAnnotationsSidebar({
-  annotations, onDelete, onSelect, highlightedId, onClose,
+  annotations, onDelete, onSelect, highlightedId, onClose, collapsed, onToggleCollapsed,
 }: {
   annotations: Annotation[];
   onDelete: (annotation: Annotation) => void;
   onSelect: (annotation: Annotation) => void;
   highlightedId: string | null;
   onClose: () => void;
+  // 2026-09-08, Lino: this sidebar overlapped the page's main content
+  // underneath it on small screens (both just floated at their own width,
+  // content never made room). Parent shrinks this to a slim edge tab via
+  // `collapsed` and mirrors the width as right-padding on the content
+  // column, so content visibly shifts left clear of the sidebar whenever
+  // it's expanded.
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const { t } = useLanguage();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -39,7 +47,28 @@ export function PublicAnnotationsSidebar({
   const sorted = [...annotations].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 z-[70] w-[340px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 overflow-y-auto pt-16 pb-24 px-3">
+    <div
+      className={`fixed right-0 top-0 bottom-0 z-[70] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
+        collapsed ? "w-12 overflow-hidden" : "w-[340px] max-w-[92vw] overflow-y-auto px-3"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggleCollapsed}
+        title={t(collapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
+        aria-label={t(collapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
+        className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+          {collapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+        </svg>
+      </button>
+      {collapsed ? (
+        <div className="flex flex-col items-center gap-1 pt-1 text-white/40">
+          <span className="text-[11px] font-semibold">{annotations.length}</span>
+        </div>
+      ) : (
+        <>
       <div className="flex items-center justify-between px-1 pb-3">
         <h2 className="text-sm font-semibold text-white/80">{t("publicAnnotationsSidebar.title", { count: annotations.length })}</h2>
         <button onClick={onClose} className="rounded-full p-1.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors" aria-label={t("modal.closeAria")}>
@@ -84,6 +113,8 @@ export function PublicAnnotationsSidebar({
           </div>
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 }

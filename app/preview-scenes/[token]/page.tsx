@@ -38,6 +38,12 @@ export default function PreviewScenesPage() {
 
 type PendingSelection = { sceneId: string; field: string; text: string; x: number; y: number };
 
+// Kept in sync with the literal widths on PublicAnnotationsSidebar.tsx and
+// the inline PublicSectionComments wrapper below.
+const HIGHLIGHT_SIDEBAR_WIDTH = 340;
+const SECTION_SIDEBAR_WIDTH = 380;
+const COLLAPSED_SIDEBAR_WIDTH = 48;
+
 function PreviewScenesPageInner() {
   const { t } = useLanguage();
   const params = useParams<{ token: string }>();
@@ -57,6 +63,16 @@ function PreviewScenesPageInner() {
   const [mode, setMode] = useState<"off" | "highlight">("off");
   const [pending, setPending] = useState<PendingSelection | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  // 2026-09-08, Lino: "auf kleinen bildschirmen überlappt die sidebar den
+  // hauptcontent" — either right sidebar (PublicAnnotationsSidebar in
+  // highlight mode, or the inline PublicSectionComments wrapper below once
+  // a shotlist is open) can now collapse to a slim edge tab. Main content's
+  // right padding (contentSidebarReserve, computed near the return below)
+  // mirrors whichever one is actually visible, so expanding a sidebar
+  // visibly pushes the content column left clear of it instead of just
+  // floating on top.
+  const [highlightSidebarCollapsed, setHighlightSidebarCollapsed] = useState(false);
+  const [sectionSidebarCollapsed, setSectionSidebarCollapsed] = useState(false);
   // 2026-08-31, Todoist #96 — Skript-Auswahlübersicht (mirrors the
   // authenticated app's own openSectionId, see projects/[id]/page.tsx):
   // visitors see a tile overview of the project's sections ("Skripte")
@@ -445,9 +461,16 @@ function PreviewScenesPageInner() {
     );
   }
 
+  const highlightSidebarReserve = mode === "highlight" ? (highlightSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : HIGHLIGHT_SIDEBAR_WIDTH) : 0;
+  const sectionSidebarReserve = openSectionId !== null ? (sectionSidebarCollapsed ? COLLAPSED_SIDEBAR_WIDTH : SECTION_SIDEBAR_WIDTH) : 0;
+  const contentSidebarReserve = Math.max(highlightSidebarReserve, sectionSidebarReserve);
+
   return (
     <div className="min-h-screen bg-[#161616] text-white" style={{ "--accent": data?.project_color ?? "#3875bd" } as React.CSSProperties}>
-      <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28">
+      <div
+        className="max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28 transition-[padding-right] duration-200"
+        style={contentSidebarReserve ? { paddingRight: `min(${contentSidebarReserve}px, 45vw)` } : undefined}
+      >
         <a href="https://subshot.ch" className="inline-flex items-baseline gap-1.5 mb-1 hover:opacity-80 transition-opacity">
           {data?.team_logo_url ? (
             // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL, not a static/local asset next/image can optimize
@@ -615,28 +638,51 @@ function PreviewScenesPageInner() {
                         onMark override: a mark click pulses the entry
                         right here instead of switching `mode` to open the
                         separate, now-redundant PublicAnnotationsSidebar. */}
-                    <div className="fixed right-0 top-0 bottom-0 z-[71] w-[380px] max-w-[92vw] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 px-3">
-                      {/* Lino's explicit ask: leaving feedback here works
-                          "exactly like the Ideas page" — one comment
-                          thread for the whole opened shotlist, not per
-                          scene. */}
-                      <PublicSectionComments
-                        section={openSection}
-                        comments={commentsBySection.get(openSection.id) ?? []}
-                        highlightAnnotations={sectionHighlightAnnotations}
-                        highlightedId={highlightedId}
-                        onSelectHighlight={(ann) => pulseAnnotation(ann.id)}
-                        onDeleteHighlight={handleDeleteAnnotation}
-                        token={token}
-                        unlockToken={unlockToken}
-                        onCommentsChanged={(updater) =>
-                          setAnnotations((prev) => {
-                            const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
-                            const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
-                            return [...others, ...updated];
-                          })
-                        }
-                      />
+                    <div
+                      className={`fixed right-0 top-0 bottom-0 z-[71] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
+                        sectionSidebarCollapsed ? "w-12 overflow-hidden" : "w-[380px] max-w-[92vw] px-3"
+                      }`}
+                    >
+                      {/* 2026-09-08, Lino: sidebar overlapped the shotlist
+                          tiles on small screens — collapse tab shrinks this
+                          to a slim edge strip, mirrored as right-padding on
+                          the content column above (contentSidebarReserve). */}
+                      <button
+                        type="button"
+                        onClick={() => setSectionSidebarCollapsed((v) => !v)}
+                        title={t(sectionSidebarCollapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
+                        aria-label={t(sectionSidebarCollapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
+                        className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                      >
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          {sectionSidebarCollapsed ? <path d="M9 6l6 6-6 6" /> : <path d="M15 6l-6 6 6 6" />}
+                        </svg>
+                      </button>
+                      {!sectionSidebarCollapsed && (
+                        <>
+                          {/* Lino's explicit ask: leaving feedback here works
+                              "exactly like the Ideas page" — one comment
+                              thread for the whole opened shotlist, not per
+                              scene. */}
+                          <PublicSectionComments
+                            section={openSection}
+                            comments={commentsBySection.get(openSection.id) ?? []}
+                            highlightAnnotations={sectionHighlightAnnotations}
+                            highlightedId={highlightedId}
+                            onSelectHighlight={(ann) => pulseAnnotation(ann.id)}
+                            onDeleteHighlight={handleDeleteAnnotation}
+                            token={token}
+                            unlockToken={unlockToken}
+                            onCommentsChanged={(updater) =>
+                              setAnnotations((prev) => {
+                                const others = prev.filter((a) => !(a.section_id === openSection.id && a.kind === "comment"));
+                                const updated = updater(prev.filter((a) => a.section_id === openSection.id && a.kind === "comment"));
+                                return [...others, ...updated];
+                              })
+                            }
+                          />
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -673,6 +719,8 @@ function PreviewScenesPageInner() {
           onSelect={(ann) => pulseAnnotation(ann.id)}
           highlightedId={highlightedId}
           onClose={() => setMode("off")}
+          collapsed={highlightSidebarCollapsed}
+          onToggleCollapsed={() => setHighlightSidebarCollapsed((v) => !v)}
         />
       )}
 
