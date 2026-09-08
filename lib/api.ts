@@ -73,6 +73,25 @@ export class ApiError extends Error {
 const GET_CACHE_TTL_MS = 4000;
 const getRequestCache = new Map<string, { promise: Promise<unknown>; timestamp: number }>();
 
+// 2026-09-08 (security audit finding, MEDIUM) — this cache used to be keyed
+// on the bare path ("me", "projects", ...) with no per-user scoping at all.
+// Module state (getRequestCache) persists across a client-side Clerk
+// sign-out + a DIFFERENT sign-in in the same tab (no full page reload
+// forces a fresh module instance) — a request to an identical path within
+// the 4s TTL window right after that switch could silently return the
+// PREVIOUS user's cached response (their `me()` profile, their project
+// list) to the new session. Every cache key now carries the acting user's
+// id as a prefix; `keyFor`/`pathOfKey` are the only two places that need
+// to know the "userId::path" shape, so the invalidation helpers below stay
+// path-only from every existing call site's point of view.
+function keyFor(userId: string | null | undefined, path: string): string {
+  return `${userId ?? "anon"}::${path}`;
+}
+function pathOfKey(key: string): string {
+  const i = key.indexOf("::");
+  return i === -1 ? key : key.slice(i + 2);
+}
+
 /** 2026-08-07, Lino: "der status... muss sich sofort ändern" — real bug
  * found live testing that fix: a caller that KNOWS the server just changed
  * (e.g. resolving a comment can flip a section's postproduction_status
@@ -86,7 +105,9 @@ const getRequestCache = new Map<string, { promise: Promise<unknown>; timestamp: 
  * network round trip. Exported at module scope (not per-createApiClient
  * instance) since the cache itself is module-level too. */
 export function invalidateGetCache(path: string) {
-  getRequestCache.delete(path);
+  for (const key of getRequestCache.keys()) {
+    if (pathOfKey(key) === path) getRequestCache.delete(key);
+  }
 }
 
 /** 2026-08-25, Lino: "projekte tauchen immer wieder auf die entweder gelöscht
@@ -114,17 +135,19 @@ function invalidateListCachesFor(path: string) {
   const projectMatch = path.match(PROJECT_LIST_MUTATION_RE);
   if (projectMatch) {
     for (const key of getRequestCache.keys()) {
-      if (key === "projects" || key.startsWith("projects?")) getRequestCache.delete(key);
+      const p = pathOfKey(key);
+      if (p === "projects" || p.startsWith("projects?")) getRequestCache.delete(key);
     }
-    if (projectMatch[1]) getRequestCache.delete(`projects/${projectMatch[1]}`);
+    if (projectMatch[1]) invalidateGetCache(`projects/${projectMatch[1]}`);
     return;
   }
   const folderMatch = path.match(FOLDER_LIST_MUTATION_RE);
   if (folderMatch) {
     for (const key of getRequestCache.keys()) {
-      if (key === "folders" || key.startsWith("folders?")) getRequestCache.delete(key);
+      const p = pathOfKey(key);
+      if (p === "folders" || p.startsWith("folders?")) getRequestCache.delete(key);
     }
-    if (folderMatch[1]) getRequestCache.delete(`folders/${folderMatch[1]}`);
+    if (folderMatch[1]) invalidateGetCache(`folders/${folderMatch[1]}`);
   }
 }
 
@@ -132,7 +155,7 @@ function invalidateListCachesFor(path: string) {
  * wrapper, all endpoint methods built on top of it. `getToken` is Clerk's
  * useAuth().getToken, injected by useApi() rather than imported directly so
  * this file has no hard dependency on being called from a Client Component. */
-export function createApiClient(getToken: () => Promise<string | null>) {
+export function createApiClient(getToken: () => Promise<string | null>, userId?: string | null) {
   async function doRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const token = await getToken();
     if (!token) throw new ApiError(401, "Nicht angemeldet.");
@@ -192,16 +215,17 @@ export function createApiClient(getToken: () => Promise<string | null>) {
       result.then(() => invalidateListCachesFor(path)).catch(() => {});
       return result;
     }
-    const cached = getRequestCache.get(path);
+    const key = keyFor(userId, path);
+    const cached = getRequestCache.get(key);
     if (cached && Date.now() - cached.timestamp < GET_CACHE_TTL_MS) {
       return cached.promise as Promise<T>;
     }
     const promise = doRequest<T>(path, init);
-    getRequestCache.set(path, { promise, timestamp: Date.now() });
+    getRequestCache.set(key, { promise, timestamp: Date.now() });
     // A failed request must not keep being replayed to every caller for
     // the rest of the TTL window — drop it immediately so the next caller
     // gets a fresh attempt instead of the same cached rejection.
-    promise.catch(() => getRequestCache.delete(path));
+    promise.catch(() => getRequestCache.delete(key));
     return promise;
   }
 

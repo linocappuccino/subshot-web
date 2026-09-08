@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pill } from "./ui/Badge";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
@@ -71,8 +71,31 @@ export function AnnotationsPanel({
     rejected: t("annotationsPanel.statusRejected"),
   };
 
+  // 2026-09-08 (functional audit finding, MEDIUM) — this used to always
+  // render scene.number/letter, the old stable screenplay-style id
+  // replaced everywhere a scene tile itself renders (SceneCard.tsx,
+  // SceneTable.tsx, PublicSceneCard.tsx) by a LIVE position-in-section
+  // count (see sceneNumberBySectionId in projects/[id]/page.tsx's own doc
+  // comment) — a pill here could show "3B" while the tile it links to now
+  // shows "4". Same computation, scoped to just the `scenes` this panel
+  // already receives.
+  const sceneNumberById = useMemo(() => {
+    const bySection = new Map<string | null, Scene[]>();
+    for (const s of scenes) {
+      if (!bySection.has(s.section_id)) bySection.set(s.section_id, []);
+      bySection.get(s.section_id)!.push(s);
+    }
+    const map = new Map<string, number>();
+    for (const list of bySection.values()) {
+      [...list].sort((a, b) => a.sort_order - b.sort_order).forEach((s, i) => map.set(s.id, i + 1));
+    }
+    return map;
+  }, [scenes]);
+
   function sceneLabel(scene: Scene | undefined): string {
     if (!scene) return "";
+    const liveNumber = sceneNumberById.get(scene.id);
+    if (liveNumber != null) return t("annotationsPanel.sceneLabel", { number: liveNumber });
     return `${t("annotationsPanel.sceneLabel", { number: scene.number })}${scene.letter || ""}`;
   }
 

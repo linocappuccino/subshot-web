@@ -1602,7 +1602,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     groups.forEach(({ label, scenes }) => {
       lines.push(label);
       scenes.forEach((scene) => {
-        lines.push(`Kachel ID:\t${scene.number}${scene.letter ?? ""}`);
+        // 2026-09-08 (functional audit finding, MEDIUM) — this used to
+        // always print the old stable scene.number/letter, which no
+        // longer matches what's actually printed on the tile (SceneCard's
+        // ColorBadge switched to the live sceneNumberBySectionId count —
+        // see that map's own doc comment above). Same live lookup here.
+        const liveNumber = sceneNumberIn(scene.section_id).get(scene.id);
+        const kachelId = liveNumber != null ? String(liveNumber) : `${scene.number}${scene.letter ?? ""}`;
+        lines.push(`Kachel ID:\t${kachelId}`);
         lines.push(`Titel:\t\t${scene.name || "-"}`);
         lines.push("");
         lines.push(`Good Take:\t${scene.good_take_filename || "nicht eingetragen"}`);

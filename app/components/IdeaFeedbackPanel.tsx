@@ -397,6 +397,13 @@ function FeedbackEntry({
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // 2026-09-08 (functional audit finding, LOW) — this used to delete on a
+  // single click with no confirmation at all, unlike every sibling delete
+  // action in this app (AnnotationsPanel, HighlightEntry just below,
+  // PublicSectionComments) which all use this same tap-again-within-4s
+  // pattern. An accidental click could irreversibly delete another team
+  // member's comment.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const color = authorColor(feedback.author_name);
 
   async function toggleResolved() {
@@ -413,6 +420,12 @@ function FeedbackEntry({
 
   async function handleDelete() {
     if (!onDeleted) return;
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      setTimeout(() => setConfirmingDelete(false), 4000);
+      return;
+    }
+    setConfirmingDelete(false);
     setDeleting(true);
     try {
       await api.deleteIdeaFeedback(ideaId, feedback.id);
@@ -460,8 +473,11 @@ function FeedbackEntry({
           type="button"
           onClick={handleDelete}
           disabled={deleting}
+          title={confirmingDelete ? t("publicAnnotationsSidebar.clickAgainToDelete") : t("common.delete")}
           aria-label={t("common.delete")}
-          className="absolute top-0.5 right-0 w-5 h-5 rounded-full bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white flex items-center justify-center text-sm transition-colors disabled:opacity-50"
+          className={`absolute top-0.5 right-0 w-5 h-5 rounded-full flex items-center justify-center text-sm transition-colors disabled:opacity-50 ${
+            confirmingDelete ? "bg-red-600 text-white" : "bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white"
+          }`}
         >
           ×
         </button>
