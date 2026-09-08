@@ -152,13 +152,16 @@ const translations = {
     "shotOrderView.empty": "Noch keine Einstellungen in dieser Shotlist.",
 
     // 2026-09-08 — Referenz-Video, ganz oben auf der Shotlist-Übersicht.
-    "referenceVideo.upload": "Beispielvideo als Referenz hochladen",
-    "referenceVideo.replace": "Video ersetzen",
+    // 2026-09-08, Lino: "der button soll heissen 'scribble Video
+    // hinzufügen'" — user-facing label only, internal key/DB naming stays
+    // reference_video_* (see Project.reference_video_url in models.py).
+    "referenceVideo.upload": "Scribble Video hinzufügen",
+    "referenceVideo.replace": "Scribble Video ersetzen",
     "referenceVideo.unsupportedType": "Nicht unterstützter Dateityp — nur MP4, MOV oder WebM.",
     "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
     "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
-    "referenceVideo.deleteTitle": "Referenz-Video löschen?",
-    "referenceVideo.deleteMessage": "Das Beispielvideo wird endgültig entfernt.",
+    "referenceVideo.deleteTitle": "Scribble Video löschen?",
+    "referenceVideo.deleteMessage": "Das Scribble Video wird endgültig entfernt.",
 
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
@@ -1047,13 +1050,13 @@ const translations = {
     "scriptOverview.shotOrderTab": "Shot order",
     "shotOrderView.empty": "No shots in this shotlist yet.",
 
-    "referenceVideo.upload": "Upload reference video",
-    "referenceVideo.replace": "Replace video",
+    "referenceVideo.upload": "Add scribble video",
+    "referenceVideo.replace": "Replace scribble video",
     "referenceVideo.unsupportedType": "Unsupported file type — MP4, MOV, or WebM only.",
     "referenceVideo.uploadFailed": "Upload failed.",
     "referenceVideo.deleteFailed": "Delete failed.",
-    "referenceVideo.deleteTitle": "Delete reference video?",
-    "referenceVideo.deleteMessage": "The reference video will be removed permanently.",
+    "referenceVideo.deleteTitle": "Delete scribble video?",
+    "referenceVideo.deleteMessage": "The scribble video will be removed permanently.",
 
     "common.save": "Save",
     "common.cancel": "Cancel",
