@@ -44,6 +44,7 @@ import { EdgeNavButton } from "@/app/components/EdgeNavButton";
 import { TimecodeBar } from "@/app/components/TimecodeBar";
 import { IdeaGrid, type IdeaGridHandle } from "@/app/components/IdeaGrid";
 import { AnnotationsPanel } from "@/app/components/AnnotationsPanel";
+import { ReferenceVideoBlock } from "@/app/components/ReferenceVideoBlock";
 import { Modal } from "@/app/components/ui/Modal";
 import { AppShell } from "@/app/components/AppShell";
 import { AuthImage } from "@/app/components/AuthImage";
@@ -1896,6 +1897,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             diesen einen Abschnitt in der bestehenden, unveränderten
             Shot-Planungsansicht darunter (siehe die Filterung von
             `sections` weiter unten). */}
+        {openSectionId === null && data && (
+          // 2026-09-08, Lino: "ganz oben in einer Shotlist soll man ein
+          // Beispielvideo hochladen können, das man als Referenz abspielen
+          // lassen kann... ganz oben über dem ersten Abschnitt" — one
+          // reference video for the whole project's shotlist, shown above
+          // the Abschnitt tile grid below (only on the overview, not inside
+          // an opened shotlist — it's project-wide, not per-section).
+          <ReferenceVideoBlock
+            projectId={data.id}
+            project={data}
+            onUpdate={(patch) => setData((prev) => (prev ? { ...prev, ...patch } : prev))}
+          />
+        )}
         {openSectionId === null ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {sections.map((section) => {

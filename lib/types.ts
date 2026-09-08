@@ -65,6 +65,14 @@ export interface Project {
   /** 2026-07-19 — Pipeline-Fortschritt fürs Projektkachel-Badge, berechnet
    * server-seitig (_set_project_pipeline_stage in main.py), nicht editierbar. */
   pipeline_stage: "idea" | "scripting" | "postproduction" | "done";
+  /** 2026-09-08 — Beispielvideo, ganz oben auf der Shotlist-Übersicht
+   * abspielbar (siehe ReferenceVideoBlock.tsx). `reference_video_url` ist
+   * bereits eine presignte, direkt abspielbare R2-URL (server-seitig via
+   * ProjectOut._presign_reference_video_url), kein roher R2-Key. */
+  reference_video_url: string | null;
+  reference_video_status: "uploading" | "ready" | null;
+  reference_video_original_filename: string | null;
+  reference_video_duration_seconds: number | null;
 }
 
 export interface SceneDialogue {

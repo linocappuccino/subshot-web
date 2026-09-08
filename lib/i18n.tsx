@@ -151,6 +151,15 @@ const translations = {
     "scriptOverview.shotOrderTab": "Shot-Reihenfolge",
     "shotOrderView.empty": "Noch keine Einstellungen in dieser Shotlist.",
 
+    // 2026-09-08 — Referenz-Video, ganz oben auf der Shotlist-Übersicht.
+    "referenceVideo.upload": "Beispielvideo als Referenz hochladen",
+    "referenceVideo.replace": "Video ersetzen",
+    "referenceVideo.unsupportedType": "Nicht unterstützter Dateityp — nur MP4, MOV oder WebM.",
+    "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
+    "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
+    "referenceVideo.deleteTitle": "Referenz-Video löschen?",
+    "referenceVideo.deleteMessage": "Das Beispielvideo wird endgültig entfernt.",
+
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
     "common.cancel": "Abbrechen",
@@ -1037,6 +1046,14 @@ const translations = {
     "scriptOverview.sceneOrderTab": "Scene order",
     "scriptOverview.shotOrderTab": "Shot order",
     "shotOrderView.empty": "No shots in this shotlist yet.",
+
+    "referenceVideo.upload": "Upload reference video",
+    "referenceVideo.replace": "Replace video",
+    "referenceVideo.unsupportedType": "Unsupported file type — MP4, MOV, or WebM only.",
+    "referenceVideo.uploadFailed": "Upload failed.",
+    "referenceVideo.deleteFailed": "Delete failed.",
+    "referenceVideo.deleteTitle": "Delete reference video?",
+    "referenceVideo.deleteMessage": "The reference video will be removed permanently.",
 
     "common.save": "Save",
     "common.cancel": "Cancel",
