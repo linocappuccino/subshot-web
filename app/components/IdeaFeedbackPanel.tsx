@@ -98,10 +98,18 @@ export function IdeaFeedbackPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea.id]);
 
+  // 2026-09-08 (functional audit finding, LOW, pre-existing) — this only
+  // ever checked plain IdeaFeedback.resolved, never highlightComments
+  // (highlight-kind Annotations, independently resolvable/reopenable via
+  // the exact same checkbox in HighlightEntry — see FeedbackRound's own
+  // openCount computation, which already treats both kinds identically).
+  // An idea with an open highlight but every plain feedback resolved
+  // could enable "Abgenommen" while a comment was still genuinely open.
   useEffect(() => {
-    onAllResolvedChange?.(feedback.every((f) => f.resolved));
+    const allResolved = feedback.every((f) => f.resolved) && highlightComments.every((a) => a.status !== "open");
+    onAllResolvedChange?.(allResolved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feedback]);
+  }, [feedback, highlightComments]);
 
   // 2026-07-28 — live sync: another team member (or the public preview's
   // "also die preview seiten" client, same channel) sending/resolving
