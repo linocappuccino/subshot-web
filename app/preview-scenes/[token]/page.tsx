@@ -12,7 +12,6 @@ import { PublicSceneMedia } from "@/app/components/PublicSceneMedia";
 import { PublicSectionComments } from "@/app/components/PublicSectionComments";
 import { PublicMapThumb } from "@/app/components/PublicMapThumb";
 import { PublicTodoLists } from "@/app/components/PublicTodoLists";
-import { PublicTeamChips } from "@/app/components/PublicTeamChips";
 import { PublicAnnotationPopup } from "@/app/components/PublicAnnotationPopup";
 import { PublicAnnotationsSidebar } from "@/app/components/PublicAnnotationsSidebar";
 import { PENDING_ANNOTATION_ID } from "@/app/components/PublicHighlightedText";
@@ -479,7 +478,10 @@ function PreviewScenesPageInner() {
           <p className="text-sm text-red-400">{error}</p>
         ) : !data ? null : (
           <>
-            {(data.shoot_date || data.location_address || data.team.length > 0) && (
+            {/* 2026-09-08, Lino: "auf der preview seite der shotliste
+                braucht es die team kachel oben nicht" — PublicTeamChips
+                removed; shoot-date/location tiles unaffected. */}
+            {(data.shoot_date || data.location_address) && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                 {data.shoot_date && (
                   <div className="rounded-2xl bg-[#212121] border border-white/[0.06] p-3.5 flex items-center">
@@ -496,7 +498,6 @@ function PreviewScenesPageInner() {
                     <PublicMapThumb token={token} unlockToken={unlockToken} address={data.location_address} lat={data.location_lat} lng={data.location_lng} />
                   </div>
                 )}
-                <PublicTeamChips team={data.team} />
               </div>
             )}
 
