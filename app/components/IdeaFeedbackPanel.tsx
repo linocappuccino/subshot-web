@@ -140,6 +140,17 @@ export function IdeaFeedbackPanel({
     setFeedback((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
   }
 
+  // 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+  // egal was für einen status sie haben und egal auf welcher pipelineseite"
+  // — plain IdeaFeedback (as opposed to highlight-kind Annotation, deletable
+  // via AnnotationsPanel already) had no delete at all. This panel owns the
+  // feedback list (see its own doc comment above), so FeedbackEntry below
+  // makes the API call itself (same shape as its own toggleResolved) and
+  // just reports the id back here to drop it from local state.
+  function deleteOne(id: string) {
+    setFeedback((prev) => prev.filter((f) => f.id !== id));
+  }
+
   // 2026-07-21, Lino: "wenn keine kommentare da sind, kann das
   // kommentarfeld komplett ausgeblendet werden. nur wenn kommentare da
   // sind, soll das kommentarfeld eingeblendet werden" — this panel now owns
@@ -162,6 +173,7 @@ export function IdeaFeedbackPanel({
             entries={entries}
             ideaId={idea.id}
             onUpdated={updateOne}
+            onDeleted={deleteOne}
             highlightedAnnotationId={highlightedAnnotationId}
             onDeleteAnnotation={onDeleteAnnotation}
             onSelectAnnotation={onSelectAnnotation}
@@ -179,12 +191,13 @@ export function IdeaFeedbackPanel({
  * per-ROUND per 2026-07-18's follow-up spec). Defaults open, click the
  * title row to collapse/expand the whole round. */
 function FeedbackRound({
-  round, entries, ideaId, onUpdated, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
+  round, entries, ideaId, onUpdated, onDeleted, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
 }: {
   round: number;
   entries: RoundEntry[];
   ideaId: string;
   onUpdated: (feedback: IdeaFeedback) => void;
+  onDeleted: (feedbackId: string) => void;
   highlightedAnnotationId?: string | null;
   onDeleteAnnotation?: (annotation: Annotation) => void;
   onSelectAnnotation?: (annotation: Annotation) => void;
@@ -229,6 +242,7 @@ function FeedbackRound({
                   feedback={entry.feedback}
                   ideaId={ideaId}
                   onUpdated={onUpdated}
+                  onDeleted={onDeleted}
                   highlighted={highlightedAnnotationId === entry.feedback.id}
                 />
               );
@@ -350,11 +364,15 @@ function HighlightEntry({
  * die Kommentare abhacken können um sie abarbeiten zu können, sie werden
  * dann durchgestrichen dargestellt"). */
 function FeedbackEntry({
-  feedback, ideaId, onUpdated, highlighted = false,
+  feedback, ideaId, onUpdated, onDeleted, highlighted = false,
 }: {
   feedback: IdeaFeedback;
   ideaId: string;
   onUpdated: (feedback: IdeaFeedback) => void;
+  /** 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+   * egal was für einen status sie haben" — no resolved/unresolved gate on
+   * the delete button below, same as HighlightEntry's own onDelete. */
+  onDeleted: (feedbackId: string) => void;
   /** 2026-07-31 — plain feedback never had this at all (only HighlightEntry
    * did), so clicking a notification/deep-link for a PLAIN comment had
    * nothing to scroll/pulse to even though IdeaFeedbackPanel's own
@@ -366,6 +384,7 @@ function FeedbackEntry({
   const toast = useToast();
   const { t } = useLanguage();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const color = authorColor(feedback.author_name);
 
   async function toggleResolved() {
@@ -380,10 +399,21 @@ function FeedbackEntry({
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await api.deleteIdeaFeedback(ideaId, feedback.id);
+      onDeleted(feedback.id);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("ideaFeedbackPanel.deleteFailed"));
+      setDeleting(false);
+    }
+  }
+
   return (
     <div
       data-comment-annotation-id={feedback.id}
-      className={`flex items-start gap-2 border-l-2 pl-2.5 transition-colors ${highlighted ? "bg-blue-500/[0.08] subshot-annot-pulse" : ""}`}
+      className={`relative flex items-start gap-2 border-l-2 pl-2.5 pr-6 transition-colors ${highlighted ? "bg-blue-500/[0.08] subshot-annot-pulse" : ""}`}
       style={{ borderLeftColor: color }}
     >
       <button
@@ -412,6 +442,15 @@ function FeedbackEntry({
           )}
         </p>
       </div>
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={deleting}
+        aria-label={t("common.delete")}
+        className="absolute top-0.5 right-0 w-5 h-5 rounded-full bg-white/10 text-white/50 hover:bg-red-600/40 hover:text-white flex items-center justify-center text-sm transition-colors disabled:opacity-50"
+      >
+        ×
+      </button>
     </div>
   );
 }

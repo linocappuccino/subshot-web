@@ -79,6 +79,28 @@ export function AnnotationsPanel({
     }
   }
 
+  // 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+  // egal was für einen status sie haben" — same two-step "tap again to
+  // confirm" pattern the public preview sidebars already use for the same
+  // action (PublicAnnotationsSidebar/PublicSectionComments), works
+  // regardless of a.status (open/resolved/rejected all show the button).
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+
+  async function handleDelete(annotation: Annotation) {
+    if (confirmingDeleteId !== annotation.id) {
+      setConfirmingDeleteId(annotation.id);
+      setTimeout(() => setConfirmingDeleteId((cur) => (cur === annotation.id ? null : cur)), 4000);
+      return;
+    }
+    setConfirmingDeleteId(null);
+    try {
+      await api.deleteAnnotation(annotation.id);
+      onChange((prev) => prev.filter((a) => a.id !== annotation.id));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("annotationsPanel.updateFailed"));
+    }
+  }
+
   // 2026-07-15, Lino: "erledigte und abgelehnte kommentare müssen in der
   // liste immer nach unten wandern" — open items first (newest first,
   // same as before), resolved/rejected always sink below them regardless
@@ -165,7 +187,11 @@ export function AnnotationsPanel({
                     </span>
                   </div>
                   {a.text && <p className="text-xs text-white/65 italic mb-1 break-words">„{a.text}“</p>}
-                  {a.comment && <p className="text-sm text-white/85 break-words">{a.comment}</p>}
+                  {a.comment && (
+                    <p className={`text-sm text-white/85 break-words ${a.status === "resolved" ? "line-through decoration-white/40 text-white/50" : ""}`}>
+                      {a.comment}
+                    </p>
+                  )}
                   {/* 2026-07-26 (#330) — who triaged this, small/greyed like
                       every other resolved-by hint in this app (see
                       IdeaFeedbackPanel's formatEntryDate line). */}
@@ -199,6 +225,13 @@ export function AnnotationsPanel({
                         {t("annotationsPanel.reopen")}
                       </button>
                     )}
+                    <button
+                      onClick={() => handleDelete(a)}
+                      title={confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : undefined}
+                      className="text-xs font-medium text-red-400/60 hover:text-red-400 transition-colors ml-auto"
+                    >
+                      {confirmingDeleteId === a.id ? t("publicAnnotationsSidebar.clickAgainToDelete") : t("common.delete")}
+                    </button>
                   </div>
                 </div>
               );

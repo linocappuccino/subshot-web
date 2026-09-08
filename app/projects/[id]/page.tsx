@@ -453,6 +453,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setTimeout(() => ideaGridRef.current?.openIdea(annotation.idea_id!), 600);
     }
   }
+
+  // 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+  // egal was für einen status sie haben und egal auf welcher pipelineseite"
+  // — AnnotationsPanel already got its own inline delete (same endpoint),
+  // this is the exact same call reused for IdeaFeedbackPanel's own
+  // HighlightEntry delete button (Ideas card view), so both surfaces work
+  // on the identical Annotation row.
+  async function handleDeleteAnnotation(annotation: Annotation) {
+    try {
+      await api.deleteAnnotation(annotation.id);
+      setAnnotations((prev) => prev.filter((a) => a.id !== annotation.id));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+    }
+  }
   // 2026-07-31, Lino: "wenn man in den notifications auf einen kommentar
   // klickt, soll es direkt die ideenkachel oder szenenkachel ... öffnen mit
   // dem kommentar" — autoOpenIdeaId already opens the right idea (passed
@@ -1818,6 +1833,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 }}
                 annotations={annotations}
                 highlightedAnnotationId={highlightedAnnotationId}
+                onDeleteAnnotation={handleDeleteAnnotation}
                 onAnnotationUpdated={(updated) => setAnnotations((prev) => prev.map((a) => (a.id === updated.id ? updated : a)))}
                 myRole={myRole}
               />

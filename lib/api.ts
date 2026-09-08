@@ -365,6 +365,10 @@ export function createApiClient(getToken: () => Promise<string | null>) {
     listAnnotations: (projectId: string) => request<Annotation[]>(`projects/${projectId}/annotations`),
     patchAnnotation: (id: string, status: "open" | "resolved" | "rejected") =>
       request<Annotation>(`annotations/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    // 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+    // egal was für einen status sie haben" — AnnotationsPanel only had
+    // resolve/reject/reopen before, never delete, for ANY status.
+    deleteAnnotation: (id: string) => request<void>(`annotations/${id}`, { method: "DELETE" }),
     moveScene: (id: string, beforeSceneId: string | null) =>
       request<Scene>(`scenes/${id}/move`, { method: "POST", body: JSON.stringify({ before_scene_id: beforeSceneId }) }),
     reorderScenes: (projectId: string, sectionId: string | null, orderedSceneIds: string[]) =>
@@ -657,6 +661,12 @@ export function createApiClient(getToken: () => Promise<string | null>) {
         method: "PATCH",
         body: JSON.stringify({ resolved }),
       }),
+    // 2026-09-08, Lino: "als admin muss man kommentare auch löschen können
+    // egal was für einen status sie haben" — plain IdeaFeedback had no
+    // delete at all from the app before (only the public share page's
+    // draft-only one), counterpart to deleteAnnotation below.
+    deleteIdeaFeedback: (ideaId: string, feedbackId: string) =>
+      request<void>(`ideas/${ideaId}/feedback/${feedbackId}`, { method: "DELETE" }),
     uploadIdeaImage: (id: string, file: File) => {
       const form = new FormData();
       form.append("file", file);

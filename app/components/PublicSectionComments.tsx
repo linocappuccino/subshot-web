@@ -5,8 +5,29 @@ import { authorColor } from "@/lib/authorColor";
 import { isSectionFeedbackLocked } from "@/lib/sectionFeedbackLock";
 import { publicScenesPreviewApi } from "@/lib/publicScenesPreviewApi";
 import { ApiError } from "@/lib/api";
-import { useLanguage } from "@/lib/i18n";
+import { Pill } from "./ui/Badge";
+import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { Annotation, Section } from "@/lib/types";
+
+// 2026-09-08, Lino: "im preview seite Shotlist muss auch der status des
+// kommentars jeweils ersichtlich sein. ist der kommentar noch offen, wurde
+// er erledigt oder abgelehnt" — same open/resolved/rejected the app's own
+// AnnotationsPanel already shows (STATUS_TONES/STATUS_LABEL_KEYS there),
+// reused here so a visitor sees at a glance whether the team already acted
+// on their feedback. "draft" never reaches this component (server-side
+// filtered, same as AnnotationsPanel's own STATUS_TONES comment).
+const STATUS_TONES: Record<Annotation["status"], "default" | "good" | "danger"> = {
+  draft: "default",
+  open: "default",
+  resolved: "good",
+  rejected: "danger",
+};
+const STATUS_LABEL_KEYS: Record<Annotation["status"], TranslationKey> = {
+  draft: "annotationsPanel.statusOpen",
+  open: "annotationsPanel.statusOpen",
+  resolved: "annotationsPanel.statusResolved",
+  rejected: "annotationsPanel.statusRejected",
+};
 
 const NAME_STORAGE_KEY = "subshot_annot_name";
 
@@ -231,11 +252,12 @@ export function PublicSectionComments({
                   }`}
                 >
                   <button type="button" onClick={() => onSelectHighlight(ann)} className="block w-full text-left">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: authorColor(ann.author_name) }}>
-                      {ann.author_name}
+                    <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold">
+                      <span style={{ color: authorColor(ann.author_name) }}>{ann.author_name}</span>
+                      <Pill tone={STATUS_TONES[ann.status]}>{t(STATUS_LABEL_KEYS[ann.status])}</Pill>
                     </div>
                     {ann.text && <p className="text-xs text-yellow-400/90 italic mt-1 truncate">„{ann.text.slice(0, 80)}“</p>}
-                    <p className="text-xs text-white/75 mt-1 break-words">
+                    <p className={`text-xs text-white/75 mt-1 break-words ${ann.status === "resolved" ? "line-through decoration-white/40 text-white/45" : ""}`}>
                       {ann.comment || <em className="text-white/40">{t("publicAnnotationsSidebar.noComment")}</em>}
                     </p>
                     <p className="text-[11px] text-white/40 mt-1.5">{formatEntryDate(ann.created_at)}</p>
@@ -396,10 +418,13 @@ function SectionRoundBlock({
             }
             return (
               <div key={a.id} className="relative border-l-2 pl-2 pr-5" style={{ borderLeftColor: authorColor(a.author_name) }}>
-                <p className="text-[12.5px] text-white/90 whitespace-pre-line">
+                <p className={`text-[12.5px] text-white/90 whitespace-pre-line ${a.status === "resolved" ? "line-through decoration-white/40 text-white/50" : ""}`}>
                   <span style={{ color: authorColor(a.author_name) }} className="font-bold">{a.author_name}:</span> {a.comment}
                 </p>
-                <p className="text-[10px] text-white/35 mt-0.5">{formatEntryDate(a.created_at)}</p>
+                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <p className="text-[10px] text-white/35">{formatEntryDate(a.created_at)}</p>
+                  <Pill tone={STATUS_TONES[a.status]} className="px-1.5 py-0.5 text-[10px]">{t(STATUS_LABEL_KEYS[a.status])}</Pill>
+                </div>
               </div>
             );
           })}

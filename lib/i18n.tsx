@@ -338,6 +338,7 @@ const translations = {
     "ideaFeedbackPanel.roundLabel": "{number} Feedback — {when}",
     "ideaFeedbackPanel.openCount": "{count} offen",
     "ideaFeedbackPanel.toggleFailed": "Konnte nicht gespeichert werden.",
+    "ideaFeedbackPanel.deleteFailed": "Löschen fehlgeschlagen.",
     "ideaFeedbackPanel.markOpen": "Als offen markieren",
     "ideaFeedbackPanel.markDone": "Als erledigt markieren",
 
@@ -1211,6 +1212,7 @@ const translations = {
     "ideaFeedbackPanel.roundLabel": "{number} Feedback — {when}",
     "ideaFeedbackPanel.openCount": "{count} open",
     "ideaFeedbackPanel.toggleFailed": "Could not save.",
+    "ideaFeedbackPanel.deleteFailed": "Delete failed.",
     "ideaFeedbackPanel.markOpen": "Mark as open",
     "ideaFeedbackPanel.markDone": "Mark as done",
 

@@ -16,6 +16,7 @@ import { PublicTeamChips } from "@/app/components/PublicTeamChips";
 import { PublicAnnotationPopup } from "@/app/components/PublicAnnotationPopup";
 import { PublicAnnotationsSidebar } from "@/app/components/PublicAnnotationsSidebar";
 import { PENDING_ANNOTATION_ID } from "@/app/components/PublicHighlightedText";
+import { SegmentedControl } from "@/app/components/ui/SegmentedControl";
 import { subscribeToChanges } from "@/lib/realtime";
 
 // 2026-07-21 (#268) — public no-login "Szenenpreview" (storyboard)
@@ -64,6 +65,14 @@ function PreviewScenesPageInner() {
   // exactly like the Ideas preview page's per-idea feedback. null =
   // overview.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  // 2026-09-08, Lino: "auf der preview seite muss genau die gleiche
+  // sortierfunktion vorhanden sein wie in der Shotlist, man muss Szenen-
+  // Reihenfolge und Shot-Reihenfolge sortieren können (kann aber keine
+  // kacheln verschieben auf der preview seite)" — same two independent
+  // orderings the authenticated app's own shotOrderMode toggles
+  // (projects/[id]/page.tsx), read-only here: no DndContext, just which of
+  // scenesFor/scenesInShootingOrder below feeds the grid.
+  const [shotOrderMode, setShotOrderMode] = useState(false);
 
   function load(unlock: string | null, silent = false) {
     if (!silent) setLoading(true);
@@ -294,6 +303,24 @@ function PreviewScenesPageInner() {
     return [...filtered.filter((s) => !s.completed), ...filtered.filter((s) => s.completed)];
   }
 
+  // 2026-09-08 — Shot-Reihenfolge counterpart to scenesFor above, same
+  // shooting_order/sort_order fallback as the authenticated app's own
+  // scenesInShootingOrder (projects/[id]/page.tsx) — a completely separate
+  // field from sort_order, so toggling back to Szenen-Reihenfolge never
+  // loses anything. Keeps the same "completed sinks to the end" grouping
+  // scenesFor already applies, so shotOrderMode really is the ONLY thing
+  // that changes, matching that page's own 1:1 parity comment.
+  function scenesInShootingOrder(sectionId: string | null) {
+    if (!data) return [];
+    const filtered = data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => {
+      if (a.shooting_order != null && b.shooting_order != null) return a.shooting_order - b.shooting_order;
+      if (a.shooting_order != null) return -1;
+      if (b.shooting_order != null) return 1;
+      return a.sort_order - b.sort_order;
+    });
+    return [...filtered.filter((s) => !s.completed), ...filtered.filter((s) => s.completed)];
+  }
+
   // 2026-09-07, Lino: "muss auf der in der shotlist übersicht das erste
   // thumbnail übernommen werden, ansonsten ist es schwierig die projekte
   // auseinander zu halten" — the Skript-Auswahlübersicht tiles below only
@@ -496,7 +523,7 @@ function PreviewScenesPageInner() {
               (() => {
                 const openSection = sectionsSorted.find((s) => s.id === openSectionId);
                 if (!openSection) return null;
-                const scenes = scenesFor(openSection.id);
+                const scenes = shotOrderMode ? scenesInShootingOrder(openSection.id) : scenesFor(openSection.id);
                 // 2026-09-07, Lino: "die markierungskommentare müssen doch
                 // auch rechts in der sidebar auftauchen unter den normalen
                 // kommentaren" — every highlight-kind annotation belonging
@@ -513,6 +540,16 @@ function PreviewScenesPageInner() {
                       ← {t("scriptOverview.backToOverview")}
                     </button>
                     <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
+                    <div className="mb-4 max-w-xs">
+                      <SegmentedControl
+                        value={shotOrderMode ? "shots" : "scenes"}
+                        onChange={(v) => setShotOrderMode(v === "shots")}
+                        options={[
+                          { value: "scenes", label: t("scriptOverview.sceneOrderTab") },
+                          { value: "shots", label: t("scriptOverview.shotOrderTab") },
+                        ]}
+                      />
+                    </div>
                     {renderScenes(scenes, (ann) => pulseAnnotation(ann.id))}
                     {/* 2026-09-07, several rounds of Lino feedback on this
                         one sidebar, in order: (1) "muss immer rechts als
