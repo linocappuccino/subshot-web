@@ -2594,6 +2594,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         projectId={data.id}
         projectName={data.name}
         kind={shareKind}
+        sectionId={currentSectionId}
       />
       <AnnotationsPanel
         open={showAnnotations}

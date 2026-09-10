@@ -17,7 +17,7 @@ import { useLanguage } from "@/lib/i18n";
  * old separate "Link"/"Teilen" quick-action buttons, since password
  * protection needs a place to live and folding it into a one-click button
  * would either bury it or turn every share into a two-click flow anyway. */
-export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard" }: {
+export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard", sectionId }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
@@ -27,6 +27,15 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
    * project (see backend ShareLink.kind). "video" (2026-07-17, #11 Schritt
    * 7) shares the Video-Feedback-Tool page instead. */
   kind?: "storyboard" | "ideas" | "video";
+  /** 2026-09-10, Lino: "wenn man in einer shotlist drin ist und dann teilt,
+   * muss der geteilte link auch direkt die preview öffnen IN der shotlist
+   * und nicht in der shotlist übersicht" — the currently-open Section's id
+   * (projects/[id]/page.tsx's own `currentSectionId`), when sharing from
+   * inside one. Appended as `?section=` on top of the SAME underlying
+   * storyboard link (no separate ShareLink row per section — see
+   * preview-scenes/[token]/page.tsx's own `?section=` handling), so this
+   * is purely a client-side URL addition, not a new backend concept. */
+  sectionId?: string | null;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -80,16 +89,21 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, projectId, kind]);
 
+  // Client-side only — same underlying link/token for every visitor of this
+  // project+kind, just with `?section=` appended when shared from inside a
+  // specific shotlist (see sectionId's own doc comment above).
+  const displayUrl = url && kind === "storyboard" && sectionId ? `${url}?section=${sectionId}` : url;
+
   async function copyLink() {
-    if (!url) return;
-    await navigator.clipboard.writeText(url);
+    if (!displayUrl) return;
+    await navigator.clipboard.writeText(displayUrl);
     toast.showSuccess(t("shareLinkModal.linkCopied"));
   }
 
   async function shareLink() {
-    if (!url) return;
+    if (!displayUrl) return;
     if (navigator.share) {
-      await navigator.share({ title: projectName || "Subshot-Projekt", url }).catch(() => {});
+      await navigator.share({ title: projectName || "Subshot-Projekt", url: displayUrl }).catch(() => {});
     } else {
       await copyLink();
     }
@@ -159,7 +173,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
           <div className="text-sm text-white/40 py-2">{t("common.loading")}</div>
         ) : url ? (
           <>
-            <div className="text-xs text-white/50 break-all mb-2">{url}</div>
+            <div className="text-xs text-white/50 break-all mb-2">{displayUrl}</div>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={copyLink}>{t("shareLinkModal.copy")}</Button>
               <Button variant="secondary" size="sm" onClick={shareLink}>{t("shareLinkModal.share")}</Button>

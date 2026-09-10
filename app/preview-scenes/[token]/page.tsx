@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { publicScenesPreviewApi } from "@/lib/publicScenesPreviewApi";
 import { ApiError } from "@/lib/api";
@@ -49,6 +49,13 @@ function PreviewScenesPageInner() {
   const { t } = useLanguage();
   const params = useParams<{ token: string }>();
   const token = params.token;
+  // 2026-09-10, Lino: "wenn man in einer shotlist drin ist und dann teilt,
+  // muss der geteilte link auch direkt die preview öffnen IN der shotlist
+  // und nicht in der shotlist übersicht" — same shape as preview-ideas'
+  // own `?idea=` param (openIdeaId below), consumed once data loads (see
+  // openedFromSectionParam below).
+  const searchParams = useSearchParams();
+  const openSectionParam = searchParams.get("section");
 
   const [data, setData] = useState<ScenesPreviewData | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -81,6 +88,12 @@ function PreviewScenesPageInner() {
   // exactly like the Ideas preview page's per-idea feedback. null =
   // overview.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  // Guards the `?section=` param below to only ever auto-open once (same
+  // pattern as preview-ideas' own openedFromParam) — otherwise every silent
+  // background refetch (the live-sync effects further down) would snap the
+  // visitor back to that section even after they'd manually navigated back
+  // to the overview.
+  const [openedFromSectionParam, setOpenedFromSectionParam] = useState(false);
   // 2026-09-08, Lino: "auf der preview seite muss genau die gleiche
   // sortierfunktion vorhanden sein wie in der Shotlist, man muss Szenen-
   // Reihenfolge und Shot-Reihenfolge sortieren können (kann aber keine
@@ -108,6 +121,10 @@ function PreviewScenesPageInner() {
         setPreviewLanguage(d.language);
         setNeedsPassword(false);
         setError(null);
+        if (openSectionParam && !openedFromSectionParam) {
+          if (d.sections.some((s) => s.id === openSectionParam)) setOpenSectionId(openSectionParam);
+          setOpenedFromSectionParam(true);
+        }
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 403) setNeedsPassword(true);
