@@ -770,8 +770,28 @@ function PreviewScenesPageInner() {
                           ever in the DOM at all while sectionMobileOpen
                           (the whole outer sheet is hidden otherwise), so it
                           always shows there regardless of `collapsed`'s
-                          stale desktop value. */}
-                      <div className={sectionSidebarCollapsed ? "hidden md:hidden" : "flex-1 min-h-0 px-3 md:px-0"}>
+                          stale desktop value.
+
+                          2026-09-10 fix, Lino: "kann man die kommentare
+                          nicht scrollen" (mobile) — PublicSectionComments
+                          relies on ITS OWN `h-full` (a percentage height)
+                          to get a bounded box to scroll its middle region
+                          within; on mobile that height comes from THIS
+                          div's `flex-1` inside the sheet's `flex flex-col`
+                          column, one extra percentage-height hop deeper
+                          than desktop's directly-viewport-anchored `fixed
+                          top-0 bottom-0` sidebar. That extra hop is exactly
+                          the kind of thing mobile Safari doesn't always
+                          resolve — `overflow-y-auto` directly on this div
+                          is a robust fallback scroll container regardless
+                          of whether the inner `h-full` height actually
+                          resolves. `md:overflow-visible` keeps desktop
+                          byte-for-byte unchanged (no overflow class here
+                          before this fix) — desktop's own sticky-header/
+                          compose-box split lives entirely inside
+                          PublicSectionComments' own working `h-full`
+                          chain, untouched. */}
+                      <div className={sectionSidebarCollapsed ? "hidden md:hidden" : "flex-1 min-h-0 overflow-y-auto md:overflow-visible px-3 md:px-0"}>
                         {/* Lino's explicit ask: leaving feedback here works
                             "exactly like the Ideas page" — one comment
                             thread for the whole opened shotlist, not per
