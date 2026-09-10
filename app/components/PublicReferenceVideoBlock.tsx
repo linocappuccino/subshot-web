@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AuthImage } from "@/app/components/AuthImage";
 import { usePinnedUrl, ReferenceVideoLightbox } from "@/app/components/ReferenceVideoBlock";
 import { useLanguage } from "@/lib/i18n";
@@ -28,6 +28,11 @@ export function PublicReferenceVideoBlock({
 }) {
   const { t } = useLanguage();
   const [showLightbox, setShowLightbox] = useState(false);
+  // 2026-09-10 — see ReferenceVideoBlock.tsx's identical thumbButtonRef/
+  // lightboxOriginRect for why: the lightbox's FLIP open animation grows
+  // from this exact thumbnail's on-screen rect, captured at click time.
+  const thumbButtonRef = useRef<HTMLButtonElement>(null);
+  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
   const pinnedVideoUrl = usePinnedUrl(url);
   const pinnedThumbnailUrl = usePinnedUrl(thumbnailUrl);
   const thumbnailObjectPosition =
@@ -40,8 +45,12 @@ export function PublicReferenceVideoBlock({
   return (
     <div className="mb-4">
       <button
+        ref={thumbButtonRef}
         type="button"
-        onClick={() => setShowLightbox(true)}
+        onClick={() => {
+          setLightboxOriginRect(thumbButtonRef.current?.getBoundingClientRect() ?? null);
+          setShowLightbox(true);
+        }}
         className="group relative block w-full sm:w-72 aspect-video rounded-2xl bg-black overflow-hidden border border-white/10"
         aria-label={t("referenceVideo.play")}
       >
@@ -63,7 +72,7 @@ export function PublicReferenceVideoBlock({
         </div>
       </button>
       {showLightbox && (
-        <ReferenceVideoLightbox url={pinnedVideoUrl} onClose={() => setShowLightbox(false)} />
+        <ReferenceVideoLightbox url={pinnedVideoUrl} originRect={lightboxOriginRect} onClose={() => setShowLightbox(false)} />
       )}
     </div>
   );

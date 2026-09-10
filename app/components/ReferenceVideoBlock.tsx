@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
@@ -123,6 +123,14 @@ export function ReferenceVideoBlock({
     section.reference_video_thumbnail_focus_x != null && section.reference_video_thumbnail_focus_y != null
       ? `${(section.reference_video_thumbnail_focus_x * 100).toFixed(1)}% ${(section.reference_video_thumbnail_focus_y * 100).toFixed(1)}%`
       : undefined;
+  // 2026-09-10, Lino: "wie die videos auf der linocappuccino webseite,
+  // quasi in einem lightbox player mit der gleichen open animation" — the
+  // lightbox grows FROM this exact thumbnail's on-screen position/size
+  // (see flipTransform in ReferenceVideoLightbox below), so the trigger
+  // needs to capture that rect at the moment of the click, before the
+  // lightbox even mounts.
+  const thumbButtonRef = useRef<HTMLButtonElement>(null);
+  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
 
   return (
     <div className="mb-5">
@@ -179,8 +187,12 @@ export function ReferenceVideoBlock({
            * a muted <video preload="metadata"> showing its own first frame,
            * same "browser renders it like an <img> poster" trick as before. */}
           <button
+            ref={thumbButtonRef}
             type="button"
-            onClick={() => setShowLightbox(true)}
+            onClick={() => {
+              setLightboxOriginRect(thumbButtonRef.current?.getBoundingClientRect() ?? null);
+              setShowLightbox(true);
+            }}
             className="group relative block w-full aspect-video"
             aria-label={t("referenceVideo.play")}
           >
@@ -257,24 +269,88 @@ export function ReferenceVideoBlock({
         onCancel={() => setConfirmingDelete(false)}
       />
       {showLightbox && hasVideo && pinnedVideoUrl && (
-        <ReferenceVideoLightbox url={pinnedVideoUrl} onClose={() => setShowLightbox(false)} />
+        <ReferenceVideoLightbox url={pinnedVideoUrl} originRect={lightboxOriginRect} onClose={() => setShowLightbox(false)} />
       )}
     </div>
   );
 }
 
-/** 2026-09-08 — simple fullscreen video-only lightbox for the Scribble
- * Video thumbnail above. Deliberately NOT VideoReviewModal (comments/
- * subtitles/versions — none of that applies to a single unversioned
- * reference file) nor PublicIdeaLightbox (idea-feedback-specific) — just
- * the shared backdrop/close-button/Escape convention those two already
- * use, around a plain native <video controls autoPlay>. */
-export function ReferenceVideoLightbox({ url, onClose }: { url: string; onClose: () => void }) {
+// 2026-09-10, Lino: "wie die videos auf der linocappuccino webseite, quasi
+// in einem lightbox player mit der gleichen open animation" — a manual FLIP
+// (First-Last-Invert-Play) transition, ported from that site's own
+// VideoLightbox.tsx (same timing/easing constants) rather than pulling in
+// framer-motion for one transition: the box's transform jumps instantly
+// (no transition) to make it LOOK like it's still sitting at the clicked
+// thumbnail's exact position/size, then animates to identity on the next
+// frame. Close reverses the same computation back toward that origin rect.
+const OPEN_TRANSITION = "transform 480ms cubic-bezier(0.16, 1, 0.3, 1)";
+const CLOSE_TRANSITION = "transform 380ms cubic-bezier(0.4, 0, 1, 1)";
+const CLOSE_DURATION = 380;
+
+function flipTransform(from: DOMRect, to: DOMRect): string {
+  const dx = from.left + from.width / 2 - (to.left + to.width / 2);
+  const dy = from.top + from.height / 2 - (to.top + to.height / 2);
+  const sx = from.width / to.width;
+  const sy = from.height / to.height;
+  return `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`;
+}
+
+/** 2026-09-08 — fullscreen video-only lightbox for the Scribble Video
+ * thumbnail above. Deliberately NOT VideoReviewModal (comments/subtitles/
+ * versions — none of that applies to a single unversioned reference file)
+ * nor PublicIdeaLightbox (idea-feedback-specific) — just the shared
+ * backdrop/close-button/Escape convention those two already use.
+ *
+ * 2026-09-10 — two changes, both explicit Lino asks: (1) the FLIP open/
+ * close animation above (was an instant mount/unmount, no animation at
+ * all); (2) native `<video controls>` replaced with a small custom chrome
+ * (tap-to-toggle-play + an explicit fullscreen button, `requestFullscreen`
+ * on the video element itself) matching the minimal custom-controls style
+ * of that reference site's own player — which, same as this one now, has
+ * no seek bar either. */
+export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: string; originRect: DOMRect | null; onClose: () => void }) {
   const { t } = useLanguage();
+  const boxRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [closing, setClosing] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  function requestClose() {
+    if (closing) return;
+    const box = boxRef.current;
+    if (box && originRect) {
+      const finalRect = box.getBoundingClientRect();
+      box.style.transition = CLOSE_TRANSITION;
+      box.style.transform = flipTransform(originRect, finalRect);
+    }
+    setClosing(true);
+    setTimeout(onClose, originRect ? CLOSE_DURATION : 0);
+  }
+
+  // Runs the open half of the FLIP: measure where the box NATURALLY landed
+  // (centered, full size) BEFORE paint, jump it to look like the thumbnail
+  // instead, then let the very next frame animate that back to identity.
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box || !originRect) return;
+    const finalRect = box.getBoundingClientRect();
+    box.style.transformOrigin = "top left";
+    box.style.transition = "none";
+    box.style.transform = flipTransform(originRect, finalRect);
+    // Force a reflow so the browser commits the jump above before the
+    // transition below is allowed to animate anything.
+    void box.offsetHeight;
+    requestAnimationFrame(() => {
+      box.style.transition = OPEN_TRANSITION;
+      box.style.transform = "translate(0, 0) scale(1, 1)";
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     }
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
@@ -282,23 +358,90 @@ export function ReferenceVideoLightbox({ url, onClose }: { url: string; onClose:
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(document.fullscreenElement === videoRef.current);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  function toggleFullscreen(e: React.MouseEvent) {
+    e.stopPropagation();
+    const video = videoRef.current;
+    if (!video) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      video.requestFullscreen?.().catch(() => {});
+    }
+  }
+
+  function togglePlay() {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  }
 
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer" onClick={onClose} />
+      <div
+        className={`absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer transition-opacity duration-300 ${closing ? "opacity-0" : "opacity-100"}`}
+        onClick={requestClose}
+      />
       <button
-        onClick={onClose}
+        onClick={requestClose}
         aria-label={t("modal.closeAria")}
         className="absolute top-5 right-5 z-20 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
       </button>
-      <div className="relative z-10 max-w-[92vw] max-h-[88vh]">
+      <div
+        ref={boxRef}
+        className="relative z-10 max-w-[92vw] max-h-[88vh] rounded-2xl overflow-hidden bg-black shadow-2xl shadow-black/50"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* eslint-disable-next-line jsx-a11y/media-has-caption -- reference footage, no track available */}
-        <video src={url} controls autoPlay preload="metadata" className="max-w-[92vw] max-h-[88vh] rounded-2xl shadow-2xl shadow-black/50" />
+        <video
+          ref={videoRef}
+          src={url}
+          autoPlay
+          playsInline
+          preload="metadata"
+          onClick={togglePlay}
+          onPlay={() => setPaused(false)}
+          onPause={() => setPaused(true)}
+          className="block max-w-[92vw] max-h-[88vh] cursor-pointer"
+        />
+        {paused && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-14 h-14 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#fff" className="translate-x-[1px]"><path d="M8 5v14l11-7z" /></svg>
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          aria-label={t(isFullscreen ? "referenceVideo.exitFullscreen" : "referenceVideo.fullscreen")}
+          className="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 flex items-center justify-center text-white transition-colors"
+        >
+          {isFullscreen ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M9 21v-3a2 2 0 0 0-2-2H4M15 21v-3a2 2 0 0 1 2-2h3" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          )}
+        </button>
       </div>
     </div>,
     document.body

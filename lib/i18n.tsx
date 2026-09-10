@@ -164,6 +164,8 @@ const translations = {
     "referenceVideo.deleteTitle": "Scribble Video löschen?",
     "referenceVideo.deleteMessage": "Das Scribble Video wird endgültig entfernt.",
     "referenceVideo.processing": "Video wird optimiert…",
+    "referenceVideo.fullscreen": "Vollbild",
+    "referenceVideo.exitFullscreen": "Vollbild verlassen",
 
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
@@ -1062,6 +1064,8 @@ const translations = {
     "referenceVideo.deleteTitle": "Delete scribble video?",
     "referenceVideo.deleteMessage": "The scribble video will be removed permanently.",
     "referenceVideo.processing": "Optimizing video…",
+    "referenceVideo.fullscreen": "Fullscreen",
+    "referenceVideo.exitFullscreen": "Exit fullscreen",
 
     "common.save": "Save",
     "common.cancel": "Cancel",
