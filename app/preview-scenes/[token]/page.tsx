@@ -705,10 +705,17 @@ function PreviewScenesPageInner() {
                       // 2026-09-10 — same mobile-bottom-sheet/desktop-column
                       // split as PublicAnnotationsSidebar.tsx (see its own
                       // doc comment for the reasoning); every differing
-                      // property gets an explicit md: override.
+                      // property gets an explicit md: override. `pb-24`
+                      // unprefixed (2026-09-10 follow-up fix, Lino: "wird...
+                      // vom 'kommentar aus/textmarker' und dem kommentar
+                      // ein/ausblenden button verdeckt") — the compose box
+                      // pinned at the bottom of PublicSectionComments' own
+                      // flex column needs the SAME clearance from the
+                      // floating `fixed ... bottom-[18px]` toolbar/button
+                      // footprint on mobile that desktop already had.
                       className={`fixed z-[71] bg-[#1a1a1a] border-white/10 transition-[width] duration-200 flex flex-col
-                        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t
-                        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16 md:pb-24
+                        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t pb-24
+                        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16
                         ${sectionMobileOpen ? "" : "hidden"} md:flex
                         ${sectionSidebarCollapsed ? "md:w-12" : "md:w-[380px] md:max-w-[92vw] md:px-3"}`}
                     >

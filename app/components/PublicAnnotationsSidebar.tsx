@@ -64,10 +64,15 @@ export function PublicAnnotationsSidebar({
       // right-edge column, always shown, width driven by `collapsed`.
       // Every property that differs between the two gets an explicit `md:`
       // override so a stale mobileOpen from before a resize can never leak
-      // mobile-only sizing into the desktop layout.
+      // mobile-only sizing into the desktop layout. `pb-24` (unprefixed,
+      // so both mobile AND desktop get it — 2026-09-10 fix, Lino: "wird...
+      // vom 'kommentar aus/textmarker' und dem kommentar ein/ausblenden
+      // button verdeckt") clears the SAME `fixed ... bottom-[18px]`
+      // floating toolbar/button footprint on mobile that desktop already
+      // reserved space for.
       className={`fixed z-[70] bg-[#1a1a1a] border-white/10 transition-[width] duration-200 flex flex-col
-        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t
-        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16 md:pb-24
+        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t pb-24
+        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16
         ${mobileOpen ? "" : "hidden"} md:flex
         ${collapsed ? "md:w-12" : "md:w-[340px] md:max-w-[92vw]"}`}
     >
