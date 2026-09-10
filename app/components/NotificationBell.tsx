@@ -85,6 +85,11 @@ export function NotificationBell() {
     const comment = n.comment_id ? `&openComment=${n.comment_id}` : "";
     if (n.entity_kind === "idea" && n.entity_id) return `/projects/${n.project_id}?openIdea=${n.entity_id}${comment}`;
     if (n.entity_kind === "scene" && n.entity_id) return `/projects/${n.project_id}?openScene=${n.entity_id}${comment}`;
+    // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht,
+    // muss man direkt in diese shotliste kommen" — a section-scoped comment
+    // (no single scene to point at) lands on the Shotlist itself, mirroring
+    // the backend's identical _entity_deep_link branch used for emails.
+    if (n.entity_kind === "section" && n.entity_id) return `/projects/${n.project_id}?openSection=${n.entity_id}${comment}`;
     if (n.entity_kind === "video" && n.entity_id) return `/projects/${n.project_id}/postproduction?openVideo=${n.entity_id}${comment}`;
     if (n.entity_kind === "postproduction") return `/projects/${n.project_id}/postproduction`;
     return moduleAwareProjectHref(n.project_id, n);

@@ -6,7 +6,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
 import { useLanguage } from "@/lib/i18n";
-import type { Annotation, Scene } from "@/lib/types";
+import type { Annotation, Scene, Section } from "@/lib/types";
 
 const STATUS_TONES: Record<Annotation["status"], "default" | "good" | "danger"> = {
   // "draft" never actually reaches this panel (list_project_annotations
@@ -36,6 +36,7 @@ export function AnnotationsPanel({
   annotations,
   onChange,
   scenes,
+  sections,
   highlightedAnnotationId,
   onSelect,
   canDelete,
@@ -49,6 +50,10 @@ export function AnnotationsPanel({
   annotations: Annotation[];
   onChange: (updater: (annotations: Annotation[]) => Annotation[]) => void;
   scenes: Scene[];
+  /** 2026-09-10 — labels a section-scoped ("Shotlist"-level, no single
+   * scene) comment with the section's own name, same idea as sceneLabel
+   * below for scene-scoped ones. */
+  sections: Section[];
   highlightedAnnotationId?: string | null;
   /** Pulses the matching markup on the page and scrolls it into view —
    * see page.tsx's handleAnnotationSelect. */
@@ -186,6 +191,7 @@ export function AnnotationsPanel({
             )}
             {shown.map((a) => {
               const scene = scenes.find((s) => s.id === a.scene_id);
+              const section = a.section_id ? sections.find((s) => s.id === a.section_id) : undefined;
               return (
                 <div
                   key={a.id}
@@ -201,6 +207,7 @@ export function AnnotationsPanel({
                         {a.kind === "pen" ? t("annotationsPanel.kindSketch") : a.kind === "comment" ? t("annotationsPanel.kindComment") : t("annotationsPanel.kindHighlight")}
                       </Pill>
                       {scene && <Pill tone="default">{sceneLabel(scene)}</Pill>}
+                      {section && <Pill tone="default">{section.name}</Pill>}
                       <Pill tone={STATUS_TONES[a.status]}>{STATUS_LABELS[a.status]}</Pill>
                     </div>
                     {/* Date-only before (2026-07-15, Lino: "es braucht

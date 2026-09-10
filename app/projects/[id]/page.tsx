@@ -215,17 +215,22 @@ const sceneCollisionDetection: CollisionDetection = (args) => {
 function NotificationParamsWatcher({
   onParams,
 }: {
-  onParams: (params: { openIdea: string | null; openScene: string | null; openComment: string | null }) => void;
+  onParams: (params: { openIdea: string | null; openScene: string | null; openSection: string | null; openComment: string | null }) => void;
 }) {
   const searchParams = useSearchParams();
   const openIdea = searchParams.get("openIdea");
   const openScene = searchParams.get("openScene");
+  // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht, muss
+  // man direkt in diese shotliste kommen" — section-scoped comment
+  // notifications (no single scene to point at), same shape as openIdea/
+  // openScene above.
+  const openSection = searchParams.get("openSection");
   const openComment = searchParams.get("openComment");
   useEffect(() => {
-    if (!openIdea && !openScene && !openComment) return;
-    onParams({ openIdea, openScene, openComment });
+    if (!openIdea && !openScene && !openSection && !openComment) return;
+    onParams({ openIdea, openScene, openSection, openComment });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openIdea, openScene, openComment]);
+  }, [openIdea, openScene, openSection, openComment]);
   return null;
 }
 
@@ -272,6 +277,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // already on this exact project page).
   const [autoOpenIdeaId, setAutoOpenIdeaId] = useState<string | null>(null);
   const [autoOpenSceneId, setAutoOpenSceneId] = useState<string | null>(null);
+  // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht, muss
+  // man direkt in diese shotliste kommen" — section-scoped comment
+  // notifications, consumed by their own effect right after the
+  // autoOpenSceneId one below.
+  const [autoOpenSectionId, setAutoOpenSectionId] = useState<string | null>(null);
   const [autoOpenCommentId, setAutoOpenCommentId] = useState<string | null>(null);
   // Live-refreshed view of editingScene (2026-07-16, Lino: AI-Bild
   // aktualisiert sich nicht in der offenen Karte) — editingScene itself is
@@ -443,6 +453,18 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   function handleAnnotationSelect(annotation: Annotation) {
     setHighlightedAnnotationId(annotation.id);
     if (annotation.scene_id) {
+      // 2026-09-10 fix, Lino: "bei markierungskommentaren dann direkt zur
+      // markierung scrollen" — the scene tile only ever exists in the DOM
+      // while ITS OWN section is the one open (SectionBlock/
+      // SortableSceneCard are only rendered for `openSectionId`, see this
+      // page's own "Skript-Auswahlübersicht" comment above) — previously
+      // this only switched to the Scenes panel and left whatever section
+      // (or none) was already open, so the querySelector below silently
+      // found nothing whenever the scene's section wasn't already the open
+      // one. "__unsectioned__" mirrors the sentinel used everywhere else on
+      // this page for the "Ohne Abschnitt" bucket.
+      const scene = data?.scenes.find((s) => s.id === annotation.scene_id);
+      setOpenSectionId(scene?.section_id ?? "__unsectioned__");
       // The scene tile lives in the Scenes panel, which only exists in the
       // DOM while activeView === "scenes" (AnimatePresence mode="wait"
       // unmounts the Ideas panel first, then mounts this one) — switch,
@@ -451,6 +473,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setTimeout(() => {
         document.querySelector(`[data-sortable-scene-id="${annotation.scene_id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
       }, 600);
+    } else if (annotation.section_id) {
+      // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht,
+      // muss man direkt in diese shotliste kommen" — a section-scoped
+      // comment has no single scene to scroll to, so landing directly on
+      // that Shotlist (leaving the AnnotationsPanel open, already showing
+      // this entry highlighted) IS the whole destination.
+      setOpenSectionId(annotation.section_id);
+      goToScenes();
     } else if (annotation.idea_id) {
       // 2026-07-22, Lino: "muss man auf den Kommentar in der Seitenleiste
       // drücken können und es öffnet sich die Kachel mit dem Kommentar und
@@ -509,6 +539,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     const scene = data.scenes.find((s) => s.id === autoOpenSceneId);
     if (!scene) return;
     if (autoOpenCommentId) {
+      // 2026-09-10 fix — same DOM-only-while-section-is-open gap as
+      // handleAnnotationSelect's own fix above: without this, a fresh
+      // notification click landing here (rather than an in-app
+      // AnnotationsPanel click) had the exact same silent-scroll-into-
+      // nothing bug whenever the scene's section wasn't already open.
+      setOpenSectionId(scene.section_id ?? "__unsectioned__");
       setShowAnnotations(true);
       goToScenes();
       setTimeout(() => {
@@ -521,6 +557,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     router.replace(`/projects/${id}`, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSceneId, data]);
+  // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht, muss
+  // man direkt in diese shotliste kommen" — section-scoped comment
+  // notifications have no single scene to open/scroll to, so landing
+  // directly on the Shotlist (with the AnnotationsPanel open, showing this
+  // entry highlighted once the separate autoOpenCommentId effect above
+  // fires) IS the destination. Mirrors autoOpenSceneId's own effect shape.
+  useEffect(() => {
+    if (!autoOpenSectionId || !data) return;
+    // Reads data.sections directly (not the memoized `sections` derived
+    // further down this component) — that const isn't declared yet at this
+    // point in the function body, so referencing it here would throw.
+    const section = data.sections.find((s) => s.id === autoOpenSectionId);
+    if (!section) return;
+    setOpenSectionId(section.id);
+    goToScenes();
+    if (autoOpenCommentId) setShowAnnotations(true);
+    setAutoOpenSectionId(null);
+    router.replace(`/projects/${id}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenSectionId, data]);
   // Fires the actual highlight/pulse for EITHER kind, ~700ms after
   // whichever panel-switch above needs to settle first (idea card opening,
   // or the scene grid scroll-into-view) — see this block's own doc comment
@@ -1633,9 +1689,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     <AppShell>
       <Suspense fallback={null}>
         <NotificationParamsWatcher
-          onParams={({ openIdea, openScene, openComment }) => {
+          onParams={({ openIdea, openScene, openSection, openComment }) => {
             if (openIdea) setAutoOpenIdeaId(openIdea);
             if (openScene) setAutoOpenSceneId(openScene);
+            if (openSection) setAutoOpenSectionId(openSection);
             if (openComment) setAutoOpenCommentId(openComment);
           }}
         />
@@ -2544,6 +2601,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         annotations={annotations}
         onChange={(updater) => setAnnotations(updater)}
         scenes={data.scenes}
+        sections={data.sections}
         highlightedAnnotationId={highlightedAnnotationId}
         onSelect={handleAnnotationSelect}
         canDelete={canDeleteComments}
