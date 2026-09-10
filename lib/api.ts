@@ -562,20 +562,21 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     deleteVideoVersion: (id: string) => request<void>(`video-versions/${id}`, { method: "DELETE" }),
 
-    // ── Referenz-Video (2026-09-08) — ein Beispielvideo pro Projekt, ganz
-    // oben auf der Shotlist-Übersicht abspielbar. Gleicher presign-then-
-    // complete Ablauf wie Video-Versionen oben, minus Versionierung. ──────
-    createReferenceVideo: (projectId: string, file: File) =>
-      request<{ upload_url: string }>(`projects/${projectId}/reference-video`, {
+    // ── Referenz-Video (2026-09-08, moved to per-Section 2026-09-10 — "jede
+    // shotlist hat aber ihr eigenes scribble video!") — ein Beispielvideo
+    // pro Shotlist, ganz oben abspielbar. Gleicher presign-then-complete
+    // Ablauf wie Video-Versionen oben, minus Versionierung. ──────────────
+    createReferenceVideo: (sectionId: string, file: File) =>
+      request<{ upload_url: string }>(`sections/${sectionId}/reference-video`, {
         method: "POST",
         body: JSON.stringify({ original_filename: file.name, content_type: file.type || "video/mp4" }),
       }),
-    completeReferenceVideo: (projectId: string, durationSeconds?: number) =>
-      request<Project>(`projects/${projectId}/reference-video/complete`, {
+    completeReferenceVideo: (sectionId: string, durationSeconds?: number) =>
+      request<Section>(`sections/${sectionId}/reference-video/complete`, {
         method: "POST",
         body: JSON.stringify({ duration_seconds: durationSeconds ?? null }),
       }),
-    deleteReferenceVideo: (projectId: string) => request<void>(`projects/${projectId}/reference-video`, { method: "DELETE" }),
+    deleteReferenceVideo: (sectionId: string) => request<void>(`sections/${sectionId}/reference-video`, { method: "DELETE" }),
     getVideoVersionDownloadUrl: (id: string) =>
       request<{ url: string }>(`video-versions/${id}/download-url`).then((r) => r.url),
     // 2026-07-17: author_name kommt jetzt server-seitig vom eingeloggten

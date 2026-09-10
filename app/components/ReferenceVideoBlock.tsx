@@ -11,12 +11,12 @@ import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { IconButton } from "@/app/components/ui/Button";
 import { AuthImage } from "@/app/components/AuthImage";
-import type { Project } from "@/lib/types";
+import type { Section } from "@/lib/types";
 
 const ALLOWED_REFERENCE_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 
 type ReferenceVideoFields = Pick<
-  Project,
+  Section,
   | "reference_video_url"
   | "reference_video_status"
   | "reference_video_original_filename"
@@ -30,7 +30,7 @@ type ReferenceVideoFields = Pick<
  * root cause, same as VideoReviewModal.tsx's own `resolveVideoSrc` (see its
  * doc comment): `reference_video_url`/`reference_video_thumbnail_url` are
  * presigned R2 URLs re-signed FRESH on every single API response
- * (ProjectOut's `_presign_image` field_validator), while this page polls
+ * (SectionOut's `_presign_image` field_validator), while this page polls
  * `projectDetail` every 12s (projects/[id]/page.tsx). Handing a `<video>`/
  * `<img>` a changed `src` string on every poll — even though it's still the
  * exact same underlying file — forces the browser to restart it. Pins the
@@ -51,21 +51,23 @@ export function usePinnedUrl(url: string | null | undefined): string | null {
 
 /** 2026-09-08, Lino: "ganz oben in einer Shotlist soll man ein
  * Beispielvideo hochladen können, das man als Referenz abspielen lassen
- * kann" — shown above the Skript-Auswahlübersicht's Abschnitt-Kacheln
- * (projects/[id]/page.tsx). One slot per project (not per Abschnitt/
- * Section — a single reference for the whole shotlist), same presign-then-
- * complete upload flow the postproduction page's video versions already
- * use (see createReferenceVideo/completeReferenceVideo in lib/api.ts),
- * deliberately without versioning/comments/watermark — a single
- * replaceable file is enough here. */
+ * kann" — shown inside the currently open Shotlist (projects/[id]/page.tsx).
+ * 2026-09-10, Lino: "das scribble Video wird jetzt bei jeder shotlist
+ * dargestellt im projekt.. jede shotlist hat aber ihr eigenes scribble
+ * video!" — was one slot per PROJECT (every shotlist showed the same
+ * video), now one slot per Section/Shotlist, same presign-then-complete
+ * upload flow the postproduction page's video versions already use (see
+ * createReferenceVideo/completeReferenceVideo in lib/api.ts), deliberately
+ * without versioning/comments/watermark — a single replaceable file is
+ * enough here. */
 export function ReferenceVideoBlock({
-  projectId,
-  project,
+  sectionId,
+  section,
   onUpdate,
 }: {
-  projectId: string;
-  project: ReferenceVideoFields;
-  onUpdate: (patch: Partial<Project>) => void;
+  sectionId: string;
+  section: ReferenceVideoFields;
+  onUpdate: (patch: Partial<Section>) => void;
 }) {
   const { t } = useLanguage();
   const toast = useToast();
@@ -85,11 +87,11 @@ export function ReferenceVideoBlock({
     }
     setUploadProgress(0);
     try {
-      const { upload_url } = await api.createReferenceVideo(projectId, file);
+      const { upload_url } = await api.createReferenceVideo(sectionId, file);
       onUpdate({ reference_video_status: "uploading", reference_video_original_filename: file.name });
       await api.uploadVideoFile(upload_url, file, setUploadProgress);
       const meta = await readVideoMetadata(file);
-      const updated = await api.completeReferenceVideo(projectId, meta.duration);
+      const updated = await api.completeReferenceVideo(sectionId, meta.duration);
       onUpdate(updated);
     } catch (err) {
       toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.uploadFailed"));
@@ -102,7 +104,7 @@ export function ReferenceVideoBlock({
   async function handleDelete() {
     setConfirmingDelete(false);
     try {
-      await api.deleteReferenceVideo(projectId);
+      await api.deleteReferenceVideo(sectionId);
       onUpdate({
         reference_video_url: null,
         reference_video_status: null,
@@ -114,12 +116,12 @@ export function ReferenceVideoBlock({
     }
   }
 
-  const hasVideo = project.reference_video_status === "ready" && !!project.reference_video_url;
-  const pinnedVideoUrl = usePinnedUrl(project.reference_video_url);
-  const pinnedThumbnailUrl = usePinnedUrl(project.reference_video_thumbnail_url);
+  const hasVideo = section.reference_video_status === "ready" && !!section.reference_video_url;
+  const pinnedVideoUrl = usePinnedUrl(section.reference_video_url);
+  const pinnedThumbnailUrl = usePinnedUrl(section.reference_video_thumbnail_url);
   const thumbnailObjectPosition =
-    project.reference_video_thumbnail_focus_x != null && project.reference_video_thumbnail_focus_y != null
-      ? `${(project.reference_video_thumbnail_focus_x * 100).toFixed(1)}% ${(project.reference_video_thumbnail_focus_y * 100).toFixed(1)}%`
+    section.reference_video_thumbnail_focus_x != null && section.reference_video_thumbnail_focus_y != null
+      ? `${(section.reference_video_thumbnail_focus_x * 100).toFixed(1)}% ${(section.reference_video_thumbnail_focus_y * 100).toFixed(1)}%`
       : undefined;
 
   return (

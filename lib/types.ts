@@ -214,6 +214,19 @@ export interface Section {
   timecode_fps: number | null;
   timecode_offset_seconds: number;
   timecode_synced_at: string | null;
+  /** 2026-09-10 — moved from Project (every shotlist showed the SAME video
+   * before) to here, one reference video per Section/Shotlist — see
+   * backend Section.reference_video_url's own doc comment. Same shape
+   * Project's own fields used to have; `reference_video_url` is already a
+   * presigned, directly playable R2 URL (SectionOut._presign_reference_video_url),
+   * not a raw key. */
+  reference_video_url: string | null;
+  reference_video_status: "uploading" | "ready" | null;
+  reference_video_original_filename: string | null;
+  reference_video_duration_seconds: number | null;
+  reference_video_thumbnail_url: string | null;
+  reference_video_thumbnail_focus_x: number | null;
+  reference_video_thumbnail_focus_y: number | null;
 }
 
 export type PostproductionStatus = "wartend" | "in_bearbeitung" | "wartet_auf_feedback" | "abgeschlossen" | "abgelehnt";

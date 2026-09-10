@@ -638,21 +638,28 @@ function PreviewScenesPageInner() {
                 const sectionHighlightAnnotations = scenes.flatMap((s) => annotationsByScene.get(s.id) ?? []);
                 return (
                   <div>
+                    {/* 2026-09-10, Lino: "über dem 'zur übersicht' button
+                        nochmals gross der titel des Videos" — moved above
+                        the back button and bumped to match the page's own
+                        h1 size (was a smaller h2 below the button). */}
+                    <h2 className="text-2xl font-bold text-white mb-3">{openSection.name}</h2>
                     <button
                       onClick={() => setOpenSectionId(null)}
                       className="mb-4 text-sm text-white/60 hover:text-white flex items-center gap-1.5"
                     >
                       ← {t("scriptOverview.backToOverview")}
                     </button>
-                    <h2 className="text-[17px] font-bold text-white mb-3">{openSection.name}</h2>
-                    {data && (
-                      <PublicReferenceVideoBlock
-                        url={data.reference_video_url}
-                        thumbnailUrl={data.reference_video_thumbnail_url}
-                        thumbnailFocusX={data.reference_video_thumbnail_focus_x}
-                        thumbnailFocusY={data.reference_video_thumbnail_focus_y}
-                      />
-                    )}
+                    {/* 2026-09-10 fix — was data.reference_video_* (one
+                        video for the whole project, every shotlist showed
+                        the same one); now genuinely scoped to THIS
+                        shotlist, see Section.reference_video_url's own doc
+                        comment on the backend. */}
+                    <PublicReferenceVideoBlock
+                      url={openSection.reference_video_url}
+                      thumbnailUrl={openSection.reference_video_thumbnail_url}
+                      thumbnailFocusX={openSection.reference_video_thumbnail_focus_x}
+                      thumbnailFocusY={openSection.reference_video_thumbnail_focus_y}
+                    />
                     <div className="mb-4 max-w-xs">
                       <SegmentedControl
                         value={shotOrderMode ? "shots" : "scenes"}

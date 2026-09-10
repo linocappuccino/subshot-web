@@ -154,7 +154,7 @@ const translations = {
     // 2026-09-08 — Referenz-Video, ganz oben auf der Shotlist-Übersicht.
     // 2026-09-08, Lino: "der button soll heissen 'scribble Video
     // hinzufügen'" — user-facing label only, internal key/DB naming stays
-    // reference_video_* (see Project.reference_video_url in models.py).
+    // reference_video_* (see Section.reference_video_url in models.py).
     "referenceVideo.upload": "Scribble Video hinzufügen",
     "referenceVideo.replace": "Scribble Video ersetzen",
     "referenceVideo.play": "Scribble Video abspielen",

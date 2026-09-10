@@ -2071,16 +2071,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           </div>
         ) : (
           <>
-            <button
-              onClick={() => {
-                setOpenSectionId(null);
-                setShotOrderMode(false);
-              }}
-              className="mb-4 text-sm text-white/60 hover:text-white flex items-center gap-1.5"
-            >
-              ← {t("scriptOverview.backToOverview")}
-            </button>
-
             {/* 2026-08-30 — Set-Marker-Feature (Timecode-Leiste), NUR
                 innerhalb der geöffneten Shotlist sichtbar (Lino: "der
                 timecode muss immer in der shotlist selber laufen! NICHT
@@ -2089,28 +2079,50 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 frische Komponenten-Instanz (frisches selectedFps etc.) bei
                 jedem Abschnittswechsel, kein Zustand leckt zwischen
                 Abschnitten. `allScenesDone` beendet die laufende Uhr
-                automatisch, sobald jede Szene "im Kasten" ist. */}
+                automatisch, sobald jede Szene "im Kasten" ist.
+                2026-09-10, Lino: "über dem 'zur übersicht' button nochmals
+                gross der titel des Videos" — one lookup now covers the
+                title, back button, TimecodeBar and ReferenceVideoBlock
+                together (used to be a bare button + two separate IIFEs
+                each re-finding openSection). */}
             {(() => {
               const openSection = sections.find((s) => s.id === openSectionId);
               if (!openSection) return null;
               const scenesInSection = scenesIn(openSection.id);
               const allScenesDone = scenesInSection.length > 0 && scenesInSection.every((s) => s.completed);
-              return <TimecodeBar key={openSection.id} section={openSection} allScenesDone={allScenesDone} />;
+              return (
+                <>
+                  <h1 className="text-2xl font-bold text-white mb-3">{openSection.name}</h1>
+                  <button
+                    onClick={() => {
+                      setOpenSectionId(null);
+                      setShotOrderMode(false);
+                    }}
+                    className="mb-4 text-sm text-white/60 hover:text-white flex items-center gap-1.5"
+                  >
+                    ← {t("scriptOverview.backToOverview")}
+                  </button>
+                  <TimecodeBar key={openSection.id} section={openSection} allScenesDone={allScenesDone} />
+                  {/* 2026-09-08, Lino: "unter der framerate und timecode
+                      funktion kommt das scribble video, dann die szenen
+                      sortierung, und dann der abschnitt mit den szenen" —
+                      2026-09-10 fix: was one reference video for the whole
+                      PROJECT (every shotlist showed the same one) — now
+                      genuinely scoped to THIS shotlist. */}
+                  <ReferenceVideoBlock
+                    sectionId={openSection.id}
+                    section={openSection}
+                    onUpdate={(patch) =>
+                      setData((prev) =>
+                        prev
+                          ? { ...prev, sections: prev.sections.map((s) => (s.id === openSection.id ? { ...s, ...patch } : s)) }
+                          : prev
+                      )
+                    }
+                  />
+                </>
+              );
             })()}
-
-            {/* 2026-09-08, Lino: "unter der framerate und timecode funktion
-                kommt das scribble video, dann die szenen sortierung, und
-                dann der abschnitt mit den szenen" — one reference video for
-                the whole project (not per Abschnitt), shown inside whichever
-                shotlist is currently open, between the TimecodeBar above and
-                the Szenen-/Shot-Reihenfolge toggle below. */}
-            {data && (
-              <ReferenceVideoBlock
-                projectId={data.id}
-                project={data}
-                onUpdate={(patch) => setData((prev) => (prev ? { ...prev, ...patch } : prev))}
-              />
-            )}
 
             {/* 2026-09-07, Lino: "2 sortierfunktionien 1. die
                 Szenenreihenfolge 2. Shotreihenfolge. diese 2 sortierungen
