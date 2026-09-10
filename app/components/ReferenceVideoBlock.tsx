@@ -145,6 +145,22 @@ export function ReferenceVideoBlock({
             />
           </div>
         </div>
+      ) : section.reference_video_status === "processing" ? (
+        // 2026-09-10, Lino: "das scribble Video braucht extrem lange zu
+        // laden wenn man es abspielt! wird es komprimiert?" — it wasn't;
+        // now it is (see complete_reference_video/compress_for_web on the
+        // backend), and this is the window while that background
+        // compression runs (client's own upload already finished — no
+        // percent to show, unlike the branch above). Same shape as
+        // AnnotationsPanel-adjacent "please wait" states elsewhere in this
+        // app, indeterminate spinner instead of a progress bar.
+        <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex items-center gap-2.5">
+          <svg className="animate-spin w-4 h-4 text-white/50" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span className="text-sm font-medium text-white/70">{t("referenceVideo.processing")}</span>
+        </div>
       ) : hasVideo ? (
         <div className="relative w-full sm:w-72 rounded-2xl bg-black overflow-hidden border border-white/10">
           {/* 2026-09-08, Lino: "es soll ein thumbnail dargestellt werden und

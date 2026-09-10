@@ -221,7 +221,10 @@ export interface Section {
    * presigned, directly playable R2 URL (SectionOut._presign_reference_video_url),
    * not a raw key. */
   reference_video_url: string | null;
-  reference_video_status: "uploading" | "ready" | null;
+  /** 2026-09-10 — "processing" added: the window between the client's raw
+   * upload finishing and the backend's web-compression background task
+   * finishing (see video_processing.compress_for_web on the backend). */
+  reference_video_status: "uploading" | "processing" | "ready" | null;
   reference_video_original_filename: string | null;
   reference_video_duration_seconds: number | null;
   reference_video_thumbnail_url: string | null;

@@ -163,6 +163,7 @@ const translations = {
     "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
     "referenceVideo.deleteTitle": "Scribble Video löschen?",
     "referenceVideo.deleteMessage": "Das Scribble Video wird endgültig entfernt.",
+    "referenceVideo.processing": "Video wird optimiert…",
 
     // Common buttons/actions reused across many dialogs
     "common.save": "Speichern",
@@ -1060,6 +1061,7 @@ const translations = {
     "referenceVideo.deleteFailed": "Delete failed.",
     "referenceVideo.deleteTitle": "Delete scribble video?",
     "referenceVideo.deleteMessage": "The scribble video will be removed permanently.",
+    "referenceVideo.processing": "Optimizing video…",
 
     "common.save": "Save",
     "common.cancel": "Cancel",
