@@ -16,6 +16,7 @@ import type { Annotation } from "@/lib/types";
  * on this app. */
 export function PublicAnnotationsSidebar({
   annotations, onDelete, onSelect, highlightedId, onClose, collapsed, onToggleCollapsed,
+  mobileOpen, onCloseMobile,
 }: {
   annotations: Annotation[];
   onDelete: (annotation: Annotation) => void;
@@ -27,9 +28,19 @@ export function PublicAnnotationsSidebar({
   // content never made room). Parent shrinks this to a slim edge tab via
   // `collapsed` and mirrors the width as right-padding on the content
   // column, so content visibly shifts left clear of the sidebar whenever
-  // it's expanded.
+  // it's expanded. Desktop-only now (md: and up) — see mobileOpen below.
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  // 2026-09-10, Lino: "die kommentarleiste soll [auf mobile] anders ein
+  // und ausblendbar sein... mit einem button öffnet sich die
+  // kommentarspalte" — below `md:` this sidebar is a bottom sheet instead
+  // of a right-edge column: fully hidden by default (no edge tab, no
+  // content reserve at all), opened via a dedicated floating button the
+  // parent page renders (md:hidden), closed via this sheet's own header ×
+  // or the same button again. Completely independent of `collapsed`
+  // (a desktop-only concept) — a phone never shows the slim tab state.
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
 }) {
   const { t } = useLanguage();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -48,9 +59,17 @@ export function PublicAnnotationsSidebar({
 
   return (
     <div
-      className={`fixed right-0 top-0 bottom-0 z-[70] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
-        collapsed ? "w-12" : "w-[340px] max-w-[92vw] overflow-y-auto px-3"
-      }`}
+      // Mobile (default): bottom sheet, fixed to the bottom edge, full
+      // width, hidden entirely unless mobileOpen. Desktop (md:): unchanged
+      // right-edge column, always shown, width driven by `collapsed`.
+      // Every property that differs between the two gets an explicit `md:`
+      // override so a stale mobileOpen from before a resize can never leak
+      // mobile-only sizing into the desktop layout.
+      className={`fixed z-[70] bg-[#1a1a1a] border-white/10 transition-[width] duration-200 flex flex-col
+        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t
+        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16 md:pb-24
+        ${mobileOpen ? "" : "hidden"} md:flex
+        ${collapsed ? "md:w-12" : "md:w-[340px] md:max-w-[92vw]"}`}
     >
       {/* 2026-09-08, Lino: two fixes — (1) arrow direction was backwards
           (open should point "into" the panel, i.e. right since it's on the
@@ -59,25 +78,41 @@ export function PublicAnnotationsSidebar({
           clip the scrolling list) was ALSO clipping this button itself
           while collapsed, since it pokes out past the parent's left edge
           via `-left-3` — dropped overflow-hidden from the collapsed state
-          entirely (nothing left to overflow once the list below is hidden). */}
+          entirely (nothing left to overflow once the list below is hidden).
+          2026-09-10 — desktop-only now, mobile has its own sheet header
+          (below) with a plain × instead of a collapse tab. */}
       <button
         type="button"
         onClick={onToggleCollapsed}
         title={t(collapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
         aria-label={t(collapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
-        className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        className="hidden md:flex absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
           {collapsed ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
         </svg>
       </button>
-      {collapsed ? (
-        <div className="flex flex-col items-center gap-1 pt-1 text-white/40">
+      {/* 2026-09-10 — mobile sheet header: drag-handle affordance (purely
+          visual, no swipe gesture wired up) + title + close, replacing the
+          desktop collapse-tab on small screens. */}
+      <div className="md:hidden flex items-center justify-center pt-2 pb-1 shrink-0">
+        <div className="w-10 h-1 rounded-full bg-white/20" />
+      </div>
+      <div className="md:hidden flex items-center justify-between px-4 pb-3 shrink-0">
+        <h2 className="text-sm font-semibold text-white/80">{t("publicAnnotationsSidebar.title", { count: annotations.length })}</h2>
+        <button onClick={onCloseMobile} className="rounded-full p-1.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors" aria-label={t("modal.closeAria")}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      {collapsed && (
+        <div className="hidden md:flex md:flex-col items-center gap-1 pt-1 text-white/40">
           <span className="text-[11px] font-semibold">{annotations.length}</span>
         </div>
-      ) : (
-        <>
-      <div className="flex items-center justify-between px-1 pb-3">
+      )}
+      <div className={`${collapsed ? "md:hidden" : ""} flex-1 min-h-0 overflow-y-auto px-4 md:px-3 pb-4 md:pb-0`}>
+      <div className="hidden md:flex items-center justify-between px-1 pb-3">
         <h2 className="text-sm font-semibold text-white/80">{t("publicAnnotationsSidebar.title", { count: annotations.length })}</h2>
         <button onClick={onClose} className="rounded-full p-1.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors" aria-label={t("modal.closeAria")}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -121,8 +156,7 @@ export function PublicAnnotationsSidebar({
           </div>
         ))}
       </div>
-        </>
-      )}
+      </div>
     </div>
   );
 }

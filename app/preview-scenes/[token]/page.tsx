@@ -81,6 +81,16 @@ function PreviewScenesPageInner() {
   // floating on top.
   const [highlightSidebarCollapsed, setHighlightSidebarCollapsed] = useState(false);
   const [sectionSidebarCollapsed, setSectionSidebarCollapsed] = useState(false);
+  // 2026-09-10, Lino: "die kommentarleiste soll [auf mobile] anders ein und
+  // ausblendbar sein... evtl. mit einem button öffnet sich die
+  // kommentarspalte" — the desktop collapse-to-slim-tab above doesn't
+  // really work on a phone (48px is still a persistent strip, and the tiny
+  // edge-pull is easy to miss/mistap). Below `md:` both sidebars become
+  // bottom sheets instead, fully hidden by default and opened via
+  // mobileCommentsButton further down — independent of the desktop
+  // collapsed booleans, which stay purely a desktop concept now.
+  const [highlightMobileOpen, setHighlightMobileOpen] = useState(false);
+  const [sectionMobileOpen, setSectionMobileOpen] = useState(false);
   // 2026-08-31, Todoist #96 — Skript-Auswahlübersicht (mirrors the
   // authenticated app's own openSectionId, see projects/[id]/page.tsx):
   // visitors see a tile overview of the project's sections ("Skripte")
@@ -494,13 +504,20 @@ function PreviewScenesPageInner() {
   return (
     <div className="min-h-screen bg-[#161616] text-white" style={{ "--accent": data?.project_color ?? "#3875bd" } as React.CSSProperties}>
       <div
-        className="max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28 transition-[padding-right] duration-200"
+        // 2026-09-10 — reserve is desktop-only now (md:pr-[var(...)]— both
+        // sidebars are bottom sheets on mobile, not a right-side column, so
+        // content never needs to make room for them there at all; only the
+        // CSS var itself is set unconditionally (harmless without the class
+        // consuming it).
+        className={`max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28 transition-[padding-right] duration-200 ${
+          contentSidebarReserve ? "md:pr-[var(--sidebar-reserve)]" : ""
+        }`}
         // 2026-09-08 follow-up audit fix: was capped at 45vw while the
         // sidebars themselves clamp at `max-w-[92vw]` — on anything narrower
         // than ~800px (i.e. exactly the "kleine Bildschirme" this feature
         // targets) the reserve was smaller than the sidebar's real on-screen
         // width, so content was still partly covered. Cap now matches.
-        style={contentSidebarReserve ? { paddingRight: `min(${contentSidebarReserve}px, 92vw)` } : undefined}
+        style={contentSidebarReserve ? ({ "--sidebar-reserve": `min(${contentSidebarReserve}px, 92vw)` } as React.CSSProperties) : undefined}
       >
         <a href="https://subshot.ch" className="inline-flex items-baseline gap-1.5 mb-1 hover:opacity-80 transition-opacity">
           {data?.team_logo_url ? (
@@ -678,9 +695,15 @@ function PreviewScenesPageInner() {
                         right here instead of switching `mode` to open the
                         separate, now-redundant PublicAnnotationsSidebar. */}
                     <div
-                      className={`fixed right-0 top-0 bottom-0 z-[71] bg-[#1a1a1a] border-l border-white/10 pt-16 pb-24 transition-[width] duration-200 ${
-                        sectionSidebarCollapsed ? "w-12" : "w-[380px] max-w-[92vw] px-3"
-                      }`}
+                      // 2026-09-10 — same mobile-bottom-sheet/desktop-column
+                      // split as PublicAnnotationsSidebar.tsx (see its own
+                      // doc comment for the reasoning); every differing
+                      // property gets an explicit md: override.
+                      className={`fixed z-[71] bg-[#1a1a1a] border-white/10 transition-[width] duration-200 flex flex-col
+                        inset-x-0 bottom-0 max-h-[80vh] rounded-t-2xl border-t
+                        md:inset-x-auto md:right-0 md:top-0 md:bottom-0 md:max-h-none md:rounded-t-none md:border-t-0 md:border-l md:pt-16 md:pb-24
+                        ${sectionMobileOpen ? "" : "hidden"} md:flex
+                        ${sectionSidebarCollapsed ? "md:w-12" : "md:w-[380px] md:max-w-[92vw] md:px-3"}`}
                     >
                       {/* 2026-09-08, Lino: sidebar overlapped the shotlist
                           tiles on small screens — collapse tab shrinks this
@@ -693,18 +716,40 @@ function PreviewScenesPageInner() {
                           was clipping this button itself (it pokes out past
                           the left edge via `-left-3`) — dropped, nothing
                           left to overflow once the content div below is
-                          hidden instead of unmounted. */}
+                          hidden instead of unmounted. 2026-09-10 —
+                          desktop-only now, see the mobile sheet header
+                          right below for the phone equivalent. */}
                       <button
                         type="button"
                         onClick={() => setSectionSidebarCollapsed((v) => !v)}
                         title={t(sectionSidebarCollapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
                         aria-label={t(sectionSidebarCollapsed ? "previewPage.expandSidebar" : "previewPage.collapseSidebar")}
-                        className="absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                        className="hidden md:flex absolute top-1/2 -left-3 -translate-y-1/2 z-10 w-6 h-10 rounded-full bg-[#2a2a2a] border border-white/10 items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                           {sectionSidebarCollapsed ? <path d="M15 6l-6 6 6 6" /> : <path d="M9 6l6 6-6 6" />}
                         </svg>
                       </button>
+                      {/* 2026-09-10 — mobile sheet header: drag-handle
+                          affordance + close, same shape as
+                          PublicAnnotationsSidebar's own mobile header
+                          (PublicSectionComments already renders its own
+                          "Feedback (N)" title inside itself, so no
+                          duplicate title needed here). */}
+                      <div className="md:hidden flex items-center justify-center pt-2 pb-1 shrink-0">
+                        <div className="w-10 h-1 rounded-full bg-white/20" />
+                      </div>
+                      <div className="md:hidden flex justify-end px-3 pb-1 shrink-0">
+                        <button
+                          onClick={() => setSectionMobileOpen(false)}
+                          className="rounded-full p-1.5 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                          aria-label={t("modal.closeAria")}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M18 6 6 18M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
                       {/* 2026-09-08 follow-up audit fix: was conditionally
                           MOUNTING/unmounting PublicSectionComments itself on
                           collapse, which wiped its local draft/myDrafts/
@@ -713,8 +758,13 @@ function PreviewScenesPageInner() {
                           silently vanish from the UI on collapse. Stays
                           mounted always now, same "hide via a CSS class"
                           approach PublicAnnotationsSidebar already uses for
-                          its own collapse. */}
-                      <div className={sectionSidebarCollapsed ? "hidden" : "h-full"}>
+                          its own collapse. `collapsed` is a desktop-only
+                          concept (2026-09-10) — on mobile this div is only
+                          ever in the DOM at all while sectionMobileOpen
+                          (the whole outer sheet is hidden otherwise), so it
+                          always shows there regardless of `collapsed`'s
+                          stale desktop value. */}
+                      <div className={sectionSidebarCollapsed ? "hidden md:hidden" : "flex-1 min-h-0 px-3 md:px-0"}>
                         {/* Lino's explicit ask: leaving feedback here works
                             "exactly like the Ideas page" — one comment
                             thread for the whole opened shotlist, not per
@@ -784,7 +834,36 @@ function PreviewScenesPageInner() {
           onClose={() => setMode("off")}
           collapsed={highlightSidebarCollapsed}
           onToggleCollapsed={() => setHighlightSidebarCollapsed((v) => !v)}
+          mobileOpen={highlightMobileOpen}
+          onCloseMobile={() => setHighlightMobileOpen(false)}
         />
+      )}
+
+      {/* 2026-09-10, Lino: "die kommentarleiste soll [auf mobile] anders
+          ein und ausblendbar sein... mit einem button öffnet sich die
+          kommentarspalte" — the one dedicated way to open whichever
+          comment sheet is currently relevant on a phone (md:hidden — the
+          desktop edge-tabs on both sidebars cover this there already).
+          Bottom-LEFT so it never collides with the existing off/Textmarker
+          toolbar pill opposite it. Only rendered while a sheet actually
+          has something to open, same conditions as the two sidebars
+          themselves. */}
+      {((mode === "highlight" && openSectionId === null) || openSectionId !== null) && (
+        <button
+          type="button"
+          onClick={() => (openSectionId !== null ? setSectionMobileOpen(true) : setHighlightMobileOpen(true))}
+          aria-label={t("previewPage.openComments")}
+          className="md:hidden fixed left-[18px] bottom-[18px] z-[80] w-12 h-12 rounded-full bg-[#212121] border border-white/10 shadow-2xl flex items-center justify-center text-white/80"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+          </svg>
+          {(openSectionId !== null ? (commentsBySection.get(openSectionId)?.length ?? 0) : annotations.length) > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[var(--accent)] text-white text-[10px] font-bold flex items-center justify-center">
+              {openSectionId !== null ? (commentsBySection.get(openSectionId)?.length ?? 0) : annotations.length}
+            </span>
+          )}
+        </button>
       )}
 
       {pending && (
