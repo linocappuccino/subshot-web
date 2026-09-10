@@ -307,14 +307,29 @@ function flipTransform(from: DOMRect, to: DOMRect): string {
  * (tap-to-toggle-play + an explicit fullscreen button, `requestFullscreen`
  * on the video element itself) matching the minimal custom-controls style
  * of that reference site's own player — which, same as this one now, has
- * no seek bar either. */
+ * no seek bar either.
+ *
+ * 2026-09-10, same day, Lino: "bitte eine timeline leiste einbauen, man
+ * muss durch das video scrubben können" — a real, if unwelcome, gap from
+ * dropping native `<video controls>` right above: this now grows its own
+ * click/drag scrub bar, same click-to-seek + window-level drag + smooth
+ * per-animation-frame progress pattern VideoReviewModal.tsx's own timeline
+ * already established (see that file's own doc comments on WHY each of
+ * those exists — jerky/inaccurate dragging otherwise), just without any of
+ * that file's comment-marker machinery this single-file player has no use
+ * for. */
 export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: string; originRect: DOMRect | null; onClose: () => void }) {
   const { t } = useLanguage();
   const boxRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const isDraggingRef = useRef(false);
   const [closing, setClosing] = useState(false);
   const [paused, setPaused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   function requestClose() {
     if (closing) return;
@@ -387,6 +402,71 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
     else video.pause();
   }
 
+  function fractionFromClientX(clientX: number): number {
+    if (!timelineRef.current) return 0;
+    const rect = timelineRef.current.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  }
+
+  function seekToFraction(fraction: number) {
+    setCurrentTime(fraction * duration);
+    const video = videoRef.current;
+    if (video && duration > 0) video.currentTime = fraction * duration;
+  }
+
+  // Same "seek immediately on mousedown (feels dead otherwise), then keep
+  // following the mouse via a window-level listener so the drag survives
+  // leaving this thin bar" pattern as VideoReviewModal.tsx's own timeline.
+  function handleTimelinePointerDown(e: React.MouseEvent<HTMLDivElement>) {
+    e.stopPropagation();
+    if (duration <= 0) return;
+    isDraggingRef.current = true;
+    setIsDragging(true);
+    seekToFraction(fractionFromClientX(e.clientX));
+  }
+
+  useEffect(() => {
+    if (!isDragging) return;
+    function onMove(e: MouseEvent) {
+      seekToFraction(fractionFromClientX(e.clientX));
+    }
+    function onUp() {
+      isDraggingRef.current = false;
+      setIsDragging(false);
+    }
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDragging, duration]);
+
+  // Same fix as VideoReviewModal.tsx's own progress bar (see its doc
+  // comment) — native `timeupdate` alone only fires ~4x/sec, which reads as
+  // visible little jumps rather than a smooth sweep. Polls every animation
+  // frame while actually playing instead; skipped during a manual drag,
+  // which already drives currentTime directly above.
+  useEffect(() => {
+    if (paused) return;
+    let raf: number;
+    function tick() {
+      if (!isDraggingRef.current && videoRef.current) setCurrentTime(videoRef.current.currentTime);
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [paused]);
+
+  function formatTime(seconds: number): string {
+    const s = Math.max(0, Math.floor(seconds));
+    const m = Math.floor(s / 60);
+    return `${m}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+
   if (typeof document === "undefined") return null;
 
   return createPortal(
@@ -417,6 +497,10 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
           onClick={togglePlay}
           onPlay={() => setPaused(false)}
           onPause={() => setPaused(true)}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+          onTimeUpdate={(e) => {
+            if (!isDraggingRef.current) setCurrentTime(e.currentTarget.currentTime);
+          }}
           className="block max-w-[92vw] max-h-[88vh] cursor-pointer"
         />
         {paused && (
@@ -426,22 +510,46 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
             </div>
           </div>
         )}
-        <button
-          type="button"
-          onClick={toggleFullscreen}
-          aria-label={t(isFullscreen ? "referenceVideo.exitFullscreen" : "referenceVideo.fullscreen")}
-          className="absolute bottom-3 right-3 w-9 h-9 rounded-full bg-black/50 backdrop-blur-sm hover:bg-black/70 flex items-center justify-center text-white transition-colors"
+        {/* 2026-09-10 — scrub bar, bottom control strip. Gradient scrim
+            behind it keeps the time labels/fullscreen icon legible over
+            bright footage without needing a solid bar. */}
+        <div
+          className="absolute inset-x-0 bottom-0 pt-8 pb-2.5 px-3 bg-gradient-to-t from-black/70 to-transparent"
+          onClick={(e) => e.stopPropagation()}
         >
-          {isFullscreen ? (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M9 21v-3a2 2 0 0 0-2-2H4M15 21v-3a2 2 0 0 1 2-2h3" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
-            </svg>
-          )}
-        </button>
+          <div
+            ref={timelineRef}
+            onMouseDown={handleTimelinePointerDown}
+            className="group/timeline relative w-full h-1.5 rounded-full bg-white/25 cursor-pointer mb-2"
+          >
+            <div className="absolute inset-y-0 left-0 rounded-full bg-white" style={{ width: `${progressPct}%` }} />
+            <div
+              className="absolute top-1/2 w-3 h-3 rounded-full bg-white shadow -translate-y-1/2 -translate-x-1/2 opacity-0 group-hover/timeline:opacity-100 transition-opacity"
+              style={{ left: `${progressPct}%`, opacity: isDragging ? 1 : undefined }}
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-white/80 tabular-nums">
+              {formatTime(currentTime)} / {formatTime(duration)}
+            </span>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-label={t(isFullscreen ? "referenceVideo.exitFullscreen" : "referenceVideo.fullscreen")}
+              className="w-8 h-8 -mr-1 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              {isFullscreen ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 3v3a2 2 0 0 1-2 2H4M15 3v3a2 2 0 0 0 2 2h3M9 21v-3a2 2 0 0 0-2-2H4M15 21v-3a2 2 0 0 1 2-2h3" />
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     </div>,
     document.body
