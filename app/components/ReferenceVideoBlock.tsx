@@ -81,8 +81,19 @@ export function ReferenceVideoBlock({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingVideoId, setUploadingVideoId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [lightboxVideoId, setLightboxVideoId] = useState<string | null>(null);
-  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
+  // 2026-09-11 (bugfix) — ONE state object, set in a SINGLE setState call
+  // from the tile's onClick, holding exactly the (already-pinned) url +
+  // rect that click needs. Was two separate pieces of state
+  // (`lightboxVideoId` + `lightboxOriginRect`, with the url re-derived via
+  // `videos.find(...)` + a SECOND, independent `usePinnedUrl` call in a
+  // wrapper component) — Lino: "jetzt kommt das video beim start der
+  // animation irgendwo her... es muss doch daher kommen wo das video im
+  // Browser ursprünglich ist". Splitting the open-rect across two state
+  // slots (even though both were set back-to-back) plus re-resolving the
+  // url in a completely different component left room for the lightbox to
+  // mount against a stale/mismatched rect from a PREVIOUS click; a single
+  // atomic object removes that entirely.
+  const [lightbox, setLightbox] = useState<{ url: string; originRect: DOMRect } | null>(null);
 
   const videos = section.reference_videos;
   // Read via a ref (not the `videos` const above) inside the async upload
@@ -191,17 +202,21 @@ export function ReferenceVideoBlock({
       />
       <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={videos.map((v) => v.id)} strategy={rectSortingStrategy}>
-          <div className="flex flex-wrap gap-3">
+          {/* 2026-09-11, Lino: "es sollen 3 videos pro zeile sein, passe die
+              grösse der videos genau so an, dass es die breite füllt von
+              der contentbreite der seite" — CSS grid instead of flex-wrap
+              fixed-width tiles: each column is an equal 1fr share of the
+              full content width, so 3 tiles always fill it exactly (no
+              leftover gap on the last one) instead of wrapping to however
+              many 288px-wide tiles happen to fit. 1 column on mobile. */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {videos.map((video, index) => (
               <ReferenceVideoSortableTile
                 key={video.id}
                 video={video}
                 label={`V${index + 1}`}
                 uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
-                onOpen={(rect) => {
-                  setLightboxOriginRect(rect);
-                  setLightboxVideoId(video.id);
-                }}
+                onOpen={(rect, url) => setLightbox({ originRect: rect, url })}
                 onDelete={() => setDeleteTargetId(video.id)}
               />
             ))}
@@ -210,7 +225,7 @@ export function ReferenceVideoBlock({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="w-full sm:w-72 aspect-video flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 transition-colors text-sm font-medium"
+              className="w-full aspect-video flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 transition-colors text-sm font-medium"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 5v14M5 12h14" />
@@ -227,35 +242,11 @@ export function ReferenceVideoBlock({
         onConfirm={handleDelete}
         onCancel={() => setDeleteTargetId(null)}
       />
-      {(() => {
-        const lightboxVideo = videos.find((v) => v.id === lightboxVideoId);
-        return lightboxVideo ? (
-          <PinnedReferenceVideoLightbox
-            video={lightboxVideo}
-            originRect={lightboxOriginRect}
-            onClose={() => setLightboxVideoId(null)}
-          />
-        ) : null;
-      })()}
+      {lightbox && (
+        <ReferenceVideoLightbox url={lightbox.url} originRect={lightbox.originRect} onClose={() => setLightbox(null)} />
+      )}
     </div>
   );
-}
-
-// Own tiny component (not an inline IIFE calling the hook directly) so
-// usePinnedUrl below is called from something React recognizes as a
-// component, not a plain function invoked mid-render.
-function PinnedReferenceVideoLightbox({
-  video,
-  originRect,
-  onClose,
-}: {
-  video: ReferenceVideo;
-  originRect: DOMRect | null;
-  onClose: () => void;
-}) {
-  const pinnedUrl = usePinnedUrl(video.url);
-  if (!pinnedUrl) return null;
-  return <ReferenceVideoLightbox url={pinnedUrl} originRect={originRect} onClose={onClose} />;
 }
 
 /** Drag handle wrapper around ReferenceVideoTile (2026-09-11 — "man muss
@@ -270,7 +261,7 @@ function ReferenceVideoSortableTile(props: {
   video: ReferenceVideo;
   label: string;
   uploadProgress: number | null;
-  onOpen: (originRect: DOMRect) => void;
+  onOpen: (originRect: DOMRect, url: string) => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.video.id });
@@ -280,7 +271,7 @@ function ReferenceVideoSortableTile(props: {
       style={{ transform: DndCSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       {...attributes}
       {...listeners}
-      className="w-full sm:w-72 touch-none cursor-grab active:cursor-grabbing"
+      className="w-full touch-none cursor-grab active:cursor-grabbing"
     >
       <ReferenceVideoTile {...props} />
     </div>
@@ -303,7 +294,7 @@ function ReferenceVideoTile({
   video: ReferenceVideo;
   label: string;
   uploadProgress: number | null;
-  onOpen: (originRect: DOMRect) => void;
+  onOpen: (originRect: DOMRect, url: string) => void;
   onDelete: () => void;
 }) {
   const { t } = useLanguage();
@@ -317,7 +308,7 @@ function ReferenceVideoTile({
 
   if (uploadProgress !== null) {
     return (
-      <div className="w-full sm:w-72 aspect-video rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex flex-col justify-center gap-2">
+      <div className="w-full aspect-video rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex flex-col justify-center gap-2">
         <span className="text-sm font-medium text-white/70">
           {t("postproduction.uploading", { percent: Math.round(uploadProgress * 100) })}
         </span>
@@ -338,7 +329,7 @@ function ReferenceVideoTile({
     // this is the window while that background compression runs (client's
     // own upload already finished — no percent to show).
     return (
-      <div className="w-full sm:w-72 aspect-video rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center gap-2.5">
+      <div className="w-full aspect-video rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center gap-2.5">
         <svg className="animate-spin w-4 h-4 text-white/50" viewBox="0 0 24 24" fill="none">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -351,7 +342,7 @@ function ReferenceVideoTile({
   if (video.status !== "ready" || !pinnedVideoUrl) return null;
 
   return (
-    <div className="relative w-full sm:w-72 rounded-2xl bg-black overflow-hidden border border-white/10">
+    <div className="relative w-full rounded-2xl bg-black overflow-hidden border border-white/10">
       {/* 2026-09-08, Lino: "es soll ein thumbnail dargestellt werden und
        * wenn man darauf klickt, soll sich das video in einer lightbox
        * öffnen" — Lino, same session: "das video thumbnail soll dann auch
@@ -367,7 +358,7 @@ function ReferenceVideoTile({
         type="button"
         onClick={() => {
           const rect = thumbButtonRef.current?.getBoundingClientRect();
-          if (rect) onOpen(rect);
+          if (rect) onOpen(rect, pinnedVideoUrl);
         }}
         className="group relative block w-full aspect-video"
         aria-label={t("referenceVideo.play")}

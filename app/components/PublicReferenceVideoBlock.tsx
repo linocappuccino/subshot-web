@@ -16,42 +16,37 @@ import type { ReferenceVideo } from "@/lib/types";
  *
  * 2026-09-11 — multi-video (Lino: "man soll mehrere scribble videos
  * hochladen können, diese werden dann nebeneinander angezeigt"), same
- * `flex flex-wrap` grid + "V{n}" badge as the authenticated component;
- * "Preview seite dann auch!" was Lino's explicit ask for this file
- * specifically, not just the in-app editor. */
+ * grid + "V{n}" badge as the authenticated component; "Preview seite dann
+ * auch!" was Lino's explicit ask for this file specifically, not just the
+ * in-app editor. Same-day follow-up, also explicitly for this page too
+ * ("dies auch bitte auf der preview seite anpassen!"): 3 equal-width
+ * columns filling the full content width (CSS grid, not flex-wrap fixed-
+ * width tiles), and the lightbox open-animation origin bug fix — one
+ * atomic `{url, originRect}` state set in a single setState call from the
+ * click, instead of two separate state slots plus a second, independent
+ * usePinnedUrl re-resolution in a wrapper component (see
+ * ReferenceVideoBlock.tsx's own doc comment on that fix for the full
+ * reasoning). */
 export function PublicReferenceVideoBlock({ videos }: { videos: ReferenceVideo[] }) {
-  const [lightboxVideoId, setLightboxVideoId] = useState<string | null>(null);
-  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
+  const [lightbox, setLightbox] = useState<{ url: string; originRect: DOMRect } | null>(null);
 
   if (videos.length === 0) return null;
 
   return (
-    <div className="mb-4 flex flex-wrap gap-3">
+    <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
       {videos.map((video, index) => (
         <PublicReferenceVideoTile
           key={video.id}
           video={video}
           label={`V${index + 1}`}
-          onOpen={(rect) => {
-            setLightboxOriginRect(rect);
-            setLightboxVideoId(video.id);
-          }}
+          onOpen={(rect, url) => setLightbox({ originRect: rect, url })}
         />
       ))}
-      {(() => {
-        const lightboxVideo = videos.find((v) => v.id === lightboxVideoId);
-        return lightboxVideo ? (
-          <PinnedLightbox video={lightboxVideo} originRect={lightboxOriginRect} onClose={() => setLightboxVideoId(null)} />
-        ) : null;
-      })()}
+      {lightbox && (
+        <ReferenceVideoLightbox url={lightbox.url} originRect={lightbox.originRect} onClose={() => setLightbox(null)} />
+      )}
     </div>
   );
-}
-
-function PinnedLightbox({ video, originRect, onClose }: { video: ReferenceVideo; originRect: DOMRect | null; onClose: () => void }) {
-  const pinnedUrl = usePinnedUrl(video.url);
-  if (!pinnedUrl) return null;
-  return <ReferenceVideoLightbox url={pinnedUrl} originRect={originRect} onClose={onClose} />;
 }
 
 function PublicReferenceVideoTile({
@@ -61,7 +56,7 @@ function PublicReferenceVideoTile({
 }: {
   video: ReferenceVideo;
   label: string;
-  onOpen: (originRect: DOMRect) => void;
+  onOpen: (originRect: DOMRect, url: string) => void;
 }) {
   const { t } = useLanguage();
   const thumbButtonRef = useRef<HTMLButtonElement>(null);
@@ -80,9 +75,9 @@ function PublicReferenceVideoTile({
       type="button"
       onClick={() => {
         const rect = thumbButtonRef.current?.getBoundingClientRect();
-        if (rect) onOpen(rect);
+        if (rect) onOpen(rect, pinnedVideoUrl);
       }}
-      className="group relative block w-full sm:w-72 aspect-video rounded-2xl bg-black overflow-hidden border border-white/10"
+      className="group relative block w-full aspect-video rounded-2xl bg-black overflow-hidden border border-white/10"
       aria-label={t("referenceVideo.play")}
     >
       {pinnedThumbnailUrl ? (
