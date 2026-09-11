@@ -230,6 +230,10 @@ export interface Section {
   reference_video_thumbnail_url: string | null;
   reference_video_thumbnail_focus_x: number | null;
   reference_video_thumbnail_focus_y: number | null;
+  /** 2026-09-11 — manually uploaded shotlist-tile cover (Skript-
+   * Übersicht), overrides the auto-derived "first scene's own image_url"
+   * fallback when set. Already a presigned R2 URL, not a raw key. */
+  thumbnail_url: string | null;
 }
 
 export type PostproductionStatus = "wartend" | "in_bearbeitung" | "wartet_auf_feedback" | "abgeschlossen" | "abgelehnt";

@@ -469,6 +469,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         client_name: string | null;
         description: string | null;
         add_project_info: boolean; remove_project_info: boolean;
+        clear_thumbnail: boolean;
       }>
     ) => {
       const { location_address, description, ...rest } = body;
@@ -484,6 +485,13 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
           clear_description: description === null,
         }),
       });
+    },
+    // 2026-09-11 — manual shotlist-tile cover, see Section.thumbnail_url's
+    // own doc comment. Same upload shape as uploadSceneImage above.
+    uploadSectionThumbnail: (id: string, file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<Section>(`sections/${id}/thumbnail`, { method: "POST", body: form });
     },
     deleteSection: (id: string) => request<void>(`sections/${id}`, { method: "DELETE" }),
     moveSection: (id: string, beforeSectionId: string | null) =>

@@ -145,6 +145,9 @@ const translations = {
     // Klick öffnet die Shot-Planung nur für diese eine Idee/Abschnitt).
     "scriptOverview.sceneCount": "Szenen",
     "scriptOverview.backToOverview": "Zur Übersicht",
+    "scriptOverview.uploadThumbnail": "Thumbnail hochladen",
+    "scriptOverview.changeThumbnail": "Thumbnail ändern",
+    "scriptOverview.removeThumbnail": "Thumbnail entfernen",
     "scriptOverview.unsectionedTitle": "Ohne Abschnitt",
     "scriptOverview.unsectionedHint": "Szenen ohne Abschnitt — noch keiner Idee zugeordnet.",
     "scriptOverview.sceneOrderTab": "Szenen-Reihenfolge",
@@ -1049,6 +1052,9 @@ const translations = {
     // 2026-08-30 — Script selection overview (approved ideas as tiles).
     "scriptOverview.sceneCount": "scenes",
     "scriptOverview.backToOverview": "Back to overview",
+    "scriptOverview.uploadThumbnail": "Upload thumbnail",
+    "scriptOverview.changeThumbnail": "Change thumbnail",
+    "scriptOverview.removeThumbnail": "Remove thumbnail",
     "scriptOverview.unsectionedTitle": "No section",
     "scriptOverview.unsectionedHint": "Scenes without a section — not yet assigned to an idea.",
     "scriptOverview.sceneOrderTab": "Scene order",

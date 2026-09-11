@@ -427,6 +427,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   const [newSectionName, setNewSectionName] = useState("");
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [editSectionName, setEditSectionName] = useState("");
+  // 2026-09-11 — one shared hidden file input for every Skript-Übersicht
+  // tile's "Thumbnail hochladen" menu item, instead of one per tile.
+  const thumbnailFileInputRef = useRef<HTMLInputElement>(null);
+  const [thumbnailUploadSectionId, setThumbnailUploadSectionId] = useState<string | null>(null);
   const [showTeam, setShowTeam] = useState(false);
   const [showNotion, setShowNotion] = useState(false);
   const [showAnnotations, setShowAnnotations] = useState(false);
@@ -1442,6 +1446,28 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     }
   }
 
+  // 2026-09-11, Lino: "bei der übersicht von den shotlisten soll man das
+  // thumbnail bestimmen können / hochladen können" — manual override for
+  // the Skript-Übersicht tile below, alongside the existing auto-derived
+  // "first scene's own image_url" fallback (see thumbnailFor).
+  async function uploadSectionThumbnail(section: Section, file: File) {
+    try {
+      const updated = await api.uploadSectionThumbnail(section.id, file);
+      setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
+  async function clearSectionThumbnail(section: Section) {
+    try {
+      const updated = await api.patchSection(section.id, { clear_thumbnail: true });
+      setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
   async function createProjectInfoScene() {
     if (!data) return;
     try {
@@ -1957,7 +1983,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         {openSectionId === null ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
             {sections.map((section) => {
-              const thumbnailUrl = firstThumbnailFor(section.id);
+              // 2026-09-11 — manual override (see uploadSectionThumbnail
+              // above) wins over the auto-derived "first scene's own
+              // image_url" fallback.
+              const thumbnailUrl = section.thumbnail_url ?? firstThumbnailFor(section.id);
               return (
                 <div key={section.id} className="relative">
                   <button
@@ -2001,21 +2030,55 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       }
                     >
                       {(close) => (
-                        <MenuItem
-                          danger
-                          onClick={() => {
-                            setDeleteSection(section);
-                            close();
-                          }}
-                        >
-                          {t("common.delete")}
-                        </MenuItem>
+                        <>
+                          <MenuItem
+                            onClick={() => {
+                              setThumbnailUploadSectionId(section.id);
+                              thumbnailFileInputRef.current?.click();
+                              close();
+                            }}
+                          >
+                            {section.thumbnail_url ? t("scriptOverview.changeThumbnail") : t("scriptOverview.uploadThumbnail")}
+                          </MenuItem>
+                          {section.thumbnail_url && (
+                            <MenuItem
+                              onClick={() => {
+                                clearSectionThumbnail(section);
+                                close();
+                              }}
+                            >
+                              {t("scriptOverview.removeThumbnail")}
+                            </MenuItem>
+                          )}
+                          <MenuItem
+                            danger
+                            onClick={() => {
+                              setDeleteSection(section);
+                              close();
+                            }}
+                          >
+                            {t("common.delete")}
+                          </MenuItem>
+                        </>
                       )}
                     </Menu>
                   </div>
                 </div>
               );
             })}
+            <input
+              ref={thumbnailFileInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                const section = sections.find((s) => s.id === thumbnailUploadSectionId);
+                setThumbnailUploadSectionId(null);
+                if (file && section) uploadSectionThumbnail(section, file);
+              }}
+            />
             {/* 2026-09-07 fix, Lino: neu angelegte Szenen/Zwischenschritte
                 landen standardmässig immer hier (kein section_id gesetzt) —
                 bei einem frischen Projekt ohne Ideen/Abschnitte (z.B. reines
