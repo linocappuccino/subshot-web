@@ -343,15 +343,14 @@ function PreviewScenesPageInner() {
   // shotlist selber" — the authenticated app replaced the old stable
   // scene.number/letter screenplay badge with a LIVE position-in-section
   // count, 1..N (see sceneNumberBySectionId in projects/[id]/page.tsx),
-  // computed off the plain sort_order list — NOT the "completed sinks to
-  // the end" display order scenesFor below still applies (that reordering
-  // is preview-only, share_view.py's own rule, and deliberately untouched
-  // here — see scenesFor's own comment). This page still rendered the old
-  // scene.number/letter field directly (PublicSceneCard), which drifted
-  // from the app's numbers the moment a scene was inserted/reordered/
-  // deleted. Mirrors sceneNumberBySectionId exactly so the number shown
-  // per scene is IDENTICAL to the app's, even though this page may place
-  // the tile itself in a different spot (completed sunk to the bottom).
+  // computed off the plain sort_order list. This page still rendered the
+  // old scene.number/letter field directly (PublicSceneCard), which
+  // drifted from the app's numbers the moment a scene was inserted/
+  // reordered/deleted. Mirrors sceneNumberBySectionId exactly so the
+  // number shown per scene is IDENTICAL to the app's. (2026-09-11: scenesFor
+  // below no longer sinks completed scenes to the end either, so this list
+  // and the numbering are now in the same order too — see scenesFor's own
+  // comment.)
   const sceneNumberBySectionId = useMemo(() => {
     const bySection = new Map<string | null, Scene[]>();
     for (const s of data?.scenes ?? []) {
@@ -372,10 +371,15 @@ function PreviewScenesPageInner() {
 
   function scenesFor(sectionId: string | null) {
     if (!data) return [];
-    const filtered = data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => a.sort_order - b.sort_order);
-    // Same stable "completed scenes sink to the end" rule as
-    // share_view.py's scenes_in (group.sort(key=lambda s: s.completed)).
-    return [...filtered.filter((s) => !s.completed), ...filtered.filter((s) => s.completed)];
+    // 2026-09-11, Lino: "die kachel die mit 'im kasten' markiert wurde
+    // muss an der position bleiben, sie darf NICHT nach unten wandern" —
+    // dropped the old "completed sinks to the end" rule this page used to
+    // mirror from share_view.py's scenes_in. Now that scene status pushes
+    // live via Pusher (see project_subshot_scene_completed_live memory),
+    // that jump became visible in real time instead of only after a
+    // reload, which is what made it read as broken/laggy. Plain sort_order
+    // now, same as the authenticated app's own scenesBySectionId.
+    return data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => a.sort_order - b.sort_order);
   }
 
   // 2026-09-08 — Shot-Reihenfolge counterpart to scenesFor above, same
@@ -387,13 +391,14 @@ function PreviewScenesPageInner() {
   // that changes, matching that page's own 1:1 parity comment.
   function scenesInShootingOrder(sectionId: string | null) {
     if (!data) return [];
-    const filtered = data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => {
+    // No "completed sinks to the end" split here either — see scenesFor's
+    // 2026-09-11 comment above, same reasoning applies to Shot-Reihenfolge.
+    return data.scenes.filter((s) => s.section_id === sectionId).sort((a, b) => {
       if (a.shooting_order != null && b.shooting_order != null) return a.shooting_order - b.shooting_order;
       if (a.shooting_order != null) return -1;
       if (b.shooting_order != null) return 1;
       return a.sort_order - b.sort_order;
     });
-    return [...filtered.filter((s) => !s.completed), ...filtered.filter((s) => s.completed)];
   }
 
   // 2026-09-07, Lino: "muss auf der in der shotlist übersicht das erste
