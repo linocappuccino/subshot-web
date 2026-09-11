@@ -10,6 +10,7 @@ import { googleMapsUrl } from "./SceneCard";
 import { ColorBadge, Pill } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
 import { AuthImage } from "./AuthImage";
+import { usePinnedUrl } from "./ReferenceVideoBlock";
 import { useToast } from "./ui/Toast";
 import { Menu, MenuItem } from "./ui/Menu";
 import { IconButton } from "./ui/Button";
@@ -176,6 +177,9 @@ function SceneRow({
   // deliberately dropped so dnd-kit's own rectSortingStrategy reflow can't
   // fight the insertion-line indicator.
   const { t } = useLanguage();
+  // Same fix as SceneCard's tile view — pin by path so the 12s live-update
+  // poll's freshly re-signed image_url doesn't flicker/reload this thumbnail.
+  const pinnedImageUrl = usePinnedUrl(scene.image_url);
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, data: { sectionId: scene.section_id ?? null } });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   // 2026-07-14: read-only display of possibly several assignees — editing
@@ -205,8 +209,8 @@ function SceneRow({
         </button>
       </td>
       <td className="px-3 py-2.5 cursor-pointer" onClick={() => onEditScene(scene)}>
-        {scene.image_url ? (
-          <AuthImage path={scene.image_url} alt="" className="w-11 h-11 object-cover rounded-lg" />
+        {pinnedImageUrl ? (
+          <AuthImage path={pinnedImageUrl} alt="" className="w-11 h-11 object-cover rounded-lg" />
         ) : (
           <div className="w-11 h-11 rounded-lg bg-white/5" />
         )}

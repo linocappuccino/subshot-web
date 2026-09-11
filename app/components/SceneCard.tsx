@@ -9,6 +9,7 @@ import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
 import { PALETTE, PRIORITY_COLORS, type Annotation, type Member, type Scene, type Shot } from "@/lib/types";
 import { AuthImage } from "./AuthImage";
+import { usePinnedUrl } from "./ReferenceVideoBlock";
 import { Pill, ColorBadge } from "./ui/Badge";
 import { Avatar } from "./ui/Avatar";
 import { Menu, MenuItem } from "./ui/Menu";
@@ -381,6 +382,11 @@ export function SceneCard({
 }) {
   const penAnnotations = (annotations ?? []).filter((a) => a.kind === "pen" && a.pen_path);
   const highlightAnnotations = (annotations ?? []).filter((a) => a.kind === "highlight" && a.field && a.text);
+  // Pin by path (see usePinnedUrl's own doc comment) — image_url is
+  // re-signed fresh on every 12s poll, and without this the tile's cover
+  // photo visibly flickers/reloads on every tick even though it's still
+  // the exact same file.
+  const pinnedImageUrl = usePinnedUrl(scene.image_url);
   const api = useApi();
   const toast = useToast();
   const { t } = useLanguage();
@@ -614,9 +620,9 @@ export function SceneCard({
         </Menu>
       </div>
 
-      {scene.image_url && (
+      {pinnedImageUrl && (
         <div className="cursor-pointer mb-2 rounded-xl overflow-hidden" onClick={onEdit}>
-          <AuthImage path={scene.image_url} alt={scene.name ?? "Szene"} className="w-full object-cover" lockAspectRatio />
+          <AuthImage path={pinnedImageUrl} alt={scene.name ?? "Szene"} className="w-full object-cover" lockAspectRatio />
         </div>
       )}
 
@@ -867,6 +873,7 @@ export function ShotRowContent({
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
 }) {
   const { t } = useLanguage();
+  const pinnedImageUrl = usePinnedUrl(shot.image_url);
   return (
     <div className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
       {dragHandleProps && (
@@ -892,8 +899,8 @@ export function ShotRowContent({
           {shot.status === "done" && <CheckIcon />}
         </span>
       </button>
-      {shot.image_url ? (
-        <AuthImage path={shot.image_url} alt="" className="w-14 h-10 object-cover rounded-md shrink-0 cursor-pointer" />
+      {pinnedImageUrl ? (
+        <AuthImage path={pinnedImageUrl} alt="" className="w-14 h-10 object-cover rounded-md shrink-0 cursor-pointer" />
       ) : (
         <div className="w-14 h-10 rounded-md shrink-0 bg-white/5" />
       )}
