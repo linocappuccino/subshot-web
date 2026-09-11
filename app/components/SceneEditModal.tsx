@@ -142,6 +142,25 @@ export function SceneEditModal({
   const [draftDialogues, setDraftDialogues] = useState<string[]>([]);
   const [newDialogueText, setNewDialogueText] = useState("");
   const [addingDialogue, setAddingDialogue] = useState(false);
+  // Guards addDialogueLine/addShot against firing twice for one Enter press
+  // (2026-09-11, Lino: "wenn ich einen dialog eingeben und enter drücke
+  // taucht er nicht auf.. reload ich die seite ist er dann da") — root
+  // cause: both functions call `setAddingDialogue(false)`/`setAddingShot
+  // (false)` synchronously as their first move, which unmounts the
+  // Textarea/input right away; a focused element being removed from the
+  // DOM fires a native blur event, which is ALSO wired to the same submit
+  // function via onBlur — so one Enter press ran the async POST twice, off
+  // the same stale `dialogues`/`newShotText` closure. The line WAS saved
+  // (the second call's response is what actually won), just not the one
+  // the first call's `pushDialogues([...dialogues, created])` put in local
+  // state, since both closures captured `dialogues` from before either
+  // resolved — the second overwrote the first's local update, hence
+  // visible only after a reload. A plain ref (not state) is required here:
+  // it must be readable/settable synchronously within the same call stack
+  // as the Enter handler, before React has even scheduled the re-render
+  // that unmounts the field and triggers the blur.
+  const dialogueSubmitGuard = useRef(false);
+  const shotSubmitGuard = useRef(false);
   // Which existing dialogue line is being edited inline (2026-07-11, Lino:
   // dialog lines must be correctable, not just add/toggle/delete) — id of
   // the SceneDialogue, plus its own draft text so typing doesn't mutate
@@ -245,26 +264,40 @@ export function SceneEditModal({
   }
 
   async function addDialogueLine() {
+    if (dialogueSubmitGuard.current) return;
+    dialogueSubmitGuard.current = true;
     const text = newDialogueText.trim();
     setAddingDialogue(false);
-    if (!text) return;
+    setNewDialogueText("");
+    if (!text) {
+      dialogueSubmitGuard.current = false;
+      return;
+    }
     if (existing) {
       try {
         const created = await api.addDialogue(existing.id, text);
         pushDialogues([...dialogues, created]);
       } catch (e) {
         toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.addDialogueFailed"));
+      } finally {
+        dialogueSubmitGuard.current = false;
       }
     } else {
       setDraftDialogues((prev) => [...prev, text]);
+      dialogueSubmitGuard.current = false;
     }
-    setNewDialogueText("");
   }
 
   async function addShot() {
+    if (shotSubmitGuard.current) return;
+    shotSubmitGuard.current = true;
     const description = newShotText.trim();
     setAddingShot(false);
-    if (!description || !existing) return;
+    setNewShotText("");
+    if (!description || !existing) {
+      shotSubmitGuard.current = false;
+      return;
+    }
     try {
       const shot = await api.createShot(existing.project_id, { scene_id: existing.id, description });
       onShotCreated?.(shot);
@@ -277,8 +310,9 @@ export function SceneEditModal({
       setEditingShot(shot);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    } finally {
+      shotSubmitGuard.current = false;
     }
-    setNewShotText("");
   }
 
   async function toggleShotDone(shot: Shot) {
