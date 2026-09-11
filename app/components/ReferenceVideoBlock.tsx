@@ -642,17 +642,22 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
   // 2026-09-11 (bugfix) — used to be createPortal(..., document.body).
   // Lino: "hat man in der preview seite die kommentarspalte offen und
   // öffnet ein scribble video, schliesst sich die kommentarspalte
-  // automatisch" — no JS code path was ever found that actually closes the
-  // sidebar's own state, so the most likely explanation is a stacking
-  // mismatch between this PORTALED (direct child of <body>) fixed overlay
-  // and the sidebar's own `fixed` element sitting deep in the normal React
-  // tree — moving both into the exact same DOM/stacking lineage (no portal)
-  // removes that whole class of mismatch outright, portal or not. Verified
-  // no ancestor between here and the page root sets a transform/filter/
-  // opacity that would otherwise make a non-portaled `fixed` element
-  // clip/mis-stack.
+  // automatisch" then, once clarified: "die kommentar sidebar muss immer
+  // hinter dem geöffneten video sein... wenn man ein scribble video öffnet
+  // zum ansehen" — the actual desired behavior, on BOTH the public preview
+  // page (whose section-comments sidebar sits at z-[71], its mobile
+  // toolbar/FAB at z-[80] — preview-scenes/[token]/page.tsx) and the
+  // authenticated editor (AnnotationsPanel.tsx, z-40, already correctly
+  // below the old z-50 here). z-[100] comfortably beats every one of
+  // those on both pages, so a fullscreen video always sits on top of
+  // whichever comment UI happens to be open, on either page — no JS
+  // path was ever found that touches the sidebar's OWN open/closed
+  // state, so nothing else needed changing there. No portal (see
+  // ReferenceVideoLightbox's own module — createPortal was removed the
+  // same session) — plain z-index ordering within the shared stacking
+  // context handles this on its own.
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div
         className={`absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer transition-opacity duration-300 ${closing ? "opacity-0" : "opacity-100"}`}
         onClick={requestClose}
