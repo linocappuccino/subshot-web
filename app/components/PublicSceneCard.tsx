@@ -133,7 +133,12 @@ export function PublicSceneCard({
   const sortedShots = [...shots].sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <div data-scene-id={scene.id} className="relative rounded-2xl bg-[#212121] border border-white/[0.06] p-4 shadow-sm">
+    <div
+      data-scene-id={scene.id}
+      className={`relative rounded-2xl border p-4 shadow-sm transition-colors ${
+        scene.completed ? "bg-emerald-500/[0.08] border-emerald-500/20" : "bg-[#212121] border-white/[0.06]"
+      }`}
+    >
       <div className="flex items-center gap-2 flex-wrap mb-2.5">
         <span className="text-[11px] font-bold text-white rounded-full px-2.5 py-1 whitespace-nowrap" style={{ background: color }}>
           {displayNumber != null ? displayNumber : `${scene.number}${scene.letter || ""}`}
