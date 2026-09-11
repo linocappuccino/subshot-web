@@ -589,6 +589,14 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         body: JSON.stringify({ duration_seconds: durationSeconds ?? null }),
       }),
     deleteReferenceVideo: (videoId: string) => request<void>(`reference-videos/${videoId}`, { method: "DELETE" }),
+    // 2026-09-11 (same day, Lino: "man muss aber die videos in der
+    // reihenfolge verschieben können") — drag-to-reorder, same "send the
+    // whole final order at once" shape as reorderIdeaImages below.
+    reorderReferenceVideos: (sectionId: string, orderedVideoIds: string[]) =>
+      request<ReferenceVideo[]>(`sections/${sectionId}/reference-videos/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ ordered_video_ids: orderedVideoIds }),
+      }),
     getVideoVersionDownloadUrl: (id: string) =>
       request<{ url: string }>(`video-versions/${id}/download-url`).then((r) => r.url),
     // 2026-07-17: author_name kommt jetzt server-seitig vom eingeloggten

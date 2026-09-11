@@ -2,6 +2,11 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  DndContext, type DragEndEvent, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS as DndCSS } from "@dnd-kit/utilities";
 import { ApiError } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { readVideoMetadata } from "@/lib/media";
@@ -141,6 +146,40 @@ export function ReferenceVideoBlock({
     }
   }
 
+  // 2026-09-11 (same day, Lino: "man muss aber die videos in der
+  // reihenfolge verschieben können wenn man in der web app oder ios app
+  // ist... von links nach rechts ist es aber immer V1, V2") — own small
+  // self-contained DndContext (NOT the page's big shared one covering
+  // scenes/sections, see projects/[id]/page.tsx's own doc comments on how
+  // much cross-container logic that one already carries — this grid is a
+  // fully independent drag domain with no reason to risk touching that).
+  // Same dnd-kit shape as IdeaImageReorderGrid.tsx, but auto-saves on drop
+  // instead of a separate "Reihenfolge speichern" button — these tiles are
+  // always in the normal flow here, not a toggled-into reorder mode.
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
+  );
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const current = videosRef.current;
+    const fromIndex = current.findIndex((v) => v.id === active.id);
+    const toIndex = current.findIndex((v) => v.id === over.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const next = [...current];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    patchVideos(next);
+    try {
+      await api.reorderReferenceVideos(sectionId, next.map((v) => v.id));
+    } catch (err) {
+      toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.reorderFailed"));
+      patchVideos(current);
+    }
+  }
+
   return (
     <div className="mb-5">
       <input
@@ -150,31 +189,37 @@ export function ReferenceVideoBlock({
         className="hidden"
         onChange={handlePick}
       />
-      <div className="flex flex-wrap gap-3">
-        {videos.map((video, index) => (
-          <ReferenceVideoTile
-            key={video.id}
-            video={video}
-            label={`V${index + 1}`}
-            uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
-            onOpen={(rect) => {
-              setLightboxOriginRect(rect);
-              setLightboxVideoId(video.id);
-            }}
-            onDelete={() => setDeleteTargetId(video.id)}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="w-full sm:w-72 aspect-video flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 transition-colors text-sm font-medium"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {t("referenceVideo.upload")}
-        </button>
-      </div>
+      <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={videos.map((v) => v.id)} strategy={rectSortingStrategy}>
+          <div className="flex flex-wrap gap-3">
+            {videos.map((video, index) => (
+              <ReferenceVideoSortableTile
+                key={video.id}
+                video={video}
+                label={`V${index + 1}`}
+                uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
+                onOpen={(rect) => {
+                  setLightboxOriginRect(rect);
+                  setLightboxVideoId(video.id);
+                }}
+                onDelete={() => setDeleteTargetId(video.id)}
+              />
+            ))}
+            {/* Not part of SortableContext's `items` — always sits fixed
+                at the end, never draggable. */}
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="w-full sm:w-72 aspect-video flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 transition-colors text-sm font-medium"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              {t("referenceVideo.upload")}
+            </button>
+          </div>
+        </SortableContext>
+      </DndContext>
       <ConfirmDialog
         open={deleteTargetId !== null}
         title={t("referenceVideo.deleteTitle")}
@@ -211,6 +256,35 @@ function PinnedReferenceVideoLightbox({
   const pinnedUrl = usePinnedUrl(video.url);
   if (!pinnedUrl) return null;
   return <ReferenceVideoLightbox url={pinnedUrl} originRect={originRect} onClose={onClose} />;
+}
+
+/** Drag handle wrapper around ReferenceVideoTile (2026-09-11 — "man muss
+ * aber die videos in der reihenfolge verschieben können"), same
+ * useSortable-on-the-whole-tile shape as IdeaImageReorderGrid.tsx's own
+ * ReorderTile. Listeners sit on this OUTER div, not on the tile's inner
+ * play-button/menu — dnd-kit's PointerSensor activationConstraint
+ * (distance: 4) means a plain tap-without-movement still reaches those
+ * inner onClick handlers normally; only an actual drag gesture is
+ * captured. */
+function ReferenceVideoSortableTile(props: {
+  video: ReferenceVideo;
+  label: string;
+  uploadProgress: number | null;
+  onOpen: (originRect: DOMRect) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.video.id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: DndCSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      {...attributes}
+      {...listeners}
+      className="w-full sm:w-72 touch-none cursor-grab active:cursor-grabbing"
+    >
+      <ReferenceVideoTile {...props} />
+    </div>
+  );
 }
 
 /** One tile in the grid above — either the "uploading" progress state, the
