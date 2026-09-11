@@ -576,10 +576,18 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // können") — beliebig viele Beispielvideos pro Shotlist, nebeneinander
     // angezeigt (V1, V2, ... nach Upload-Reihenfolge). Gleicher presign-
     // then-complete Ablauf wie Video-Versionen oben, jetzt adressiert per
-    // eigener Video-id statt per Section (kein "replace" mehr — jeder
-    // Upload legt eine neue Zeile an, Ersetzen = Löschen + neu hochladen). ─
+    // eigener Video-id statt per Section. ──────────────────────────────
     createReferenceVideo: (sectionId: string, file: File) =>
       request<{ id: string; upload_url: string }>(`sections/${sectionId}/reference-videos`, {
+        method: "POST",
+        body: JSON.stringify({ original_filename: file.name, content_type: file.type || "video/mp4" }),
+      }),
+    // 2026-09-11 (same day, Lino: "man muss mit den 3 punkten auf dem
+    // scribble video ein video ersetzen können") — swaps an existing row's
+    // content in place (same id/position/label) instead of delete+re-
+    // upload, which would land the replacement at the end of the grid.
+    replaceReferenceVideo: (videoId: string, file: File) =>
+      request<{ id: string; upload_url: string }>(`reference-videos/${videoId}/replace`, {
         method: "POST",
         body: JSON.stringify({ original_filename: file.name, content_type: file.type || "video/mp4" }),
       }),

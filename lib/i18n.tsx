@@ -159,6 +159,7 @@ const translations = {
     // hinzufügen'" — user-facing label only, internal key/DB naming stays
     // reference_video_* (see Section.reference_video_url in models.py).
     "referenceVideo.upload": "Scribble Video hinzufügen",
+    "referenceVideo.replace": "Video ersetzen",
     "referenceVideo.play": "Scribble Video abspielen",
     "referenceVideo.unsupportedType": "Nicht unterstützter Dateityp — nur MP4, MOV oder WebM.",
     "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
@@ -1062,6 +1063,7 @@ const translations = {
     "shotOrderView.empty": "No shots in this shotlist yet.",
 
     "referenceVideo.upload": "Add scribble video",
+    "referenceVideo.replace": "Replace video",
     "referenceVideo.play": "Play scribble video",
     "referenceVideo.unsupportedType": "Unsupported file type — MP4, MOV, or WebM only.",
     "referenceVideo.uploadFailed": "Upload failed.",

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   DndContext, type DragEndEvent, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
 } from "@dnd-kit/core";
@@ -81,6 +80,12 @@ export function ReferenceVideoBlock({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadingVideoId, setUploadingVideoId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  // 2026-09-11 (same day, Lino: "man muss mit den 3 punkten auf dem
+  // scribble video ein video ersetzen können") — set right before
+  // triggering the shared hidden <input>; handlePick below branches on it
+  // to call replaceReferenceVideo (same id/position) instead of
+  // createReferenceVideo (a new row appended at the end).
+  const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   // 2026-09-11 (bugfix) — ONE state object, set in a SINGLE setState call
   // from the tile's onClick, holding exactly the (already-pinned) url +
   // rect that click needs. Was two separate pieces of state
@@ -118,27 +123,40 @@ export function ReferenceVideoBlock({
       toast.showError(t("referenceVideo.unsupportedType"));
       return;
     }
+    const targetId = replaceTargetId;
+    setReplaceTargetId(null);
+    const previousVideo = targetId ? videosRef.current.find((v) => v.id === targetId) ?? null : null;
     setUploadProgress(0);
     let videoId: string | null = null;
     try {
-      const { id, upload_url } = await api.createReferenceVideo(sectionId, file);
+      const { id, upload_url } = targetId
+        ? await api.replaceReferenceVideo(targetId, file)
+        : await api.createReferenceVideo(sectionId, file);
       videoId = id;
       setUploadingVideoId(id);
-      patchVideos([
-        ...videosRef.current,
-        {
-          id, url: null, status: "uploading", original_filename: file.name,
-          duration_seconds: null, thumbnail_url: null, thumbnail_focus_x: null, thumbnail_focus_y: null,
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      const placeholder: ReferenceVideo = {
+        id, url: null, status: "uploading", original_filename: file.name,
+        duration_seconds: null, thumbnail_url: null, thumbnail_focus_x: null, thumbnail_focus_y: null,
+        created_at: previousVideo?.created_at ?? new Date().toISOString(),
+      };
+      patchVideos(
+        targetId
+          ? videosRef.current.map((v) => (v.id === id ? placeholder : v))
+          : [...videosRef.current, placeholder]
+      );
       await api.uploadVideoFile(upload_url, file, setUploadProgress);
       const meta = await readVideoMetadata(file);
       const updated = await api.completeReferenceVideo(id, meta.duration);
       patchVideos(videosRef.current.map((v) => (v.id === id ? updated : v)));
     } catch (err) {
       toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.uploadFailed"));
-      if (videoId) patchVideos(videosRef.current.filter((v) => v.id !== videoId));
+      if (videoId) {
+        if (targetId && previousVideo) {
+          patchVideos(videosRef.current.map((v) => (v.id === videoId ? previousVideo : v)));
+        } else if (!targetId) {
+          patchVideos(videosRef.current.filter((v) => v.id !== videoId));
+        }
+      }
     } finally {
       setUploadProgress(null);
       setUploadingVideoId(null);
@@ -217,6 +235,10 @@ export function ReferenceVideoBlock({
                 label={`V${index + 1}`}
                 uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
                 onOpen={(rect, url) => setLightbox({ originRect: rect, url })}
+                onReplace={() => {
+                  setReplaceTargetId(video.id);
+                  inputRef.current?.click();
+                }}
                 onDelete={() => setDeleteTargetId(video.id)}
               />
             ))}
@@ -262,6 +284,7 @@ function ReferenceVideoSortableTile(props: {
   label: string;
   uploadProgress: number | null;
   onOpen: (originRect: DOMRect, url: string) => void;
+  onReplace: () => void;
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.video.id });
@@ -289,12 +312,14 @@ function ReferenceVideoTile({
   label,
   uploadProgress,
   onOpen,
+  onReplace,
   onDelete,
 }: {
   video: ReferenceVideo;
   label: string;
   uploadProgress: number | null;
   onOpen: (originRect: DOMRect, url: string) => void;
+  onReplace: () => void;
   onDelete: () => void;
 }) {
   const { t } = useLanguage();
@@ -396,15 +421,25 @@ function ReferenceVideoTile({
           }
         >
           {(close) => (
-            <MenuItem
-              danger
-              onClick={() => {
-                onDelete();
-                close();
-              }}
-            >
-              {t("common.delete")}
-            </MenuItem>
+            <>
+              <MenuItem
+                onClick={() => {
+                  onReplace();
+                  close();
+                }}
+              >
+                {t("referenceVideo.replace")}
+              </MenuItem>
+              <MenuItem
+                danger
+                onClick={() => {
+                  onDelete();
+                  close();
+                }}
+              >
+                {t("common.delete")}
+              </MenuItem>
+            </>
           )}
         </Menu>
       </div>
@@ -604,9 +639,19 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
 
   const progressPct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
+  // 2026-09-11 (bugfix) — used to be createPortal(..., document.body).
+  // Lino: "hat man in der preview seite die kommentarspalte offen und
+  // öffnet ein scribble video, schliesst sich die kommentarspalte
+  // automatisch" — no JS code path was ever found that actually closes the
+  // sidebar's own state, so the most likely explanation is a stacking
+  // mismatch between this PORTALED (direct child of <body>) fixed overlay
+  // and the sidebar's own `fixed` element sitting deep in the normal React
+  // tree — moving both into the exact same DOM/stacking lineage (no portal)
+  // removes that whole class of mismatch outright, portal or not. Verified
+  // no ancestor between here and the page root sets a transform/filter/
+  // opacity that would otherwise make a non-portaled `fixed` element
+  // clip/mis-stack.
+  return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className={`absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer transition-opacity duration-300 ${closing ? "opacity-0" : "opacity-100"}`}
@@ -688,7 +733,6 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
           </div>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
