@@ -120,7 +120,14 @@ export function ShotEditModal({
       camera_support: cameraSupport,
       clear_image: imageRemoved && !imageFile,
     });
-    if (imageFile) updated = await api.uploadShotImage(shot.id, imageFile);
+    if (imageFile) {
+      updated = await api.uploadShotImage(shot.id, imageFile);
+      // Same fix as SceneEditModal's persistExisting() — without clearing
+      // this, every later autosave (any other field) re-uploaded the same
+      // image again.
+      setImageFile(null);
+    }
+    setImageRemoved(false);
     onUpdated(updated);
   }
 

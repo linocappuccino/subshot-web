@@ -382,7 +382,17 @@ export function SceneEditModal({
   async function persistExisting(): Promise<Scene | null> {
     if (!existing) return null;
     let scene = await api.patchScene(existing.id, { ...buildPatchBody(), clear_image: imageRemoved && !imageFile });
-    if (imageFile) scene = await api.uploadSceneImage(existing.id, imageFile);
+    if (imageFile) {
+      scene = await api.uploadSceneImage(existing.id, imageFile);
+      // Without this, the same file stayed in state after a successful
+      // upload, so every LATER autosave (triggered by an unrelated field,
+      // e.g. typing in the description) re-uploaded the identical image
+      // again — found live 2026-09-11 watching autosave traffic: repeated
+      // PATCH+image POST pairs for one scene, several seconds apart, with
+      // no further user interaction with the image itself.
+      setImageFile(null);
+    }
+    setImageRemoved(false);
     scene = { ...scene, dialogues };
     onUpdated(scene);
     return scene;
