@@ -174,6 +174,19 @@ function PreviewScenesPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIds, unlockToken]);
 
+  // 2026-09-11, Lino: "jegliche Änderungen die in der Shotliste gemacht
+  // werden müssen immer direkt in der Preview übernommen werden" — unlike
+  // sceneIds above (only entities already loaded), this is subscribed for
+  // the whole project the moment its id is known, so a brand-new scene, a
+  // deleted one, or a reordered section reaches an open preview too, not
+  // just edits to a scene already on screen (see realtime.ts's own
+  // project-<id> doc comment).
+  useEffect(() => {
+    if (!data?.project_id) return;
+    return subscribeToChanges("project", data.project_id, () => load(unlockToken, true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.project_id, unlockToken]);
+
   // 2026-08-31, Todoist #96 — same live sync as sceneIds above, for the
   // currently OPENED section's own comment thread (only ever one at a
   // time, unlike every scene at once above — a section's tile overview

@@ -18,6 +18,13 @@ import Pusher from "pusher-js";
  * over hand-syncing three structurally different comment shapes
  * (VideoComment/IdeaFeedback+highlight Annotation/scene comment+highlight
  * Annotation) into fine-grained client-side patches.
+ *
+ * 2026-09-11, Lino: "jegliche Änderungen die in der Shotliste gemacht
+ * werden müssen immer direkt in der Preview übernommen werden" — added
+ * `project-<id>`, subscribed permanently (not just for entities currently
+ * on screen) by preview-scenes/[token]/page.tsx, so structural shotlist
+ * changes (new/deleted scene, reordered section, ...) reach an open
+ * preview too, not just edits to a scene already loaded.
  */
 
 let client: Pusher | null | undefined;
@@ -30,7 +37,7 @@ function getClient(): Pusher | null {
   return client;
 }
 
-type EntityKind = "video" | "idea" | "scene" | "section";
+type EntityKind = "video" | "idea" | "scene" | "section" | "project";
 
 /** Subscribes to `<kind>-<id>`'s "changed" event, calling `onChanged` every
  * time it fires. Returns an unsubscribe function — call it from a `useEffect`
