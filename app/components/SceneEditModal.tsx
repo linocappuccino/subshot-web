@@ -224,6 +224,26 @@ export function SceneEditModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, existing?.id, existing?.image_url]);
 
+  // 2026-09-11, Lino: "wenn man einen dialog hinzufügt... taucht dieser
+  // zuerst in der preview aktualisiert auf und erst paar sekunden danach
+  // in der web app" — root cause: this modal keeps its own local
+  // `dialogues` copy, separate from the parent project page's `data.scenes`
+  // that SceneCard actually renders from. Every OTHER scene edit in
+  // SceneCard.tsx (rename, "im Kasten", existing-dialogue-toggle, shots
+  // via addShot/toggleShotDone right below) calls the parent's onChange/
+  // onUpdated/onShotUpdated immediately with the server response — adding
+  // a dialogue line was the one path that didn't, so the tile only ever
+  // saw it once persistExisting()/autosave happened to fire (or, in the
+  // common case of closing the modal via X/Escape/backdrop, not until the
+  // next 12s poll). pushDialogues is the shared fix: every dialogue
+  // mutation below now pushes the new array up to the parent via
+  // onUpdated right away, same as iOS's addDialogue already does by
+  // writing straight into the shared @Published scenes array.
+  function pushDialogues(next: SceneDialogue[]) {
+    setDialogues(next);
+    if (existing) onUpdated({ ...existing, dialogues: next });
+  }
+
   async function addDialogueLine() {
     const text = newDialogueText.trim();
     setAddingDialogue(false);
@@ -231,7 +251,7 @@ export function SceneEditModal({
     if (existing) {
       try {
         const created = await api.addDialogue(existing.id, text);
-        setDialogues((prev) => [...prev, created]);
+        pushDialogues([...dialogues, created]);
       } catch (e) {
         toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.addDialogueFailed"));
       }
@@ -294,17 +314,17 @@ export function SceneEditModal({
   }
 
   async function toggleDialogueLine(d: SceneDialogue) {
-    setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, done: !x.done } : x)));
+    pushDialogues(dialogues.map((x) => (x.id === d.id ? { ...x, done: !x.done } : x)));
     try {
       await api.patchDialogue(d.id, { done: !d.done });
     } catch (e) {
-      setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, done: d.done } : x)));
+      pushDialogues(dialogues.map((x) => (x.id === d.id ? { ...x, done: d.done } : x)));
       toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.updateFailed"));
     }
   }
 
   async function deleteDialogueLine(d: SceneDialogue) {
-    setDialogues((prev) => prev.filter((x) => x.id !== d.id));
+    pushDialogues(dialogues.filter((x) => x.id !== d.id));
     try {
       await api.deleteDialogue(d.id);
     } catch (e) {
@@ -321,11 +341,11 @@ export function SceneEditModal({
     const text = editingDialogueText.trim();
     setEditingDialogueId(null);
     if (!text || text === d.text) return;
-    setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, text } : x)));
+    pushDialogues(dialogues.map((x) => (x.id === d.id ? { ...x, text } : x)));
     try {
       await api.patchDialogue(d.id, { text });
     } catch (e) {
-      setDialogues((prev) => prev.map((x) => (x.id === d.id ? { ...x, text: d.text } : x)));
+      pushDialogues(dialogues.map((x) => (x.id === d.id ? { ...x, text: d.text } : x)));
       toast.showError(e instanceof ApiError ? e.message : t("sceneEditModal.dialogueSaveFailed"));
     }
   }
