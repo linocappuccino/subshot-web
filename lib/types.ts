@@ -170,6 +170,22 @@ export interface Shot {
   updated_at: string;
 }
 
+/** One "Scribble Video" row — see backend ReferenceVideo's own doc comment
+ * (models.py). `url`/`thumbnail_url` are already presigned, directly
+ * playable/displayable R2 URLs (ReferenceVideoOut's `_presign_image`
+ * validators), not raw keys. */
+export interface ReferenceVideo {
+  id: string;
+  url: string | null;
+  status: "uploading" | "processing" | "ready" | null;
+  original_filename: string | null;
+  duration_seconds: number | null;
+  thumbnail_url: string | null;
+  thumbnail_focus_x: number | null;
+  thumbnail_focus_y: number | null;
+  created_at: string;
+}
+
 export interface Section {
   id: string;
   project_id: string;
@@ -215,21 +231,12 @@ export interface Section {
   timecode_offset_seconds: number;
   timecode_synced_at: string | null;
   /** 2026-09-10 — moved from Project (every shotlist showed the SAME video
-   * before) to here, one reference video per Section/Shotlist — see
-   * backend Section.reference_video_url's own doc comment. Same shape
-   * Project's own fields used to have; `reference_video_url` is already a
-   * presigned, directly playable R2 URL (SectionOut._presign_reference_video_url),
-   * not a raw key. */
-  reference_video_url: string | null;
-  /** 2026-09-10 — "processing" added: the window between the client's raw
-   * upload finishing and the backend's web-compression background task
-   * finishing (see video_processing.compress_for_web on the backend). */
-  reference_video_status: "uploading" | "processing" | "ready" | null;
-  reference_video_original_filename: string | null;
-  reference_video_duration_seconds: number | null;
-  reference_video_thumbnail_url: string | null;
-  reference_video_thumbnail_focus_x: number | null;
-  reference_video_thumbnail_focus_y: number | null;
+   * before) to here, one-per-Section. 2026-09-11 — moved again from a
+   * single set of scalar fields to a real list (Lino: "man soll mehrere
+   * scribble videos hochladen können, diese werden dann nebeneinander
+   * angezeigt") — see backend ReferenceVideo's own doc comment
+   * (models.py). Upload-ordered: index 0 = V1, index 1 = V2, ... */
+  reference_videos: ReferenceVideo[];
   /** 2026-09-11 — manually uploaded shotlist-tile cover (Skript-
    * Übersicht), overrides the auto-derived "first scene's own image_url"
    * fallback when set. Already a presigned R2 URL, not a raw key. */
@@ -596,14 +603,6 @@ export interface ScenesPreviewData {
   shots: Shot[];
   todo_lists: TodoList[];
   team: Member[];
-  /** 2026-09-08 — read-only counterpart to Project's own reference_video_*
-   * fields (see ReferenceVideoBlock.tsx), only ever set when
-   * reference_video_status is "ready" (server-side gate, see
-   * get_scenes_preview in main.py — a mid-upload video never leaks here). */
-  reference_video_url: string | null;
-  reference_video_thumbnail_url: string | null;
-  reference_video_thumbnail_focus_x: number | null;
-  reference_video_thumbnail_focus_y: number | null;
 }
 
 // ── Deliver (2026-09-06) ────────────────────────────────────────────────────

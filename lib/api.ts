@@ -22,6 +22,7 @@ import type {
   Project,
   ProjectDetail,
   ProjectFolder,
+  ReferenceVideo,
   Scene,
   SceneDialogue,
   SceneMarker,
@@ -570,21 +571,24 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     deleteVideoVersion: (id: string) => request<void>(`video-versions/${id}`, { method: "DELETE" }),
 
-    // ── Referenz-Video (2026-09-08, moved to per-Section 2026-09-10 — "jede
-    // shotlist hat aber ihr eigenes scribble video!") — ein Beispielvideo
-    // pro Shotlist, ganz oben abspielbar. Gleicher presign-then-complete
-    // Ablauf wie Video-Versionen oben, minus Versionierung. ──────────────
+    // ── Referenz-/"Scribble"-Video (2026-09-08, per-Section 2026-09-10,
+    // multi-video 2026-09-11 — "man soll mehrere scribble videos hochladen
+    // können") — beliebig viele Beispielvideos pro Shotlist, nebeneinander
+    // angezeigt (V1, V2, ... nach Upload-Reihenfolge). Gleicher presign-
+    // then-complete Ablauf wie Video-Versionen oben, jetzt adressiert per
+    // eigener Video-id statt per Section (kein "replace" mehr — jeder
+    // Upload legt eine neue Zeile an, Ersetzen = Löschen + neu hochladen). ─
     createReferenceVideo: (sectionId: string, file: File) =>
-      request<{ upload_url: string }>(`sections/${sectionId}/reference-video`, {
+      request<{ id: string; upload_url: string }>(`sections/${sectionId}/reference-videos`, {
         method: "POST",
         body: JSON.stringify({ original_filename: file.name, content_type: file.type || "video/mp4" }),
       }),
-    completeReferenceVideo: (sectionId: string, durationSeconds?: number) =>
-      request<Section>(`sections/${sectionId}/reference-video/complete`, {
+    completeReferenceVideo: (videoId: string, durationSeconds?: number) =>
+      request<ReferenceVideo>(`reference-videos/${videoId}/complete`, {
         method: "POST",
         body: JSON.stringify({ duration_seconds: durationSeconds ?? null }),
       }),
-    deleteReferenceVideo: (sectionId: string) => request<void>(`sections/${sectionId}/reference-video`, { method: "DELETE" }),
+    deleteReferenceVideo: (videoId: string) => request<void>(`reference-videos/${videoId}`, { method: "DELETE" }),
     getVideoVersionDownloadUrl: (id: string) =>
       request<{ url: string }>(`video-versions/${id}/download-url`).then((r) => r.url),
     // 2026-07-17: author_name kommt jetzt server-seitig vom eingeloggten

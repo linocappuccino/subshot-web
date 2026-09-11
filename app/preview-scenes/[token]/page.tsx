@@ -677,14 +677,9 @@ function PreviewScenesPageInner() {
                     {/* 2026-09-10 fix — was data.reference_video_* (one
                         video for the whole project, every shotlist showed
                         the same one); now genuinely scoped to THIS
-                        shotlist, see Section.reference_video_url's own doc
-                        comment on the backend. */}
-                    <PublicReferenceVideoBlock
-                      url={openSection.reference_video_url}
-                      thumbnailUrl={openSection.reference_video_thumbnail_url}
-                      thumbnailFocusX={openSection.reference_video_thumbnail_focus_x}
-                      thumbnailFocusY={openSection.reference_video_thumbnail_focus_y}
-                    />
+                        shotlist. 2026-09-11 — multi-video, see
+                        ReferenceVideo's own doc comment on the backend. */}
+                    <PublicReferenceVideoBlock videos={openSection.reference_videos} />
                     <div className="mb-4 max-w-xs">
                       <SegmentedControl
                         value={shotOrderMode ? "shots" : "scenes"}

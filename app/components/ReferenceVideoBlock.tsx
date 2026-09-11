@@ -11,20 +11,11 @@ import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { IconButton } from "@/app/components/ui/Button";
 import { AuthImage } from "@/app/components/AuthImage";
-import type { Section } from "@/lib/types";
+import type { ReferenceVideo, Section } from "@/lib/types";
 
 const ALLOWED_REFERENCE_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 
-type ReferenceVideoFields = Pick<
-  Section,
-  | "reference_video_url"
-  | "reference_video_status"
-  | "reference_video_original_filename"
-  | "reference_video_duration_seconds"
-  | "reference_video_thumbnail_url"
-  | "reference_video_thumbnail_focus_x"
-  | "reference_video_thumbnail_focus_y"
->;
+type ReferenceVideoFields = Pick<Section, "reference_videos">;
 
 /** 2026-09-08, Lino: "warum reloaded das video immer alle 5-10 sekunde" —
  * root cause, same as VideoReviewModal.tsx's own `resolveVideoSrc` (see its
@@ -55,11 +46,20 @@ export function usePinnedUrl(url: string | null | undefined): string | null {
  * 2026-09-10, Lino: "das scribble Video wird jetzt bei jeder shotlist
  * dargestellt im projekt.. jede shotlist hat aber ihr eigenes scribble
  * video!" — was one slot per PROJECT (every shotlist showed the same
- * video), now one slot per Section/Shotlist, same presign-then-complete
- * upload flow the postproduction page's video versions already use (see
- * createReferenceVideo/completeReferenceVideo in lib/api.ts), deliberately
- * without versioning/comments/watermark — a single replaceable file is
- * enough here. */
+ * video), then one slot per Section/Shotlist.
+ * 2026-09-11, Lino: "man soll mehrere scribble videos hochladen können,
+ * diese werden dann nebeneinander angezeigt.. das erste hochgeladene Video
+ * wird mit V1 markiert, das zweite mit V2.. wenn die zeile mit videos
+ * gefüllt ist wird unter den videos ein weiteres angezeigt" — a real list
+ * now (`section.reference_videos`, see ReferenceVideo's own doc comment in
+ * models.py), rendered as a `flex flex-wrap` grid of same-size tiles plus
+ * a trailing "add" tile — wrapping to a new row once a row is full is just
+ * what `flex-wrap` already does, no extra layout logic needed. "V1"/"V2"/
+ * ... is each tile's 1-based position in the (upload-ordered) array, not a
+ * stored field — deleting an earlier one naturally renumbers the rest.
+ * There's no more per-tile "replace" action (that only made sense for a
+ * single slot) — delete + upload a new one covers it, landing at the end
+ * like any other upload. */
 export function ReferenceVideoBlock({
   sectionId,
   section,
@@ -74,8 +74,25 @@ export function ReferenceVideoBlock({
   const api = useApi();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [showLightbox, setShowLightbox] = useState(false);
+  const [uploadingVideoId, setUploadingVideoId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [lightboxVideoId, setLightboxVideoId] = useState<string | null>(null);
+  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
+
+  const videos = section.reference_videos;
+  // Read via a ref (not the `videos` const above) inside the async upload
+  // handler below — that const is a snapshot from the render that started
+  // handlePick, but onUpdate(...) triggers a parent re-render with a fresh
+  // array on every step of the multi-await upload flow; a second `await`
+  // later in the SAME handler call would otherwise still be mutating the
+  // stale array it closed over, silently dropping whatever onUpdate did in
+  // between (same class of bug as #213's other stale-closure fixes).
+  const videosRef = useRef(videos);
+  videosRef.current = videos;
+
+  function patchVideos(next: ReferenceVideo[]) {
+    onUpdate({ reference_videos: next });
+  }
 
   async function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -86,51 +103,43 @@ export function ReferenceVideoBlock({
       return;
     }
     setUploadProgress(0);
+    let videoId: string | null = null;
     try {
-      const { upload_url } = await api.createReferenceVideo(sectionId, file);
-      onUpdate({ reference_video_status: "uploading", reference_video_original_filename: file.name });
+      const { id, upload_url } = await api.createReferenceVideo(sectionId, file);
+      videoId = id;
+      setUploadingVideoId(id);
+      patchVideos([
+        ...videosRef.current,
+        {
+          id, url: null, status: "uploading", original_filename: file.name,
+          duration_seconds: null, thumbnail_url: null, thumbnail_focus_x: null, thumbnail_focus_y: null,
+          created_at: new Date().toISOString(),
+        },
+      ]);
       await api.uploadVideoFile(upload_url, file, setUploadProgress);
       const meta = await readVideoMetadata(file);
-      const updated = await api.completeReferenceVideo(sectionId, meta.duration);
-      onUpdate(updated);
+      const updated = await api.completeReferenceVideo(id, meta.duration);
+      patchVideos(videosRef.current.map((v) => (v.id === id ? updated : v)));
     } catch (err) {
       toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.uploadFailed"));
-      onUpdate({ reference_video_status: null, reference_video_url: null, reference_video_original_filename: null });
+      if (videoId) patchVideos(videosRef.current.filter((v) => v.id !== videoId));
     } finally {
       setUploadProgress(null);
+      setUploadingVideoId(null);
     }
   }
 
   async function handleDelete() {
-    setConfirmingDelete(false);
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    if (!id) return;
     try {
-      await api.deleteReferenceVideo(sectionId);
-      onUpdate({
-        reference_video_url: null,
-        reference_video_status: null,
-        reference_video_original_filename: null,
-        reference_video_duration_seconds: null,
-      });
+      await api.deleteReferenceVideo(id);
+      patchVideos(videosRef.current.filter((v) => v.id !== id));
     } catch (err) {
       toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.deleteFailed"));
     }
   }
-
-  const hasVideo = section.reference_video_status === "ready" && !!section.reference_video_url;
-  const pinnedVideoUrl = usePinnedUrl(section.reference_video_url);
-  const pinnedThumbnailUrl = usePinnedUrl(section.reference_video_thumbnail_url);
-  const thumbnailObjectPosition =
-    section.reference_video_thumbnail_focus_x != null && section.reference_video_thumbnail_focus_y != null
-      ? `${(section.reference_video_thumbnail_focus_x * 100).toFixed(1)}% ${(section.reference_video_thumbnail_focus_y * 100).toFixed(1)}%`
-      : undefined;
-  // 2026-09-10, Lino: "wie die videos auf der linocappuccino webseite,
-  // quasi in einem lightbox player mit der gleichen open animation" — the
-  // lightbox grows FROM this exact thumbnail's on-screen position/size
-  // (see flipTransform in ReferenceVideoLightbox below), so the trigger
-  // needs to capture that rect at the moment of the click, before the
-  // lightbox even mounts.
-  const thumbButtonRef = useRef<HTMLButtonElement>(null);
-  const [lightboxOriginRect, setLightboxOriginRect] = useState<DOMRect | null>(null);
 
   return (
     <div className="mb-5">
@@ -141,136 +150,199 @@ export function ReferenceVideoBlock({
         className="hidden"
         onChange={handlePick}
       />
-      {uploadProgress !== null ? (
-        <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex flex-col gap-2">
-          <span className="text-sm font-medium text-white/70">
-            {t("postproduction.uploading", { percent: Math.round(uploadProgress * 100) })}
-          </span>
-          <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
-            <div
-              className="h-full bg-blue-500 rounded-full transition-[width] duration-150"
-              style={{ width: `${Math.round(uploadProgress * 100)}%` }}
-            />
-          </div>
-        </div>
-      ) : section.reference_video_status === "processing" ? (
-        // 2026-09-10, Lino: "das scribble Video braucht extrem lange zu
-        // laden wenn man es abspielt! wird es komprimiert?" — it wasn't;
-        // now it is (see complete_reference_video/compress_for_web on the
-        // backend), and this is the window while that background
-        // compression runs (client's own upload already finished — no
-        // percent to show, unlike the branch above). Same shape as
-        // AnnotationsPanel-adjacent "please wait" states elsewhere in this
-        // app, indeterminate spinner instead of a progress bar.
-        <div className="rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex items-center gap-2.5">
-          <svg className="animate-spin w-4 h-4 text-white/50" viewBox="0 0 24 24" fill="none">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-          <span className="text-sm font-medium text-white/70">{t("referenceVideo.processing")}</span>
-        </div>
-      ) : hasVideo ? (
-        <div className="relative w-full sm:w-72 rounded-2xl bg-black overflow-hidden border border-white/10">
-          {/* 2026-09-08, Lino: "es soll ein thumbnail dargestellt werden und
-           * wenn man darauf klickt, soll sich das video in einer lightbox
-           * öffnen" — was a full-width inline <video controls>; now a
-           * compact clickable thumbnail that opens ReferenceVideoLightbox
-           * below on click. Lino, same session: "das video thumbnail soll
-           * dann auch immer ein zentriertes gesicht sein" — the real
-           * thumbnail (reference_video_thumbnail_url, face-priority frame +
-           * detect_face_focus object-position, same AuthImage/
-           * background_image_focus_x/y convention projects/page.tsx already
-           * uses for folder covers) is generated by a backend background
-           * task shortly after upload and arrives on this same object via
-           * the page's existing 12s poll — while it's still null (the
-           * ~seconds-long window right after a fresh upload), falls back to
-           * a muted <video preload="metadata"> showing its own first frame,
-           * same "browser renders it like an <img> poster" trick as before. */}
-          <button
-            ref={thumbButtonRef}
-            type="button"
-            onClick={() => {
-              setLightboxOriginRect(thumbButtonRef.current?.getBoundingClientRect() ?? null);
-              setShowLightbox(true);
+      <div className="flex flex-wrap gap-3">
+        {videos.map((video, index) => (
+          <ReferenceVideoTile
+            key={video.id}
+            video={video}
+            label={`V${index + 1}`}
+            uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
+            onOpen={(rect) => {
+              setLightboxOriginRect(rect);
+              setLightboxVideoId(video.id);
             }}
-            className="group relative block w-full aspect-video"
-            aria-label={t("referenceVideo.play")}
-          >
-            {pinnedThumbnailUrl ? (
-              <AuthImage
-                path={pinnedThumbnailUrl}
-                alt=""
-                className="w-full h-full object-cover"
-                objectPosition={thumbnailObjectPosition}
-              />
-            ) : (
-              // eslint-disable-next-line jsx-a11y/media-has-caption -- reference footage, no track available
-              <video src={pinnedVideoUrl ?? undefined} muted preload="metadata" playsInline className="w-full h-full object-cover" />
-            )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/30 transition-colors">
-              <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#000" className="translate-x-[1px]"><path d="M8 5v14l11-7z" /></svg>
-              </div>
-            </div>
-          </button>
-          <div className="absolute top-2 right-2">
-            <Menu
-              trigger={
-                <IconButton size={28} className="bg-black/50 backdrop-blur-sm text-white/70 hover:text-white hover:bg-black/70">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                    <circle cx="5" cy="12" r="1.8" />
-                    <circle cx="12" cy="12" r="1.8" />
-                    <circle cx="19" cy="12" r="1.8" />
-                  </svg>
-                </IconButton>
-              }
-            >
-              {(close) => (
-                <>
-                  <MenuItem
-                    onClick={() => {
-                      inputRef.current?.click();
-                      close();
-                    }}
-                  >
-                    {t("referenceVideo.replace")}
-                  </MenuItem>
-                  <MenuItem
-                    danger
-                    onClick={() => {
-                      setConfirmingDelete(true);
-                      close();
-                    }}
-                  >
-                    {t("common.delete")}
-                  </MenuItem>
-                </>
-              )}
-            </Menu>
-          </div>
-        </div>
-      ) : (
+            onDelete={() => setDeleteTargetId(video.id)}
+          />
+        ))}
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="w-full flex items-center gap-2 justify-center rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 py-5 transition-colors text-sm font-medium"
+          className="w-full sm:w-72 aspect-video flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-white/15 hover:border-white/30 bg-white/[0.02] hover:bg-white/[0.05] text-white/50 hover:text-white/80 transition-colors text-sm font-medium"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14M5 12h14" />
           </svg>
           {t("referenceVideo.upload")}
         </button>
-      )}
+      </div>
       <ConfirmDialog
-        open={confirmingDelete}
+        open={deleteTargetId !== null}
         title={t("referenceVideo.deleteTitle")}
         message={t("referenceVideo.deleteMessage")}
         onConfirm={handleDelete}
-        onCancel={() => setConfirmingDelete(false)}
+        onCancel={() => setDeleteTargetId(null)}
       />
-      {showLightbox && hasVideo && pinnedVideoUrl && (
-        <ReferenceVideoLightbox url={pinnedVideoUrl} originRect={lightboxOriginRect} onClose={() => setShowLightbox(false)} />
-      )}
+      {(() => {
+        const lightboxVideo = videos.find((v) => v.id === lightboxVideoId);
+        return lightboxVideo ? (
+          <PinnedReferenceVideoLightbox
+            video={lightboxVideo}
+            originRect={lightboxOriginRect}
+            onClose={() => setLightboxVideoId(null)}
+          />
+        ) : null;
+      })()}
+    </div>
+  );
+}
+
+// Own tiny component (not an inline IIFE calling the hook directly) so
+// usePinnedUrl below is called from something React recognizes as a
+// component, not a plain function invoked mid-render.
+function PinnedReferenceVideoLightbox({
+  video,
+  originRect,
+  onClose,
+}: {
+  video: ReferenceVideo;
+  originRect: DOMRect | null;
+  onClose: () => void;
+}) {
+  const pinnedUrl = usePinnedUrl(video.url);
+  if (!pinnedUrl) return null;
+  return <ReferenceVideoLightbox url={pinnedUrl} originRect={originRect} onClose={onClose} />;
+}
+
+/** One tile in the grid above — either the "uploading" progress state, the
+ * "processing" (server-side compression) spinner state, or the ready
+ * clickable thumbnail with its "V{n}" badge + delete menu. Split out of
+ * ReferenceVideoBlock (rather than an inline .map() body) purely so each
+ * tile can call the usePinnedUrl/useState hooks it needs without an
+ * eslint-disable for hooks-in-a-loop. */
+function ReferenceVideoTile({
+  video,
+  label,
+  uploadProgress,
+  onOpen,
+  onDelete,
+}: {
+  video: ReferenceVideo;
+  label: string;
+  uploadProgress: number | null;
+  onOpen: (originRect: DOMRect) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useLanguage();
+  const thumbButtonRef = useRef<HTMLButtonElement>(null);
+  const pinnedVideoUrl = usePinnedUrl(video.url);
+  const pinnedThumbnailUrl = usePinnedUrl(video.thumbnail_url);
+  const thumbnailObjectPosition =
+    video.thumbnail_focus_x != null && video.thumbnail_focus_y != null
+      ? `${(video.thumbnail_focus_x * 100).toFixed(1)}% ${(video.thumbnail_focus_y * 100).toFixed(1)}%`
+      : undefined;
+
+  if (uploadProgress !== null) {
+    return (
+      <div className="w-full sm:w-72 aspect-video rounded-2xl bg-white/[0.04] border border-white/10 p-4 flex flex-col justify-center gap-2">
+        <span className="text-sm font-medium text-white/70">
+          {t("postproduction.uploading", { percent: Math.round(uploadProgress * 100) })}
+        </span>
+        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full bg-blue-500 rounded-full transition-[width] duration-150"
+            style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (video.status === "processing") {
+    // 2026-09-10, Lino: "das scribble Video braucht extrem lange zu laden
+    // wenn man es abspielt! wird es komprimiert?" — it wasn't; now it is
+    // (see complete_reference_video/compress_for_web on the backend), and
+    // this is the window while that background compression runs (client's
+    // own upload already finished — no percent to show).
+    return (
+      <div className="w-full sm:w-72 aspect-video rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center gap-2.5">
+        <svg className="animate-spin w-4 h-4 text-white/50" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+        <span className="text-sm font-medium text-white/70">{t("referenceVideo.processing")}</span>
+      </div>
+    );
+  }
+
+  if (video.status !== "ready" || !pinnedVideoUrl) return null;
+
+  return (
+    <div className="relative w-full sm:w-72 rounded-2xl bg-black overflow-hidden border border-white/10">
+      {/* 2026-09-08, Lino: "es soll ein thumbnail dargestellt werden und
+       * wenn man darauf klickt, soll sich das video in einer lightbox
+       * öffnen" — Lino, same session: "das video thumbnail soll dann auch
+       * immer ein zentriertes gesicht sein" — the real thumbnail
+       * (face-priority frame + detect_face_focus object-position, same
+       * AuthImage/background_image_focus_x/y convention projects/page.tsx
+       * already uses for folder covers) is generated by a backend
+       * background task shortly after upload; while it's still null,
+       * falls back to a muted <video preload="metadata"> showing its own
+       * first frame, same "browser renders it like an <img> poster" trick. */}
+      <button
+        ref={thumbButtonRef}
+        type="button"
+        onClick={() => {
+          const rect = thumbButtonRef.current?.getBoundingClientRect();
+          if (rect) onOpen(rect);
+        }}
+        className="group relative block w-full aspect-video"
+        aria-label={t("referenceVideo.play")}
+      >
+        {pinnedThumbnailUrl ? (
+          <AuthImage
+            path={pinnedThumbnailUrl}
+            alt=""
+            className="w-full h-full object-cover"
+            objectPosition={thumbnailObjectPosition}
+          />
+        ) : (
+          // eslint-disable-next-line jsx-a11y/media-has-caption -- reference footage, no track available
+          <video src={pinnedVideoUrl} muted preload="metadata" playsInline className="w-full h-full object-cover" />
+        )}
+        <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/30 transition-colors">
+          <div className="w-11 h-11 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#000" className="translate-x-[1px]"><path d="M8 5v14l11-7z" /></svg>
+          </div>
+        </div>
+      </button>
+      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/50 backdrop-blur-sm text-[11px] font-semibold text-white/90 tabular-nums pointer-events-none">
+        {label}
+      </div>
+      <div className="absolute top-2 right-2">
+        <Menu
+          trigger={
+            <IconButton size={28} className="bg-black/50 backdrop-blur-sm text-white/70 hover:text-white hover:bg-black/70">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="5" cy="12" r="1.8" />
+                <circle cx="12" cy="12" r="1.8" />
+                <circle cx="19" cy="12" r="1.8" />
+              </svg>
+            </IconButton>
+          }
+        >
+          {(close) => (
+            <MenuItem
+              danger
+              onClick={() => {
+                onDelete();
+                close();
+              }}
+            >
+              {t("common.delete")}
+            </MenuItem>
+          )}
+        </Menu>
+      </div>
     </div>
   );
 }
