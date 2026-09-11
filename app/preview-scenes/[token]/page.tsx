@@ -612,7 +612,14 @@ function PreviewScenesPageInner() {
                 {sectionsSorted.map((section) => {
                   const scenes = scenesFor(section.id);
                   const doneCount = scenes.filter((s) => s.completed).length;
-                  const thumbnailUrl = firstThumbnailFor(section.id);
+                  // 2026-09-11 — manual override (see the authenticated
+                  // app's own uploadSectionThumbnail) wins over the
+                  // auto-derived "first scene with a cover photo"
+                  // fallback below. This page has its own separate copy
+                  // of the Skript-Übersicht tile (not shared with
+                  // projects/[id]/page.tsx), missed when the upload
+                  // feature first shipped there.
+                  const thumbnailUrl = section.thumbnail_url ?? firstThumbnailFor(section.id);
                   return (
                     <button
                       key={section.id}
