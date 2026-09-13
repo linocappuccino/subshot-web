@@ -553,19 +553,85 @@ export function ReferenceVideoLightbox({ url, originRect, onClose }: { url: stri
       setIsFullscreen(document.fullscreenElement === videoRef.current);
     }
     document.addEventListener("fullscreenchange", onFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    // iOS Safari never sets document.fullscreenElement for a <video> —
+    // it has its own separate native video-fullscreen API/events instead
+    // (see enterVideoFullscreen/exitVideoFullscreen below), so isFullscreen
+    // would otherwise silently stay stuck on false there.
+    const video = videoRef.current;
+    function onWebkitBegin() { setIsFullscreen(true); }
+    function onWebkitEnd() { setIsFullscreen(false); }
+    video?.addEventListener("webkitbeginfullscreen", onWebkitBegin);
+    video?.addEventListener("webkitendfullscreen", onWebkitEnd);
+    return () => {
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+      video?.removeEventListener("webkitbeginfullscreen", onWebkitBegin);
+      video?.removeEventListener("webkitendfullscreen", onWebkitEnd);
+    };
   }, []);
+
+  // iOS Safari has no generic document Fullscreen API for a `playsInline`
+  // <video> — it only exposes the older, video-specific
+  // webkitEnterFullscreen()/webkitExitFullscreen() pair instead (not in
+  // the lib.dom typings, hence the cast). Every fullscreen entry/exit in
+  // this component (the manual button AND the rotate-to-fullscreen effect
+  // below) goes through these two so both APIs are tried consistently.
+  function enterVideoFullscreen(video: HTMLVideoElement) {
+    const legacy = video as HTMLVideoElement & { webkitEnterFullscreen?: () => void; webkitSupportsFullscreen?: boolean };
+    if (legacy.webkitSupportsFullscreen && legacy.webkitEnterFullscreen) {
+      legacy.webkitEnterFullscreen();
+    } else {
+      video.requestFullscreen?.().catch(() => {});
+    }
+  }
+
+  function exitVideoFullscreen(video: HTMLVideoElement) {
+    const legacy = video as HTMLVideoElement & { webkitExitFullscreen?: () => void; webkitDisplayingFullscreen?: boolean };
+    if (legacy.webkitDisplayingFullscreen && legacy.webkitExitFullscreen) {
+      legacy.webkitExitFullscreen();
+    } else if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
 
   function toggleFullscreen(e: React.MouseEvent) {
     e.stopPropagation();
     const video = videoRef.current;
     if (!video) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
+    if (document.fullscreenElement || isFullscreen) {
+      exitVideoFullscreen(video);
     } else {
-      video.requestFullscreen?.().catch(() => {});
+      enterVideoFullscreen(video);
     }
   }
+
+  // 2026-09-13, Lino: "wenn man die seite auf dem mobile ansieht durch
+  // drehen des mobiles in fullscreen wechseln können um das scribble video
+  // in fullscreen zu sehen" — the <video> is deliberately `playsInline`
+  // (keeps it embedded in the lightbox's own layout instead of iOS's
+  // default auto-fullscreen-on-play), which as a side effect also disables
+  // iOS's native rotate-to-fullscreen behavior a plain, non-playsinline
+  // <video> gets for free. Restores just that one behavior manually:
+  // gated to actual touch/mobile devices (`pointer: coarse`) so a desktop
+  // window resize or a rare rotated external-monitor setup never yanks the
+  // video into fullscreen on its own — this is specifically about a phone
+  // being physically turned sideways.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+    const mql = window.matchMedia("(orientation: landscape)");
+    function onOrientationChange(e: { matches: boolean }) {
+      const video = videoRef.current;
+      if (!video) return;
+      if (e.matches) enterVideoFullscreen(video);
+      else exitVideoFullscreen(video);
+    }
+    mql.addEventListener("change", onOrientationChange);
+    // Phone was already turned sideways at the moment the lightbox opened
+    // — treat that the same as an in-flight rotation instead of requiring
+    // a further rotate-away-and-back to notice.
+    onOrientationChange(mql);
+    return () => mql.removeEventListener("change", onOrientationChange);
+  }, []);
 
   function togglePlay() {
     const video = videoRef.current;
