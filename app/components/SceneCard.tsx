@@ -405,6 +405,31 @@ export function SceneCard({
   const [descriptionOpen, setDescriptionOpen] = useState(true);
   // ...and for the shot ("Einstellung") list.
   const [shotsOpen, setShotsOpen] = useState(true);
+  // 2026-09-13, Lino: "wenn eine szene als 'im kasten' markiert wird, wird
+  // sie minimiert, klickt man auf den titel soll sie wieder die normale
+  // grösse einnehmen... NUR bei szenen die schon im kasten sind" — web-
+  // parity port of iOS's expandedCompletedSceneIds/isCollapsed (see
+  // ShotListView.swift), which already had this and web never did. Local
+  // to this one card (like dialogOpen/descriptionOpen/shotsOpen above), not
+  // persisted — resets to collapsed on remount, same session-local
+  // reasoning as iOS's own comment on that state.
+  const [expanded, setExpanded] = useState(false);
+  const isCollapsed = scene.completed && !expanded;
+
+  // Tapping the tile body: for an "im Kasten" scene this toggles
+  // collapse/expand (same as iOS's sceneTile onTapGesture) rather than
+  // opening the edit modal — editing a completed scene still works, just
+  // via the "…" menu's own "Bearbeiten" item instead, exactly like iOS
+  // routes it through the long-press context menu there. Scenes that
+  // aren't completed are never collapsed, so they keep opening the edit
+  // modal on tap like before.
+  function handleTileClick() {
+    if (scene.completed) {
+      setExpanded(false);
+    } else {
+      onEdit();
+    }
+  }
 
   async function saveGoodTake() {
     setEditingGoodTake(false);
@@ -510,6 +535,95 @@ export function SceneCard({
             : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
         }`}
       >
+      {isCollapsed ? (
+        // Collapsed "im Kasten" summary — number/title/priority plus the
+        // start date if there is one, same idea as iOS's sceneCollapsedRow.
+        // Tap the title area to expand back to the full card; edit/
+        // duplicate/delete/"nicht mehr im Kasten" all stay reachable via
+        // the "…" menu without expanding first, mirroring iOS's
+        // long-press context menu on its own collapsed row.
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpanded(true)}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
+              <h3 className="font-semibold truncate">
+                {scene.name ? renderHighlightedText(scene.name, "name", highlightAnnotations, highlightedAnnotationId, onAnnotationClick) : t("scene.unnamed")}
+              </h3>
+              {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
+            </div>
+            {scene.scheduled_at && (
+              <p className="text-[11px] text-white/40 mt-1">
+                Start: {new Date(scene.scheduled_at).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            )}
+          </div>
+          {dragHandleProps && (
+            <button
+              {...dragHandleProps.attributes}
+              {...dragHandleProps.listeners}
+              className="shrink-0 touch-none text-white/20 hover:text-white/50 cursor-grab active:cursor-grabbing p-1.5"
+              aria-label={t("scene.dragHandle")}
+            >
+              <svg width="14" height="18" viewBox="0 0 12 16" fill="currentColor">
+                <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
+                <circle cx="9" cy="2" r="1.4" /><circle cx="9" cy="8" r="1.4" /><circle cx="9" cy="14" r="1.4" />
+              </svg>
+            </button>
+          )}
+          <Menu
+            trigger={
+              <IconButton size={30}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="5" cy="12" r="1.8" />
+                  <circle cx="12" cy="12" r="1.8" />
+                  <circle cx="19" cy="12" r="1.8" />
+                </svg>
+              </IconButton>
+            }
+          >
+            {(close) => (
+              <>
+                <MenuItem
+                  onClick={() => {
+                    onEdit();
+                    close();
+                  }}
+                >
+                  Bearbeiten
+                </MenuItem>
+                <MenuItem
+                  onClick={() => {
+                    toggleCompleted();
+                    close();
+                  }}
+                >
+                  Nicht mehr im Kasten
+                </MenuItem>
+                {onDuplicate && (
+                  <MenuItem
+                    onClick={() => {
+                      onDuplicate();
+                      close();
+                    }}
+                  >
+                    Duplizieren
+                  </MenuItem>
+                )}
+                <MenuItem
+                  danger
+                  onClick={() => {
+                    onDelete();
+                    close();
+                  }}
+                >
+                  Löschen
+                </MenuItem>
+              </>
+            )}
+          </Menu>
+        </div>
+      ) : (
+        <>
       {/* Comment-mode pen-stroke overlays (2026-07-14) — see
           PenAnnotationOverlay's own doc comment. Sits above the card's own
           background/border (this element is `relative`) but below its
@@ -523,7 +637,7 @@ export function SceneCard({
         />
       )}
       <div className="flex items-start gap-2 mb-2">
-        <div className="flex-1 min-w-0 cursor-pointer" onClick={onEdit}>
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={handleTileClick}>
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
             {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
@@ -621,7 +735,7 @@ export function SceneCard({
       </div>
 
       {pinnedImageUrl && (
-        <div className="cursor-pointer mb-2 rounded-xl overflow-hidden" onClick={onEdit}>
+        <div className="cursor-pointer mb-2 rounded-xl overflow-hidden" onClick={handleTileClick}>
           <AuthImage path={pinnedImageUrl} alt={scene.name ?? "Szene"} className="w-full object-cover" lockAspectRatio />
         </div>
       )}
@@ -835,6 +949,8 @@ export function SceneCard({
           Im Kasten
         </button>
       </div>
+        </>
+      )}
 
       <ShotEditModal
         open={editingShot !== null}
