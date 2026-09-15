@@ -1797,27 +1797,7 @@ export function VideoReviewModal({
             </div>
 
             {/* Custom Timeline: Fortschritt + Kommentar-Marker + Hover-Filmstrip */}
-            {/* 2026-09-15, Lino: "man muss die timeline im video player
-                super genau treffen damit die bilder angezeigt werden...
-                eine dezente toleranz einbauen" — the actual track below is
-                a deliberately thin 4px line (2026-07-18: "Timelinelinie ist
-                noch zu dick"); the hover/seek listeners now sit on THIS
-                outer wrapper instead (its `pt-8 pb-8` padding was already
-                here for layout spacing, not hit-testing — reusing it costs
-                nothing extra), giving a ~68px-tall forgiving hit zone
-                around that thin visual line without changing how it looks.
-                `timelineRef` stays on the inner track div below (same
-                width as this wrapper — the padding here is vertical only —
-                so fractionFromClientX's horizontal math is untouched).
-                Comment-marker avatars inside still call stopPropagation on
-                their own onClick (unchanged), so clicking one still can't
-                also trigger a seek here. */}
-            <div
-              className="relative pt-8 pb-8 cursor-pointer"
-              onMouseMove={handleTimelineMove}
-              onMouseLeave={() => !isDragging && setHoverFraction(null)}
-              onMouseDown={handleTimelinePointerDown}
-            >
+            <div className="relative pt-8 pb-8">
               {hoverFraction != null && filmstrip && frameCount > 1 && (() => {
                 // 2026-07-19, Lino: "beim Scrubben über die Timeline wird
                 // das Bild über der Timeline vom Kachelrand abgeschnitten"
@@ -1854,13 +1834,14 @@ export function VideoReviewModal({
               })()}
               <div
                 ref={timelineRef}
-                // 2026-09-15 — hover/seek listeners moved to the outer
-                // wrapper above (see its own doc comment); `timelineRef`
-                // stays here purely as the width/position reference for
-                // fractionFromClientX and the hover-preview's clamping math.
+                // 2026-09-15 — hover/seek listeners moved to a dedicated
+                // invisible overlay rendered right after this div (see its
+                // own doc comment below); `timelineRef` stays here purely
+                // as the width/position reference for fractionFromClientX
+                // and the hover-preview's clamping math.
                 // 2026-07-18, Lino: "Timelinelinie ist noch zu dick, kann
                 // feiner sein" — von h-1.5 (6px) auf h-1 (4px).
-                className="group relative h-1 rounded-full bg-white/10 cursor-pointer"
+                className="relative h-1 rounded-full bg-white/10"
               >
                 {/* 2026-07-17, Lino: "kann sie sich smoother vergrössern"
                     (der Fortschrittsbalken beim Abspielen) — ursprünglich
@@ -1881,13 +1862,18 @@ export function VideoReviewModal({
                     Maus auf der Spitze der Timeline ist, um zu wissen dass man
                     ziehen kann" — rein visueller Griff an der aktuellen
                     Abspielposition, pointer-events-none damit Klicks/Drag
-                    weiterhin vom umschliessenden Track (onMouseDown oben)
-                    behandelt werden, nicht vom Griff selbst. Sichtbar bei
-                    Hover ODER waehrend des Draggens (sonst verschwindet er
-                    genau dann, wenn man ihn gerade zieht). */}
+                    weiterhin vom Hit-Zone-Overlay (siehe unten) behandelt
+                    werden, nicht vom Griff selbst. Sichtbar bei Hover ODER
+                    waehrend des Draggens (sonst verschwindet er genau dann,
+                    wenn man ihn gerade zieht). 2026-09-15 — was CSS
+                    `group-hover`, jetzt an `hoverFraction` (dieselbe
+                    JS-Hover-Erkennung wie die Filmstrip-Vorschau) gekoppelt,
+                    seit der Track selbst keine eigenen Maus-Handler mehr hat
+                    (siehe timelineRef's Doc-Kommentar) und `:hover` darauf
+                    also nicht mehr zuverlaessig feuert. */}
                 <div
                   className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white ring-1 ring-black/20 shadow pointer-events-none transition-opacity ${
-                    isDragging ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    isDragging || hoverFraction != null ? "opacity-100" : "opacity-0"
                   }`}
                   style={{ left: `${progressPct}%` }}
                 />
@@ -1932,6 +1918,27 @@ export function VideoReviewModal({
                   </div>
                 ))}
               </div>
+              {/* 2026-09-15, Lino: "man muss die timeline im video player
+                  super genau treffen damit die bilder angezeigt werden...
+                  eine dezente toleranz einbauen", then "die toleranz der
+                  trefferfläche ist zu gross.. mach die ca. 30px" — a
+                  separate, invisible hit-zone, vertically centered on the
+                  visible 4px track above (top-[19px] = pt-8's 32px, minus
+                  half of this 30px zone, plus half the track's own 4px),
+                  rendered AFTER (so on top of) the plain track/progress-
+                  fill/knob above — none of those carry their own z-index,
+                  so later-in-DOM wins ties — while staying below the
+                  comment markers' explicit z-10, so their own onClick
+                  (with its own stopPropagation) still can't also trigger a
+                  seek here. `timelineRef` stays on the visible track for
+                  fractionFromClientX's width/position math, untouched by
+                  this overlay. */}
+              <div
+                className="absolute inset-x-0 top-[19px] h-[30px] cursor-pointer"
+                onMouseMove={handleTimelineMove}
+                onMouseLeave={() => !isDragging && setHoverFraction(null)}
+                onMouseDown={handleTimelinePointerDown}
+              />
             </div>
             </div>
           </div>
