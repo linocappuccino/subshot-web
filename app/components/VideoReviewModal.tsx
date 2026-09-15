@@ -381,6 +381,30 @@ export function VideoReviewModal({
     videoSrcRef.current = { versionId: currentVersion.id, url: currentVersion.playback_url };
     return currentVersion.playback_url;
   }
+  // 2026-09-15, Lino: "beim video player werden die bilder nicht mehr
+  // angezeigt wenn man über die timeline fährt mit der maus... es wird nur
+  // der rahmen der bilder angezeigt aber der rahmen ist leer" — exact same
+  // root cause as resolveVideoSrc() right above, just never given the same
+  // fix: `filmstrip_url` is ALSO re-signed fresh on every single
+  // `_video_out` response (main.py), and the live-sync poll/Pusher refetch
+  // hands this component a new `video` object with a changed
+  // `filmstrip_url` string even though the underlying file never changed.
+  // The hover-preview binds that string directly as a `background-image`
+  // (see the timeline JSX below) — a changed url there forces the browser
+  // to restart fetching the whole (large, ~1-2MB) sprite sheet from
+  // scratch, so on a project getting frequent live updates it can end up
+  // perpetually re-fetching and never finishing a single load: the
+  // preview's bordered box still renders (its size/position never
+  // depended on the image loading), just with nothing painted inside.
+  // Same fix, same shape: pin the url by version id for as long as it's
+  // still the same version, only let a real version switch through.
+  const filmstripSrcRef = useRef<{ versionId: string; url: string } | undefined>(undefined);
+  function resolveFilmstripSrc(): string | undefined {
+    if (!currentVersion?.filmstrip_url) return undefined;
+    if (filmstripSrcRef.current?.versionId === currentVersion.id) return filmstripSrcRef.current.url;
+    filmstripSrcRef.current = { versionId: currentVersion.id, url: currentVersion.filmstrip_url };
+    return currentVersion.filmstrip_url;
+  }
   const [duration, setDuration] = useState(currentVersion?.duration_seconds ?? 0);
   const [hoverFraction, setHoverFraction] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -1166,7 +1190,7 @@ export function VideoReviewModal({
     wasAllFeedbackResolvedRef.current = allFeedbackResolved;
   }, [allFeedbackResolved, presenting]);
 
-  const filmstrip = currentVersion?.filmstrip_url;
+  const filmstrip = resolveFilmstripSrc();
   const frameCount = currentVersion?.filmstrip_frame_count ?? 0;
   const frameWidth = currentVersion?.filmstrip_frame_width ?? 160;
   const frameHeight = currentVersion?.filmstrip_frame_height ?? 90;

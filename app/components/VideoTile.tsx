@@ -7,6 +7,7 @@ import { Avatar } from "./ui/Avatar";
 import { DateTimePicker } from "./ui/DateTimePicker";
 import type { Member, PostproductionStatus, Video, VideoVersion } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n";
+import { usePinnedUrl } from "./ReferenceVideoBlock";
 
 // 2026-07-18 (Todoist #192, Lino: "jeder Status eine eigene Farbe") — all
 // three non-final statuses used to share the same grey "default" tone,
@@ -147,8 +148,18 @@ export function VideoTile({
   const [frameIndex, setFrameIndex] = useState(0);
   const [hovering, setHovering] = useState(false);
 
+  // 2026-09-15 — same re-signed-URL bug as VideoReviewModal.tsx's own
+  // resolveFilmstripSrc (see that file's doc comment): `filmstrip_url` gets
+  // a fresh presigned query string on every poll/live-update, and binding a
+  // changed url straight to a `background-image` (below) forces the
+  // browser to restart fetching the whole sprite sheet — on a page that
+  // polls this often, that can mean it never finishes loading, leaving the
+  // hover-scrub thumbnail perpetually blank. `usePinnedUrl` (pins by PATH,
+  // ignoring the query string) already exists for exactly this, just
+  // hadn't been applied here yet.
+  const pinnedFilmstripUrl = usePinnedUrl(latest?.filmstrip_url);
   const frameCount = latest?.filmstrip_frame_count ?? 0;
-  const hasFilmstrip = !!latest?.filmstrip_url && frameCount > 1;
+  const hasFilmstrip = !!pinnedFilmstripUrl && frameCount > 1;
 
   function handleMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!hasFilmstrip || !tileRef.current) return;
@@ -303,7 +314,7 @@ export function VideoTile({
           <div
             className="absolute inset-0"
             style={{
-              backgroundImage: `url(${latest!.filmstrip_url})`,
+              backgroundImage: `url(${pinnedFilmstripUrl})`,
               backgroundSize: `${frameCount * 100}% 100%`,
               backgroundPosition: `${bgPositionPercent}% 0%`,
               backgroundRepeat: "no-repeat",
