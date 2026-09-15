@@ -591,10 +591,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         method: "POST",
         body: JSON.stringify({ original_filename: file.name, content_type: file.type || "video/mp4" }),
       }),
-    completeReferenceVideo: (videoId: string, durationSeconds?: number) =>
+    completeReferenceVideo: (videoId: string, durationSeconds?: number, aspectRatio?: number) =>
       request<ReferenceVideo>(`reference-videos/${videoId}/complete`, {
         method: "POST",
-        body: JSON.stringify({ duration_seconds: durationSeconds ?? null }),
+        body: JSON.stringify({ duration_seconds: durationSeconds ?? null, aspect_ratio: aspectRatio ?? null }),
       }),
     deleteReferenceVideo: (videoId: string) => request<void>(`reference-videos/${videoId}`, { method: "DELETE" }),
     // 2026-09-11 (same day, Lino: "man muss aber die videos in der

@@ -180,6 +180,7 @@ export interface ReferenceVideo {
   status: "uploading" | "processing" | "ready" | null;
   original_filename: string | null;
   duration_seconds: number | null;
+  aspect_ratio: number | null;
   thumbnail_url: string | null;
   thumbnail_focus_x: number | null;
   thumbnail_focus_y: number | null;

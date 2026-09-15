@@ -19,6 +19,18 @@ import type { ReferenceVideo, Section } from "@/lib/types";
 
 const ALLOWED_REFERENCE_VIDEO_TYPES = ["video/mp4", "video/quicktime", "video/webm"];
 
+// 2026-09-15, Lino: "wenn ein 16:9 video hochgeladen wird, soll es die
+// ganze content breite einnehmen" — everything else (vertical phone
+// footage, 4:3, square, ...) keeps the existing 3-per-row grid. A tight
+// band around the real 16/9 ratio (≈1.778) rather than "any landscape
+// video" — the whole point is to single out actual 16:9 footage, not turn
+// every landscape upload into a full-width row and defeat the grid.
+const SIXTEEN_BY_NINE_MIN = 1.65;
+const SIXTEEN_BY_NINE_MAX = 1.95;
+function isSixteenByNine(aspectRatio: number | null): boolean {
+  return aspectRatio != null && aspectRatio >= SIXTEEN_BY_NINE_MIN && aspectRatio <= SIXTEEN_BY_NINE_MAX;
+}
+
 type ReferenceVideoFields = Pick<Section, "reference_videos">;
 
 /** 2026-09-08, Lino: "warum reloaded das video immer alle 5-10 sekunde" —
@@ -136,7 +148,7 @@ export function ReferenceVideoBlock({
       setUploadingVideoId(id);
       const placeholder: ReferenceVideo = {
         id, url: null, status: "uploading", original_filename: file.name,
-        duration_seconds: null, thumbnail_url: null, thumbnail_focus_x: null, thumbnail_focus_y: null,
+        duration_seconds: null, aspect_ratio: null, thumbnail_url: null, thumbnail_focus_x: null, thumbnail_focus_y: null,
         created_at: previousVideo?.created_at ?? new Date().toISOString(),
       };
       patchVideos(
@@ -146,7 +158,8 @@ export function ReferenceVideoBlock({
       );
       await api.uploadVideoFile(upload_url, file, setUploadProgress);
       const meta = await readVideoMetadata(file);
-      const updated = await api.completeReferenceVideo(id, meta.duration);
+      const aspectRatio = meta.width && meta.height ? meta.width / meta.height : undefined;
+      const updated = await api.completeReferenceVideo(id, meta.duration, aspectRatio);
       patchVideos(videosRef.current.map((v) => (v.id === id ? updated : v)));
     } catch (err) {
       toast.showError(err instanceof ApiError ? err.message : t("referenceVideo.uploadFailed"));
@@ -233,6 +246,7 @@ export function ReferenceVideoBlock({
                 key={video.id}
                 video={video}
                 label={`V${index + 1}`}
+                fullWidth={isSixteenByNine(video.aspect_ratio)}
                 uploadProgress={video.id === uploadingVideoId ? uploadProgress : null}
                 onOpen={(rect, url) => setLightbox({ originRect: rect, url })}
                 onReplace={() => {
@@ -282,6 +296,7 @@ export function ReferenceVideoBlock({
 function ReferenceVideoSortableTile(props: {
   video: ReferenceVideo;
   label: string;
+  fullWidth: boolean;
   uploadProgress: number | null;
   onOpen: (originRect: DOMRect, url: string) => void;
   onReplace: () => void;
@@ -294,7 +309,7 @@ function ReferenceVideoSortableTile(props: {
       style={{ transform: DndCSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
       {...attributes}
       {...listeners}
-      className="w-full touch-none cursor-grab active:cursor-grabbing"
+      className={`w-full touch-none cursor-grab active:cursor-grabbing ${props.fullWidth ? "sm:col-span-3" : ""}`}
     >
       <ReferenceVideoTile {...props} />
     </div>
