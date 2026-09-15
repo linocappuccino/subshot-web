@@ -1742,6 +1742,17 @@ export function VideoReviewModal({
                   ref={videoRef}
                   src={resolveVideoSrc()}
                   crossOrigin="anonymous"
+                  // 2026-09-15, Lino: "beim drücken von play wechselt er
+                  // nun immer in den vollbildmodus... die kommentarfunktion
+                  // verschwindet dadurch" — this <video> never had
+                  // `playsInline`, unlike ReferenceVideoLightbox's own
+                  // player (ReferenceVideoBlock.tsx) which already sets it.
+                  // Without it, iOS Safari auto-opens its native fullscreen
+                  // player on play instead of keeping the video embedded in
+                  // this custom layout, taking the whole comment UI with it
+                  // off-screen. Same fix as that other player, just never
+                  // applied here.
+                  playsInline
                   onLoadedData={() => setVideoReady(true)}
                   onLoadedMetadata={(e) => {
                     setDuration(e.currentTarget.duration || currentVersion.duration_seconds || 0);
