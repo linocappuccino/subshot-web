@@ -1797,7 +1797,27 @@ export function VideoReviewModal({
             </div>
 
             {/* Custom Timeline: Fortschritt + Kommentar-Marker + Hover-Filmstrip */}
-            <div className="relative pt-8 pb-8">
+            {/* 2026-09-15, Lino: "man muss die timeline im video player
+                super genau treffen damit die bilder angezeigt werden...
+                eine dezente toleranz einbauen" — the actual track below is
+                a deliberately thin 4px line (2026-07-18: "Timelinelinie ist
+                noch zu dick"); the hover/seek listeners now sit on THIS
+                outer wrapper instead (its `pt-8 pb-8` padding was already
+                here for layout spacing, not hit-testing — reusing it costs
+                nothing extra), giving a ~68px-tall forgiving hit zone
+                around that thin visual line without changing how it looks.
+                `timelineRef` stays on the inner track div below (same
+                width as this wrapper — the padding here is vertical only —
+                so fractionFromClientX's horizontal math is untouched).
+                Comment-marker avatars inside still call stopPropagation on
+                their own onClick (unchanged), so clicking one still can't
+                also trigger a seek here. */}
+            <div
+              className="relative pt-8 pb-8 cursor-pointer"
+              onMouseMove={handleTimelineMove}
+              onMouseLeave={() => !isDragging && setHoverFraction(null)}
+              onMouseDown={handleTimelinePointerDown}
+            >
               {hoverFraction != null && filmstrip && frameCount > 1 && (() => {
                 // 2026-07-19, Lino: "beim Scrubben über die Timeline wird
                 // das Bild über der Timeline vom Kachelrand abgeschnitten"
@@ -1834,9 +1854,10 @@ export function VideoReviewModal({
               })()}
               <div
                 ref={timelineRef}
-                onMouseMove={handleTimelineMove}
-                onMouseLeave={() => !isDragging && setHoverFraction(null)}
-                onMouseDown={handleTimelinePointerDown}
+                // 2026-09-15 — hover/seek listeners moved to the outer
+                // wrapper above (see its own doc comment); `timelineRef`
+                // stays here purely as the width/position reference for
+                // fractionFromClientX and the hover-preview's clamping math.
                 // 2026-07-18, Lino: "Timelinelinie ist noch zu dick, kann
                 // feiner sein" — von h-1.5 (6px) auf h-1 (4px).
                 className="group relative h-1 rounded-full bg-white/10 cursor-pointer"
