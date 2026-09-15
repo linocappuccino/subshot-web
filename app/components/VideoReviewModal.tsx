@@ -994,9 +994,20 @@ export function VideoReviewModal({
     }
   }
 
-  async function submitComment() {
+  // 2026-09-15, Lino: "auf der preview seite im player werden die
+  // kommentare nicht gespeichert / angezeigt.. es passiert nach der
+  // namenseinfage einfach nichts" — root cause: this early-returned into
+  // showNameDialog without ever re-attempting the post once a name was
+  // given. `confirmVisitorName` below only saved `visitorName` to state
+  // and closed the dialog — a plain follow-up call to `submitComment()`
+  // there would still read the STALE (null) `visitorName` from this
+  // closure, since `setVisitorName` doesn't take effect until the next
+  // render. `nameOverride` lets the dialog's confirm handler pass the
+  // just-typed name straight through instead of waiting on that render.
+  async function submitComment(nameOverride?: string) {
     if (!currentVersion || !commentText.trim() || posting) return;
-    if (publicMode && !visitorName) {
+    const effectiveVisitorName = nameOverride ?? visitorName;
+    if (publicMode && !effectiveVisitorName) {
       setShowNameDialog(true);
       return;
     }
@@ -1005,7 +1016,7 @@ export function VideoReviewModal({
       const created =
         publicMode && postComment
           ? await postComment(
-              currentVersion.id, videoRef.current?.currentTime ?? 0, commentText.trim(), replyTo?.id ?? null, visitorName!
+              currentVersion.id, videoRef.current?.currentTime ?? 0, commentText.trim(), replyTo?.id ?? null, effectiveVisitorName!
             )
           : await api.createVideoComment(
               currentVersion.id, videoRef.current?.currentTime ?? 0, commentText.trim(), replyTo?.id ?? null
@@ -1038,7 +1049,11 @@ export function VideoReviewModal({
     sessionStorage.setItem(NAME_KEY, trimmed);
     setVisitorName(trimmed);
     setShowNameDialog(false);
-    requestAnimationFrame(() => commentInputRef.current?.focus());
+    // Re-attempt the comment post that opened this dialog in the first
+    // place — passing `trimmed` directly rather than relying on
+    // `visitorName` state, which won't reflect the line above until the
+    // next render (see submitComment's own doc comment).
+    submitComment(trimmed);
   }
 
   async function submitFeedback() {
