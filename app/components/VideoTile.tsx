@@ -192,6 +192,17 @@ export function VideoTile({
     ? versionWithKnownAspect.filmstrip_frame_width! / versionWithKnownAspect.filmstrip_frame_height!
     : 16 / 9;
 
+  // 2026-09-15, Lino: "wenn man auf der postproduction seite ist wo man die
+  // kachelübersicht mit allen videos hat.. da muss das 16:9 format die
+  // contentbreite haben von der seite" — same tight band around the real
+  // 16/9 ratio (≈1.778) as ReferenceVideoBlock.tsx's own isSixteenByNine,
+  // so only actual widescreen footage gets singled out (9:16, 4:3, square
+  // etc. keep the existing variable-width masonry). Reuses the exact
+  // `w-full`/`h-auto` override this component already has for ALL tiles on
+  // mobile (see the outer wrapper's own `max-sm:w-full!` doc comment) —
+  // just applied unconditionally instead of only below the `sm` breakpoint.
+  const isSixteenByNine = aspectRatio >= 1.65 && aspectRatio <= 1.95;
+
   // 2026-07-20, Lino: "ein langer Titel verzieht die Kachel in der Breite,
   // das sollte nicht passieren" — CSS min-width:0 + line-clamp allein
   // reichte NICHT: die Breite dieses flex-col-Containers ist "auto"
@@ -241,7 +252,7 @@ export function VideoTile({
       // this same `bg-[#1c1c1e]`, one step lighter than layout.tsx's `#161616` body) — not a new
       // color invented for this one component. The ambient status-glow blur just below this is a
       // separate, deliberate accent (also used on projects/page.tsx's project tiles) and untouched.
-      className="relative flex flex-col rounded-xl border border-white/10 bg-[#1c1c1e] shrink-0 max-sm:w-full!"
+      className={`relative flex flex-col rounded-xl border border-white/10 bg-[#1c1c1e] shrink-0 ${isSixteenByNine ? "w-full!" : "max-sm:w-full!"}`}
     >
       {/* 2026-07-19 (Todoist #218) — same ambient-glow technique as the
           project tiles on projects/page.tsx (blurred color layer behind
@@ -286,7 +297,7 @@ export function VideoTile({
         // the outer wrapper now stretched to 100% width (see its own comment), `aspectRatio`
         // alone computes this box's height FROM that full width instead, same native CSS
         // aspect-ratio behavior as before just with width/height roles swapped for mobile.
-        className="relative overflow-hidden rounded-t-xl cursor-pointer max-sm:h-auto!"
+        className={`relative overflow-hidden rounded-t-xl cursor-pointer ${isSixteenByNine ? "h-auto!" : "max-sm:h-auto!"}`}
       >
         {showFilmstripFrame ? (
           <div
