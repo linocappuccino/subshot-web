@@ -350,9 +350,16 @@ export interface VideoVersion {
   playback_url: string | null;
   /** 2026-07-17, Kachel-Grid mit Gesichts-Frame + Hover-Scrubbing +
    * Timeline-Hover-Vorschau (siehe app/video_processing.py im Backend).
-   * Beide null solange die Background-Task nach dem Upload noch nicht
-   * durchgelaufen ist. filmstrip_url ist EIN horizontales Sprite-Bild aus
-   * filmstrip_frame_count Frames à filmstrip_frame_width px Breite —
+   * Alle null solange die Background-Task nach dem Upload noch nicht
+   * durchgelaufen ist. filmstrip_url ist EIN Sprite-Bild aus
+   * filmstrip_frame_count Frames à filmstrip_frame_width x
+   * filmstrip_frame_height px, angeordnet in einem filmstrip_columns
+   * breiten GRID (2026-09-15 — war eine einzelne Reihe, siehe
+   * FILMSTRIP_GRID_COLUMNS's Doc-Kommentar im Backend: eine einzelne Reihe
+   * aus 40 Frames sprengte bei 16:9-Videos das Textur-Limit des Browsers).
+   * `filmstrip_columns` null = Sprite von VOR diesem Fix, eine einzelne
+   * Reihe (columns = filmstrip_frame_count) — beide Konsumenten
+   * (VideoTile.tsx, VideoReviewModal.tsx) behandeln das als Fallback.
    * Frontend berechnet den sichtbaren Ausschnitt selbst per
    * background-position. */
   thumbnail_url: string | null;
@@ -360,6 +367,7 @@ export interface VideoVersion {
   filmstrip_frame_count: number | null;
   filmstrip_frame_width: number | null;
   filmstrip_frame_height: number | null;
+  filmstrip_columns: number | null;
   /** Nur relevant fuer den oeffentlichen Preview-Viewer (#254) — sperrt
    * weitere Kommentare auf DIESER Version, bis eine neue hochgeladen wird
    * (siehe VideoVersion.feedback_locked im Backend). Im eingeloggten Review-

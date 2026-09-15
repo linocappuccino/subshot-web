@@ -160,6 +160,12 @@ export function VideoTile({
   const pinnedFilmstripUrl = usePinnedUrl(latest?.filmstrip_url);
   const frameCount = latest?.filmstrip_frame_count ?? 0;
   const hasFilmstrip = !!pinnedFilmstripUrl && frameCount > 1;
+  // 2026-09-15 — the sprite is a `filmstripColumns`-wide GRID, not a single
+  // row (see filmstrip_columns's own doc comment in lib/types.ts for why).
+  // `?? frameCount` = old single-row layout, for a sprite generated before
+  // this column existed.
+  const filmstripColumns = latest?.filmstrip_columns ?? frameCount;
+  const filmstripRows = frameCount > 0 ? Math.ceil(frameCount / filmstripColumns) : 1;
 
   function handleMove(e: React.MouseEvent<HTMLDivElement>) {
     if (!hasFilmstrip || !tileRef.current) return;
@@ -169,7 +175,17 @@ export function VideoTile({
   }
 
   const showFilmstripFrame = hovering && hasFilmstrip;
-  const bgPositionPercent = frameCount > 1 ? (frameIndex / (frameCount - 1)) * 100 : 0;
+  // 2026-09-15 — 2D grid position instead of a single horizontal offset
+  // (see filmstripColumns above). Standard percentage-based sprite-sheet
+  // math: with backgroundSize at `columns*100%`/`rows*100%` of this box,
+  // moving position by col/(columns-1) [row/(rows-1)] steps through each
+  // column [row] exactly — reduces to the old single-row formula when
+  // filmstripRows is 1 (legacy sprites, see filmstripColumns's own doc
+  // comment) since the Y term is then always 0%.
+  const filmstripCol = frameIndex % filmstripColumns;
+  const filmstripRow = Math.floor(frameIndex / filmstripColumns);
+  const bgPositionXPercent = filmstripColumns > 1 ? (filmstripCol / (filmstripColumns - 1)) * 100 : 0;
+  const bgPositionYPercent = filmstripRows > 1 ? (filmstripRow / (filmstripRows - 1)) * 100 : 0;
   const commentCount = latest?.comments.filter((c) => c.status === "open").length ?? 0;
 
   // 2026-07-17, Lino: "9:16 videos werden beim scrubben verzogen... kacheln
@@ -315,8 +331,8 @@ export function VideoTile({
             className="absolute inset-0"
             style={{
               backgroundImage: `url(${pinnedFilmstripUrl})`,
-              backgroundSize: `${frameCount * 100}% 100%`,
-              backgroundPosition: `${bgPositionPercent}% 0%`,
+              backgroundSize: `${filmstripColumns * 100}% ${filmstripRows * 100}%`,
+              backgroundPosition: `${bgPositionXPercent}% ${bgPositionYPercent}%`,
               backgroundRepeat: "no-repeat",
             }}
           />

@@ -1207,6 +1207,13 @@ export function VideoReviewModal({
   const previewScale = PREVIEW_DISPLAY_HEIGHT / frameHeight;
   const previewWidth = frameWidth * previewScale;
   const previewHeight = PREVIEW_DISPLAY_HEIGHT;
+  // 2026-09-15 — the sprite is a `filmstripColumns`-wide GRID, not a single
+  // row (see filmstrip_columns's own doc comment in lib/types.ts for why:
+  // a single row of 40 frames at a good frame height blew way past the
+  // browser's max texture size for a 16:9 source). `?? frameCount` = old
+  // single-row layout, for a sprite generated before this column existed.
+  const filmstripColumns = currentVersion?.filmstrip_columns ?? frameCount;
+  const filmstripRows = frameCount > 0 ? Math.ceil(frameCount / filmstripColumns) : 1;
 
   function fractionFromClientX(clientX: number): number {
     if (!timelineRef.current) return 0;
@@ -1805,6 +1812,13 @@ export function VideoReviewModal({
                 const containerWidth = timelineRef.current?.getBoundingClientRect().width ?? 0;
                 const rawLeft = hoverFraction * containerWidth - previewWidth / 2;
                 const clampedLeft = Math.min(Math.max(rawLeft, 0), Math.max(0, containerWidth - previewWidth));
+                // 2026-09-15 — 2D grid position instead of a single
+                // horizontal offset (see filmstripColumns above). Reduces
+                // to the old single-row math when filmstripRows is 1
+                // (legacy sprites — the Y offset is then always 0px).
+                const hoverFrameIndex = Math.min(frameCount - 1, Math.floor(hoverFraction * frameCount));
+                const hoverCol = hoverFrameIndex % filmstripColumns;
+                const hoverRow = Math.floor(hoverFrameIndex / filmstripColumns);
                 return (
                   <div
                     className="absolute bottom-full mb-2 pointer-events-none rounded-md overflow-hidden border border-white/20 shadow-xl"
@@ -1812,8 +1826,8 @@ export function VideoReviewModal({
                       left: clampedLeft,
                       width: previewWidth, height: previewHeight,
                       backgroundImage: `url(${filmstrip})`,
-                      backgroundSize: `${frameCount * previewWidth}px ${previewHeight}px`,
-                      backgroundPosition: `-${Math.min(frameCount - 1, Math.floor(hoverFraction * frameCount)) * previewWidth}px 0px`,
+                      backgroundSize: `${filmstripColumns * previewWidth}px ${filmstripRows * previewHeight}px`,
+                      backgroundPosition: `-${hoverCol * previewWidth}px -${hoverRow * previewHeight}px`,
                     }}
                   />
                 );
