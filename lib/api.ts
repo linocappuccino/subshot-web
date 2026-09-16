@@ -570,6 +570,16 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         body: JSON.stringify({ file_size_bytes: fileSizeBytes, duration_seconds: durationSeconds ?? null }),
       }),
     deleteVideoVersion: (id: string) => request<void>(`video-versions/${id}`, { method: "DELETE" }),
+    // 2026-09-16 (Lino: "die reihenfolge der videos selber wählen auf der
+    // postproduction page") — same "send the whole final order at once"
+    // shape as reorderReferenceVideos below; version_number IS the V1/V2
+    // label, so the response comes back as the full Video (versions
+    // re-sorted server-side).
+    reorderVideoVersions: (videoId: string, orderedVersionIds: string[]) =>
+      request<Video>(`videos/${videoId}/versions/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ ordered_version_ids: orderedVersionIds }),
+      }),
 
     // ── Referenz-/"Scribble"-Video (2026-09-08, per-Section 2026-09-10,
     // multi-video 2026-09-11 — "man soll mehrere scribble videos hochladen

@@ -249,6 +249,7 @@ export function VideoReviewModal({
   // (api.uploadVideoFile's optional 3rd callback param), just never wired
   // up here.
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [movingVersion, setMovingVersion] = useState(false);
   const [confirmDeleteVideo, setConfirmDeleteVideo] = useState(false);
   const [confirmDeleteVersion, setConfirmDeleteVersion] = useState(false);
   // 2026-07-26 — only meaningful when there's more than one version AND a
@@ -884,6 +885,29 @@ export function VideoReviewModal({
     }
   }
 
+  // 2026-09-16, Lino: "es muss möglich sein die reihenfolge der videos
+  // selber zu wählen auf der postproduction page" — swaps the current
+  // version with its neighbor and sends the whole new order to
+  // reorderVideoVersions (same shape reorder_video_versions expects), then
+  // follows the moved version with versionIndex so the modal keeps showing
+  // the same clip the user was just looking at.
+  async function moveVersion(direction: -1 | 1) {
+    const otherIndex = versionIndex + direction;
+    if (movingVersion || otherIndex < 0 || otherIndex >= versions.length) return;
+    const reordered = [...versions];
+    [reordered[versionIndex], reordered[otherIndex]] = [reordered[otherIndex], reordered[versionIndex]];
+    setMovingVersion(true);
+    try {
+      const updated = await api.reorderVideoVersions(video.id, reordered.map((v) => v.id));
+      onVideoUpdated(updated);
+      setVersionIndex(otherIndex);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("videoReviewModal.moveVersionFailed"));
+    } finally {
+      setMovingVersion(false);
+    }
+  }
+
   // 2026-08-08 — dispatcht anhand von `subtitleLang`, WELCHE der beiden
   // PATCH-Formen gemeint ist (SubtitlePanel selbst ist seit dem
   // Mehrsprachen-Upload lang-agnostisch, siehe dessen eigener Doc-
@@ -1435,6 +1459,34 @@ export function VideoReviewModal({
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
             </button>
+            {/* 2026-09-16, Lino: "die reihenfolge der videos selber wählen" —
+                separate from the prev/next pair above (those just change
+                which version the modal is LOOKING at; these actually move
+                the version and re-label every V1/V2/... after it). Only
+                for editors, and only when there's more than one version to
+                reorder against. */}
+            {canEdit && versions.length > 1 && (
+              <div className="flex items-center gap-0.5 pl-1 ml-1 border-l border-white/10 shrink-0">
+                <button
+                  onClick={() => moveVersion(-1)}
+                  disabled={movingVersion || versionIndex <= 0}
+                  aria-label={t("videoReviewModal.moveVersionEarlier")}
+                  title={t("videoReviewModal.moveVersionEarlier")}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors shrink-0"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 19V5M5 11l6-6 6 6" /></svg>
+                </button>
+                <button
+                  onClick={() => moveVersion(1)}
+                  disabled={movingVersion || versionIndex >= versions.length - 1}
+                  aria-label={t("videoReviewModal.moveVersionLater")}
+                  title={t("videoReviewModal.moveVersionLater")}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:hover:bg-transparent transition-colors shrink-0"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5v14M5 13l6 6 6-6" /></svg>
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex items-center flex-wrap gap-1.5 shrink-0">
             {canEdit && (
