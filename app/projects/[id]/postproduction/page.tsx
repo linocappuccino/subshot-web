@@ -609,7 +609,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       const fresh = await api.projectDetail(data.id);
       setData(fresh);
       setManualOrder(null);
-      toast.showSuccess(t("postproduction.reorderSave"));
+      toast.showSuccess(t("postproduction.reorderSaved"));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("postproduction.reorderFailed"));
     } finally {

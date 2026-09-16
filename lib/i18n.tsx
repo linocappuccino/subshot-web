@@ -611,8 +611,9 @@ const translations = {
     "postproduction.reorderStart": "Reihenfolge festlegen",
     "postproduction.reorderSave": "Reihenfolge speichern",
     "postproduction.reorderCancel": "Abbrechen",
-    "postproduction.reorderHint": "Videos per Griff-Symbol verschieben, um die Reihenfolge auf der Preview-Seite festzulegen.",
+    "postproduction.reorderHint": "Videos per Griff-Symbol verschieben, um die Reihenfolge auf der Preview-Seite festzulegen. Diese Übersicht hier bleibt weiterhin nach Deadline sortiert.",
     "postproduction.reorderFailed": "Reihenfolge konnte nicht gespeichert werden.",
+    "postproduction.reorderSaved": "Reihenfolge für die Preview-Seite gespeichert. Diese Übersicht hier zeigt weiterhin die Deadline-Sortierung.",
 
     // team/page.tsx
     "teamPage.statusInactive": "Inaktiv",
@@ -1510,8 +1511,9 @@ const translations = {
     "postproduction.reorderStart": "Set order",
     "postproduction.reorderSave": "Save order",
     "postproduction.reorderCancel": "Cancel",
-    "postproduction.reorderHint": "Drag videos by their handle to set the order shown on the preview page.",
+    "postproduction.reorderHint": "Drag videos by their handle to set the order shown on the preview page. This overview always stays sorted by deadline.",
     "postproduction.reorderFailed": "Could not save the order.",
+    "postproduction.reorderSaved": "Order saved for the preview page. This overview still shows the deadline sort.",
 
     // team/page.tsx
     "teamPage.statusInactive": "Inactive",
