@@ -1272,7 +1272,7 @@ export function VideoReviewModal({
     return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
   }
 
-  function handleTimelineMove(e: React.MouseEvent<HTMLDivElement>) {
+  function handleTimelineMove(e: React.PointerEvent<HTMLDivElement>) {
     setHoverFraction(fractionFromClientX(e.clientX));
   }
 
@@ -1293,7 +1293,15 @@ export function VideoReviewModal({
   // des Drags `currentTime` direkt aus der Maus-Fraction setzen (kein
   // Warten auf das Browser-Event), damit der Balken exakt 1:1 der Maus
   // folgt; das eigentliche Video-Seek (`seekTo`) läuft parallel weiter.
-  function handleTimelinePointerDown(e: React.MouseEvent<HTMLDivElement>) {
+  // 2026-09-16, Lino: "man kann auf der preview seite auf mobile gar nicht
+  // in der timeline scrubben" — this whole drag flow only ever listened for
+  // `mouse*` events, which never fire for touch input at all. Pointer
+  // Events (`pointerdown`/`pointermove`/`pointerup`) unify mouse, touch and
+  // pen into one event stream with the same `clientX`, so switching to them
+  // here (plus `touch-none` on the hit-zone below, so the browser doesn't
+  // steal the gesture for page-scroll instead) makes the exact same drag
+  // logic work on mobile without a separate touch-event code path.
+  function handleTimelinePointerDown(e: React.PointerEvent<HTMLDivElement>) {
     const fraction = fractionFromClientX(e.clientX);
     setHoverFraction(fraction);
     isDraggingRef.current = true;
@@ -1306,7 +1314,7 @@ export function VideoReviewModal({
 
   useEffect(() => {
     if (!isDragging) return;
-    function onMove(e: MouseEvent) {
+    function onMove(e: PointerEvent) {
       const fraction = fractionFromClientX(e.clientX);
       setHoverFraction(fraction);
       if (duration > 0) {
@@ -1318,11 +1326,11 @@ export function VideoReviewModal({
       isDraggingRef.current = false;
       setIsDragging(false);
     }
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
     return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDragging, duration]);
@@ -1845,7 +1853,19 @@ export function VideoReviewModal({
                   // background, so the video's own corners need their own
                   // rounding directly (border-radius clips a <video>'s
                   // rendered frame same as an <img>).
-                  className={`cursor-pointer ${presenting ? "rounded-xl" : ""}`}
+                  // 2026-09-16, Lino: "die ecken sind beim video noch nicht
+                  // abgerundet in der mobile version" — since the mobile
+                  // fix above (`max-sm:-mx-5`) makes the video fill its
+                  // wrapper exactly edge-to-edge too, it hits the exact
+                  // same clipping gap the presenting-mode fix already
+                  // describes: relying only on the wrapper's overflow-hidden
+                  // to clip a <video> element is unreliable across browsers
+                  // (mobile Safari in particular routinely fails to clip a
+                  // hardware-decoded <video> layer via a parent's
+                  // border-radius+overflow-hidden). Rounding the video's own
+                  // corners directly always fixes it regardless of whether
+                  // it fills the wrapper exactly, so just always apply it.
+                  className="cursor-pointer rounded-xl"
                 />
               ) : (
                 <p className="text-sm text-white/40">{t("videoReviewModal.noVideoForVersion")}</p>
@@ -2024,10 +2044,10 @@ export function VideoReviewModal({
                   fractionFromClientX's width/position math, untouched by
                   this overlay. */}
               <div
-                className="absolute inset-x-0 top-[19px] h-[30px] cursor-pointer"
-                onMouseMove={handleTimelineMove}
-                onMouseLeave={() => !isDragging && setHoverFraction(null)}
-                onMouseDown={handleTimelinePointerDown}
+                className="absolute inset-x-0 top-[19px] h-[30px] cursor-pointer touch-none"
+                onPointerMove={handleTimelineMove}
+                onPointerLeave={() => !isDragging && setHoverFraction(null)}
+                onPointerDown={handleTimelinePointerDown}
               />
             </div>
             </div>
