@@ -900,6 +900,7 @@ const translations = {
 
     // PublicSceneCard.tsx
     "publicSceneCard.inTheCan": "IM KASTEN",
+    "publicSceneCard.notShot": "NICHT GESCHOSSEN",
     "publicSceneCard.shotsCountSingular": "{count} Einstellung",
     "publicSceneCard.shotsCountPlural": "{count} Einstellungen",
 
@@ -1795,6 +1796,7 @@ const translations = {
 
     // PublicSceneCard.tsx
     "publicSceneCard.inTheCan": "IN THE CAN",
+    "publicSceneCard.notShot": "NOT SHOT",
     "publicSceneCard.shotsCountSingular": "{count} shot",
     "publicSceneCard.shotsCountPlural": "{count} shots",
 

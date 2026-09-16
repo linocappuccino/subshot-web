@@ -108,6 +108,10 @@ export interface Scene {
    * state) — see Scene.image_generating in models.py for why. */
   image_generating: boolean;
   completed: boolean;
+  /** 2026-09-16 — roter X-Button neben "Im Kasten": Szene wurde NICHT
+   * gedreht, zählt aber wie completed für den Pipeline-Workflow (Backend
+   * setzt beide Felder immer zusammen, siehe SceneCard's toggleNotShot). */
+  not_shot: boolean;
   sort_order: number;
   assignee_id: string | null;
   assignee_ids: string[];

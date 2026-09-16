@@ -136,7 +136,11 @@ export function PublicSceneCard({
     <div
       data-scene-id={scene.id}
       className={`relative rounded-2xl border p-4 shadow-sm transition-colors ${
-        scene.completed ? "bg-emerald-500/[0.08] border-emerald-500/20" : "bg-[#212121] border-white/[0.06]"
+        scene.not_shot
+          ? "bg-red-500/[0.08] border-red-500/20"
+          : scene.completed
+            ? "bg-emerald-500/[0.08] border-emerald-500/20"
+            : "bg-[#212121] border-white/[0.06]"
       }`}
     >
       <div className="flex items-center gap-2 flex-wrap mb-2.5">
@@ -151,11 +155,18 @@ export function PublicSceneCard({
             {t(PRIORITY_LABEL_KEYS[scene.priority])}
           </span>
         )}
-        {scene.completed && (
-          <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/15 rounded-full px-2.5 py-1 inline-flex items-center gap-1 whitespace-nowrap">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 6 9 17l-5-5" /></svg>
-            {t("publicSceneCard.inTheCan")}
+        {scene.not_shot ? (
+          <span className="text-[11px] font-bold text-red-400 bg-red-500/15 rounded-full px-2.5 py-1 inline-flex items-center gap-1 whitespace-nowrap">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+            {t("publicSceneCard.notShot")}
           </span>
+        ) : (
+          scene.completed && (
+            <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/15 rounded-full px-2.5 py-1 inline-flex items-center gap-1 whitespace-nowrap">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 6 9 17l-5-5" /></svg>
+              {t("publicSceneCard.inTheCan")}
+            </span>
+          )
         )}
       </div>
 

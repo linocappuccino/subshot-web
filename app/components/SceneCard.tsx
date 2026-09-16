@@ -337,6 +337,13 @@ function CheckIcon() {
     </svg>
   );
 }
+function XIcon({ size = 11 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
 /** Web equivalent of iOS's "sdcard.fill" SF Symbol, used on the good-take
  * button — a memory card with a clipped top-left corner. */
 function SdCardIcon() {
@@ -445,7 +452,26 @@ export function SceneCard({
 
   async function toggleCompleted() {
     try {
-      const updated = await api.patchScene(scene.id, { completed: !scene.completed });
+      // "Im Kasten" is the normal/positive completion path — always clears
+      // not_shot too, so correcting a mistakenly red-marked scene back to
+      // green is a single click, not two.
+      const updated = await api.patchScene(scene.id, { completed: !scene.completed, not_shot: false });
+      onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
+
+  // 2026-09-16, Lino: roter X-Button links neben "Im Kasten" — Szene wurde
+  // NICHT gedreht, soll aber den Pipeline-Workflow nicht blockieren, zählt
+  // also backend-seitig genau wie "im Kasten" (completed immer zusammen mit
+  // not_shot gesetzt, siehe ScenePatch's eigener Kommentar). Symmetrischer
+  // Toggle wie toggleCompleted: erneutes Klicken macht beides rückgängig
+  // (zurück in den neutralen, nicht entschiedenen Zustand).
+  async function toggleNotShot() {
+    try {
+      const nextNotShot = !scene.not_shot;
+      const updated = await api.patchScene(scene.id, { not_shot: nextNotShot, completed: nextNotShot });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
@@ -530,9 +556,11 @@ export function SceneCard({
         // frosted-glass material now, not just a gradient standing in for one
         // (Lino: "der apple glas effekt soll auf ALLEN Kacheln sein").
         className={`relative rounded-2xl p-4 border backdrop-blur-md backdrop-saturate-150 transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_1px_2px_rgba(0,0,0,0.2)] ${
-          scene.completed
-            ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
-            : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
+          scene.not_shot
+            ? "bg-gradient-to-b from-red-500/[0.14] to-red-500/[0.06] border-red-500/20"
+            : scene.completed
+              ? "bg-gradient-to-b from-emerald-500/[0.14] to-emerald-500/[0.06] border-emerald-500/20"
+              : "bg-gradient-to-b from-white/[0.075] to-white/[0.025] border-white/8 hover:border-white/15"
         }`}
       >
       {isCollapsed ? (
@@ -641,10 +669,16 @@ export function SceneCard({
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
             {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
-            {scene.completed && (
-              <Pill tone="good" icon={<CheckIcon />}>
-                IM KASTEN
+            {scene.not_shot ? (
+              <Pill tone="danger" icon={<XIcon size={9} />}>
+                NICHT GESCHOSSEN
               </Pill>
+            ) : (
+              scene.completed && (
+                <Pill tone="good" icon={<CheckIcon />}>
+                  IM KASTEN
+                </Pill>
+              )
             )}
           </div>
           <h3 className="font-semibold mb-1.5 break-words">
@@ -939,6 +973,16 @@ export function SceneCard({
             </>
           )}
         </Menu>
+        <button
+          onClick={toggleNotShot}
+          aria-label="Nicht geschossen"
+          title="Nicht geschossen"
+          className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+            scene.not_shot ? "bg-red-500/25 text-red-400" : "bg-white/8 text-white/40 hover:bg-red-500/15 hover:text-red-400"
+          }`}
+        >
+          <XIcon />
+        </button>
         <button
           onClick={toggleCompleted}
           className={`text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 transition-colors ${

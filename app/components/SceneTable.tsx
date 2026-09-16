@@ -62,7 +62,21 @@ export function SceneTable({
 
   async function toggleCompleted(scene: Scene) {
     try {
-      const updated = await api.patchScene(scene.id, { completed: !scene.completed });
+      const updated = await api.patchScene(scene.id, { completed: !scene.completed, not_shot: false });
+      onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("sceneTable.toggleFailed"));
+    }
+  }
+
+  // 2026-09-16 — table-view equivalent of SceneCard's toggleNotShot, same
+  // web-parity reasoning: always sets completed alongside not_shot so the
+  // pipeline workflow (im-Kasten-based) isn't blocked by a scene that was
+  // never actually shot.
+  async function toggleNotShot(scene: Scene) {
+    try {
+      const nextNotShot = !scene.not_shot;
+      const updated = await api.patchScene(scene.id, { not_shot: nextNotShot, completed: nextNotShot });
       onChange((d) => ({ ...d, scenes: d.scenes.map((s) => (s.id === updated.id ? updated : s)) }));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("sceneTable.toggleFailed"));
@@ -121,6 +135,7 @@ export function SceneTable({
                 onDeleteScene={onDeleteScene}
                 onDuplicateScene={onDuplicateScene}
                 onToggleCompleted={toggleCompleted}
+                onToggleNotShot={toggleNotShot}
                 onToggleDialogue={toggleDialogueLine}
                 insertionEdge={insertionIndicator?.targetId === scene.id ? insertionIndicator.edge : null}
               />
@@ -156,6 +171,7 @@ function SceneRow({
   onDeleteScene,
   onDuplicateScene,
   onToggleCompleted,
+  onToggleNotShot,
   onToggleDialogue,
   insertionEdge,
 }: {
@@ -167,6 +183,7 @@ function SceneRow({
   onDeleteScene: (scene: Scene) => void;
   onDuplicateScene?: (scene: Scene) => void;
   onToggleCompleted: (scene: Scene) => void;
+  onToggleNotShot: (scene: Scene) => void;
   onToggleDialogue: (scene: Scene, dialogueId: string, done: boolean) => void;
   /** Notion-style insertion indicator, table equivalent of
    * SortableSceneCard's left/right line — a row is a horizontal strip, so
@@ -191,7 +208,7 @@ function SceneRow({
     <tr
       ref={setNodeRef}
       style={{ opacity: isDragging ? 0.4 : 1 }}
-      className={`relative border-t border-white/6 transition-colors hover:bg-white/[0.05] align-top ${scene.completed ? "bg-emerald-500/[0.06]" : ""} ${
+      className={`relative border-t border-white/6 transition-colors hover:bg-white/[0.05] align-top ${scene.not_shot ? "bg-red-500/[0.06]" : scene.completed ? "bg-emerald-500/[0.06]" : ""} ${
         insertionEdge === "top" ? "shadow-[inset_0_2px_0_0_#3b82f6]" : insertionEdge === "bottom" ? "shadow-[inset_0_-2px_0_0_#3b82f6]" : ""
       }`}
     >
@@ -307,27 +324,51 @@ function SceneRow({
       <td className="px-3 py-2.5 text-center text-white/60 cursor-pointer" onClick={() => onEditScene(scene)}>
         {scene.is_intermediate_step ? "—" : shots.length}
       </td>
-      <td className="px-3 py-2.5 text-center">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleCompleted(scene);
-          }}
-        >
-          <span
-            className="inline-flex w-5 h-5 rounded-full border-[1.5px] items-center justify-center transition-colors"
-            style={{
-              borderColor: scene.completed ? "#4caf6d" : "rgba(255,255,255,0.3)",
-              backgroundColor: scene.completed ? "#4caf6d" : "transparent",
+      <td className="px-3 py-2.5">
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleNotShot(scene);
+            }}
+            aria-label="Nicht geschossen"
+            title="Nicht geschossen"
+          >
+            <span
+              className="inline-flex w-5 h-5 rounded-full border-[1.5px] items-center justify-center transition-colors"
+              style={{
+                borderColor: scene.not_shot ? "#ef4444" : "rgba(255,255,255,0.3)",
+                backgroundColor: scene.not_shot ? "#ef4444" : "transparent",
+              }}
+            >
+              {scene.not_shot && (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              )}
+            </span>
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCompleted(scene);
             }}
           >
-            {scene.completed && (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M20 6 9 17l-5-5" />
-              </svg>
-            )}
-          </span>
-        </button>
+            <span
+              className="inline-flex w-5 h-5 rounded-full border-[1.5px] items-center justify-center transition-colors"
+              style={{
+                borderColor: scene.completed ? "#4caf6d" : "rgba(255,255,255,0.3)",
+                backgroundColor: scene.completed ? "#4caf6d" : "transparent",
+              }}
+            >
+              {scene.completed && (
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
+              )}
+            </span>
+          </button>
+        </div>
       </td>
       <td className="px-1 py-2.5 text-center">
         <Menu
