@@ -828,6 +828,40 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.module_concept, data?.module_scripting, data?.module_postproduction]);
 
+  // 2026-09-16, Lino: "wenn ein Projekt geöffnet wird, soll es immer beim
+  // Pipelinestatus öffnen der gerade aktuell noch offen ist" — sind auf
+  // dieser Seite bereits alle echten Szenen 'im Kasten' (pipeline_stage ist
+  // dann server-seitig schon "postproduction"/"done", siehe
+  // _set_project_pipeline_stage), hat diese Ideen/Scripting-Route nichts
+  // Offenes mehr zu zeigen, also direkt weiter zur Postproduction. Anders
+  // als das Modul-Gate oben ist das eine EINMALIGE Landing-Entscheidung
+  // beim Öffnen (per pipelineLandingResolved-Flag), keine live-reaktive —
+  // sonst würde jemand, der gerade die letzte Szene abhakt und danach noch
+  // auf der Shotlist weiterarbeitet, mitten aus der Seite gerissen. Aus dem
+  // selben Grund respektiert es `initialReturnView === "scenes"` (siehe
+  // returnViewRef oben) — kommt man über den "zurück zu Szenen"-Pfeil von
+  // der Postproduction-Seite selbst hierher, ist das ein expliziter
+  // User-Wunsch, den der Redirect nicht sofort wieder rückgängig machen darf.
+  const [pipelineLandingResolved, setPipelineLandingResolved] = useState(false);
+  useEffect(() => {
+    if (!data || pipelineLandingResolved) return;
+    setPipelineLandingResolved(true);
+    if (
+      initialReturnView !== "scenes" &&
+      data.module_postproduction &&
+      (data.pipeline_stage === "postproduction" || data.pipeline_stage === "done")
+    ) {
+      router.replace(`/projects/${id}/postproduction`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, pipelineLandingResolved]);
+  const needsPipelineStageRedirect =
+    !!data &&
+    !pipelineLandingResolved &&
+    initialReturnView !== "scenes" &&
+    data.module_postproduction &&
+    (data.pipeline_stage === "postproduction" || data.pipeline_stage === "done");
+
   // Lightweight "live updates" (2026-07-10): polls every 12s while this
   // page is open so a teammate's edits show up without anyone reloading —
   // deliberately NOT a websocket/real-time typing sync (overkill for a shot
@@ -1629,7 +1663,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     [data?.scenes]
   );
 
-  if (!data || needsPostproductionRedirect) {
+  if (!data || needsPostproductionRedirect || needsPipelineStageRedirect) {
     return (
       <AppShell>
         <div className="flex-1 flex items-center justify-center text-white/50">Lädt…</div>

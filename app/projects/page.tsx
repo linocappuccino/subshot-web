@@ -952,9 +952,15 @@ function ProjectTile({
   // through a tile click (back button, a bookmarked link, a notification
   // deep link) — see that page's own render-gate fix for how THAT path
   // avoids painting the wrong view too.
+  // 2026-09-16, Lino: same "skip the flash detour" reasoning as above, now
+  // for a project that HAS Ideen/Scripting enabled but has already
+  // progressed past them (every real scene 'im Kasten') — see the target
+  // page's own pipelineLandingResolved redirect for the fallback path.
   const targetHref =
     project.module_concept || project.module_scripting
-      ? `/projects/${project.id}`
+      ? project.module_postproduction && (project.pipeline_stage === "postproduction" || project.pipeline_stage === "done")
+        ? `/projects/${project.id}/postproduction`
+        : `/projects/${project.id}`
       : project.module_postproduction
         ? `/projects/${project.id}/postproduction`
         : `/projects/${project.id}`;
@@ -1143,9 +1149,12 @@ function ProjectListRow({
     return Promise.resolve();
   }
 
+  // Siehe ProjectTile's identische Stelle.
   const targetHref =
     project.module_concept || project.module_scripting
-      ? `/projects/${project.id}`
+      ? project.module_postproduction && (project.pipeline_stage === "postproduction" || project.pipeline_stage === "done")
+        ? `/projects/${project.id}/postproduction`
+        : `/projects/${project.id}`
       : project.module_postproduction
         ? `/projects/${project.id}/postproduction`
         : `/projects/${project.id}`;
