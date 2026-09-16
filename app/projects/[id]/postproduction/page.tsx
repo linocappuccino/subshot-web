@@ -594,6 +594,18 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       // ordering. Cheaper to just re-fetch this project's own detail
       // than to reimplement the slot algorithm client-side just to
       // predict it.
+      //
+      // Real bug found live (Lino: "die geänderte reihenfolge wird nicht
+      // gespeichert und fällt wieder auf die alte reihenfolge zurück") —
+      // same cache race `onCommentsChanged` above already has its own long
+      // doc comment about: `api.projectDetail` is a GET, deduped/cached
+      // for 4s (GET_CACHE_TTL_MS). The page's own initial load already
+      // populated that exact cache entry, so this "fresh" re-fetch kept
+      // silently returning the EARLIER cached response (captured before
+      // the reorder write) — the grid visibly saved, then snapped straight
+      // back to the old order once this resolved. invalidateGetCache
+      // forces the next call to be a real network round trip.
+      invalidateGetCache(`projects/${data.id}`);
       const fresh = await api.projectDetail(data.id);
       setData(fresh);
       setManualOrder(null);
