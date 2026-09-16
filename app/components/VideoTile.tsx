@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Pill } from "./ui/Badge";
 import { Menu, MenuItem } from "./ui/Menu";
 import { Avatar } from "./ui/Avatar";
@@ -80,7 +81,7 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * Nummer als kleines Badge oben rechts im Thumbnail. */
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable,
 }: {
   video: Video;
   status: PostproductionStatus | null;
@@ -116,6 +117,22 @@ export function VideoTile({
    * per-section uploadProgress placeholder box used for a tile's FIRST
    * video, just rendered inline here since this tile already exists. */
   uploadFraction?: number;
+  /** 2026-09-16, Lino: "ich kann die reihenfolge der videos... in der
+   * postproduction übersicht noch nicht ändern" — the postproduction
+   * page's manual-order mode wraps every tile in dnd-kit's `useSortable`
+   * and hands the result straight through here rather than this component
+   * calling the hook itself, so VideoTile stays usable un-wrapped (public
+   * preview, normal deadline-sorted view) exactly as before. Bound to a
+   * small dedicated grab handle (below), never to the tile root — the tile
+   * has too many of its own click targets (menu, status pill, title edit,
+   * assignee picker) to risk a drag listener swallowing any of them. */
+  sortable?: {
+    setNodeRef: (node: HTMLElement | null) => void;
+    style: React.CSSProperties;
+    attributes: DraggableAttributes;
+    listeners: DraggableSyntheticListeners;
+    isDragging: boolean;
+  };
 }) {
   const { t } = useLanguage();
   const statusLabels: Record<PostproductionStatus, string> = {
@@ -265,7 +282,8 @@ export function VideoTile({
     // newer "wir entfernen uns von Übergangsanimationen, soll super
     // schnell sein" direction — reorders now snap instantly, no animation.
     <div
-      style={{ width: tileWidthCss }}
+      ref={sortable?.setNodeRef}
+      style={{ width: tileWidthCss, ...sortable?.style, opacity: sortable?.isDragging ? 0.4 : 1 }}
       // 2026-08-25, Lino: "jede kachel soll bildschirmbreit sein für mobile, und untereinander" —
       // `max-sm:w-full!` overrides the inline `tileWidthCss` (Tailwind's `!` beats inline styles)
       // below the `sm` breakpoint, so each tile takes the FULL width of the flex-wrap container
@@ -370,6 +388,31 @@ export function VideoTile({
             </span>
           )}
         </div>
+
+        {/* Drag handle for the postproduction page's manual-order mode —
+            top corners are both already taken (version/comment badges
+            right, upload-version menu left), so this sits top-center.
+            `onClick`/`onPointerDown` stopPropagation keeps a plain click
+            from also opening the review modal, same convention as the
+            menu button just below. `touch-action: none` is required by
+            dnd-kit for the TouchSensor to receive the gesture at all. */}
+        {sortable && (
+          <button
+            type="button"
+            {...sortable.attributes}
+            {...sortable.listeners}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={t("postproduction.reorderHandle")}
+            style={{ touchAction: "none" }}
+            className="absolute top-2 left-1/2 -translate-x-1/2 w-7 h-6 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/80 hover:text-white transition-colors cursor-grab active:cursor-grabbing"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="8" cy="6" r="1.6" /><circle cx="16" cy="6" r="1.6" />
+              <circle cx="8" cy="12" r="1.6" /><circle cx="16" cy="12" r="1.6" />
+              <circle cx="8" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" />
+            </svg>
+          </button>
+        )}
 
         {/* 2026-07-17, Lino: "auf der kachel in der übersicht soll ein 3
             punkte button sein, dann kommt ein dropdown menü... 'upload new

@@ -521,6 +521,16 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // to fetch every video in one request instead of one per section (see
     // that page's own doc comment on videosBySection).
     listProjectVideos: (projectId: string) => request<Video[]>(`projects/${projectId}/videos`),
+    // 2026-09-16 (Lino: "ich kann die reihenfolge der videos... noch nicht
+    // ändern, diese muss ich ändern können, damit ich für die person auf
+    // der preview seite die reihenfolge vorgeben kann") — the WHOLE
+    // postproduction tile-grid's flat order in one call, same shape as
+    // reorderReferenceVideos/reorderIdeaImages.
+    reorderPostproductionVideos: (projectId: string, orderedVideoIds: string[]) =>
+      request<Video[]>(`projects/${projectId}/postproduction/videos/reorder`, {
+        method: "POST",
+        body: JSON.stringify({ ordered_video_ids: orderedVideoIds }),
+      }),
     createVideo: (sectionId: string, title = "Video", sortOrder = 0) =>
       request<Video>(`sections/${sectionId}/videos`, { method: "POST", body: JSON.stringify({ title, sort_order: sortOrder }) }),
     // assignee_id: undefined = don't touch it, null = explicitly unassign

@@ -607,6 +607,12 @@ const translations = {
     "postproduction.videoForSection": "Video für „{name}“",
     "postproduction.backToScenesAria": "Szenen",
     "postproduction.backToScenesLabel": "Script / Shotlist Editor",
+    "postproduction.reorderHandle": "Video verschieben",
+    "postproduction.reorderStart": "Reihenfolge festlegen",
+    "postproduction.reorderSave": "Reihenfolge speichern",
+    "postproduction.reorderCancel": "Abbrechen",
+    "postproduction.reorderHint": "Videos per Griff-Symbol verschieben, um die Reihenfolge auf der Preview-Seite festzulegen.",
+    "postproduction.reorderFailed": "Reihenfolge konnte nicht gespeichert werden.",
 
     // team/page.tsx
     "teamPage.statusInactive": "Inaktiv",
@@ -1500,6 +1506,12 @@ const translations = {
     "postproduction.videoForSection": "Video for “{name}”",
     "postproduction.backToScenesAria": "Scenes",
     "postproduction.backToScenesLabel": "Script / shot list editor",
+    "postproduction.reorderHandle": "Move video",
+    "postproduction.reorderStart": "Set order",
+    "postproduction.reorderSave": "Save order",
+    "postproduction.reorderCancel": "Cancel",
+    "postproduction.reorderHint": "Drag videos by their handle to set the order shown on the preview page.",
+    "postproduction.reorderFailed": "Could not save the order.",
 
     // team/page.tsx
     "teamPage.statusInactive": "Inactive",

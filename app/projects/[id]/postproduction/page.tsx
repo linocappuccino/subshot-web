@@ -1,6 +1,11 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState, use as usePromise } from "react";
+import {
+  DndContext, type DragEndEvent, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
+} from "@dnd-kit/core";
+import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
 import { ShareLinkModal } from "@/app/components/ShareLinkModal";
@@ -73,6 +78,22 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // frühere expandedVideos-Version), damit die Kacheln sofort sichtbar
   // sind statt hinter einem Klick versteckt.
   const [videosBySection, setVideosBySection] = useState<Record<string, Video[]>>({});
+  // 2026-09-16, Lino: "ich kann die reihenfolge der videos... in der
+  // postproduction übersicht noch nicht ändern, diese muss ich ändern
+  // können, damit ich für die person auf der preview seite die reihenfolge
+  // vorgeben kann" — a dedicated manual-order MODE, kept entirely separate
+  // from the normal deadline-sorted grid below (that sort is a real,
+  // actively-relied-on triage view, not something to silently replace).
+  // `null` = not in this mode; otherwise the flat list of video ids IN THE
+  // ORDER the user is currently arranging them, seeded from the true
+  // backend order (Section.sort_order then Video.sort_order — see
+  // startReorder) when the mode is entered, not the deadline order.
+  const [manualOrder, setManualOrder] = useState<string[] | null>(null);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const reorderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
+  );
   // 2026-07-18 (Todoist #201, Lino: "ein Indikator der zeigt wie weit der
   // Upload ist") — 0-1 fraction per section while its first video is
   // uploading (addVideo below); the empty "+" box shows this instead of
@@ -518,6 +539,72 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  // 2026-09-16, Lino: "ich kann die reihenfolge der videos... noch nicht
+  // ändern" — seeds `manualOrder` from the TRUE persisted order (Section
+  // .sort_order then Video.sort_order, matching the backend's own
+  // reorder_postproduction_videos and the public preview page's ordering)
+  // rather than the deadline-sorted `sections` view this page normally
+  // shows, so the very first drag starts from what the client would
+  // actually see right now, not from the triage view's incidental order.
+  function startReorder() {
+    const orderedSections = (data?.sections ?? [])
+      .filter((s) => s.in_postproduction)
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order);
+    const flat = orderedSections.flatMap((s) =>
+      (videosBySection[s.id] ?? []).slice().sort((a, b) => a.sort_order - b.sort_order).map((v) => v.id)
+    );
+    setManualOrder(flat);
+  }
+
+  function cancelReorder() {
+    setManualOrder(null);
+  }
+
+  function handleReorderDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setManualOrder((prev) => {
+      if (!prev) return prev;
+      const next = [...prev];
+      const fromIndex = next.indexOf(active.id as string);
+      const toIndex = next.indexOf(over.id as string);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }
+
+  async function saveReorder() {
+    if (!manualOrder || !data) return;
+    setSavingOrder(true);
+    try {
+      const updated = await api.reorderPostproductionVideos(data.id, manualOrder);
+      setVideosBySection((prev) => {
+        const next = { ...prev };
+        for (const video of updated) {
+          next[video.section_id] = (next[video.section_id] ?? []).map((v) => (v.id === video.id ? video : v));
+        }
+        return next;
+      });
+      // sort_order changed on the section side too (see the backend's
+      // "stable slot reassignment" comment) — data.sections needs the
+      // fresh values or the NEXT startReorder() would seed from stale
+      // ordering. Cheaper to just re-fetch this project's own detail
+      // than to reimplement the slot algorithm client-side just to
+      // predict it.
+      const fresh = await api.projectDetail(data.id);
+      setData(fresh);
+      setManualOrder(null);
+      toast.showSuccess(t("postproduction.reorderSave"));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("postproduction.reorderFailed"));
+    } finally {
+      setSavingOrder(false);
+    }
+  }
+
   // 2026-07-19 (Todoist #219, Lino: "Kacheln nach Dringlichkeit sortieren,
   // die Deadline die am nächsten zum aktuellen Datum ist, soll als erstes
   // erscheinen") — Deadline lebt auf der Section (siehe VideoTile's
@@ -534,6 +621,18 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       if (!b.postproduction_deadline) return -1;
       return new Date(a.postproduction_deadline).getTime() - new Date(b.postproduction_deadline).getTime();
     });
+
+  // Lookup maps for the manual-order grid below — that one renders from
+  // the flat `manualOrder` id list, not from `sections`/`videosBySection`'s
+  // own nesting, so it needs a video's owning section resolved by id.
+  const videoById: Record<string, Video> = {};
+  const sectionByVideoId: Record<string, Section> = {};
+  for (const section of sections) {
+    for (const video of videosBySection[section.id] ?? []) {
+      videoById[video.id] = video;
+      sectionByVideoId[video.id] = section;
+    }
+  }
 
   return (
     <AppShell>
@@ -604,6 +703,27 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             <Button variant="secondary" size="sm" onClick={() => router.push(`/projects/${id}/deliver`)}>
               <DeliverIcon /> {t("workflow.deliver")}
             </Button>
+            {/* 2026-09-16, Lino: "ich kann die reihenfolge der videos...
+                ändern können, damit ich für die person auf der preview
+                seite die reihenfolge vorgeben kann" — separate mode
+                instead of making the deadline-sorted grid itself always
+                draggable, see manualOrder's own doc comment above. */}
+            {canEditStatus && (
+              manualOrder ? (
+                <>
+                  <Button variant="secondary" size="sm" onClick={cancelReorder} disabled={savingOrder}>
+                    {t("postproduction.reorderCancel")}
+                  </Button>
+                  <Button variant="primary" size="sm" onClick={saveReorder} disabled={savingOrder}>
+                    {savingOrder ? t("common.saving") : t("postproduction.reorderSave")}
+                  </Button>
+                </>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={startReorder}>
+                  <ReorderIcon /> {t("postproduction.reorderStart")}
+                </Button>
+              )
+            )}
           </div>
         </div>
 
@@ -638,6 +758,48 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               <>Noch kein Video. Über „+ Video“ oben eines hochladen.</>
             )}
           </p>
+        ) : manualOrder ? (
+          // 2026-09-16, Lino: "ich kann die reihenfolge der videos... noch
+          // nicht ändern" — a separate flat, drag-sortable grid (adding/
+          // uploading is out of scope here, exit the mode for that), built
+          // from `manualOrder` instead of `sections`/`videosBySection`'s
+          // own deadline-sorted nesting so any cross-section arrangement
+          // the user drags to is representable, not just within one
+          // section. `id`-keyed lookups above resolve each tile's actual
+          // video/section.
+          <>
+            <p className="text-sm text-white/40 mb-4">{t("postproduction.reorderHint")}</p>
+            <DndContext sensors={reorderSensors} collisionDetection={closestCenter} onDragEnd={handleReorderDragEnd}>
+              <SortableContext items={manualOrder} strategy={rectSortingStrategy}>
+                <div className="flex flex-wrap gap-4 items-start">
+                  {manualOrder.map((videoId) => {
+                    const video = videoById[videoId];
+                    const section = sectionByVideoId[videoId];
+                    if (!video || !section) return null;
+                    return (
+                      <SortableVideoTile
+                        key={video.id}
+                        id={video.id}
+                        video={video}
+                        status={section.postproduction_status}
+                        deadline={section.postproduction_deadline}
+                        canEditStatus={canEditStatus}
+                        canEditDeadline={canEditDeadline}
+                        onOpen={() => setReviewingVideo(video)}
+                        onChangeStatus={(status) => updateStatus(section, status)}
+                        onChangeDeadline={(date) => updateDeadline(section, date)}
+                        onUploadVersion={canEditStatus ? (file) => uploadVersionFromTile(section.id, video, file) : undefined}
+                        onRename={canEditStatus ? (title) => renameVideo(section.id, video, title) : undefined}
+                        uploadFraction={versionUploadProgress[video.id]}
+                        members={members}
+                        onChangeAssignee={(userId) => updateVideoAssignee(section.id, video, userId)}
+                      />
+                    );
+                  })}
+                </div>
+              </SortableContext>
+            </DndContext>
+          </>
         ) : (
           // 2026-07-17, Lino: "die video kacheln sollen direkt auf der
           // postproductionseite sein.. keine zeilen ansicht wie es jetzt
@@ -885,6 +1047,27 @@ function PlusIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M5 12h14" />
     </svg>
+  );
+}
+function ReorderIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7h18M3 12h18M3 17h18" />
+    </svg>
+  );
+}
+
+/** Thin `useSortable` wrapper around VideoTile for the manual-order grid
+ * above — kept as its own component (rather than calling the hook inline
+ * in the .map()) because hooks can't be called inside a callback passed
+ * to Array.map. */
+function SortableVideoTile({ id, ...tileProps }: { id: string } & React.ComponentProps<typeof VideoTile>) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <VideoTile
+      {...tileProps}
+      sortable={{ setNodeRef, style: { transform: CSS.Transform.toString(transform), transition }, attributes, listeners, isDragging }}
+    />
   );
 }
 function NotionIcon() {
