@@ -579,13 +579,25 @@ export function VideoReviewModal({
 
     // 2026-08-03 — Präsentationsmodus füllt fast den ganzen Viewport (kein
     // Backdrop-Rand), damit Video+Feedback wirklich GROSS werden.
-    const outerPad = presenting ? 0 : window.innerWidth < 640 ? 12 : 24; // Backdrop p-3 sm:p-6
+    // 2026-09-16, Lino: "das video soll die Bildschirmbreite füllen bei
+    // 16:9 videos" — auf Mobile ist die Karte längst randlos bildschirmfüllend
+    // (`max-sm:w-screen! h-screen!` weiter unten am Card, siehe deren eigener
+    // 2026-08-25-Kommentar), aber diese Rechnung zog hier trotzdem noch ein
+    // Backdrop-outerPad (12px) ab, das es auf Mobile gar nicht mehr gibt,
+    // PLUS das p-5-Padding der Video-Spalte (colPadX) — obwohl der Video-
+    // Wrapper genau dieses Padding jetzt per `max-sm:-mx-5` wieder aufhebt
+    // (siehe JSX unten). Zusammen machte das availW spürbar kleiner als die
+    // tatsächliche Bildschirmbreite, sodass ein 16:9-Video (breiten-getrieben,
+    // siehe fitBox) sichtbar schmaler als der Screen gerendert wurde statt
+    // randlos zu füllen.
+    const isMobileCard = window.innerWidth < 640;
+    const outerPad = presenting || isMobileCard ? 0 : 24; // Backdrop p-3 sm:p-6
     const maxCardW = window.innerWidth - outerPad * 2;
     const maxCardH = window.innerHeight - outerPad * 2;
 
     const headerH = headerRef.current?.offsetHeight ?? 0;
     const chromeH = chromeRef.current?.offsetHeight ?? 0; // Controls-Zeile + Timeline, inkl. ihrem eigenen gap
-    const colPadX = 40; // linke Spalte: p-5 links+rechts
+    const colPadX = isMobileCard ? 0 : 40; // linke Spalte: p-5 links+rechts (mobile bleedet der Video-Wrapper bis zum Rand)
     const colPadY = 40 + 12; // p-5 oben+unten + gap-3 zwischen Video und Chrome-Block
 
     // Präsentationsmodus erzwingt die Kommentarspalte sichtbar (auch wenn
@@ -1788,7 +1800,7 @@ export function VideoReviewModal({
           )}
           {/* Links: Video + Timeline */}
           <div className="flex-1 flex flex-col p-5 gap-3 min-w-0">
-            <div ref={videoWrapRef} className="flex-1 relative rounded-xl overflow-hidden flex items-center justify-center min-h-0">
+            <div ref={videoWrapRef} className="flex-1 relative rounded-xl overflow-hidden flex items-center justify-center min-h-0 max-sm:-mx-5">
               {currentVersion?.playback_url ? (
                 <video
                   ref={videoRef}
