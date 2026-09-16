@@ -613,6 +613,7 @@ const translations = {
     "postproduction.reorderCancel": "Abbrechen",
     "postproduction.reorderHint": "Videos per Griff-Symbol verschieben, um die Reihenfolge auf der Preview-Seite festzulegen. Diese Übersicht hier bleibt weiterhin nach Deadline sortiert.",
     "postproduction.reorderFailed": "Reihenfolge konnte nicht gespeichert werden.",
+    "postproduction.reorderStale": "Die Videoliste hat sich zwischenzeitlich geändert (z. B. Video gelöscht oder hinzugefügt). Bitte Reihenfolge nochmal festlegen.",
     "postproduction.reorderSaved": "Reihenfolge für die Preview-Seite gespeichert. Diese Übersicht hier zeigt weiterhin die Deadline-Sortierung.",
 
     // team/page.tsx
@@ -1513,6 +1514,7 @@ const translations = {
     "postproduction.reorderCancel": "Cancel",
     "postproduction.reorderHint": "Drag videos by their handle to set the order shown on the preview page. This overview always stays sorted by deadline.",
     "postproduction.reorderFailed": "Could not save the order.",
+    "postproduction.reorderStale": "The video list changed in the meantime (e.g. a video was deleted or added). Please set the order again.",
     "postproduction.reorderSaved": "Order saved for the preview page. This overview still shows the deadline sort.",
 
     // team/page.tsx

@@ -2,9 +2,9 @@
 
 import { Suspense, useEffect, useRef, useState, use as usePromise } from "react";
 import {
-  DndContext, type DragEndEvent, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
+  DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
 } from "@dnd-kit/core";
-import { SortableContext, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
@@ -92,7 +92,15 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   const [savingOrder, setSavingOrder] = useState(false);
   const reorderSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } })
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
+    // 2026-09-16 (audit finding) — the drag handle inherits dnd-kit's
+    // keyboard-drag ARIA/tabIndex attributes either way (useSortable
+    // always sets them), which made it LOOK keyboard-operable without
+    // actually being one — Tab-focusing the handle and pressing
+    // Enter/Space did nothing. Registering KeyboardSensor makes that
+    // affordance real: Space picks up a tile, arrow keys move it, Space
+    // again drops it, matching dnd-kit's own documented keyboard pattern.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   // 2026-07-18 (Todoist #201, Lino: "ein Indikator der zeigt wie weit der
   // Upload ist") — 0-1 fraction per section while its first video is
@@ -611,7 +619,33 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       setManualOrder(null);
       toast.showSuccess(t("postproduction.reorderSaved"));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : t("postproduction.reorderFailed"));
+      // 2026-09-16 (audit finding) — a 400 here specifically means the
+      // project's actual video set no longer matches this `manualOrder`
+      // snapshot (a video/version deleted or a new video added elsewhere
+      // while this reorder session was open — the "+ Video" button and
+      // opening a tile are now blocked during reorder mode to prevent this
+      // from THIS tab, but another tab/session/device could still do it).
+      // The backend correctly rejects rather than silently reordering a
+      // wrong subset; the fix here is to re-sync and drop back to the
+      // normal view rather than leaving the user stuck on a save that will
+      // never succeed no matter how many times they retry it.
+      if (e instanceof ApiError && e.status === 400) {
+        toast.showError(t("postproduction.reorderStale"));
+        invalidateGetCache(`projects/${data.id}`);
+        try {
+          const [fresh, freshVideos] = await Promise.all([api.projectDetail(data.id), api.listProjectVideos(data.id)]);
+          setData(fresh);
+          const bySection: Record<string, Video[]> = {};
+          for (const video of freshVideos) (bySection[video.section_id] ??= []).push(video);
+          setVideosBySection(bySection);
+        } catch {
+          // best-effort resync — if this also fails the user still sees
+          // the stale-order toast above and can just retry manually
+        }
+        setManualOrder(null);
+      } else {
+        toast.showError(e instanceof ApiError ? e.message : t("postproduction.reorderFailed"));
+      }
     } finally {
       setSavingOrder(false);
     }
@@ -697,7 +731,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 den button ausblenden)" — showNotion-State + Modal bewusst
                 nicht entfernt, siehe page.tsx (Ideen/Szenen) fuer denselben
                 Schritt. */}
-            {canEditStatus && (
+            {/* 2026-09-16 (audit finding) — hidden while manualOrder is
+                active: adding a video mid-reorder changes the project's
+                actual video set out from under the locally-held
+                `manualOrder` snapshot, so Speichern would 400 on a
+                now-stale id list. Simplest fix is just not offering the
+                action here rather than trying to keep two independent
+                pieces of state in sync. */}
+            {canEditStatus && !manualOrder && (
               <Button variant="secondary" size="sm" onClick={() => unplannedVideoInputRef.current?.click()}>
                 <PlusIcon /> {t("workflow.newVideo")}
               </Button>
@@ -797,7 +838,16 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                         deadline={section.postproduction_deadline}
                         canEditStatus={canEditStatus}
                         canEditDeadline={canEditDeadline}
-                        onOpen={() => setReviewingVideo(video)}
+                        // 2026-09-16 (audit finding) — deliberately a no-op
+                        // here, not setReviewingVideo. Opening the full
+                        // review modal from this grid would let a version
+                        // get deleted mid-reorder; deleting a video's LAST
+                        // version cascade-deletes the whole Video row (see
+                        // delete_video_version's own doc comment), which
+                        // changes the project's actual video SET out from
+                        // under the locally-held `manualOrder` snapshot —
+                        // Speichern would then 400 on a stale id list.
+                        onOpen={() => {}}
                         onChangeStatus={(status) => updateStatus(section, status)}
                         onChangeDeadline={(date) => updateDeadline(section, date)}
                         onUploadVersion={canEditStatus ? (file) => uploadVersionFromTile(section.id, video, file) : undefined}

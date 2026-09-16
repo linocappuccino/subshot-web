@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import DOMPurify from "dompurify";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
 import { useLanguage } from "@/lib/i18n";
@@ -76,7 +77,28 @@ function DevlogPageInner() {
             )}
             <div
               className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-a:text-blue-400"
-              dangerouslySetInnerHTML={{ __html: open.html }}
+              // 2026-09-16 (security audit, low/defense-in-depth) — Ghost
+              // post HTML rendered verbatim with zero sanitization, unlike
+              // every other rich-text sink in this codebase (see
+              // lib/richText.ts's sanitizeRichTextHtml). Not currently
+              // attacker-reachable (Ghost content is Lino-authored only via
+              // the CMS admin, not user-submitted), but a direct stored-XSS
+              // sink on this public unauthenticated page if the Ghost
+              // account or the backend's devlog-proxy were ever
+              // compromised. DOMPurify (not the stricter richText
+              // sanitizer above — that one's tag whitelist is far too
+              // narrow for real blog content: no headings/links/images/
+              // lists) with an explicit allowlist matching what a Ghost
+              // post actually needs.
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(open.html, {
+                  ALLOWED_TAGS: [
+                    "p", "br", "hr", "b", "strong", "i", "em", "u", "s", "code", "pre", "blockquote",
+                    "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "img", "figure", "figcaption", "div", "span",
+                  ],
+                  ALLOWED_ATTR: ["href", "src", "alt", "title", "target", "rel", "class", "srcset", "sizes", "width", "height"],
+                }),
+              }}
             />
           </div>
         ) : (
