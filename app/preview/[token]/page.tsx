@@ -122,20 +122,20 @@ function PreviewVideoPageInner() {
     return map;
   }, [data]);
 
-  // Same "nearest deadline first, undated last" order as postproduction/
-  // page.tsx (#219) — deadline lives on the section, shared by every video
-  // inside it, so this sorts videos by their OWN section's deadline.
-  const sortedVideos = useMemo(() => {
-    if (!data) return [];
-    return [...data.videos].sort((a, b) => {
-      const da = sectionById.get(a.section_id)?.postproduction_deadline;
-      const db_ = sectionById.get(b.section_id)?.postproduction_deadline;
-      if (!da && !db_) return 0;
-      if (!da) return 1;
-      if (!db_) return -1;
-      return new Date(da).getTime() - new Date(db_).getTime();
-    });
-  }, [data, sectionById]);
+  // 2026-09-16 — REMOVED the "nearest deadline first" sort this page used
+  // to copy from postproduction/page.tsx (#219). Root cause of Lino's "die
+  // reihenfolge ist auf der preview seite immer noch falsch" report: the
+  // backend's own order (Section.sort_order then Video.sort_order — now
+  // editor-controlled via the postproduction page's manual-order mode, see
+  // reorder_postproduction_videos in main.py) was correct end-to-end
+  // (verified live via server logs + direct API checks), but THIS sort
+  // silently discarded it and re-sorted by deadline before every render —
+  // deadline is an internal production-tracking concept the external
+  // client viewing this page has no reason to care about, and it made the
+  // whole point of the new reorder feature (letting Lino choose what the
+  // client sees) impossible to achieve from here. `data.videos` is now
+  // rendered in the order the backend already sends it, unsorted.
+  const sortedVideos = data?.videos ?? [];
 
   if (needsPassword) {
     return (
