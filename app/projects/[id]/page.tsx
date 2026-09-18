@@ -1902,8 +1902,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             {/* 2026-07-17, Lino: "auf der Ideenseite braucht es den
                 Tabellenbutton nicht, der soll auf der Szenenübersicht
                 vorhanden sein" — was always visible regardless of which
-                part of the page you were looking at. */}
-            {activeView === "scenes" && (
+                part of the page you were looking at.
+                2026-09-18, Lino: "die Listenansicht in der Shotlist-
+                Übersicht brauchen wir nicht, die brauchen wir erst wenn man
+                eine Shotlist geöffnet hat" — the Skript-Auswahlübersicht
+                (openSectionId === null, a grid of SECTION/"Shotlist" cards)
+                never actually read `viewMode` at all, so this button did
+                nothing there besides being visible+confusing; only once a
+                shotlist is opened (a real section id, or the
+                "__unsectioned__" scenes-without-a-section list) does a
+                grid/table toggle apply to anything. */}
+            {activeView === "scenes" && openSectionId !== null && (
               <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
                 <button
                   onClick={() => setViewModePersisted("grid")}
