@@ -38,6 +38,7 @@ export function IdeaFloatingCard({
   onTogglePresenting,
   onUpdated,
   onDeleted,
+  onSilentlyRemoved,
   annotations,
   highlightedAnnotationId,
   onDeleteAnnotation,
@@ -47,8 +48,16 @@ export function IdeaFloatingCard({
 }: {
   idea: Idea;
   /** True right after this idea was created via the "+" button — selects
-   * the default "Neue Idee" title so typing immediately replaces it. */
+   * the default "Neue Idee" title so typing immediately replaces it. ALSO
+   * doubles as the "eligible for auto-delete-if-left-empty" signal, see the
+   * unmount effect below — a freshly created idea is the only case where
+   * silently discarding it on the way out is safe/expected. */
   autoFocusTitle?: boolean;
+  /** 2026-09-18, Lino: "wird eine Idee erstellt ohne Inhalt... wird diese
+   * Idee nicht gespeichert" — called from this component's own unmount
+   * cleanup (see below) if `autoFocusTitle` was true and the idea still has
+   * neither text nor a ready image at that moment. */
+  onSilentlyRemoved: (id: string) => void;
   /** 2026-07-18, Lino: "pro Kachel noch einen Präsentationsmodus" — lives
    * in the parent (IdeaFocusView), not local state here, so it survives
    * navigating to the next/previous idea via the arrow buttons (this
@@ -81,6 +90,20 @@ export function IdeaFloatingCard({
 
   const [title, setTitle] = useState(idea.title);
   const [text, setText] = useState(idea.text);
+  // 2026-09-18 — "always latest" refs for the unmount-cleanup effect further
+  // down: that effect has an empty dep array (it must only run ONCE, on true
+  // unmount, not on every keystroke), so it can't read `text`/`idea.images`
+  // directly without risking a stale closure from the render it was set up
+  // in. Assigning during render (not inside an effect) is the standard fix —
+  // these are read-only-in-effects values, never used in this render's JSX.
+  const latestTextRef = useRef(text);
+  latestTextRef.current = text;
+  const latestImagesRef = useRef(idea.images);
+  latestImagesRef.current = idea.images;
+  // Set by handleDelete right before it starts, so the unmount cleanup below
+  // doesn't ALSO try to delete (and re-report as removed) an idea that was
+  // just explicitly deleted via the trash button.
+  const explicitlyDeletedRef = useRef(false);
   const detectedEmbed = useMemo(() => detectSocialEmbed(text), [text]);
   const [slideIndex, setSlideIndex] = useState(0);
   // 2026-07-21, Lino: "Per klick auf die diashow kann man die diashow
@@ -396,15 +419,37 @@ export function IdeaFloatingCard({
   }
 
   async function handleDelete() {
+    explicitlyDeletedRef.current = true;
     setDeleting(true);
     try {
       await api.deleteIdea(idea.id);
       onDeleted(idea.id);
     } catch (e) {
+      explicitlyDeletedRef.current = false;
       toast.showError(e instanceof ApiError ? e.message : t("ideaCard.deleteFailed"));
       setDeleting(false);
     }
   }
+
+  // 2026-09-18, Lino: "wird eine Idee erstellt ohne Inhalt (kein Bild oder
+  // kein Text) wird diese Idee nicht gespeichert" — this component remounts
+  // per idea (key={idea.id} in IdeaFocusView), so "unmount" here means
+  // exactly "the user navigated away from or closed THIS idea". Only acts
+  // when `autoFocusTitle` was true (i.e. this card was showing the idea
+  // freshly created via the "+" button) — never auto-deletes a
+  // pre-existing idea a user happens to have cleared mid-edit. Empty dep
+  // array is deliberate: this must fire exactly once, on real unmount, not
+  // once per render.
+  useEffect(() => {
+    return () => {
+      if (explicitlyDeletedRef.current || !autoFocusTitle) return;
+      const hasText = richTextToPlainText(latestTextRef.current).length > 0;
+      const hasImage = latestImagesRef.current.some((img) => img.status === "ready" && img.image_url);
+      if (hasText || hasImage) return;
+      api.deleteIdea(idea.id).then(() => onSilentlyRemoved(idea.id)).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const imageCount = idea.images.length;
 

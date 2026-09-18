@@ -279,6 +279,17 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
             handleDeleted(id);
             setFocusIndex((i) => (i !== null ? Math.min(i, ideas.length - 2) : null));
           }}
+          // 2026-09-18, Lino: "wird eine Idee erstellt ohne Inhalt (kein Bild
+          // oder kein Text) wird diese Idee nicht gespeichert" — separate from
+          // onDeleted above on purpose: THAT one also closes the whole focus
+          // view when it was the last idea (correct for an explicit delete
+          // click while still looking at it). This fires from IdeaFloatingCard's
+          // OWN unmount cleanup, i.e. strictly AFTER the user already navigated
+          // away/closed — reusing onDeleted's close-side-effect here would risk
+          // closing whatever idea the user is now looking at, based on a stale
+          // "was this the last one" snapshot from before they navigated. Just
+          // removes it from local state, nothing else.
+          onSilentlyRemoved={handleDeleted}
           onClose={() => setFocusIndex(null)}
           annotations={annotations}
           highlightedAnnotationId={highlightedAnnotationId}

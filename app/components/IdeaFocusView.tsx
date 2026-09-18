@@ -22,6 +22,7 @@ export function IdeaFocusView({
   onCreateNext,
   onUpdated,
   onDeleted,
+  onSilentlyRemoved,
   onClose,
   annotations,
   highlightedAnnotationId,
@@ -37,6 +38,10 @@ export function IdeaFocusView({
   onCreateNext: () => void;
   onUpdated: (idea: Idea) => void;
   onDeleted: (id: string) => void;
+  /** See IdeaGrid's own doc comment on this prop — fires when a freshly
+   * created, still-empty idea gets auto-deleted after the user navigates
+   * away/closes without adding text or an image. */
+  onSilentlyRemoved: (id: string) => void;
   onClose: () => void;
   /** 2026-07-22 — passed straight through to IdeaFloatingCard, see
    * IdeaFeedbackPanel's own doc comment for what this powers. */
@@ -205,6 +210,7 @@ export function IdeaFocusView({
                 onDeleted(id);
                 if (ideas.length <= 1) onClose();
               }}
+              onSilentlyRemoved={onSilentlyRemoved}
               annotations={annotations}
               highlightedAnnotationId={highlightedAnnotationId}
               onDeleteAnnotation={onDeleteAnnotation}
