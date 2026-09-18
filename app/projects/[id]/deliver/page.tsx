@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { DeliverStatus } from "@/lib/types";
+import { formatVersionLabel } from "@/lib/types";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
   { hours: 1, labelKey: "deliverAdmin.duration1h" },
@@ -295,7 +296,7 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
                     {v.title}
                   </p>
                   <p className="text-[11px] text-white/30">
-                    {v.section_name} · {v.latest_version?.display_version_label || `v${v.latest_version?.version_number}`} · {formatBytes(v.latest_version?.file_size_bytes ?? null)}
+                    {v.section_name} · {v.latest_version ? formatVersionLabel(v.latest_version) : "–"} · {formatBytes(v.latest_version?.file_size_bytes ?? null)}
                   </p>
                 </div>
               ))}

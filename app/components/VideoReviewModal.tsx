@@ -10,6 +10,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
 import type { Member, Video, VideoComment, VideoVersion, SubtitlesData, SubtitleSegment, SubtitleTranslationCue } from "@/lib/types";
+import { formatVersionLabel } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
 import { readVideoMetadata } from "@/lib/media";
@@ -1507,9 +1508,14 @@ export function VideoReviewModal({
                     className="flex items-center gap-1 mt-0.5"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      saveVersionLabel(labelDraft.trim() || null);
+                      const suffix = labelDraft.trim();
+                      saveVersionLabel(suffix ? `V${suffix}` : null);
                     }}
                   >
+                    {/* 2026-09-18, Lino: "muss automatisch immer das V vor der Nr stehen" —
+                        das "V" ist jetzt ein fixer, nicht editierbarer Teil der Anzeige statt
+                        Teil des Eingabetexts, damit es nie vergessen/weggelassen werden kann. */}
+                    <span className="text-xs text-white/50 font-semibold">V</span>
                     <input
                       autoFocus
                       type="text"
@@ -1519,9 +1525,9 @@ export function VideoReviewModal({
                         if (e.key === "Escape") setEditingLabel(false);
                       }}
                       placeholder={t("videoReviewModal.versionLabelPlaceholder")}
-                      maxLength={40}
+                      maxLength={39}
                       disabled={savingLabel}
-                      className="w-28 bg-white/10 border border-white/20 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-white/40"
+                      className="w-24 bg-white/10 border border-white/20 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-white/40"
                     />
                     <button
                       type="submit"
@@ -1546,14 +1552,15 @@ export function VideoReviewModal({
                   <button
                     type="button"
                     onClick={() => {
-                      setLabelDraft(currentVersion?.display_version_label ?? "");
+                      setLabelDraft((currentVersion?.display_version_label ?? "").replace(/^v/i, ""));
                       setEditingLabel(true);
                     }}
                     title={t("videoReviewModal.editVersionLabel")}
                     className="text-xs text-white/40 hover:text-white/70 flex items-center gap-1 transition-colors"
                   >
                     {currentVersion?.display_version_label
-                      ?? t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
+                      ? formatVersionLabel(currentVersion)
+                      : t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                   </button>
                 )
@@ -1564,7 +1571,8 @@ export function VideoReviewModal({
                 // funktionsloser Stift-Button waere hier nur verwirrend.
                 <div className="text-xs text-white/40">
                   {currentVersion?.display_version_label
-                    ?? t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
+                    ? formatVersionLabel(currentVersion)
+                    : t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
                 </div>
               )}
             </div>
@@ -1776,7 +1784,8 @@ export function VideoReviewModal({
                   {t("videoReviewModal.deleteChoiceThisVersion")}
                   <span className="block text-xs text-white/40 mt-0.5">
                     {currentVersion?.display_version_label
-                      ?? t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
+                      ? formatVersionLabel(currentVersion)
+                      : t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
                   </span>
                 </button>
                 <button
@@ -1803,7 +1812,7 @@ export function VideoReviewModal({
         <ConfirmDialog
           open={confirmDeleteVersion}
           title={t("videoReviewModal.deleteVersionTitle")}
-          message={t("videoReviewModal.deleteVersionMessage", { number: currentVersion?.display_version_label ?? currentVersion?.version_number ?? "–" })}
+          message={t("videoReviewModal.deleteVersionMessage", { number: currentVersion?.display_version_label ? formatVersionLabel(currentVersion) : (currentVersion?.version_number ?? "–") })}
           onConfirm={() => {
             setConfirmDeleteVersion(false);
             if (currentVersion) onDeleteVersion?.(currentVersion.id);

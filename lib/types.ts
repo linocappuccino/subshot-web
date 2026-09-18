@@ -336,6 +336,16 @@ export interface SubtitlesData {
   translations: Record<string, SubtitleTranslationCue[]>;
 }
 
+/** 2026-09-18, Lino: "muss automatisch immer das V vor der Nr stehen" — normalizes
+ * a manual version label so it always displays with a leading "V", even for labels
+ * saved before this rule existed (the edit UI itself now also prepends "V" at save
+ * time, this is the defensive read-side counterpart). */
+export function formatVersionLabel(version: Pick<VideoVersion, "display_version_label" | "version_number">): string {
+  const label = version.display_version_label;
+  if (!label) return `V${version.version_number}`;
+  return /^v/i.test(label) ? label : `V${label}`;
+}
+
 export interface VideoVersion {
   id: string;
   video_id: string;
@@ -343,7 +353,8 @@ export interface VideoVersion {
   /** Optionale manuelle Ueberschreibung der angezeigten Versionsnummer
    * (siehe VideoVersion.display_version_label im Backend). null = zeig
    * weiterhin "V{version_number}" wie bisher; gesetzt = zeig diesen Text
-   * stattdessen. Reihenfolge/version_number bleiben davon unberuehrt. */
+   * stattdessen (immer mit "V"-Praefix, siehe formatVersionLabel). Reihenfolge/
+   * version_number bleiben davon unberuehrt. */
   display_version_label: string | null;
   original_filename: string | null;
   content_type: string | null;

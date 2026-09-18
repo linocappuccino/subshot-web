@@ -7,6 +7,7 @@ import { Menu, MenuItem } from "./ui/Menu";
 import { Avatar } from "./ui/Avatar";
 import { DateTimePicker } from "./ui/DateTimePicker";
 import type { Member, PostproductionStatus, Video, VideoVersion } from "@/lib/types";
+import { formatVersionLabel } from "@/lib/types";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 
@@ -379,7 +380,7 @@ export function VideoTile({
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {latest && (
             <span className="text-[11px] font-mono text-white/80 bg-black/50 rounded-full px-2 py-0.5">
-              {latest.display_version_label || `v${latest.version_number}`}
+              {formatVersionLabel(latest)}
             </span>
           )}
           {commentCount > 0 && (
