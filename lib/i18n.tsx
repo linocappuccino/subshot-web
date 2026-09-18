@@ -888,7 +888,7 @@ const translations = {
     // Bestätigung), der neue Name soll das klarer machen.
     "publicIdeaLightbox.sendFeedback": "Finales Feedback absenden",
     "publicIdeaLightbox.enterNameFirst": "Bitte Namen eingeben.",
-    "publicIdeaLightbox.confirmSendMessage": "Feedback senden? Nach diesem Schritt kann der Kommentar nicht mehr bearbeitet, ergänzt oder gelöscht werden.",
+    "publicIdeaLightbox.confirmSendMessage": "Feedback senden? Damit wird diese Feedbackrunde abgeschlossen — bis zur nächsten Runde kann niemand mehr Kommentare hinzufügen oder bearbeiten.",
     "publicIdeaLightbox.draftSaved": "✓ Entwurf gespeichert.",
     "publicIdeaLightbox.saveFailed": "Konnte nicht gespeichert werden.",
     "publicIdeaLightbox.feedbackSent": "✓ Feedback gesendet.",
@@ -1789,7 +1789,7 @@ const translations = {
     "publicIdeaLightbox.saveFeedback": "Save feedback",
     "publicIdeaLightbox.sendFeedback": "Submit final feedback",
     "publicIdeaLightbox.enterNameFirst": "Please enter your name.",
-    "publicIdeaLightbox.confirmSendMessage": "Send feedback? After this step the comment can no longer be edited, added to, or deleted.",
+    "publicIdeaLightbox.confirmSendMessage": "Send feedback? This closes the current feedback round — no one will be able to add or edit comments until the next round.",
     "publicIdeaLightbox.draftSaved": "✓ Draft saved.",
     "publicIdeaLightbox.saveFailed": "Could not be saved.",
     "publicIdeaLightbox.feedbackSent": "✓ Feedback sent.",
