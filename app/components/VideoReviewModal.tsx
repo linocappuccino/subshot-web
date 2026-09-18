@@ -1493,60 +1493,71 @@ export function VideoReviewModal({
             </button>
             <div className="min-w-0">
               <div className="font-semibold text-sm truncate">{currentVersion?.original_filename ?? video.title}</div>
-              {editingLabel ? (
-                <form
-                  className="flex items-center gap-1 mt-0.5"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    saveVersionLabel(labelDraft.trim() || null);
-                  }}
-                >
-                  <input
-                    autoFocus
-                    type="text"
-                    value={labelDraft}
-                    onChange={(e) => setLabelDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") setEditingLabel(false);
+              {canEdit ? (
+                editingLabel ? (
+                  <form
+                    className="flex items-center gap-1 mt-0.5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveVersionLabel(labelDraft.trim() || null);
                     }}
-                    placeholder={t("videoReviewModal.versionLabelPlaceholder")}
-                    maxLength={40}
-                    disabled={savingLabel}
-                    className="w-28 bg-white/10 border border-white/20 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-white/40"
-                  />
-                  <button
-                    type="submit"
-                    disabled={savingLabel}
-                    className="text-[11px] text-white/70 hover:text-white px-1 disabled:opacity-40"
                   >
-                    {t("videoReviewModal.versionLabelSave")}
-                  </button>
-                  {currentVersion?.display_version_label && (
-                    <button
-                      type="button"
+                    <input
+                      autoFocus
+                      type="text"
+                      value={labelDraft}
+                      onChange={(e) => setLabelDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") setEditingLabel(false);
+                      }}
+                      placeholder={t("videoReviewModal.versionLabelPlaceholder")}
+                      maxLength={40}
                       disabled={savingLabel}
-                      onClick={() => saveVersionLabel(null)}
-                      title={t("videoReviewModal.versionLabelReset")}
-                      className="text-[11px] text-white/40 hover:text-white/70 px-1 disabled:opacity-40"
+                      className="w-28 bg-white/10 border border-white/20 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none focus:border-white/40"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingLabel}
+                      className="text-[11px] text-white/70 hover:text-white px-1 disabled:opacity-40"
                     >
-                      ↺
+                      {t("videoReviewModal.versionLabelSave")}
                     </button>
-                  )}
-                </form>
+                    {currentVersion?.display_version_label && (
+                      <button
+                        type="button"
+                        disabled={savingLabel}
+                        onClick={() => saveVersionLabel(null)}
+                        title={t("videoReviewModal.versionLabelReset")}
+                        className="text-[11px] text-white/40 hover:text-white/70 px-1 disabled:opacity-40"
+                      >
+                        ↺
+                      </button>
+                    )}
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLabelDraft(currentVersion?.display_version_label ?? "");
+                      setEditingLabel(true);
+                    }}
+                    title={t("videoReviewModal.editVersionLabel")}
+                    className="text-xs text-white/40 hover:text-white/70 flex items-center gap-1 transition-colors"
+                  >
+                    {currentVersion?.display_version_label
+                      ?? t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  </button>
+                )
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLabelDraft(currentVersion?.display_version_label ?? "");
-                    setEditingLabel(true);
-                  }}
-                  title={t("videoReviewModal.editVersionLabel")}
-                  className="text-xs text-white/40 hover:text-white/70 flex items-center gap-1 transition-colors"
-                >
+                // Oeffentliche/nicht-editierende Betrachter (z.B. /preview/[token],
+                // canEdit=false) sehen nur den reinen Text, ohne Bearbeiten-Affordanz —
+                // der PATCH-Endpoint verlangt ohnehin editor-Rolle, aber ein
+                // funktionsloser Stift-Button waere hier nur verwirrend.
+                <div className="text-xs text-white/40">
                   {currentVersion?.display_version_label
                     ?? t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                </button>
+                </div>
               )}
             </div>
             <button
