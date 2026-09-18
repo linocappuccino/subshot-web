@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** Renders a scene/shot/folder/idea cover photo. Named "AuthImage" from when
  * this needed a Clerk Bearer token to fetch the bytes itself and swap in an
@@ -52,6 +52,22 @@ export function AuthImage({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [ratio, setRatio] = useState<"16 / 9" | "9 / 16" | null>(null);
+  // 2026-09-18, Lino: "warum pulsiert das bild manchmal... es pulsiert
+  // dauerhaft?!" — onError below used to just set loaded=false again (a
+  // no-op re-set, since it was already false) with nothing that ever tried
+  // again or told the viewer anything was wrong: a load failure for ANY
+  // reason (a transient network blip, or a genuinely broken/expired URL)
+  // looked identical to "still loading" forever — the pulse IS the
+  // "loading" state, so a permanent failure meant a permanent pulse, no
+  // visible difference from a slow-but-fine image. `remountKey` forces a
+  // fresh request to the SAME url on a transient failure (retrying with a
+  // modified url, e.g. a cache-busting query param, would break a presigned
+  // R2 signature, which signs over the exact query string). After a couple
+  // of retries still failing, `failed` stops the pulse and shows a plain
+  // broken-image state instead of animating forever.
+  const [failed, setFailed] = useState(false);
+  const [remountKey, setRemountKey] = useState(0);
+  const retryCountRef = useRef(0);
 
   // 2026-07-22, Lino: "springt der abschnitt für eine millisekunde nach
   // unten und dann wieder hoch... so ca. alle 13 sekunden" — the page's own
@@ -79,6 +95,8 @@ export function AuthImage({
   useEffect(() => {
     setLoaded(false);
     setRatio(null);
+    setFailed(false);
+    retryCountRef.current = 0;
   }, [pathIdentity]);
 
   return (
@@ -99,6 +117,7 @@ export function AuthImage({
     // Berechnung) existiert die ganze Zeit.
     // eslint-disable-next-line @next/next/no-img-element
     <img
+      key={remountKey}
       src={path}
       alt={alt}
       // 2026-08-31 — perf pass: this is THE way every scene/shot/folder/
@@ -110,7 +129,7 @@ export function AuthImage({
       // load. No next/image migration needed for this alone — the
       // attribute works on a plain <img> in every browser this app targets.
       loading="lazy"
-      className={`${className ?? ""} ${loaded ? "" : "bg-white/5 animate-pulse"}`}
+      className={`${className ?? ""} ${loaded ? "" : failed ? "bg-white/5" : "bg-white/5 animate-pulse"}`}
       style={{
         opacity: loaded ? 1 : 0,
         ...(lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined),
@@ -122,9 +141,25 @@ export function AuthImage({
         if (lockAspectRatio) setRatio(isLandscape ? "16 / 9" : "9 / 16");
         onOrientation?.(isLandscape ? "landscape" : "portrait");
         if (img.naturalHeight > 0) onAspectRatio?.(img.naturalWidth / img.naturalHeight);
+        retryCountRef.current = 0;
+        setFailed(false);
         setLoaded(true);
       }}
-      onError={() => setLoaded(false)}
+      onError={() => {
+        setLoaded(false);
+        if (retryCountRef.current < 2) {
+          // Retries the exact same (unmodified) url via a full remount —
+          // appending a cache-busting query param instead would break a
+          // presigned R2 url's signature, which is computed over the exact
+          // query string. Covers a transient network blip; a genuinely
+          // expired/broken url will just fail the same way again.
+          retryCountRef.current += 1;
+          const attempt = retryCountRef.current;
+          setTimeout(() => setRemountKey((k) => k + 1), 800 * attempt);
+        } else {
+          setFailed(true);
+        }
+      }}
     />
   );
 }

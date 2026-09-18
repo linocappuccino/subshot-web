@@ -259,6 +259,18 @@ export function IdeaFloatingCard({
   // Auto-advancing crossfade slideshow — only when there's more than one
   // ready image to cycle through.
   const readyImages = idea.images.filter((img) => img.status === "ready" && img.image_url);
+  // 2026-09-18, Lino: "es pulsiert dauerhaft" — slideIndex can point past
+  // the end of readyImages for a moment (e.g. a generating image on this
+  // idea finishes elsewhere/gets removed and readyImages.length changes
+  // between renders before handleDeleteImage's own clamp — or any other
+  // path — has a chance to run). `readyImages[slideIndex]` then reads
+  // undefined, and the `?? ""` fallbacks below hand AuthImage/AuthVideo an
+  // empty src — most browsers never fire load OR error for an empty <img
+  // src>, so it just sits in its "loading" pulse state forever with no way
+  // to ever get out of it. Clamping at the point of use (not just wherever
+  // slideIndex is set) makes every read below safe regardless of how it
+  // got out of range.
+  const safeSlideIndex = Math.min(slideIndex, readyImages.length - 1);
   useEffect(() => {
     if (readyImages.length < 2 || slideshowPaused) return;
     const timer = setInterval(() => setSlideIndex((i) => (i + 1) % readyImages.length), SLIDESHOW_INTERVAL_MS);
@@ -521,7 +533,7 @@ export function IdeaFloatingCard({
             {readyImages.length > 0 ? (
               <>
                   <div
-                    key={readyImages[slideIndex]?.id ?? slideIndex}
+                    key={readyImages[safeSlideIndex]?.id ?? safeSlideIndex}
                     className="absolute inset-0"
                   >
                     {/* object-contain (2026-07-17, Lino: "es muss schon
@@ -531,15 +543,15 @@ export function IdeaFloatingCard({
                         below), so contain here is mostly just a safety
                         margin for edge cases, not doing the heavy lifting
                         alone anymore. */}
-                    {isVideoUrl(readyImages[slideIndex]?.image_url ?? "") ? (
+                    {isVideoUrl(readyImages[safeSlideIndex]?.image_url ?? "") ? (
                       <AuthVideo
-                        path={readyImages[slideIndex]?.image_url ?? ""}
+                        path={readyImages[safeSlideIndex]?.image_url ?? ""}
                         className="w-full h-full object-contain"
                         onAspectRatio={setAspectRatio}
                       />
                     ) : (
                       <AuthImage
-                        path={readyImages[slideIndex]?.image_url ?? ""}
+                        path={readyImages[safeSlideIndex]?.image_url ?? ""}
                         alt={title}
                         className="w-full h-full object-contain"
                         onAspectRatio={setAspectRatio}
