@@ -288,6 +288,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     if (!reviewingVideo) return;
     return subscribeToChanges("video", reviewingVideo.id, () => {
+      // 2026-09-18, Lino: "der grüne Haken kommt verzögert, oder gar nicht"
+      // (resolving a video comment in the player) — same GET-cache race as
+      // onCommentsChanged's own invalidateGetCache calls further down this
+      // file: this refetch landing within GET_CACHE_TTL_MS of the section's
+      // earlier videos fetch (very likely — this handler fires almost
+      // immediately after the comment-resolve write's own broadcast) kept
+      // silently returning the pre-toggle list, snapping the checkbox back.
+      invalidateGetCache(`sections/${reviewingVideo.section_id}/videos`);
       api
         .listVideos(reviewingVideo.section_id)
         .then((videos) => {
@@ -1055,6 +1063,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           onCommentsChanged={() => {
             invalidateGetCache(`projects/${id}`);
             api.projectDetail(id).then(setData);
+            // 2026-09-18 — this listVideos call had the exact same
+            // uninvalidated-GET-cache gap the projectDetail call just above
+            // it was already fixed for (see its own doc comment above).
+            invalidateGetCache(`sections/${reviewingVideo.section_id}/videos`);
             api.listVideos(reviewingVideo.section_id).then((videos) => {
               setVideosBySection((prev) => ({ ...prev, [reviewingVideo.section_id]: videos }));
               setReviewingVideo((prev) => {

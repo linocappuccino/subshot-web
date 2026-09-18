@@ -131,6 +131,21 @@ export function invalidateGetCache(path: string) {
  * create/delete/rename/move/module-toggle on the project or folder itself. */
 const PROJECT_LIST_MUTATION_RE = /^projects(?:\/([^/?]+)(?:\/move)?)?$/;
 const FOLDER_LIST_MUTATION_RE = /^folders(?:\/([^/?]+)(?:\/(?:move|image))?)?$/;
+// 2026-09-18, Lino: "der grüne Haken kommt verzögert, oder gar nicht... man
+// muss immer mehrmals klicken" (resolving idea feedback comments) — same
+// root cause as invalidateGetCache's own 2026-08-07 doc comment above, one
+// step removed: resolving/deleting a comment (PATCH|DELETE
+// ideas/{id}/feedback/{feedbackId}) broadcasts on the idea's realtime
+// channel (see broadcast_changed(idea_channel(...)) in main.py), and
+// IdeaFeedbackPanel's OWN subscribeToChanges handler reacts to that by
+// re-fetching `ideas/{id}/feedback` — often within the same tick the mutation
+// response already landed. That re-fetch is a plain GET, so it's subject to
+// the very same 4s cache as the panel's initial on-mount fetch; landing
+// inside that window returns the STALE (pre-toggle) list and silently
+// reverts the checkbox the mutation's own response had just correctly
+// ticked. Toggling again only "works" once enough real time has passed for
+// the cache window to have rolled over naturally.
+const IDEA_FEEDBACK_MUTATION_RE = /^ideas\/([^/?]+)\/feedback(?:\/[^/?]+)?$/;
 
 function invalidateListCachesFor(path: string) {
   const projectMatch = path.match(PROJECT_LIST_MUTATION_RE);
@@ -149,6 +164,11 @@ function invalidateListCachesFor(path: string) {
       if (p === "folders" || p.startsWith("folders?")) getRequestCache.delete(key);
     }
     if (folderMatch[1]) invalidateGetCache(`folders/${folderMatch[1]}`);
+    return;
+  }
+  const ideaFeedbackMatch = path.match(IDEA_FEEDBACK_MUTATION_RE);
+  if (ideaFeedbackMatch) {
+    invalidateGetCache(`ideas/${ideaFeedbackMatch[1]}/feedback`);
   }
 }
 
