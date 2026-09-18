@@ -932,9 +932,17 @@ export function VideoReviewModal({
     setSavingLabel(true);
     try {
       const updatedVersion = await api.setVideoVersionLabel(currentVersion.id, label);
+      // Nur das geaenderte Feld uebernehmen, NICHT das ganze Objekt ersetzen: die
+      // PATCH-Antwort läuft (anders als die normale Video-Abfrage ueber _video_out
+      // im Backend) nicht durch die Praesigned-URL-Anreicherung, haette also
+      // playback_url/thumbnail_url/filmstrip_url auf diesem einen Client sofort auf
+      // null zurueckgesetzt — "Video verschwindet" nach dem Speichern (Lino, live
+      // reproduziert). Alle bereits geladenen Felder bleiben so unangetastet.
       onVideoUpdated({
         ...video,
-        versions: video.versions.map((v) => (v.id === updatedVersion.id ? updatedVersion : v)),
+        versions: video.versions.map((v) =>
+          v.id === updatedVersion.id ? { ...v, display_version_label: updatedVersion.display_version_label } : v
+        ),
       });
       setEditingLabel(false);
     } catch (e) {
