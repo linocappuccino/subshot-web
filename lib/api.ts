@@ -590,6 +590,15 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         method: "POST",
         body: JSON.stringify({ ordered_version_ids: orderedVersionIds }),
       }),
+    // 2026-09-18 (Lino: "Versionsnummer selber angeben, Reihenfolge bleibt
+    // gleich") — sets/clears the manual display_version_label override,
+    // completely independent of reorderVideoVersions above. label=null
+    // clears it back to the automatic "V{version_number}" display.
+    setVideoVersionLabel: (versionId: string, label: string | null) =>
+      request<VideoVersion>(`video-versions/${versionId}/label`, {
+        method: "PATCH",
+        body: JSON.stringify({ label }),
+      }),
 
     // ── Referenz-/"Scribble"-Video (2026-09-08, per-Section 2026-09-10,
     // multi-video 2026-09-11 — "man soll mehrere scribble videos hochladen

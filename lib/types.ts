@@ -340,6 +340,11 @@ export interface VideoVersion {
   id: string;
   video_id: string;
   version_number: number;
+  /** Optionale manuelle Ueberschreibung der angezeigten Versionsnummer
+   * (siehe VideoVersion.display_version_label im Backend). null = zeig
+   * weiterhin "V{version_number}" wie bisher; gesetzt = zeig diesen Text
+   * stattdessen. Reihenfolge/version_number bleiben davon unberuehrt. */
+  display_version_label: string | null;
   original_filename: string | null;
   content_type: string | null;
   file_size_bytes: number | null;

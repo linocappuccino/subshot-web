@@ -379,7 +379,7 @@ export function VideoTile({
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {latest && (
             <span className="text-[11px] font-mono text-white/80 bg-black/50 rounded-full px-2 py-0.5">
-              v{latest.version_number}
+              {latest.display_version_label || `v${latest.version_number}`}
             </span>
           )}
           {commentCount > 0 && (
