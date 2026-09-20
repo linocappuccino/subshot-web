@@ -655,6 +655,21 @@ export interface DeliverLink {
   cover_video_version_id: string | null;
 }
 
+/** 2026-09-20 — arbitrary extra files attached to a project's Deliver
+ * handoff, see DeliverMiscFile's own doc comment in models.py.
+ * `relative_path` may contain "/" (folder structure from a webkitdirectory
+ * folder upload) — that's what reconstructs the folder layout inside the
+ * delivered ZIP; `display_name` is a purely cosmetic override for the
+ * listing UI, never affecting the real ZIP path. */
+export interface DeliverMiscFile {
+  id: string;
+  relative_path: string;
+  display_name: string | null;
+  file_size_bytes: number | null;
+  status: "uploading" | "ready";
+  created_at: string;
+}
+
 /** GET /projects/{id}/deliver — the internal "Deliver" tab's own data:
  * current link settings (if any) plus the live list of currently-eligible
  * videos, so the tab can show both "here's your link" and "here's what's
@@ -666,6 +681,7 @@ export interface DeliverStatus {
   project_emoji: string | null;
   link: DeliverLink | null;
   videos: DeliverVideo[];
+  misc_files: DeliverMiscFile[];
 }
 
 /** GET /share/{token}/deliver-preview — the public, no-login payload. */
@@ -679,6 +695,7 @@ export interface DeliverPreviewData {
   language: string;
   expires_at: string;
   videos: DeliverVideo[];
+  misc_files: DeliverMiscFile[];
   cover_video_version_id: string | null;
   cover_thumbnail_url: string | null;
   total_size_bytes: number;

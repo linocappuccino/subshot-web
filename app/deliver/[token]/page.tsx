@@ -110,6 +110,19 @@ function DeliverPageInner() {
     }
   }
 
+  async function downloadMiscFile(fileId: string) {
+    try {
+      const { url } = await publicDeliverApi.getMiscFileDownloadUrl(token, unlockToken, fileId);
+      const a = document.createElement("a");
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch {
+      alert(t("deliverPage.downloadFailed"));
+    }
+  }
+
   async function downloadOne(video: DeliverVideo) {
     if (!video.latest_version) return;
     try {
@@ -305,6 +318,29 @@ function DeliverPageInner() {
             </div>
           ))}
         </div>
+
+        {data.misc_files.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-xs uppercase tracking-widest text-white/40">{t("deliverPage.miscFiles")}</p>
+            <div className="flex flex-col gap-1 rounded-xl border border-white/8 bg-white/[0.03] p-2">
+              {data.misc_files.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => downloadMiscFile(f.id)}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-white/[0.05]"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-white/40">
+                    <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                  </svg>
+                  <span className="min-w-0 flex-1 truncate text-sm text-white/80">{f.display_name || f.relative_path}</span>
+                  <span className="shrink-0 text-[11px] text-white/30">{formatBytes(f.file_size_bytes || 0)}</span>
+                  <span className="shrink-0 text-white/40">⬇</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <p className="text-center text-xs text-white/30">{t("deliverPage.footerNote")}</p>
       </div>

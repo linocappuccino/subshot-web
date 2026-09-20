@@ -2,6 +2,7 @@ import type {
   Annotation,
   DeliverStatus,
   DeliverLink,
+  DeliverMiscFile,
   Idea,
   IdeaFeedback,
   IdeaImage,
@@ -399,6 +400,23 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         }),
       }),
     revokeDeliverLink: (projectId: string) => request<void>(`projects/${projectId}/deliver-link`, { method: "DELETE" }),
+
+    // 2026-09-20 — "sonstige Dateien" attached to the Deliver handoff, see
+    // DeliverMiscFile's own doc comment in models.py.
+    listDeliverMiscFiles: (projectId: string) => request<DeliverMiscFile[]>(`projects/${projectId}/deliver-misc-files`),
+    createDeliverMiscFile: (projectId: string, body: { relative_path: string; content_type: string; file_size_bytes?: number }) =>
+      request<{ id: string; upload_url: string }>(`projects/${projectId}/deliver-misc-files`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    completeDeliverMiscFile: (id: string) =>
+      request<DeliverMiscFile>(`deliver-misc-files/${id}/complete`, { method: "POST" }),
+    renameDeliverMiscFile: (id: string, displayName: string | null) =>
+      request<DeliverMiscFile>(`deliver-misc-files/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ display_name: displayName }),
+      }),
+    deleteDeliverMiscFile: (id: string) => request<void>(`deliver-misc-files/${id}`, { method: "DELETE" }),
 
     // ── Scenes ───────────────────────────────────────────────────────────
     createScene: (projectId: string, body: Record<string, unknown>) =>

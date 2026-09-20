@@ -38,6 +38,11 @@ export const publicDeliverApi = {
       fetch(`${BASE_URL}/share/${token}/deliver/${versionId}/download-url`, { headers: unlockHeaders(unlockToken) })
     ),
 
+  getMiscFileDownloadUrl: (token: string, unlockToken: string | null, miscFileId: string) =>
+    handle<{ url: string }>(
+      fetch(`${BASE_URL}/share/${token}/deliver/misc/${miscFileId}/download-url`, { headers: unlockHeaders(unlockToken) })
+    ),
+
   // Used by the "Alles herunterladen (ZIP)" button — one presigned URL per
   // eligible video in a single round trip, so the client can fetch+zip
   // (client-zip) without ever routing the video bytes through this API.

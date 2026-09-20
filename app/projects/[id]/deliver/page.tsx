@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use as usePromise } from "react";
+import { useEffect, useRef, useState, use as usePromise } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
@@ -9,7 +9,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
-import type { DeliverStatus } from "@/lib/types";
+import type { DeliverStatus, DeliverMiscFile } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
@@ -59,16 +59,106 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
   const [saving, setSaving] = useState(false);
   const [revoking, setRevoking] = useState(false);
 
+  // 2026-09-20, Lino: "es braucht noch ein upload feld wo man sonstige
+  // dateien anhängen kann... es soll möglich sein direkt einen ordner vom
+  // desktop hochzuladen, diese ordnerstruktur soll dann auch übernommen
+  // werden" — see DeliverMiscFile's own doc comment in models.py.
+  const [miscFiles, setMiscFiles] = useState<DeliverMiscFile[]>([]);
+  const [uploadDone, setUploadDone] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploading = uploadTotal > 0 && uploadDone < uploadTotal;
+
+  useEffect(() => {
+    // `webkitdirectory` is a real, long-supported (Chrome/Edge/Safari)
+    // DOM property for picking an entire folder instead of individual
+    // files — not part of the standard HTMLInputElement type, so it's set
+    // imperatively here rather than fought with as a JSX attribute.
+    if (folderInputRef.current) {
+      (folderInputRef.current as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
+    }
+  }, []);
+
   async function load() {
     setLoading(true);
     try {
-      const s = await api.deliverStatus(id);
+      const [s, files] = await Promise.all([api.deliverStatus(id), api.listDeliverMiscFiles(id)]);
       setStatus(s);
+      setMiscFiles(files);
       if (s.link) setCoverVersionId(s.link.cover_video_version_id);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.loadFailed"));
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Bounded concurrency (4 at once) — a folder upload can easily contain
+  // dozens of files; fully sequential would be needlessly slow, fully
+  // parallel risks choking a weak connection with too many simultaneous
+  // PUTs at once. `relative_path` (File.webkitRelativePath for a folder
+  // pick, just File.name for a plain multi-file pick) is what reconstructs
+  // folder structure inside the delivered ZIP later — see
+  // get_share_deliver_download_all_urls in main.py.
+  async function uploadMiscFiles(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    setUploadTotal((t) => t + files.length);
+    const maxConcurrent = 4;
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < files.length) {
+        const file = files[nextIndex];
+        nextIndex += 1;
+        const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+        try {
+          const { id: miscFileId, upload_url } = await api.createDeliverMiscFile(id, {
+            relative_path: relativePath,
+            content_type: file.type || "application/octet-stream",
+            file_size_bytes: file.size,
+          });
+          await fetch(upload_url, {
+            method: "PUT",
+            headers: { "Content-Type": file.type || "application/octet-stream" },
+            body: file,
+          });
+          const completed = await api.completeDeliverMiscFile(miscFileId);
+          setMiscFiles((prev) => [...prev, completed]);
+        } catch (e) {
+          toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.miscUploadFailed"));
+        } finally {
+          setUploadDone((d) => d + 1);
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(maxConcurrent, files.length) }, worker));
+    // Reset the counters once a batch fully lands, so a later batch starts
+    // its own fresh "0 von N" progress instead of accumulating forever.
+    setUploadDone(0);
+    setUploadTotal(0);
+  }
+
+  async function submitRename(fileId: string) {
+    try {
+      const updated = await api.renameDeliverMiscFile(fileId, renameDraft.trim() || null);
+      setMiscFiles((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
+    } finally {
+      setRenamingId(null);
+    }
+  }
+
+  async function deleteMiscFile(fileId: string) {
+    if (!confirm(t("deliverAdmin.miscDeleteConfirm"))) return;
+    try {
+      await api.deleteDeliverMiscFile(fileId);
+      setMiscFiles((prev) => prev.filter((f) => f.id !== fileId));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
     }
   }
 
@@ -298,6 +388,96 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
                   <p className="text-[11px] text-white/30">
                     {v.section_name} · {v.latest_version ? formatVersionLabel(v.latest_version) : "–"} · {formatBytes(v.latest_version?.file_size_bytes ?? null)}
                   </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+            <Label>
+              {miscFiles.length} {t(miscFiles.length === 1 ? "deliverAdmin.miscFile" : "deliverAdmin.miscFiles")}
+            </Label>
+            <div className="flex items-center gap-2">
+              {uploading && (
+                <span className="text-xs text-white/40">
+                  {t("deliverAdmin.uploading")} {uploadDone}/{uploadTotal}
+                </span>
+              )}
+              <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                {t("deliverAdmin.uploadFiles")}
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => folderInputRef.current?.click()} disabled={uploading}>
+                {t("deliverAdmin.uploadFolder")}
+              </Button>
+            </div>
+          </div>
+          <p className="text-xs text-white/40 mb-3">{t("deliverAdmin.miscFilesHint")}</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              uploadMiscFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={folderInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              uploadMiscFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          {miscFiles.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-xl border border-white/8 bg-white/[0.02] p-2">
+              {miscFiles.map((f) => (
+                <div key={f.id} className="flex items-center gap-2 rounded-lg px-2.5 py-2 hover:bg-white/[0.03]">
+                  {f.status === "uploading" ? (
+                    <span className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-white/60" />
+                  ) : (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-white/30">
+                      <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
+                    </svg>
+                  )}
+                  {renamingId === f.id ? (
+                    <input
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitRename(f.id);
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      onBlur={() => submitRename(f.id)}
+                      className="min-w-0 flex-1 rounded border border-white/15 bg-transparent px-1.5 py-0.5 text-sm outline-none focus:border-blue-500"
+                    />
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-sm text-white/80" title={f.relative_path}>
+                      {f.display_name || f.relative_path}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[11px] text-white/30">{formatBytes(f.file_size_bytes)}</span>
+                  {renamingId !== f.id && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingId(f.id);
+                        setRenameDraft(f.display_name || "");
+                      }}
+                      className="shrink-0 text-xs text-white/40 hover:text-white/70"
+                    >
+                      {t("deliverAdmin.rename")}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => deleteMiscFile(f.id)} className="shrink-0 text-xs text-red-400/70 hover:text-red-400">
+                    {t("common.delete")}
+                  </button>
                 </div>
               ))}
             </div>
