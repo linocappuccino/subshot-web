@@ -55,3 +55,29 @@ export function subscribeToChanges(kind: EntityKind, id: string, onChanged: () =
     pusher.unsubscribe(channelName);
   };
 }
+
+/** 2026-09-20, Lino: "das muss doch alles IMMER sofort syncen!!!" — mirrors
+ * the backend's `user_channel`/`team_channel`/`broadcast_project_list_changed`
+ * in app/realtime.py. The project LIST's own visibility isn't one entity id
+ * (own projects + team + shared + info-member + assignee, see
+ * `_project_visibility_filter`'s doc comment) so, same as the backend side,
+ * this subscribes to the two channels that cover the overwhelming majority
+ * of real setups (own account + own team) rather than one exact id — an
+ * extra ping when something happened that this viewer can't actually see
+ * just costs one harmless refetch. */
+export function subscribeToProjectListChanges(userId: string, teamId: string | null, onChanged: () => void): () => void {
+  const pusher = getClient();
+  if (!pusher) return () => {};
+  const channelNames = [`user-${userId}-projects`, ...(teamId ? [`team-${teamId}-projects`] : [])];
+  const channels = channelNames.map((name) => {
+    const channel = pusher.subscribe(name);
+    channel.bind("changed", onChanged);
+    return { name, channel };
+  });
+  return () => {
+    for (const { name, channel } of channels) {
+      channel.unbind("changed", onChanged);
+      pusher.unsubscribe(name);
+    }
+  };
+}

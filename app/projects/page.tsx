@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,6 +21,7 @@ import {
 } from "@dnd-kit/core";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
+import { subscribeToProjectListChanges } from "@/lib/realtime";
 import { setNavCache } from "@/lib/navCache";
 import type { Annotation, Member, Project, ProjectFolder } from "@/lib/types";
 import { AuthImage } from "@/app/components/AuthImage";
@@ -151,38 +152,65 @@ function ProjectsPageContent() {
     null
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      // 2026-07-19: folders can now nest, so a folder's OWN sub-folders are
-      // fetched the same way root folders are — just scoped to this
-      // folder_id instead of root (same convention as projects).
+  // 2026-07-19: folders can now nest, so a folder's OWN sub-folders are
+  // fetched the same way root folders are — just scoped to this folder_id
+  // instead of root (same convention as projects). Factored out of the
+  // load-on-mount effect below (2026-09-20) so the new realtime-refetch
+  // effect can call the exact same logic instead of duplicating it.
+  // `requestTokenRef` replaces the old effect-local `cancelled` flag as the
+  // race-guard (a late-resolving fetch for a folder the user already
+  // navigated away from must not clobber newer state) — needs to survive
+  // outside the effect now that this same function is also called from the
+  // realtime subscription below, not just the folderId-change effect.
+  const requestTokenRef = useRef(0);
+  const loadProjects = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const token = ++requestTokenRef.current;
+      if (!opts?.silent) setLoading(true);
       try {
         const [p, f] = await Promise.all([api.projects(folderId ?? undefined), api.folders(folderId ?? undefined)]);
-        if (cancelled) return;
+        if (token !== requestTokenRef.current) return;
         setProjects(p);
         setFolders(f);
       } catch (e) {
-        if (!cancelled) toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
+        if (token !== requestTokenRef.current) return;
+        toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
       } finally {
-        if (!cancelled) {
+        if (token === requestTokenRef.current && !opts?.silent) {
           setLoading(false);
           hasLoadedOnceRef.current = true;
         }
       }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [folderId]
+  );
+
+  useEffect(() => {
+    loadProjects().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
 
+  const [myUserId, setMyUserId] = useState<string | null>(null);
   useEffect(() => {
     api.myTeams().then((teams) => setMyTeamId(teams[0]?.id ?? null)).catch(() => {});
+    api.me().then((me) => setMyUserId(me.id)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 2026-09-20, Lino: "das muss doch alles IMMER sofort syncen!!! EGAL was
+  // angepasst oder geändert wird!!!" — a second tab/device creating,
+  // renaming, moving, or deleting a project (or getting shared a new one)
+  // used to only ever show up here after a manual refresh. `silent: true`
+  // skips the loading-skeleton flash for what's a background refetch of an
+  // already-visible list, same "dim the old tiles, don't replace them"
+  // reasoning `hasLoadedOnceRef` above already uses for folder navigation.
+  useEffect(() => {
+    if (!myUserId) return;
+    return subscribeToProjectListChanges(myUserId, myTeamId, () => {
+      loadProjects({ silent: true }).catch(() => {});
+    });
+  }, [myUserId, myTeamId, loadProjects]);
 
   async function createOrEditProject(
     name: string,
