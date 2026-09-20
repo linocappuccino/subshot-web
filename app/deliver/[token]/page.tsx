@@ -166,17 +166,51 @@ function DeliverPageInner() {
     }
   }
 
+  // 2026-09-20, Lino: "kommt 'wird verpackt' aber es bleibt sehr lange bei
+  // 90% stehen" — the old progress calc measured "how many fetch() calls
+  // have been INITIATED", which resolves almost instantly per file (fetch
+  // resolves once response HEADERS arrive, not once the body is fully
+  // downloaded) — so 0->90% flew by in a fraction of a second, then the
+  // REAL work (downloading every video's actual bytes + the zip encoding,
+  // inside downloadZip(...).blob()) happened entirely behind the frozen
+  // "90%", which for a real multi-GB delivery can take minutes. Rewritten
+  // to track actual bytes transferred: fetch() all files concurrently
+  // (fast — just gets headers, including Content-Length), sum their sizes
+  // for the real total, then wrap each response body in a passthrough
+  // ReadableStream that counts bytes as client-zip actually reads them.
   async function downloadAll() {
     setZipping(true);
     setZipProgress(0);
     try {
       const { files } = await publicDeliverApi.getDownloadAllUrls(token, unlockToken);
-      const responses = [];
-      for (let i = 0; i < files.length; i++) {
-        responses.push({ name: files[i].filename, input: await fetch(files[i].url) });
-        setZipProgress(Math.round(((i + 1) / files.length) * 90));
-      }
-      const zipResponse = downloadZip(responses);
+      const responses = await Promise.all(files.map((f) => fetch(f.url)));
+      const totalBytes = responses.reduce((sum, r) => sum + Number(r.headers.get("content-length") || 0), 0);
+      let downloadedBytes = 0;
+      let lastReportedPct = 0;
+      const entries = responses.map((response, i) => {
+        if (!response.body) return { name: files[i].filename, input: response };
+        const reader = response.body.getReader();
+        const trackedStream = new ReadableStream<Uint8Array>({
+          async pull(controller) {
+            const { done, value } = await reader.read();
+            if (done) {
+              controller.close();
+              return;
+            }
+            downloadedBytes += value.byteLength;
+            if (totalBytes > 0) {
+              const pct = Math.min(99, Math.round((downloadedBytes / totalBytes) * 100));
+              if (pct !== lastReportedPct) {
+                lastReportedPct = pct;
+                setZipProgress(pct);
+              }
+            }
+            controller.enqueue(value);
+          },
+        });
+        return { name: files[i].filename, input: new Response(trackedStream) };
+      });
+      const zipResponse = downloadZip(entries);
       const blob = await zipResponse.blob();
       setZipProgress(100);
       const blobUrl = URL.createObjectURL(blob);
