@@ -69,18 +69,34 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const uploading = uploadTotal > 0 && uploadDone < uploadTotal;
 
-  useEffect(() => {
-    // `webkitdirectory` is a real, long-supported (Chrome/Edge/Safari)
-    // DOM property for picking an entire folder instead of individual
-    // files — not part of the standard HTMLInputElement type, so it's set
-    // imperatively here rather than fought with as a JSX attribute.
-    if (folderInputRef.current) {
-      (folderInputRef.current as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
-    }
-  }, []);
+  // 2026-09-20 (follow-up), Lino: "es öffnet immer den ordner den man
+  // hochladen möchte anstatt ihn für den upload hochzuladen" — the
+  // previous approach set `webkitdirectory` on a persisted hidden <input>
+  // via useEffect, which apparently didn't reliably stick (the native
+  // picker then behaved like a plain file dialog — double-clicking a
+  // folder just navigates into it, exactly the reported symptom, since
+  // folders aren't selectable items at all without that attribute truly
+  // being honored). Switched to creating the input FRESH on every click
+  // instead, with `setAttribute("webkitdirectory", "")` (the attribute
+  // form, not just the JS property) set before it's ever attached to the
+  // DOM — the standard, battle-tested pattern for this exact feature,
+  // sidesteps whatever timing/attribute-reflection quirk the persisted-ref
+  // version hit.
+  function openFolderPicker() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.setAttribute("webkitdirectory", "");
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      uploadMiscFiles(input.files);
+      document.body.removeChild(input);
+    });
+    document.body.appendChild(input);
+    input.click();
+  }
 
   async function load() {
     setLoading(true);
@@ -408,7 +424,7 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
               <Button variant="secondary" size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
                 {t("deliverAdmin.uploadFiles")}
               </Button>
-              <Button variant="secondary" size="sm" onClick={() => folderInputRef.current?.click()} disabled={uploading}>
+              <Button variant="secondary" size="sm" onClick={openFolderPicker} disabled={uploading}>
                 {t("deliverAdmin.uploadFolder")}
               </Button>
             </div>
@@ -416,16 +432,6 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
           <p className="text-xs text-white/40 mb-3">{t("deliverAdmin.miscFilesHint")}</p>
           <input
             ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              uploadMiscFiles(e.target.files);
-              e.target.value = "";
-            }}
-          />
-          <input
-            ref={folderInputRef}
             type="file"
             multiple
             className="hidden"
