@@ -257,6 +257,39 @@ export function VideoReviewModal({
   // override on the CURRENT version, nothing about the order.
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState("");
+  // 2026-09-20, Lino: "das gleiche problem mit dem player oder video das
+  // nach oben rutsch haben wir auf der Preview seite wenn sie jemand auf
+  // einem phone öffnet" — same root cause as the native iOS player's
+  // keyboard bug (see [[feedback_swiftui_keyboard_avoidance_unreliable]]
+  // round 6), just on the web side: this modal is `position: fixed`, but
+  // mobile WebKit computes a focused-element's "is it visible" check
+  // against the LAYOUT viewport, and when the on-screen keyboard opens it
+  // scrolls the layout viewport to bring the focused `<textarea>` (the
+  // comment box) into view — `position: fixed` elements are supposed to
+  // stay pinned to the VISUAL viewport, but mobile Safari visibly drags
+  // them along with that scroll anyway, taking the whole card (header,
+  // close button, video) off the top of the screen. `document.body.style
+  // .overflow = "hidden"` above rules out an actual page-scroll being the
+  // cause — this is the fixed-position-under-keyboard WebKit quirk
+  // specifically. Same fix strategy as the iOS round 6 "measure the real
+  // position, cancel the drift" — here via `window.visualViewport`, whose
+  // `offsetTop` is exactly how far the visual viewport has been scrolled
+  // down relative to the layout viewport; countering it with an equal and
+  // opposite `translateY` keeps the card visually pinned to the true
+  // top of screen no matter what mobile Safari does internally.
+  const [keyboardShiftY, setKeyboardShiftY] = useState(0);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setKeyboardShiftY(vv.offsetTop);
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
   const [savingLabel, setSavingLabel] = useState(false);
   const [confirmDeleteVideo, setConfirmDeleteVideo] = useState(false);
   const [confirmDeleteVersion, setConfirmDeleteVersion] = useState(false);
@@ -1432,6 +1465,10 @@ export function VideoReviewModal({
         // `p-3`), the card itself is forced full-screen right below (see its own comment).
         presenting ? "p-0" : "p-0 sm:p-6"
       }`}
+      // See keyboardShiftY's own doc comment above — cancels mobile Safari
+      // dragging this fixed overlay upward when the keyboard opens for the
+      // comment textarea. No-op (0) on desktop / no visualViewport support.
+      style={keyboardShiftY ? { transform: `translateY(${keyboardShiftY}px)` } : undefined}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
