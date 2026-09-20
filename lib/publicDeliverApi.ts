@@ -38,9 +38,12 @@ export const publicDeliverApi = {
       fetch(`${BASE_URL}/share/${token}/deliver/${versionId}/download-url`, { headers: unlockHeaders(unlockToken) })
     ),
 
-  getMiscFileDownloadUrl: (token: string, unlockToken: string | null, miscFileId: string) =>
-    handle<{ url: string }>(
-      fetch(`${BASE_URL}/share/${token}/deliver/misc/${miscFileId}/download-url`, { headers: unlockHeaders(unlockToken) })
+  // 2026-09-20 — one tile's worth of presigned URLs (a solo-file group
+  // always has exactly one; a folder group has one per member file, each
+  // already carrying its folder-preserving zip path as `filename`).
+  getMiscGroupDownloadUrls: (token: string, unlockToken: string | null, groupId: string) =>
+    handle<{ files: { filename: string; url: string }[]; kind: "file" | "folder"; display_name: string }>(
+      fetch(`${BASE_URL}/share/${token}/deliver/misc-group/${groupId}/download-urls`, { headers: unlockHeaders(unlockToken) })
     ),
 
   // Used by the "Alles herunterladen (ZIP)" button — one presigned URL per

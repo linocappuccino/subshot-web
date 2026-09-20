@@ -3,6 +3,7 @@ import type {
   DeliverStatus,
   DeliverLink,
   DeliverMiscFile,
+  DeliverMiscGroup,
   Idea,
   IdeaFeedback,
   IdeaImage,
@@ -401,22 +402,28 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     revokeDeliverLink: (projectId: string) => request<void>(`projects/${projectId}/deliver-link`, { method: "DELETE" }),
 
-    // 2026-09-20 — "sonstige Dateien" attached to the Deliver handoff, see
-    // DeliverMiscFile's own doc comment in models.py.
-    listDeliverMiscFiles: (projectId: string) => request<DeliverMiscFile[]>(`projects/${projectId}/deliver-misc-files`),
-    createDeliverMiscFile: (projectId: string, body: { relative_path: string; content_type: string; file_size_bytes?: number }) =>
-      request<{ id: string; upload_url: string }>(`projects/${projectId}/deliver-misc-files`, {
+    // 2026-09-20 (redesigned same day) — "sonstige Dateien" attached to the
+    // Deliver handoff, one tile per upload batch, see DeliverMiscGroup's
+    // own doc comment in models.py.
+    listDeliverMiscGroups: (projectId: string) => request<DeliverMiscGroup[]>(`projects/${projectId}/deliver-misc-groups`),
+    createDeliverMiscGroup: (projectId: string, body: { display_name: string; kind: "file" | "folder" }) =>
+      request<DeliverMiscGroup>(`projects/${projectId}/deliver-misc-groups`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    createDeliverMiscFile: (groupId: string, body: { relative_path: string; content_type: string; file_size_bytes?: number }) =>
+      request<{ id: string; upload_url: string }>(`deliver-misc-groups/${groupId}/files`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
     completeDeliverMiscFile: (id: string) =>
       request<DeliverMiscFile>(`deliver-misc-files/${id}/complete`, { method: "POST" }),
-    renameDeliverMiscFile: (id: string, displayName: string | null) =>
-      request<DeliverMiscFile>(`deliver-misc-files/${id}`, {
+    renameDeliverMiscGroup: (groupId: string, displayName: string) =>
+      request<DeliverMiscGroup>(`deliver-misc-groups/${groupId}`, {
         method: "PATCH",
         body: JSON.stringify({ display_name: displayName }),
       }),
-    deleteDeliverMiscFile: (id: string) => request<void>(`deliver-misc-files/${id}`, { method: "DELETE" }),
+    deleteDeliverMiscGroup: (groupId: string) => request<void>(`deliver-misc-groups/${groupId}`, { method: "DELETE" }),
 
     // ── Scenes ───────────────────────────────────────────────────────────
     createScene: (projectId: string, body: Record<string, unknown>) =>

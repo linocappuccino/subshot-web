@@ -7,7 +7,7 @@ import { publicDeliverApi } from "@/lib/publicDeliverApi";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
-import type { DeliverPreviewData, DeliverVideo } from "@/lib/types";
+import type { DeliverPreviewData, DeliverVideo, DeliverMiscGroup } from "@/lib/types";
 
 // 2026-09-06, Lino: "genau dieses Deliver-System möchte ich für Subshot nun
 // auch haben... nach der Postproduction-Seite kommt die Deliver-Page, jedes
@@ -47,6 +47,7 @@ function DeliverPageInner() {
   const [unlockToken, setUnlockToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playingVideo, setPlayingVideo] = useState<DeliverVideo | null>(null);
+  const [downloadingGroupId, setDownloadingGroupId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
   const [countdown, setCountdown] = useState("");
@@ -110,16 +111,39 @@ function DeliverPageInner() {
     }
   }
 
-  async function downloadMiscFile(fileId: string) {
+  // 2026-09-20 — a solo-file group (kind="file") always has exactly one
+  // entry, downloaded directly; a folder group's files get zipped
+  // client-side (same `downloadZip` the "Alle herunterladen" button
+  // already uses) into one `{display_name}.zip`, since a single click on
+  // a folder tile should hand over the whole folder, not one file at a
+  // time.
+  async function downloadMiscGroup(group: DeliverMiscGroup) {
+    setDownloadingGroupId(group.id);
     try {
-      const { url } = await publicDeliverApi.getMiscFileDownloadUrl(token, unlockToken, fileId);
+      const { files, kind, display_name } = await publicDeliverApi.getMiscGroupDownloadUrls(token, unlockToken, group.id);
+      if (kind === "file" && files.length === 1) {
+        const a = document.createElement("a");
+        a.href = files[0].url;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+      const responses = await Promise.all(files.map(async (f) => ({ name: f.filename, input: await fetch(f.url) })));
+      const zipResponse = downloadZip(responses);
+      const blob = await zipResponse.blob();
+      const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
+      a.href = blobUrl;
+      a.download = `${display_name}.zip`;
       document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
     } catch {
       alert(t("deliverPage.downloadFailed"));
+    } finally {
+      setDownloadingGroupId(null);
     }
   }
 
@@ -319,25 +343,39 @@ function DeliverPageInner() {
           ))}
         </div>
 
-        {data.misc_files.length > 0 && (
+        {data.misc_groups.length > 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-xs uppercase tracking-widest text-white/40">{t("deliverPage.miscFiles")}</p>
-            <div className="flex flex-col gap-1 rounded-xl border border-white/8 bg-white/[0.03] p-2">
-              {data.misc_files.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => downloadMiscFile(f.id)}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left hover:bg-white/[0.05]"
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-white/40">
-                    <path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z" />
-                  </svg>
-                  <span className="min-w-0 flex-1 truncate text-sm text-white/80">{f.display_name || f.relative_path}</span>
-                  <span className="shrink-0 text-[11px] text-white/30">{formatBytes(f.file_size_bytes || 0)}</span>
-                  <span className="shrink-0 text-white/40">⬇</span>
-                </button>
-              ))}
+            {/* 2026-09-20, Lino: "es soll auf der Deliver page als Kachel
+                dargestellt werden die gleich gross wie die Videos" — same
+                grid/tile classNames as the video grid above. */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {data.misc_groups.map((g) => {
+                const totalBytes = g.files.reduce((sum, f) => sum + (f.file_size_bytes || 0), 0);
+                return (
+                  <button
+                    key={g.id}
+                    type="button"
+                    disabled={downloadingGroupId === g.id}
+                    onClick={() => downloadMiscGroup(g)}
+                    className="group relative flex aspect-square flex-col items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-white/5 transition-colors hover:bg-white/[0.08] disabled:opacity-60"
+                  >
+                    <span className="text-4xl" aria-hidden>
+                      {downloadingGroupId === g.id ? "" : g.kind === "folder" ? "📁" : "📄"}
+                    </span>
+                    {downloadingGroupId === g.id && (
+                      <span className="h-6 w-6 animate-spin rounded-full border-2 border-white/25 border-t-white/80" />
+                    )}
+                    <p className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 text-[11px] text-white/80">
+                      {g.display_name}
+                      {formatBytes(totalBytes) ? ` · ${formatBytes(totalBytes)}` : ""}
+                    </p>
+                    <span className="absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+                      ⬇
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

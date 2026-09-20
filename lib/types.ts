@@ -655,19 +655,28 @@ export interface DeliverLink {
   cover_video_version_id: string | null;
 }
 
-/** 2026-09-20 — arbitrary extra files attached to a project's Deliver
- * handoff, see DeliverMiscFile's own doc comment in models.py.
- * `relative_path` may contain "/" (folder structure from a webkitdirectory
- * folder upload) — that's what reconstructs the folder layout inside the
- * delivered ZIP; `display_name` is a purely cosmetic override for the
- * listing UI, never affecting the real ZIP path. */
+/** 2026-09-20 (redesigned same day) — one file belonging to a
+ * DeliverMiscGroup tile, see that model's own doc comment in models.py.
+ * `relative_path` is relative to the GROUP's own root (not the project) —
+ * may still contain "/" for a nested subfolder inside a folder-kind group. */
 export interface DeliverMiscFile {
   id: string;
   relative_path: string;
-  display_name: string | null;
   file_size_bytes: number | null;
   status: "uploading" | "ready";
   created_at: string;
+}
+
+/** One tile on the Deliver pages — a single uploaded file, or an entire
+ * uploaded folder (`kind`), same size/grid as the video tiles. Named at
+ * upload time (`display_name`, required) rather than a cosmetic per-file
+ * override. */
+export interface DeliverMiscGroup {
+  id: string;
+  display_name: string;
+  kind: "file" | "folder";
+  created_at: string;
+  files: DeliverMiscFile[];
 }
 
 /** GET /projects/{id}/deliver — the internal "Deliver" tab's own data:
@@ -681,7 +690,7 @@ export interface DeliverStatus {
   project_emoji: string | null;
   link: DeliverLink | null;
   videos: DeliverVideo[];
-  misc_files: DeliverMiscFile[];
+  misc_groups: DeliverMiscGroup[];
 }
 
 /** GET /share/{token}/deliver-preview — the public, no-login payload. */
@@ -695,7 +704,7 @@ export interface DeliverPreviewData {
   language: string;
   expires_at: string;
   videos: DeliverVideo[];
-  misc_files: DeliverMiscFile[];
+  misc_groups: DeliverMiscGroup[];
   cover_video_version_id: string | null;
   cover_thumbnail_url: string | null;
   total_size_bytes: number;
