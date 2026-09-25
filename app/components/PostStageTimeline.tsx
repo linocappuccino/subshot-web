@@ -36,7 +36,11 @@ export function PostStageTimeline({
   const activeIndex = stage ? POST_STAGES.indexOf(stage) : -1;
 
   return (
-    <ol className="flex items-center gap-0 min-w-0" aria-label="Stadium">
+    // 2026-09-25, Lino: "über dem jeweilig aktivierten Workflow … klein drüber schreiben
+    // 'Working on'" — absolutely positioned above the current step; `pt-3` reserves that line
+    // permanently (inside the scroll container's padding box, so it isn't clipped) so switching
+    // stages never changes the header height. Not shown for "Abgenommen" (nothing in work).
+    <ol className="flex items-center gap-0 min-w-0 pt-3" aria-label="Stadium">
       {POST_STAGES.map((s, i) => {
         const reached = i <= activeIndex;
         const current = i === activeIndex;
@@ -58,6 +62,8 @@ export function PostStageTimeline({
                 )}
               />
             )}
+            <span className="relative">
+            {current && !approved && <WorkingOnKicker className="absolute bottom-full left-1/2 -translate-x-1/2" />}
             <button
               type="button"
               disabled={!clickable}
@@ -75,6 +81,7 @@ export function PostStageTimeline({
                   a tooltip), otherwise four labels don't fit in one line. */}
               <span className={current ? undefined : "hidden sm:inline"}>{labels[s]}</span>
             </button>
+            </span>
           </li>
         );
       })}
@@ -86,10 +93,25 @@ export function PostStageTimeline({
 export function PostStageLabel({ stage, className }: { stage: PostStage | null; className?: string }) {
   const labels = usePostStageLabels();
   if (!stage) return null;
+  const approved = stage === "abgenommen";
   return (
-    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap", stage === "abgenommen" ? "text-emerald-400" : "text-white/70", className)}>
-      <span className={cn("w-1.5 h-1.5 rounded-full", stage === "abgenommen" ? "bg-emerald-400" : "bg-white/70")} />
-      {labels[stage]}
+    <span className={cn("inline-flex flex-col items-end whitespace-nowrap", className)}>
+      {/* Reserved (invisible) even when approved so every tile's footer has the same height. */}
+      <WorkingOnKicker className={approved ? "invisible" : undefined} />
+      <span className={cn("inline-flex items-center gap-1.5", approved ? "text-emerald-400" : "text-white/70")}>
+        <span className={cn("w-1.5 h-1.5 rounded-full", approved ? "bg-emerald-400" : "bg-white/70")} />
+        {labels[stage]}
+      </span>
+    </span>
+  );
+}
+
+/** Tiny "Working on" caption above the current (not yet approved) stage. Deliberately English in
+ * every UI language — Lino's wording. */
+function WorkingOnKicker({ className }: { className?: string }) {
+  return (
+    <span className={cn("block text-[9px] leading-none uppercase tracking-wider text-white/40 whitespace-nowrap pb-0.5", className)}>
+      Working on
     </span>
   );
 }
