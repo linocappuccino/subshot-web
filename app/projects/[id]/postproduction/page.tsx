@@ -1012,6 +1012,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       {reviewingVideo && (
         <VideoReviewModal
           video={reviewingVideo}
+          sectionStatus={data?.sections.find((s) => s.id === reviewingVideo.section_id)?.postproduction_status ?? null}
           canEdit={canEditStatus}
           currentUserId={currentUserId}
           members={members}

@@ -340,6 +340,30 @@ export interface SubtitlesData {
  * a manual version label so it always displays with a leading "V", even for labels
  * saved before this rule existed (the edit UI itself now also prepends "V" at save
  * time, this is the defensive read-side counterpart). */
+/** 2026-09-25, Lino: "Rohschnitt > Feinschnitt > Color Grading > Abgenommen"
+ * — timeline order. Only the first three are stored per version (backend
+ * VIDEO_POST_STAGES); "abgenommen" comes automatically from the section's
+ * postproduction_status. */
+export const POST_STAGES = ["rohschnitt", "feinschnitt", "color_grading", "abgenommen"] as const;
+export type PostStage = (typeof POST_STAGES)[number];
+export type StoredPostStage = Exclude<PostStage, "abgenommen">;
+
+/** The stage to SHOW for one version: the newest ready version of a video
+ * whose section is "abgeschlossen" is "abgenommen", everything else shows
+ * its own stored stage. */
+export function effectivePostStage(
+  version: Pick<VideoVersion, "id" | "post_stage"> | null | undefined,
+  video: Pick<Video, "versions">,
+  sectionStatus: PostproductionStatus | null | undefined
+): PostStage | null {
+  if (!version) return null;
+  if (sectionStatus === "abgeschlossen") {
+    const ready = video.versions.filter((v) => v.status === "ready");
+    if (ready[ready.length - 1]?.id === version.id) return "abgenommen";
+  }
+  return version.post_stage ?? null;
+}
+
 export function formatVersionLabel(version: Pick<VideoVersion, "display_version_label" | "version_number">): string {
   const label = version.display_version_label;
   if (!label) return `V${version.version_number}`;
@@ -356,6 +380,10 @@ export interface VideoVersion {
    * stattdessen (immer mit "V"-Praefix, siehe formatVersionLabel). Reihenfolge/
    * version_number bleiben davon unberuehrt. */
   display_version_label: string | null;
+  /** 2026-09-25 — Postproduction-Stadium dieser Version (Zeitstrahl im
+   * Player). "abgenommen" wird nie gespeichert, sondern abgeleitet — siehe
+   * effectivePostStage. null = Alt-Version ohne Angabe. */
+  post_stage?: StoredPostStage | null;
   original_filename: string | null;
   content_type: string | null;
   file_size_bytes: number | null;

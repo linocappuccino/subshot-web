@@ -7,7 +7,8 @@ import { Menu, MenuItem } from "./ui/Menu";
 import { Avatar } from "./ui/Avatar";
 import { DateTimePicker } from "./ui/DateTimePicker";
 import type { Member, PostproductionStatus, Video, VideoVersion } from "@/lib/types";
-import { formatVersionLabel } from "@/lib/types";
+import { effectivePostStage, formatVersionLabel } from "@/lib/types";
+import { PostStageLabel } from "./PostStageTimeline";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 
@@ -592,6 +593,11 @@ export function VideoTile({
           ) : (
             <span>{deadline ? new Date(deadline).toLocaleDateString("de-CH") : "—"}</span>
           )}
+          {/* 2026-09-25, Lino: "in der Postproduction-Übersicht muss einfach der momentan
+              ausgewählte Stand rechts unten, wo auch die anderen Infos stehen, angezeigt
+              werden (auch auf der Preview-Seite)" — the newest ready version's stage, right-
+              aligned in this existing last row (no extra row, no layout growth). */}
+          <PostStageLabel stage={effectivePostStage(latest, video, status)} className="ml-auto pl-2" />
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import type {
+  StoredPostStage,
   Annotation,
   DeliverStatus,
   DeliverLink,
@@ -643,6 +644,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<VideoVersion>(`video-versions/${versionId}/label`, {
         method: "PATCH",
         body: JSON.stringify({ label }),
+      }),
+
+    setVideoVersionStage: (versionId: string, stage: StoredPostStage | null) =>
+      request<VideoVersion>(`video-versions/${versionId}/stage`, {
+        method: "PATCH",
+        body: JSON.stringify({ stage }),
       }),
 
     // ── Referenz-/"Scribble"-Video (2026-09-08, per-Section 2026-09-10,

@@ -235,6 +235,7 @@ function PreviewVideoPageInner() {
       {reviewingVideo && (
         <VideoReviewModal
           video={reviewingVideo}
+          sectionStatus={sectionById.get(reviewingVideo.section_id)?.postproduction_status ?? null}
           canEdit={false}
           currentUserId={null}
           members={[]}

@@ -10,7 +10,9 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
 import type { Member, Video, VideoComment, VideoVersion, SubtitlesData, SubtitleSegment, SubtitleTranslationCue } from "@/lib/types";
-import { formatVersionLabel } from "@/lib/types";
+import { effectivePostStage, formatVersionLabel } from "@/lib/types";
+import type { PostproductionStatus, StoredPostStage } from "@/lib/types";
+import { PostStageTimeline } from "./PostStageTimeline";
 import { useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
 import { readVideoMetadata } from "@/lib/media";
@@ -100,7 +102,11 @@ export function VideoReviewModal({
   onTranslateSubtitles,
   initialHighlightedCommentId,
   onCommentsChanged,
+  sectionStatus,
 }: {
+  /** 2026-09-25 — the video's Section postproduction_status, only used to derive the
+   * "Abgenommen" step of the stage timeline (see effectivePostStage). */
+  sectionStatus?: PostproductionStatus | null;
   video: Video;
   canEdit: boolean;
   members: Member[];
@@ -961,6 +967,27 @@ export function VideoReviewModal({
     }
   }
 
+  const [savingStage, setSavingStage] = useState(false);
+  async function saveStage(stage: StoredPostStage) {
+    if (!currentVersion || savingStage || currentVersion.post_stage === stage) return;
+    const versionId = currentVersion.id;
+    const previous = currentVersion.post_stage ?? null;
+    const applyStage = (value: StoredPostStage | null) =>
+      onVideoUpdated({ ...video, versions: video.versions.map((v) => (v.id === versionId ? { ...v, post_stage: value } : v)) });
+    // Optimistic — the timeline moves instantly; rolled back if the PATCH fails. Only the one
+    // changed field is merged (same thin-PATCH-response reasoning as saveVersionLabel below).
+    applyStage(stage);
+    setSavingStage(true);
+    try {
+      await api.setVideoVersionStage(versionId, stage);
+    } catch (e) {
+      applyStage(previous);
+      toast.showError(e instanceof ApiError ? e.message : t("postStage.setFailed"));
+    } finally {
+      setSavingStage(false);
+    }
+  }
+
   async function saveVersionLabel(label: string | null) {
     if (!currentVersion || savingLabel) return;
     setSavingLabel(true);
@@ -1527,8 +1554,23 @@ export function VideoReviewModal({
         // line to themselves — comfortably enough width even for every icon at once) while staying
         // a single row on desktop exactly as before; `flex-wrap` on the icon group itself is a
         // second safety net in case even a full mobile-width line isn't enough.
-        <div ref={headerRef} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-5 py-3 border-b border-white/10 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
+        // 2026-09-25 — stage timeline ("Rohschnitt > Feinschnitt > Color Grading > Abgenommen",
+        // Lino: "oben in der Mitte"). Grid areas: lg+ one row [version nav | timeline | icons]
+        // with the timeline truly centered; sm–lg the timeline gets its own centered row above
+        // the existing nav/icons row (a 4-step timeline doesn't fit between them there); below
+        // sm everything stacks as before, timeline first.
+        <div
+          ref={headerRef}
+          className="flex flex-col gap-2 px-5 py-3 border-b border-white/10 shrink-0 sm:grid sm:items-center sm:gap-x-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:[grid-template-areas:'time_time'_'left_right'] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:[grid-template-areas:'left_time_right']"
+        >
+          <div className="flex justify-center min-w-0 overflow-x-auto sm:[grid-area:time]">
+            <PostStageTimeline
+              stage={effectivePostStage(currentVersion, video, sectionStatus)}
+              onChange={canEdit && !publicMode ? saveStage : undefined}
+              disabled={savingStage || !currentVersion}
+            />
+          </div>
+          <div className="flex items-center gap-3 min-w-0 sm:[grid-area:left]">
             <button
               onClick={() => setVersionIndex((i) => i - 1)}
               disabled={versionIndex <= 0}
@@ -1650,7 +1692,7 @@ export function VideoReviewModal({
               </div>
             )}
           </div>
-          <div className="flex items-center flex-wrap gap-1.5 shrink-0">
+          <div className="flex items-center flex-wrap gap-1.5 shrink-0 sm:[grid-area:right] sm:justify-self-end">
             {canEdit && (
               <>
                 <input

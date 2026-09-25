@@ -214,6 +214,12 @@ const translations = {
     "postproductionStatus.wartetAufFeedback": "Wartet auf Feedback",
     "postproductionStatus.abgeschlossen": "Abgeschlossen",
     "postproductionStatus.abgelehnt": "Abgelehnt",
+    "postStage.rohschnitt": "Rohschnitt",
+    "postStage.feinschnitt": "Feinschnitt",
+    "postStage.colorGrading": "Color Grading",
+    "postStage.abgenommen": "Abgenommen",
+    "postStage.abgenommenHint": "Wird automatisch gesetzt, sobald das Video auf „Abgeschlossen“ steht",
+    "postStage.setFailed": "Stadium konnte nicht gespeichert werden.",
 
     // Shared priority labels — SceneCard.tsx, ShotEditModal.tsx, SceneEditModal.tsx, SceneTable.tsx
     "priority.must": "Wichtig",
@@ -1146,6 +1152,12 @@ const translations = {
     "postproductionStatus.wartetAufFeedback": "Awaiting feedback",
     "postproductionStatus.abgeschlossen": "Completed",
     "postproductionStatus.abgelehnt": "Rejected",
+    "postStage.rohschnitt": "Rough cut",
+    "postStage.feinschnitt": "Fine cut",
+    "postStage.colorGrading": "Color grading",
+    "postStage.abgenommen": "Approved",
+    "postStage.abgenommenHint": "Set automatically once the video is marked “Completed”",
+    "postStage.setFailed": "Could not save the stage.",
 
     // Shared priority labels — SceneCard.tsx, ShotEditModal.tsx, SceneEditModal.tsx, SceneTable.tsx
     "priority.must": "Important",
