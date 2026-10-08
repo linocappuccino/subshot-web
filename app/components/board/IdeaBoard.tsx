@@ -465,12 +465,8 @@ export function IdeaBoard({
 
   async function addFiles(files: File[], at: Point, avoidOverlap = false) {
     if (!uploadFile) return;
-    let cursorX = snap(at.x - 168);
-    const y = snap(at.y - 120);
-    const reserved: { x: number; y: number; w: number; h: number }[] = [];
-    const uploads: Promise<void>[] = [];
-    // placement happens one file after the other (each needs its measured
-    // size to reserve its spot), the uploads themselves then run in parallel
+    // 1) measure every file first (sizes decide the layout)
+    const items: { file: File; mime: string; kind: MediaElement["type"]; w: number; h: number }[] = [];
     for (const file of files) {
       const mime = guessMime(file);
       const kind = elementKindForMime(mime);
@@ -491,41 +487,90 @@ export function IdeaBoard({
         w = 336;
         h = 120;
       }
-      const spot = place(cursorX, y, w, h, avoidOverlap, reserved);
-      reserved.push({ x: spot.x, y: spot.y, w, h });
-      cursorX = spot.x + w + GRID;
-      const pid = newId();
-      setPending((p) => [...p, { id: pid, label: file.name, progress: 0, x: spot.x, y: spot.y, w, h }]);
-      uploads.push(
-        (async () => {
-          try {
-            const { key, src } = await uploadFile(file, mime, (f) =>
-              setPending((p) => p.map((it) => (it.id === pid ? { ...it, progress: f } : it))),
-            );
-            const el: MediaElement = {
-              id: newId(),
-              type: kind,
-              x: spot.x,
-              y: spot.y,
-              w,
-              h,
-              z: maxZ(dataRef.current.elements) + 1,
-              asset_key: key,
-              src,
-              name: file.name,
-              mime,
-              ...(kind === "pdf" ? { size: file.size } : {}),
-            };
-            addElements([el]);
-          } catch {
-            onError?.(t("ideaBoard.uploadFailed", { name: file.name }));
-          } finally {
-            setPending((p) => p.filter((it) => it.id !== pid));
-          }
-        })(),
-      );
+      items.push({ file, mime, kind, w, h });
     }
-    await Promise.all(uploads);
+    if (items.length === 0) return;
+
+    // 2) positions. One file: the usual free spot. Several files from one
+    // upload (2026-10-08, Lino): a compact, slightly overlapping stack
+    // centred on the drop point / view centre, so it's obvious these just
+    // came in together — rows of ~√n, each card overlapping the previous
+    // one by ~20%, squeezed tighter if the stack wouldn't fit in view.
+    let spots: Point[];
+    if (items.length === 1) {
+      const it = items[0];
+      spots = [place(at.x - it.w / 2, at.y - it.h / 2, it.w, it.h, avoidOverlap)];
+    } else {
+      const cols = Math.ceil(Math.sqrt(items.length));
+      const view = visibleWorldRect();
+      const layout = (f: number) => {
+        const pos: Point[] = [];
+        let y = 0;
+        let width = 0;
+        for (let r = 0; r * cols < items.length; r++) {
+          const row = items.slice(r * cols, r * cols + cols);
+          let x = 0;
+          row.forEach((it, i) => {
+            pos.push({ x, y });
+            width = Math.max(width, x + it.w);
+            if (i < row.length - 1) x += it.w * f;
+          });
+          const rowH = Math.max(...row.map((it) => it.h));
+          if ((r + 1) * cols < items.length) y += rowH * f;
+          else y += rowH;
+        }
+        return { pos, width, height: y };
+      };
+      let f = 0.8;
+      let lay = layout(f);
+      while (f > 0.3 && (lay.width > view.w || lay.height > view.h)) {
+        f -= 0.05;
+        lay = layout(f);
+      }
+      const origin = clampInto(at.x - lay.width / 2, at.y - lay.height / 2, lay.width, lay.height, view);
+      const ox = snap(origin.x);
+      const oy = snap(origin.y);
+      spots = lay.pos.map((p) => ({ x: Math.round(ox + p.x), y: Math.round(oy + p.y) }));
+    }
+
+    // 3) placeholders right away, uploads in parallel; stacking order is the
+    // upload order, not whichever finishes first
+    const zBase = maxZ(dataRef.current.elements) + 1;
+    const added: string[] = [];
+    await Promise.all(
+      items.map(async (it, i) => {
+        const { x, y } = spots[i];
+        const pid = newId();
+        setPending((p) => [...p, { id: pid, label: it.file.name, progress: 0, x, y, w: it.w, h: it.h }]);
+        try {
+          const { key, src } = await uploadFile(it.file, it.mime, (fr) =>
+            setPending((p) => p.map((pi) => (pi.id === pid ? { ...pi, progress: fr } : pi))),
+          );
+          const el: MediaElement = {
+            id: newId(),
+            type: it.kind,
+            x,
+            y,
+            w: it.w,
+            h: it.h,
+            z: zBase + i,
+            asset_key: key,
+            src,
+            name: it.file.name,
+            mime: it.mime,
+            ...(it.kind === "pdf" ? { size: it.file.size } : {}),
+          };
+          addElements([el], items.length === 1);
+          added.push(el.id);
+        } catch {
+          onError?.(t("ideaBoard.uploadFailed", { name: it.file.name }));
+        } finally {
+          setPending((p) => p.filter((pi) => pi.id !== pid));
+        }
+      }),
+    );
+    // the new stack ends up selected, ready to be moved as one
+    if (added.length > 1) setSelection(new Set(added));
   }
 
   async function addLink(rawUrl: string, at: Point, avoidOverlap = false) {
