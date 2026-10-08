@@ -8,8 +8,12 @@ import {
   STROKE_WIDTHS,
   TEXT_COLORS,
   TEXT_COLOR_STYLES,
+  GROUP_CARD_H,
+  GROUP_CARD_W,
   boundsOf,
   elementKindForMime,
+  hiddenElementIds,
+  normalizeGroups,
   guessMime,
   looksLikeUrl,
   newId,
@@ -19,6 +23,7 @@ import {
   type BoardElement,
   type Connector,
   type DrawingElement,
+  type GroupElement,
   type LinkElement,
   type LinkPreview,
   type MediaElement,
@@ -157,7 +162,7 @@ export function IdeaBoard({
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [data, setData] = useState<BoardData>(initial);
+  const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
   const dataRef = useRef(data);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   const viewRef = useRef(view);
@@ -203,6 +208,7 @@ export function IdeaBoard({
       redoStack.current = [];
       setHistorySize({ undo: undoStack.current.length, redo: 0 });
     }
+    next = normalizeGroups(next);
     dataRef.current = next;
     setData(next);
     if (opts.notify !== false) onChangeRef.current?.(next);
@@ -467,7 +473,9 @@ export function IdeaBoard({
 
   // ── selection actions ─────────────────────────────────────────────────
   function deleteSelection() {
-    const ids = selectionRef.current;
+    const ids = new Set(selectionRef.current);
+    // a selected group goes together with everything in it
+    for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
     if (ids.size === 0 && !selectedConnector) return;
     commit((d) => ({
       elements: d.elements.filter((el) => !ids.has(el.id)),
@@ -478,8 +486,9 @@ export function IdeaBoard({
   }
 
   function duplicateSelection() {
-    const ids = selectionRef.current;
+    const ids = new Set(selectionRef.current);
     if (ids.size === 0) return;
+    for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
     const mapping = new Map<string, string>();
     let z = maxZ(dataRef.current.elements);
     const copies = dataRef.current.elements
@@ -489,12 +498,85 @@ export function IdeaBoard({
         const id = newId();
         mapping.set(el.id, id);
         return { ...el, id, x: el.x + GRID, y: el.y + GRID, z: ++z } as BoardElement;
-      });
+      })
+      .map((el) => (el.type === "group" ? { ...el, children: el.children.map((c) => mapping.get(c) ?? c) } : el));
     const connectorCopies: Connector[] = dataRef.current.connectors
       .filter((c) => mapping.has(c.from) && mapping.has(c.to))
       .map((c) => ({ ...c, id: newId(), from: mapping.get(c.from)!, to: mapping.get(c.to)! }));
     commit((d) => ({ elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
-    setSelection(new Set(copies.map((c) => c.id)));
+    const groupIds = copies.filter((c) => c.type === "group").map((c) => c.id);
+    const inGroups = new Set(copies.flatMap((c) => (c.type === "group" ? c.children : [])));
+    setSelection(new Set(groupIds.length ? [...groupIds, ...copies.filter((c) => c.type !== "group" && !inGroups.has(c.id)).map((c) => c.id)] : copies.map((c) => c.id)));
+  }
+
+  // ── groups ────────────────────────────────────────────────────────────
+  function groupSelection() {
+    const sel = selectionRef.current;
+    const els = dataRef.current.elements;
+    const groupsInSel = els.filter((el): el is GroupElement => el.type === "group" && sel.has(el.id));
+    const members = new Set<string>();
+    for (const el of els) if (sel.has(el.id) && el.type !== "group") members.add(el.id);
+    for (const g of groupsInSel) g.children.forEach((c) => members.add(c));
+    // an element already in another (unselected) group moves to the new one
+    if (members.size < 2) return;
+    const memberEls = els.filter((el) => members.has(el.id));
+    const group: GroupElement = {
+      id: newId(),
+      type: "group",
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      z: Math.min(...memberEls.map((el) => el.z)) - 1,
+      title: "",
+      collapsed: false,
+      children: memberEls.map((el) => el.id),
+    };
+    const dropGroups = new Set(groupsInSel.map((g) => g.id));
+    commit((d) => ({
+      elements: [
+        ...d.elements
+          .filter((el) => !dropGroups.has(el.id))
+          .map((el) => (el.type === "group" ? { ...el, children: el.children.filter((c) => !members.has(c)) } : el)),
+        group,
+      ],
+      connectors: d.connectors.filter((c) => !dropGroups.has(c.from) && !dropGroups.has(c.to)),
+    }));
+    setSelection(new Set([group.id]));
+    setEditingId(group.id);
+  }
+
+  function ungroup(id: string) {
+    const g = dataRef.current.elements.find((el) => el.id === id);
+    if (!g || g.type !== "group") return;
+    commit((d) => ({
+      elements: d.elements.filter((el) => el.id !== id),
+      connectors: d.connectors.filter((c) => c.from !== id && c.to !== id),
+    }));
+    setSelection(new Set(g.children));
+  }
+
+  function toggleGroup(id: string) {
+    const g = dataRef.current.elements.find((el) => el.id === id);
+    if (!g || g.type !== "group") return;
+    // collapsing: the card takes the frame's top-left corner; expanding: the
+    // frame is recomputed from the members (normalizeGroups)
+    const patch: Partial<GroupElement> = g.collapsed
+      ? { collapsed: false }
+      : { collapsed: true, w: GROUP_CARD_W, h: GROUP_CARD_H };
+    if (editable) updateElement(id, patch, { history: true });
+    else updateElement(id, patch, { notify: false });
+    setSelection((sel) => {
+      const next = new Set(sel);
+      g.children.forEach((c) => next.delete(c));
+      return next;
+    });
+  }
+
+  function commitGroupTitle(id: string, title: string) {
+    const g = dataRef.current.elements.find((el) => el.id === id);
+    if (g && g.type === "group" && title.trim() !== g.title) updateElement(id, { title: title.trim() } as Partial<GroupElement>, { history: true });
+    if (editingRef.current === id) setEditingId(null);
   }
 
   function reorderSelection(front: boolean) {
@@ -654,6 +736,11 @@ export function IdeaBoard({
   }
 
   function activate(el: BoardElement) {
+    if (el.type === "group" && editable) {
+      setSelection(new Set([el.id]));
+      setEditingId(el.id);
+      return;
+    }
     if ((el.type === "text" || el.type === "scene") && editable) {
       editingStartHtml.current = el.html;
       setSelection(new Set([el.id]));
@@ -771,8 +858,10 @@ export function IdeaBoard({
         ids = new Set([id]);
         setSelection(ids);
       }
+      const moving = new Set(ids);
+      for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => moving.add(c));
       const origin = new Map<string, Point>();
-      for (const el of dataRef.current.elements) if (ids.has(el.id)) origin.set(el.id, { x: el.x, y: el.y });
+      for (const el of dataRef.current.elements) if (moving.has(el.id)) origin.set(el.id, { x: el.x, y: el.y });
       opRef.current = {
         kind: "move",
         pointerId: e.pointerId,
@@ -780,7 +869,11 @@ export function IdeaBoard({
         sy: e.clientY,
         ids: [...ids],
         origin,
-        primary: id,
+        // dragging a group snaps its members to the grid, not the frame
+        primary: (() => {
+          const el = dataRef.current.elements.find((x) => x.id === id);
+          return el?.type === "group" ? el.children.find((c) => origin.has(c)) ?? id : id;
+        })(),
         moved: false,
         snapshot: dataRef.current,
         clickedId: id,
@@ -899,8 +992,14 @@ export function IdeaBoard({
         const minX = Math.min(op.x0, w.x), maxX = Math.max(op.x0, w.x);
         const minY = Math.min(op.y0, w.y), maxY = Math.max(op.y0, w.y);
         const ids = new Set(op.base);
+        const hidden = hiddenElementIds(dataRef.current.elements);
         for (const el of dataRef.current.elements) {
-          if (el.x < maxX && el.x + el.w > minX && el.y < maxY && el.y + el.h > minY) ids.add(el.id);
+          if (hidden.has(el.id)) continue;
+          if (el.type === "group" && !el.collapsed) {
+            // a frame counts only when the rectangle encloses it completely —
+            // otherwise selecting a few things inside a group would grab the whole group
+            if (el.x >= minX && el.x + el.w <= maxX && el.y >= minY && el.y + el.h <= maxY) ids.add(el.id);
+          } else if (el.x < maxX && el.x + el.w > minX && el.y < maxY && el.y + el.h > minY) ids.add(el.id);
         }
         setSelection(ids);
         return;
@@ -1065,6 +1164,12 @@ export function IdeaBoard({
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         redo();
+      } else if (mod && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          const g = dataRef.current.elements.find((el) => el.type === "group" && selectionRef.current.has(el.id));
+          if (g) ungroup(g.id);
+        } else groupSelection();
       } else if (mod && e.key.toLowerCase() === "d") {
         e.preventDefault();
         duplicateSelection();
@@ -1223,6 +1328,7 @@ export function IdeaBoard({
 
   // ── rendering helpers ─────────────────────────────────────────────────
   const elements = useMemo(() => [...data.elements].sort((a, b) => a.z - b.z), [data.elements]);
+  const hidden = useMemo(() => hiddenElementIds(data.elements), [data.elements]);
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));
   const selBounds = boundsOf(selectedEls);
@@ -1237,6 +1343,10 @@ export function IdeaBoard({
     addImage: t("ideaBoard.addImage"),
     play: t("ideaBoard.playVideo"),
     stop: t("ideaBoard.stopVideo"),
+    group: t("ideaBoard.group"),
+    groupItems: t("ideaBoard.groupItems"),
+    collapse: t("ideaBoard.collapse"),
+    expand: t("ideaBoard.expand"),
   };
 
   let gridSize = GRID * view.scale;
@@ -1245,9 +1355,10 @@ export function IdeaBoard({
   const handleSize = 12 / view.scale;
 
   function connectorPath(c: Connector) {
-    const a = byId.get(c.from);
-    const b = byId.get(c.to);
-    if (!a || !b) return null;
+    // an end inside a collapsed group attaches to the group's card instead
+    const a = byId.get(hidden.get(c.from) ?? c.from);
+    const b = byId.get(hidden.get(c.to) ?? c.to);
+    if (!a || !b || a.id === b.id) return null;
     const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
     const cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
     const p1 = rectEdgePoint(a, cb, 6);
@@ -1320,15 +1431,17 @@ export function IdeaBoard({
         </svg>
 
         {elements.map((el) => {
+          if (hidden.has(el.id)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
+          const isFrame = el.type === "group" && !el.collapsed;
           const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene";
-          const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file";
+          const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
               key={el.id}
               data-el-id={el.id}
-              className={`absolute group ${isDrawing ? "pointer-events-none" : ""} ${editable && !isDrawing && editingId !== el.id ? "cursor-grab active:cursor-grabbing" : ""}`}
+              className={`absolute group ${isDrawing || isFrame ? "pointer-events-none" : ""} ${editable && !isDrawing && !isFrame && editingId !== el.id ? "cursor-grab active:cursor-grabbing" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
@@ -1345,6 +1458,9 @@ export function IdeaBoard({
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
                 onPickSceneImage={() => pickSceneImage(el.id)}
+                groupMembers={el.type === "group" ? el.children.map((c) => byId.get(c)).filter((m): m is BoardElement => !!m) : undefined}
+                onToggleGroup={() => toggleGroup(el.id)}
+                onCommitGroupTitle={(title) => commitGroupTitle(el.id, title)}
                 onMeasure={(h) => updateElement(el.id, { h: Math.ceil(h) }, { notify: editable })}
                 onNaturalSize={(nw, nh) => {
                   if (!nw || !nh) return;
@@ -1374,7 +1490,7 @@ export function IdeaBoard({
                 <div
                   data-handle="connect"
                   title={t("ideaBoard.connect")}
-                  className={`absolute rounded-full bg-blue-500 border-white cursor-crosshair transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                  className={`absolute pointer-events-auto rounded-full bg-blue-500 border-white cursor-crosshair transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
                   style={{ width: handleSize, height: handleSize, right: -handleSize - 8 / view.scale, top: `calc(50% - ${handleSize / 2}px)`, borderWidth: 2 / view.scale }}
                 />
               )}
@@ -1476,6 +1592,25 @@ export function IdeaBoard({
                   }}
                 />
               ))}
+              <Divider />
+            </>
+          )}
+          {selectedEls.length >= 2 && (
+            <>
+              <BarButton title={t("ideaBoard.groupAction")} onPress={groupSelection}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.groupAction")}</span>
+              </BarButton>
+              <Divider />
+            </>
+          )}
+          {selectedEls.length === 1 && selectedEls[0].type === "group" && (
+            <>
+              <BarButton title={(selectedEls[0] as GroupElement).collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")} onPress={() => toggleGroup(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">{(selectedEls[0] as GroupElement).collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")}</span>
+              </BarButton>
+              <BarButton title={t("ideaBoard.ungroup")} onPress={() => ungroup(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.ungroup")}</span>
+              </BarButton>
               <Divider />
             </>
           )}

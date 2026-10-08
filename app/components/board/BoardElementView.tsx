@@ -10,6 +10,7 @@ import {
   type BoardElement,
   type DrawingElement,
   type LinkElement,
+  type GroupElement,
   type MediaElement,
   type SceneElement,
   type TextElement,
@@ -47,6 +48,10 @@ export interface ElementViewLabels {
   addImage: string;
   play: string;
   stop: string;
+  group: string;
+  groupItems: string;
+  collapse: string;
+  expand: string;
 }
 
 export function BoardElementView({
@@ -57,6 +62,9 @@ export function BoardElementView({
   onCommitText,
   onCommitScene,
   onPickSceneImage,
+  groupMembers,
+  onToggleGroup,
+  onCommitGroupTitle,
   onMeasure,
   onNaturalSize,
 }: {
@@ -67,6 +75,9 @@ export function BoardElementView({
   onCommitText: (html: string) => void;
   onCommitScene?: (patch: { title?: string; html?: string }) => void;
   onPickSceneImage?: () => void;
+  groupMembers?: BoardElement[];
+  onToggleGroup?: () => void;
+  onCommitGroupTitle?: (title: string) => void;
   /** content needs more height than el.h (text/link cards grow with content) */
   onMeasure: (height: number) => void;
   /** media reported its real pixel size (used to fix the element's aspect ratio) */
@@ -88,6 +99,17 @@ export function BoardElementView({
       return <LinkNode el={el} onMeasure={onMeasure} editable={editable} labels={labels} />;
     case "drawing":
       return <DrawingNode el={el} />;
+    case "group":
+      return (
+        <GroupNode
+          el={el}
+          members={groupMembers ?? []}
+          editing={editing}
+          labels={labels}
+          onToggle={() => onToggleGroup?.()}
+          onCommitTitle={(title) => onCommitGroupTitle?.(title)}
+        />
+      );
     case "scene":
       return (
         <SceneNode
@@ -506,5 +528,103 @@ function DrawingNode({ el }: { el: DrawingElement }) {
       <path d={d} fill="none" stroke="transparent" strokeWidth={el.stroke_width + 14} strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "stroke" }} />
       <path d={d} fill="none" stroke={el.color} strokeWidth={el.stroke_width} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function previewOf(el: BoardElement): string | null {
+  if (el.type === "image") return el.src ?? null;
+  if (el.type === "scene" || el.type === "link") return el.image_src ?? null;
+  return null;
+}
+
+function GroupNode({
+  el,
+  members,
+  editing,
+  labels,
+  onToggle,
+  onCommitTitle,
+}: {
+  el: GroupElement;
+  members: BoardElement[];
+  editing: boolean;
+  labels: ElementViewLabels;
+  onToggle: () => void;
+  onCommitTitle: (title: string) => void;
+}) {
+  const titleRef = useRef<HTMLInputElement>(null);
+  useLayoutEffect(() => {
+    if (editing && titleRef.current) {
+      titleRef.current.focus({ preventScroll: true });
+      titleRef.current.select();
+    }
+  }, [editing]);
+
+  const title = editing ? (
+    <input
+      ref={titleRef}
+      defaultValue={el.title}
+      placeholder={labels.group}
+      onBlur={(e) => onCommitTitle(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/90 outline-none select-text"
+    />
+  ) : (
+    <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${el.title ? "text-white/85" : "text-white/40"}`}>{el.title || labels.group}</span>
+  );
+  const count = <span className="shrink-0 text-xs text-white/40 tabular-nums">{labels.groupItems.replace("{count}", String(members.length))}</span>;
+  const toggle = (
+    <button
+      data-no-drag
+      onClick={onToggle}
+      title={el.collapsed ? labels.expand : labels.collapse}
+      aria-label={el.collapsed ? labels.expand : labels.collapse}
+      className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${el.collapsed ? "-rotate-90" : ""}`}>
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    </button>
+  );
+
+  if (!el.collapsed) {
+    // frame around the members — only the header bar takes clicks, the inside
+    // stays click-through so the members (and the empty board) work as usual
+    return (
+      <div className="absolute inset-0 rounded-2xl border border-white/15 bg-white/[0.035] pointer-events-none">
+        <div className="pointer-events-auto flex items-center gap-2 px-2.5 h-10 rounded-t-2xl bg-white/[0.04] border-b border-white/10 cursor-grab">
+          {toggle}
+          {title}
+          {count}
+        </div>
+      </div>
+    );
+  }
+
+  const thumbs = members.map(previewOf).filter((x): x is string => !!x).slice(0, 4);
+  return (
+    <div className="w-full h-full rounded-2xl bg-[#232325] border border-white/15 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col">
+      <div className="flex items-center gap-2 px-2.5 h-10 border-b border-white/10">
+        {toggle}
+        {title}
+        {count}
+      </div>
+      <div className="flex-1 min-h-0 p-2.5 flex gap-1.5">
+        {thumbs.length > 0 ? (
+          thumbs.map((src, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={i} src={src} alt="" draggable={false} className="h-full flex-1 min-w-0 object-cover rounded-lg bg-white/5 pointer-events-none" />
+          ))
+        ) : (
+          <div className="flex-1 rounded-lg border border-dashed border-white/15 flex items-center justify-center gap-1.5 text-white/30">
+            {members.slice(0, 6).map((m) => (
+              <span key={m.id} className="w-2 h-2 rounded-full bg-white/25" />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

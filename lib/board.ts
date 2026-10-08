@@ -76,7 +76,67 @@ export interface SceneElement extends BaseElement {
   image_src?: string | null;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement;
+/** 2026-10-08, Lino: a group — a frame drawn around its member elements
+ * (expanded) or a compact card standing in for them (collapsed). While
+ * expanded its x/y/w/h are derived from the members (see normalizeGroups);
+ * while collapsed they are the card's own position/size and the members are
+ * hidden (they keep their positions and move along with the card). */
+export interface GroupElement extends BaseElement {
+  type: "group";
+  title: string;
+  collapsed: boolean;
+  children: string[];
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement;
+
+export const GROUP_PAD = 24;
+export const GROUP_HEADER = 40;
+export const GROUP_CARD_W = 288;
+export const GROUP_CARD_H = 132;
+
+/** Expanded groups get their frame recomputed from their members after
+ * every change; members of collapsed groups are hidden. */
+export function normalizeGroups(data: BoardData): BoardData {
+  if (!data.elements.some((el) => el.type === "group")) return data;
+  const byId = new Map(data.elements.map((el) => [el.id, el]));
+  let changed = false;
+  // members that no longer exist drop out; a group left with < 2 members dissolves
+  const dissolved = new Set<string>();
+  const elements = data.elements.flatMap((el): BoardElement[] => {
+    if (el.type !== "group") return [el];
+    const alive = el.children.filter((id) => byId.has(id));
+    if (alive.length < 2) {
+      dissolved.add(el.id);
+      changed = true;
+      return [];
+    }
+    if (alive.length !== el.children.length) {
+      changed = true;
+      el = { ...el, children: alive };
+    }
+    if (el.collapsed) return [el];
+    const members = (el as GroupElement).children.map((id) => byId.get(id)).filter((m): m is BoardElement => !!m && m.type !== "group");
+    const b = boundsOf(members);
+    if (!b) return [el];
+    const x = b.x - GROUP_PAD;
+    const y = b.y - GROUP_PAD - GROUP_HEADER;
+    const w = b.w + GROUP_PAD * 2;
+    const h = b.h + GROUP_PAD * 2 + GROUP_HEADER;
+    if (x === el.x && y === el.y && w === el.w && h === el.h) return [el];
+    changed = true;
+    return [{ ...el, x, y, w, h }];
+  });
+  if (!changed) return data;
+  const connectors = dissolved.size ? data.connectors.filter((c) => !dissolved.has(c.from) && !dissolved.has(c.to)) : data.connectors;
+  return { elements, connectors };
+}
+
+export function hiddenElementIds(elements: BoardElement[]): Map<string, string> {
+  const hidden = new Map<string, string>();
+  for (const el of elements) if (el.type === "group" && el.collapsed) for (const c of el.children) hidden.set(c, el.id);
+  return hidden;
+}
 
 export function nextSceneNumber(elements: BoardElement[]): number {
   return elements.reduce((m, el) => (el.type === "scene" ? Math.max(m, el.number) : m), 0) + 1;
