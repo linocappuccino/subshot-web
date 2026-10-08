@@ -115,7 +115,28 @@ export const GROUP_CARD_H = 132;
 
 /** Expanded groups get their frame recomputed from their members after
  * every change; members of collapsed groups are hidden. */
+/** 2026-10-08, Lino: no two scene cards on a board may share a number — a
+ * duplicated (or otherwise clashing) card keeps its content but gets the next
+ * free number; the older card (lower z) keeps the original. */
+function uniqueSceneNumbers(data: BoardData): BoardData {
+  const scenes = data.elements.filter((el): el is SceneElement => el.type === "scene");
+  const seen = new Set<number>();
+  if (scenes.every((sc) => !seen.has(sc.number) && seen.add(sc.number))) return data;
+  let next = nextSceneNumber(data.elements);
+  const taken = new Set<number>();
+  const clashing: SceneElement[] = [];
+  for (const sc of [...scenes].sort((a, b) => a.z - b.z)) {
+    if (taken.has(sc.number)) clashing.push(sc);
+    else taken.add(sc.number);
+  }
+  // several duplicated at once (e.g. 1 + 2) → new numbers in the same order
+  const renumber = new Map<string, number>();
+  for (const sc of clashing.sort((a, b) => a.number - b.number || a.z - b.z)) renumber.set(sc.id, next++);
+  return { ...data, elements: data.elements.map((el) => (renumber.has(el.id) ? ({ ...el, number: renumber.get(el.id)! } as BoardElement) : el)) };
+}
+
 export function normalizeGroups(data: BoardData): BoardData {
+  data = uniqueSceneNumbers(data);
   // a thumbnail whose element is gone (or lost its image) no longer counts
   if (data.cover) {
     const coverEl = data.elements.find((el) => el.id === data.cover);
