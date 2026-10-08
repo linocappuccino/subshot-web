@@ -30,6 +30,7 @@ import {
   type SceneElement,
   type StrokeColor,
   type TextColor,
+  type TextAlign,
   type TextElement,
   type TodoElement,
 } from "@/lib/board";
@@ -732,6 +733,13 @@ export function IdeaBoard({
       const z = new Map(picked.map((el, i) => [el.id, base + i]));
       return { ...d, elements: d.elements.map((el) => (z.has(el.id) ? { ...el, z: z.get(el.id)! } : el)) };
     });
+  }
+
+  function setTextAlign(ids: Set<string>, align: TextAlign) {
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => (ids.has(el.id) && el.type === "text" ? { ...el, align } : el)),
+    }));
   }
 
   function setTextColor(color: TextColor) {
@@ -1884,6 +1892,12 @@ export function IdeaBoard({
           <BarButton title={t("ideaBoard.format.bulletList")} onPress={() => document.execCommand("insertUnorderedList")}>•</BarButton>
           <BarButton title={t("ideaBoard.format.numberList")} onPress={() => document.execCommand("insertOrderedList")}>1.</BarButton>
           <BarButton title={t("ideaBoard.format.quote")} onPress={() => document.execCommand("formatBlock", false, "blockquote")}>❝</BarButton>
+          <Divider />
+          {TEXT_ALIGNS.map((a) => (
+            <BarButton key={a} title={t(`ideaBoard.align.${a}`)} active={(editingEl.align ?? "left") === a} onPress={() => setTextAlign(new Set([editingEl.id]), a)}>
+              <AlignIcon align={a} />
+            </BarButton>
+          ))}
         </FloatingBar>
       )}
 
@@ -1914,6 +1928,17 @@ export function IdeaBoard({
                     background: c === "transparent" ? "repeating-conic-gradient(#555 0 25%, #333 0 50%) 50% / 8px 8px" : TEXT_COLOR_STYLES[c].bg,
                   }}
                 />
+              ))}
+              <Divider />
+              {TEXT_ALIGNS.map((a) => (
+                <BarButton
+                  key={a}
+                  title={t(`ideaBoard.align.${a}`)}
+                  active={selectedEls.every((el) => ((el as TextElement).align ?? "left") === a)}
+                  onPress={() => setTextAlign(new Set(selectedEls.map((el) => el.id)), a)}
+                >
+                  <AlignIcon align={a} />
+                </BarButton>
               ))}
               <Divider />
             </>
@@ -2329,7 +2354,20 @@ function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: numb
   );
 }
 
-function BarButton({ title, onPress, children, danger }: { title: string; onPress: () => void; children: React.ReactNode; danger?: boolean }) {
+const TEXT_ALIGNS: TextAlign[] = ["left", "center", "right"];
+
+function AlignIcon({ align }: { align: TextAlign }) {
+  const rows: [number, number][] = align === "left" ? [[4, 20], [4, 14], [4, 18]] : align === "right" ? [[4, 20], [10, 20], [6, 20]] : [[4, 20], [7, 17], [5, 19]];
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      {rows.map(([x1, x2], i) => (
+        <line key={i} x1={x1} x2={x2} y1={6 + i * 6} y2={6 + i * 6} />
+      ))}
+    </svg>
+  );
+}
+
+function BarButton({ title, onPress, children, danger, active }: { title: string; onPress: () => void; children: React.ReactNode; danger?: boolean; active?: boolean }) {
   return (
     <button
       title={title}
@@ -2338,7 +2376,7 @@ function BarButton({ title, onPress, children, danger }: { title: string; onPres
       onPointerDown={(e) => e.preventDefault()}
       onMouseDown={(e) => e.preventDefault()}
       onClick={onPress}
-      className={`min-w-8 h-8 px-1.5 rounded-lg flex items-center justify-center text-sm ${danger ? "text-red-300 hover:bg-red-500/20" : "text-white/80 hover:bg-white/10"}`}
+      className={`min-w-8 h-8 px-1.5 rounded-lg flex items-center justify-center text-sm ${danger ? "text-red-300 hover:bg-red-500/20" : active ? "text-white bg-white/15" : "text-white/80 hover:bg-white/10"}`}
     >
       {children}
     </button>

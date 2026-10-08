@@ -443,6 +443,7 @@ function TextNode({
         color: style.fg,
         border: `1px solid ${style.border}`,
         minHeight: el.h,
+        textAlign: el.align ?? "left",
         boxShadow: el.color === "transparent" ? "none" : undefined,
       }}
     >

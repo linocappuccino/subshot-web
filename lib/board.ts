@@ -36,7 +36,11 @@ export interface TextElement extends BaseElement {
   type: "text";
   html: string;
   color: TextColor;
+  /** 2026-10-08, Lino: whole text box left / centered / right (default left) */
+  align?: TextAlign;
 }
+
+export type TextAlign = "left" | "center" | "right";
 
 export interface MediaElement extends BaseElement {
   type: "image" | "video" | "audio" | "pdf" | "file";
