@@ -35,6 +35,7 @@ import {
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
 import { BoardTodoContext } from "./BoardTodo";
+import { ImageGeneratePopup } from "../ImageGeneratePopup";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -66,6 +67,8 @@ type Point = { x: number; y: number };
 
 export type BoardUploadFn = (file: File, mime: string, onProgress: (fraction: number) => void) => Promise<{ key: string; src: string }>;
 export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
+export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
+export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
 
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 4;
@@ -210,6 +213,7 @@ export function IdeaBoard({
   onChange,
   uploadFile,
   fetchLinkPreview,
+  generateImage,
   onError,
   onEscape,
   className = "",
@@ -219,6 +223,8 @@ export function IdeaBoard({
   onChange?: (data: BoardData) => void;
   uploadFile?: BoardUploadFn;
   fetchLinkPreview?: BoardLinkPreviewFn;
+  /** scene cards' "AI generieren" — same popup/engine as the shot list */
+  generateImage?: BoardGenerateImageFn;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -890,6 +896,27 @@ export function IdeaBoard({
       onError?.(t("ideaBoard.uploadFailed", { name: file.name }));
     } finally {
       setPending((p) => p.filter((it) => it.id !== pid));
+    }
+  }
+
+  // AI image for a scene card (2026-10-08): popup (style / format / prompt),
+  // the card pulses while the job runs, the result becomes the scene image
+  const [aiFor, setAiFor] = useState<string | null>(null);
+  const [aiRunning, setAiRunning] = useState<Set<string>>(new Set());
+  async function runSceneAi(id: string, prompt: string, style: BoardImageStyle, aspect: "16:9" | "9:16") {
+    if (!generateImage) return;
+    setAiRunning((s) => new Set(s).add(id));
+    try {
+      const { key, src } = await generateImage(prompt, style, aspect);
+      if (dataRef.current.elements.some((e) => e.id === id)) updateElement(id, { image_key: key, image_src: src } as Partial<SceneElement>, { history: true });
+    } catch (e) {
+      if (e instanceof Error && e.message) onError?.(e.message);
+    } finally {
+      setAiRunning((s) => {
+        const next = new Set(s);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -1582,6 +1609,9 @@ export function IdeaBoard({
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
+    uploadImage: t("ideaBoard.uploadImage"),
+    aiImage: t("ideaBoard.aiImage"),
+    aiGenerating: t("ideaBoard.aiGenerating"),
     todoDefaultName: t("ideaBoard.todoDefaultName"),
     todoAddPlaceholder: t("ideaBoard.todoAddPlaceholder"),
     todoMissing: t("ideaBoard.todoMissing"),
@@ -1720,6 +1750,8 @@ export function IdeaBoard({
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
+                onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
+                sceneGenerating={aiRunning.has(el.id)}
                 onRequestDialogue={() => {
                   dialogueOnEdit.current = el.id;
                   setSelection(new Set([el.id]));
@@ -1924,6 +1956,11 @@ export function IdeaBoard({
               </span>
               <BarButton title={t("ideaBoard.sceneNumberUp")} onPress={() => setSceneNumber(selectedEls[0].id, 1)}>+</BarButton>
               <Divider />
+              {generateImage && (
+                <BarButton title={t("ideaBoard.aiImage")} onPress={() => setAiFor(selectedEls[0].id)}>
+                  <span className="text-xs font-semibold px-0.5">✨</span>
+                </BarButton>
+              )}
               <BarButton title={t("ideaBoard.addImage")} onPress={() => pickSceneImage(selectedEls[0].id)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
               </BarButton>
@@ -2044,6 +2081,36 @@ export function IdeaBoard({
             );
           })()}
         </ContextMenu>
+      )}
+
+      {editable && generateImage && (
+        // the Modal is a portal, but React still bubbles its events through
+        // the board — keep the board's pointer/keyboard handlers out of it
+        <div
+          className="contents"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+        <ImageGeneratePopup
+          open={aiFor !== null}
+          onClose={() => setAiFor(null)}
+          initialPrompt={(() => {
+            const sc = aiFor ? byId.get(aiFor) : null;
+            if (!sc || sc.type !== "scene") return "";
+            return [sc.title, boardHtmlToPlain(sc.html)].filter(Boolean).join(". ");
+          })()}
+          onGenerate={(prompt, style, aspect) => {
+            const id = aiFor;
+            setAiFor(null);
+            if (id) void runSceneAi(id, prompt, style, aspect);
+          }}
+        />
+        </div>
       )}
 
       {/* tools */}

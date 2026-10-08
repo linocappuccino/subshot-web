@@ -539,6 +539,17 @@ function IdeaBoardScreen({
               return { key: ticket.key, src: ticket.url };
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
+            generateImage={async (prompt, style, aspect) => {
+              const { job_id } = await api.createBoardImageJob(idea.id, { prompt, style, aspect_ratio: aspect });
+              // Gemini usually needs 10–40 s; give up after ~4 minutes
+              for (let i = 0; i < 80; i++) {
+                await new Promise((r) => setTimeout(r, 3000));
+                const job = await api.boardImageJob(idea.id, job_id);
+                if (job.status === "ready" && job.key && job.url) return { key: job.key, src: job.url };
+                if (job.status === "failed") throw new Error(job.error || t("ideaBoard.aiFailed"));
+              }
+              throw new Error(t("ideaBoard.aiFailed"));
+            }}
           />
           </BoardTodoContext.Provider>
         ) : (

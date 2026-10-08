@@ -48,6 +48,9 @@ export interface ElementViewLabels extends TodoLabels {
   sceneTextPlaceholder: string;
   addImage: string;
   addDialogue: string;
+  uploadImage: string;
+  aiImage: string;
+  aiGenerating: string;
   dialoguePlaceholder: string;
   removeDialogue: string;
   play: string;
@@ -68,6 +71,8 @@ export function BoardElementView({
   onCommitScene,
   onRequestDialogue,
   addDialogueOnEdit,
+  onGenerateSceneImage,
+  sceneGenerating,
   onPickSceneImage,
   groupMembers,
   onToggleGroup,
@@ -83,6 +88,8 @@ export function BoardElementView({
   onCommitScene?: (patch: { title?: string; html?: string; dialogues?: string[] }) => void;
   onRequestDialogue?: () => void;
   addDialogueOnEdit?: boolean;
+  onGenerateSceneImage?: () => void;
+  sceneGenerating?: boolean;
   onPickSceneImage?: () => void;
   groupMembers?: BoardElement[];
   onToggleGroup?: () => void;
@@ -132,6 +139,8 @@ export function BoardElementView({
           onPickImage={() => onPickSceneImage?.()}
           onRequestDialogue={() => onRequestDialogue?.()}
           addDialogueOnEdit={!!addDialogueOnEdit}
+          onGenerate={onGenerateSceneImage}
+          generating={!!sceneGenerating}
           onMeasure={onMeasure}
         />
       );
@@ -147,6 +156,8 @@ function SceneNode({
   onPickImage,
   onRequestDialogue,
   addDialogueOnEdit,
+  onGenerate,
+  generating,
   onMeasure,
 }: {
   el: SceneElement;
@@ -157,6 +168,8 @@ function SceneNode({
   onPickImage: () => void;
   onRequestDialogue: () => void;
   addDialogueOnEdit: boolean;
+  onGenerate?: () => void;
+  generating: boolean;
   onMeasure: (h: number) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -237,18 +250,37 @@ function SceneNode({
         </div>
       </div>
       <div className="px-3">
-        {el.image_src ? (
+        {generating ? (
+          <div className="w-full aspect-video rounded-lg bg-gradient-to-br from-violet-500/25 via-blue-500/15 to-transparent animate-pulse flex flex-col items-center justify-center gap-1.5 text-xs text-white/70">
+            <span className="text-lg">✨</span>
+            {labels.aiGenerating}
+          </div>
+        ) : el.image_src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={el.image_src} alt="" draggable={false} className="w-full aspect-video object-cover rounded-lg bg-white/5 pointer-events-none select-none" />
         ) : editable ? (
-          <button
-            data-no-drag
-            onClick={onPickImage}
-            className="w-full aspect-video rounded-lg border border-dashed border-white/20 text-white/45 hover:text-white/75 hover:border-white/40 text-xs flex flex-col items-center justify-center gap-1.5 transition-colors"
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
-            {labels.addImage}
-          </button>
+          <div className="w-full aspect-video rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 p-2">
+            <span className="text-xs text-white/40">{labels.addImage}</span>
+            <div className="flex gap-1.5">
+              <button
+                data-no-drag
+                onClick={onPickImage}
+                className="flex items-center gap-1.5 rounded-lg bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white/80"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
+                {labels.uploadImage}
+              </button>
+              {onGenerate && (
+                <button
+                  data-no-drag
+                  onClick={onGenerate}
+                  className="flex items-center gap-1.5 rounded-lg bg-violet-500/20 hover:bg-violet-500/30 px-2.5 py-1.5 text-xs font-semibold text-violet-200"
+                >
+                  ✨ {labels.aiImage}
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <div className="w-full aspect-video rounded-lg bg-white/5" />
         )}

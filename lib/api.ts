@@ -852,6 +852,15 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // scene card "AI generieren" (2026-10-08): starts a job, poll for the result
+    createBoardImageJob: (ideaId: string, body: { prompt: string; style: "realistic" | "sketch" | "funny_sketch"; aspect_ratio: "16:9" | "9:16" }) =>
+      request<{ job_id: string }>(`ideas/${ideaId}/board/generate-image`, { method: "POST", body: JSON.stringify(body) }),
+    boardImageJob: (ideaId: string, jobId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/board/generate-image/${jobId}`);
+      return request<{ status: "generating" | "ready" | "failed"; key?: string; url?: string; error?: string | null }>(
+        `ideas/${ideaId}/board/generate-image/${jobId}`,
+      );
+    },
     ideaTodoLists: (ideaId: string) => {
       invalidateGetCache(`ideas/${ideaId}/todo-lists`);
       return request<TodoList[]>(`ideas/${ideaId}/todo-lists`);
