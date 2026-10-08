@@ -231,59 +231,164 @@ export const clampMoodboardScale = clampS;
 
 export type MoodboardBox = { id: string; x: number; y: number; w: number; h: number };
 
-/** 2026-10-08, Lino: "es dürfen keine Lücken entstehen" — justified rows:
- * images keep their aspect ratio, every row fills the full width exactly,
- * so nothing ever leaves a hole. A row closes at the image count that brings
- * its height closest to its target height; the target is `baseH` (≈ `cols`
- * square images per row) times the row's size factor (area-weighted mean of
- * its images' `s`) — so a bigger image makes its row hold fewer images and
- * grow taller, a smaller one lets more images move up into its row. A short
- * last row is merged into the one above instead of being left half empty. */
+/** 2026-10-08, Lino: moodboard layout — gap-free and every image keeps its
+ * aspect ratio (no cropping).
+ *
+ * Normal images (size factor `s` < 1.15) sit in justified rows: a row closes
+ * at the image count that brings its height closest to its target (`baseH`
+ * ≈ `cols` square images per row, times the images' mean `s`), then fills the
+ * width exactly. An image pulled bigger (s ≥ 1.15) becomes a FEATURE (Lino:
+ * "ein Bild muss über mehrere Zeilen gehen können, nur dieses wird grösser"):
+ * it spans several rows on one side, the following images stack in justified
+ * rows on the other side. The block's height is solved exactly so the feature
+ * and the stacked rows end on the same line:
+ *   side rows at width w are a·w + c tall (a = Σ 1/Σar per row, c = gaps),
+ *   the feature at height H is ar_F·H wide, w = W − gap − ar_F·H
+ *   ⇒ H = (a·(W − gap) + c) / (1 + a·ar_F)
+ * The number of stacked images is the one whose exact H is closest to the
+ * feature's target (baseH·s). Features alternate left/right. A feature with
+ * nothing after it takes the images of the row before it as its side. */
 export function layoutMoodboard(items: MoodboardItem[], width: number, cols: number, gap: number): { boxes: MoodboardBox[]; height: number } {
   const W = Math.max(40, width);
-  const baseH = (W - gap * (Math.max(1, cols) - 1)) / Math.max(1, cols);
+  const G = gap;
+  const baseH = (W - G * (Math.max(1, cols) - 1)) / Math.max(1, cols);
   const ar = (it: MoodboardItem) => Math.max(0.1, it.ar || 1);
   const sc = (it: MoodboardItem) => it.s ?? 1;
-  const heightOf = (row: MoodboardItem[]) => (W - gap * (row.length - 1)) / row.reduce((t, it) => t + ar(it), 0);
-  const targetOf = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + sc(it) * ar(it), 0)) / row.reduce((t, it) => t + ar(it), 0);
+  const FEATURE = 1.15;
+  const isFeature = (it: MoodboardItem) => sc(it) >= FEATURE;
+  const sumAr = (row: MoodboardItem[]) => row.reduce((t, it) => t + ar(it), 0);
+  const heightAt = (row: MoodboardItem[], w: number) => (w - G * (row.length - 1)) / sumAr(row);
+  const targetOf = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + Math.min(sc(it), FEATURE) * ar(it), 0)) / sumAr(row);
 
-  const rows: MoodboardItem[][] = [];
-  let cur: MoodboardItem[] = [];
-  for (const it of items) {
-    const next = [...cur, it];
-    const h = heightOf(next);
-    if (h > targetOf(next)) {
-      cur = next;
+  /** justified rows of `list` at width w (short last row merged upward) */
+  const buildRows = (list: MoodboardItem[], w: number): MoodboardItem[][] => {
+    const rows: MoodboardItem[][] = [];
+    let cur: MoodboardItem[] = [];
+    for (const it of list) {
+      const next = [...cur, it];
+      const h = heightAt(next, w);
+      if (h > targetOf(next)) {
+        cur = next;
+        continue;
+      }
+      if (cur.length && Math.abs(heightAt(cur, w) - targetOf(cur)) < Math.abs(h - targetOf(next))) {
+        rows.push(cur);
+        cur = [it];
+      } else {
+        rows.push(next);
+        cur = [];
+      }
+    }
+    if (cur.length) {
+      if (heightAt(cur, w) > targetOf(cur) * 1.5 && rows.length) rows[rows.length - 1] = [...rows[rows.length - 1], ...cur];
+      else rows.push(cur);
+    }
+    return rows;
+  };
+
+  /** exact block height for a feature + the side rows (see doc comment) */
+  const solve = (F: MoodboardItem, rows: MoodboardItem[][]) => {
+    const a = rows.reduce((t, r) => t + 1 / sumAr(r), 0);
+    const c = G * (rows.length - 1) - G * rows.reduce((t, r) => t + (r.length - 1) / sumAr(r), 0);
+    const H = (a * (W - G) + c) / (1 + a * ar(F));
+    return { H, wf: ar(F) * H, ws: W - G - ar(F) * H };
+  };
+
+  // 1) blocks: runs of normal images, or a feature with its side images
+  type Block = { kind: "rows"; items: MoodboardItem[]; feature?: boolean } | { kind: "feature"; F: MoodboardItem; side: MoodboardItem[] };
+  const blocks: Block[] = [];
+  let i = 0;
+  while (i < items.length) {
+    if (!isFeature(items[i])) {
+      const run: MoodboardItem[] = [];
+      while (i < items.length && !isFeature(items[i])) run.push(items[i++]);
+      blocks.push({ kind: "rows", items: run });
       continue;
     }
-    // over target now — close with or without this image, whichever is closer
-    if (cur.length && Math.abs(heightOf(cur) - targetOf(cur)) < Math.abs(h - targetOf(next))) {
-      rows.push(cur);
-      cur = [it];
-    } else {
-      rows.push(next);
-      cur = [];
+    // several big images in a row: together they form one tall justified row
+    if (i + 1 < items.length && isFeature(items[i + 1])) {
+      const run: MoodboardItem[] = [];
+      while (i < items.length && isFeature(items[i])) run.push(items[i++]);
+      blocks.push({ kind: "rows", items: run, feature: true });
+      continue;
     }
+    const F = items[i++];
+    const Hf = baseH * sc(F);
+    const wsEst = W - G - ar(F) * Hf;
+    const pool: MoodboardItem[] = [];
+    for (let j = i; j < items.length && !isFeature(items[j]) && pool.length < 24; j++) pool.push(items[j]);
+    let best: { k: number; err: number } | null = null;
+    if (wsEst > W * 0.18) {
+      for (let k = 1; k <= pool.length; k++) {
+        const rows = buildRows(pool.slice(0, k), wsEst);
+        const { H, wf, ws } = solve(F, rows);
+        if (ws < W * 0.15 || wf < W * 0.15 || H <= 0) continue;
+        const err = Math.abs(H - Hf);
+        if (!best || err < best.err) best = { k, err };
+        if (H < Hf * 0.6) break; // only getting shorter from here
+      }
+    }
+    const side = best ? pool.slice(0, best.k) : [];
+    i += side.length;
+    blocks.push({ kind: "feature", F, side });
   }
-  if (cur.length) {
-    const tooTall = heightOf(cur) > targetOf(cur) * 1.5;
-    if (tooTall && rows.length) rows[rows.length - 1] = [...rows[rows.length - 1], ...cur];
-    else rows.push(cur);
+  // a feature with nothing beside it: at the very end it takes the images of
+  // the row before it; otherwise (too wide to share the width) it becomes a
+  // full-width image of its own
+  for (let b = 0; b < blocks.length; b++) {
+    const blk = blocks[b];
+    if (blk.kind !== "feature" || blk.side.length) continue;
+    const prev = blocks[b - 1];
+    const atEnd = b === blocks.length - 1;
+    if (atEnd && prev && prev.kind === "rows" && !prev.feature && prev.items.length) {
+      const rows = buildRows(prev.items, W);
+      const take = rows[rows.length - 1];
+      blk.side = take;
+      prev.items = prev.items.slice(0, prev.items.length - take.length);
+    }
   }
 
+  // 2) positions
   const boxes: MoodboardBox[] = [];
   let y = 0;
-  rows.forEach((row, ri) => {
-    let h = heightOf(row);
-    // only a board that is ONE short row keeps its natural height
-    if (rows.length === 1) h = Math.min(h, targetOf(row) * 1.5);
-    let x = 0;
-    for (const it of row) {
-      const w = ar(it) * h;
-      boxes.push({ id: it.id, x, y, w, h });
-      x += w + gap;
+  let featureNo = 0;
+  const placeRows = (rows: MoodboardItem[][], x0: number, w: number, y0: number) => {
+    let yy = y0;
+    rows.forEach((row, ri) => {
+      const h = heightAt(row, w);
+      let x = x0;
+      for (const it of row) {
+        const bw = ar(it) * h;
+        boxes.push({ id: it.id, x, y: yy, w: bw, h });
+        x += bw + G;
+      }
+      yy += h + (ri < rows.length - 1 ? G : 0);
+    });
+    return yy;
+  };
+  const live = blocks.filter((b) => b.kind === "feature" || b.items.length);
+  live.forEach((blk, bi) => {
+    if (bi > 0) y += G;
+    if (blk.kind === "rows") {
+      // big images side by side: exactly one row, as tall as the width allows
+      const rows = blk.feature ? [blk.items] : buildRows(blk.items, W);
+      y = placeRows(rows, 0, W, y);
+      return;
     }
-    y += h + (ri < rows.length - 1 ? gap : 0);
+    const { F, side } = blk;
+    if (!side.length) {
+      // nothing can sit beside it: the full width
+      const h = W / ar(F);
+      boxes.push({ id: F.id, x: 0, y, w: W, h });
+      y += h;
+      return;
+    }
+    const rowsEst = buildRows(side, W - G - ar(F) * baseH * sc(F));
+    const { H, wf, ws } = solve(F, rowsEst);
+    const left = featureNo++ % 2 === 0;
+    boxes.push({ id: F.id, x: left ? 0 : W - wf, y, w: wf, h: H });
+    placeRows(rowsEst, left ? wf + G : 0, ws, y);
+    y += H;
   });
   return { boxes, height: y };
 }
