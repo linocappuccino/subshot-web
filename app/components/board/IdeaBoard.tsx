@@ -187,7 +187,19 @@ function freeSpot(
   }
   candidates.sort((p, q) => Math.hypot(p.x - start.x, p.y - start.y) - Math.hypot(q.x - start.x, q.y - start.y));
   for (const c of candidates) if (!hits(c.x, c.y)) return c;
-  return snapIn(start.x, start.y);
+  // view is full: the spot covering the least of what's already there
+  const overlapArea = (px: number, py: number) =>
+    taken.reduce((sum, r) => sum + Math.max(0, Math.min(px + w, r.x + r.w) - Math.max(px, r.x)) * Math.max(0, Math.min(py + h, r.y + r.h) - Math.max(py, r.y)), 0);
+  let best: Point | null = null;
+  let bestArea = Infinity;
+  for (const c of candidates) {
+    const area = overlapArea(c.x, c.y);
+    if (area < bestArea - 1) {
+      best = c;
+      bestArea = area;
+    }
+  }
+  return best ?? snapIn(start.x, start.y);
 }
 
 export function IdeaBoard({
@@ -1484,7 +1496,7 @@ export function IdeaBoard({
       return;
     }
     if (files.length) {
-      void addFiles(files, at);
+      void addFiles(files, at, files.length > 1);
       return;
     }
     const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
