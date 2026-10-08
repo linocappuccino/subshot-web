@@ -10,6 +10,7 @@ import {
   type DrawingElement,
   type LinkElement,
   type MediaElement,
+  type SceneElement,
   type TextElement,
 } from "@/lib/board";
 
@@ -39,6 +40,10 @@ export interface ElementViewLabels {
   open: string;
   download: string;
   missingFile: string;
+  scene: string;
+  sceneTitlePlaceholder: string;
+  sceneTextPlaceholder: string;
+  addImage: string;
 }
 
 export function BoardElementView({
@@ -47,6 +52,8 @@ export function BoardElementView({
   editable,
   labels,
   onCommitText,
+  onCommitScene,
+  onPickSceneImage,
   onMeasure,
   onNaturalSize,
 }: {
@@ -55,6 +62,8 @@ export function BoardElementView({
   editable: boolean;
   labels: ElementViewLabels;
   onCommitText: (html: string) => void;
+  onCommitScene?: (patch: { title?: string; html?: string }) => void;
+  onPickSceneImage?: () => void;
   /** content needs more height than el.h (text/link cards grow with content) */
   onMeasure: (height: number) => void;
   /** media reported its real pixel size (used to fix the element's aspect ratio) */
@@ -76,7 +85,129 @@ export function BoardElementView({
       return <LinkNode el={el} onMeasure={onMeasure} editable={editable} labels={labels} />;
     case "drawing":
       return <DrawingNode el={el} />;
+    case "scene":
+      return (
+        <SceneNode
+          el={el}
+          editing={editing}
+          editable={editable}
+          labels={labels}
+          onCommit={(patch) => onCommitScene?.(patch)}
+          onPickImage={() => onPickSceneImage?.()}
+          onMeasure={onMeasure}
+        />
+      );
   }
+}
+
+function SceneNode({
+  el,
+  editing,
+  editable,
+  labels,
+  onCommit,
+  onPickImage,
+  onMeasure,
+}: {
+  el: SceneElement;
+  editing: boolean;
+  editable: boolean;
+  labels: ElementViewLabels;
+  onCommit: (patch: { title?: string; html?: string }) => void;
+  onPickImage: () => void;
+  onMeasure: (h: number) => void;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  useGrowToContent(cardRef, el.h, onMeasure);
+
+  useLayoutEffect(() => {
+    if (!editing) return;
+    if (editorRef.current) editorRef.current.innerHTML = sanitizeBoardHtml(el.html);
+    const title = titleRef.current;
+    if (title) {
+      title.focus({ preventScroll: true });
+      title.select();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const textEmpty = !el.html || !el.html.replace(/<[^>]*>/g, "").trim();
+  return (
+    <div
+      ref={cardRef}
+      className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      style={{ minHeight: el.h }}
+    >
+      <div className="flex items-center gap-2.5 px-3 pt-3 pb-2">
+        <div className="shrink-0 h-7 min-w-7 px-2 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center tabular-nums">
+          {el.number}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40 leading-none mb-1">{labels.scene}</div>
+          {editing ? (
+            <input
+              ref={titleRef}
+              defaultValue={el.title}
+              placeholder={labels.sceneTitlePlaceholder}
+              onBlur={(e) => onCommit({ title: e.currentTarget.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  editorRef.current?.focus();
+                }
+              }}
+              className="w-full bg-transparent text-[15px] font-semibold text-white/90 outline-none placeholder:text-white/30 select-text"
+            />
+          ) : (
+            <div className={`text-[15px] font-semibold truncate ${el.title ? "text-white/90" : "text-white/30"}`}>
+              {el.title || labels.sceneTitlePlaceholder}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="px-3">
+        {el.image_src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={el.image_src} alt="" draggable={false} className="w-full aspect-video object-cover rounded-lg bg-white/5 pointer-events-none select-none" />
+        ) : editable ? (
+          <button
+            data-no-drag
+            onClick={onPickImage}
+            className="w-full aspect-video rounded-lg border border-dashed border-white/20 text-white/45 hover:text-white/75 hover:border-white/40 text-xs flex flex-col items-center justify-center gap-1.5 transition-colors"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
+            {labels.addImage}
+          </button>
+        ) : (
+          <div className="w-full aspect-video rounded-lg bg-white/5" />
+        )}
+      </div>
+      <div className="px-3.5 pt-2.5 pb-3 text-white/85">
+        {editing ? (
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            data-placeholder={labels.sceneTextPlaceholder}
+            className="board-text outline-none cursor-text select-text min-h-[1.5em]"
+            onInput={(e) => {
+              e.currentTarget.dataset.empty = String(!e.currentTarget.textContent);
+            }}
+            onBlur={(e) => onCommit({ html: e.currentTarget.innerHTML })}
+          />
+        ) : (
+          <div
+            className="board-text"
+            data-empty={textEmpty ? "true" : "false"}
+            data-placeholder={labels.sceneTextPlaceholder}
+            dangerouslySetInnerHTML={{ __html: sanitizeBoardHtml(el.html) }}
+          />
+        )}
+      </div>
+    </div>
+  );
 }
 
 function useGrowToContent(ref: React.RefObject<HTMLElement | null>, height: number, onMeasure: (h: number) => void) {

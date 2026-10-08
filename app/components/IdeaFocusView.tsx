@@ -114,13 +114,13 @@ function boardSummary(data: BoardData) {
   const order = (a: { x: number; y: number }, b: { x: number; y: number }) =>
     Math.round(a.y / 48) - Math.round(b.y / 48) || a.x - b.x;
   const texts = data.elements.filter((el) => el.type === "text").sort(order);
-  const images = data.elements.filter((el) => el.type === "image").sort(order);
+  const images = data.elements.filter((el) => el.type === "image" || (el.type === "scene" && el.image_src)).sort(order);
   const nonEmpty = texts.filter((el) => el.type === "text" && boardHtmlToPlain(el.html));
   const first = nonEmpty[0];
   return {
     text: nonEmpty.map((el) => (el.type === "text" ? el.html : "")).join("<div><br></div>"),
     board_text_preview: first && first.type === "text" ? boardHtmlToPlain(first.html).slice(0, 400) : "",
-    board_cover_url: images[0] && images[0].type === "image" ? images[0].src ?? null : null,
+    board_cover_url: images[0] ? (images[0].type === "image" ? images[0].src ?? null : images[0].type === "scene" ? images[0].image_src ?? null : null) : null,
   };
 }
 

@@ -656,6 +656,15 @@ const translations = {
     "ideaBoard.deleteIdea": "Idee löschen",
     "ideaBoard.internalApproved": "Intern abgenommen",
     "ideaBoard.internalRejected": "Intern abgelehnt",
+    "ideaBoard.scene": "Szene",
+    "ideaBoard.sceneTitlePlaceholder": "Titel der Szene",
+    "ideaBoard.sceneTextPlaceholder": "Was passiert in dieser Szene?",
+    "ideaBoard.addImage": "Bild hinzufügen",
+    "ideaBoard.removeImage": "Bild entfernen",
+    "ideaBoard.toolScene": "Szene (S) – wird beim Abnehmen in die Shotlist übernommen",
+    "ideaBoard.toScene": "In Szene umwandeln",
+    "ideaBoard.sceneNumberDown": "Nummer verkleinern",
+    "ideaBoard.sceneNumberUp": "Nummer vergrössern",
 
     // RichTextEditor.tsx (toolbar chrome only — slash-menu marker labels
     // are data-format tokens parsed by exact-match regex server-side in
@@ -1636,6 +1645,15 @@ const translations = {
     "ideaBoard.deleteIdea": "Delete idea",
     "ideaBoard.internalApproved": "Internally approved",
     "ideaBoard.internalRejected": "Internally rejected",
+    "ideaBoard.scene": "Scene",
+    "ideaBoard.sceneTitlePlaceholder": "Scene title",
+    "ideaBoard.sceneTextPlaceholder": "What happens in this scene?",
+    "ideaBoard.addImage": "Add image",
+    "ideaBoard.removeImage": "Remove image",
+    "ideaBoard.toolScene": "Scene (S) – becomes a shot-list scene on approval",
+    "ideaBoard.toScene": "Turn into scene",
+    "ideaBoard.sceneNumberDown": "Lower number",
+    "ideaBoard.sceneNumberUp": "Raise number",
 
     // RichTextEditor.tsx (toolbar chrome only, see de block comment)
     "richTextEditor.bold": "Bold",

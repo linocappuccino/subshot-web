@@ -64,7 +64,23 @@ export interface DrawingElement extends BaseElement {
   stroke_width: number;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement;
+/** 2026-10-08, Lino: a scene card — number, image, title and text. On
+ * "Abgenommen" every scene card becomes its own Scene in the shot list, in
+ * number order (backend: approve_idea / idea_board.scenes_for_approval). */
+export interface SceneElement extends BaseElement {
+  type: "scene";
+  number: number;
+  title: string;
+  html: string;
+  image_key?: string;
+  image_src?: string | null;
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement;
+
+export function nextSceneNumber(elements: BoardElement[]): number {
+  return elements.reduce((m, el) => (el.type === "scene" ? Math.max(m, el.number) : m), 0) + 1;
+}
 
 export interface Connector {
   id: string;

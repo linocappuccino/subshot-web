@@ -13,6 +13,7 @@ import {
   guessMime,
   looksLikeUrl,
   newId,
+  nextSceneNumber,
   snap,
   type BoardData,
   type BoardElement,
@@ -21,6 +22,7 @@ import {
   type LinkElement,
   type LinkPreview,
   type MediaElement,
+  type SceneElement,
   type StrokeColor,
   type TextColor,
   type TextElement,
@@ -511,8 +513,12 @@ export function IdeaBoard({
   }
 
   function finishEditing() {
+    // blur first so the focused field (text box, or a scene card's title
+    // input / text) commits via its onBlur before it unmounts
     const active = document.activeElement as HTMLElement | null;
-    if (active?.isContentEditable) active.blur();
+    if (active && viewportRef.current?.contains(active) && (active.isContentEditable || active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+      active.blur();
+    }
     setEditingId(null);
   }
 
@@ -533,8 +539,117 @@ export function IdeaBoard({
     if (editingRef.current === id) setEditingId(null);
   }
 
+  // ── scene cards ───────────────────────────────────────────────────────
+  const sceneImageInputRef = useRef<HTMLInputElement>(null);
+  const sceneImageTarget = useRef<string | null>(null);
+
+  function addScene(at: Point, avoidOverlap = false) {
+    const w = 312;
+    const h = 300;
+    const spot = avoidOverlap ? freeSpot(at.x - w / 2, at.y - h / 2, w, h, dataRef.current.elements) : { x: snap(at.x - w / 2), y: snap(at.y - h / 2) };
+    const el: SceneElement = {
+      id: newId(),
+      type: "scene",
+      x: spot.x,
+      y: spot.y,
+      w,
+      h,
+      z: maxZ(dataRef.current.elements) + 1,
+      number: nextSceneNumber(dataRef.current.elements),
+      title: "",
+      html: "",
+    };
+    addElements([el]);
+    setTool("select");
+    setEditingId(el.id);
+  }
+
+  /** An image card becomes a scene card in place (same id, so its connectors
+   * stay attached); the image is taken over as the scene's image. */
+  function convertToScene(id: string) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el || el.type !== "image") return;
+    const scene: SceneElement = {
+      id: el.id,
+      type: "scene",
+      x: el.x,
+      y: el.y,
+      w: Math.max(312, el.w),
+      h: 300,
+      z: el.z,
+      number: nextSceneNumber(dataRef.current.elements),
+      title: "",
+      html: "",
+      image_key: el.asset_key,
+      image_src: el.src ?? null,
+    };
+    commit((d) => ({ ...d, elements: d.elements.map((e) => (e.id === id ? scene : e)) }));
+    setSelection(new Set([id]));
+    setEditingId(id);
+  }
+
+  function commitScene(id: string, patch: { title?: string; html?: string }) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el || el.type !== "scene") return;
+    const next: Partial<SceneElement> = {};
+    if (patch.title !== undefined && patch.title.trim() !== el.title) next.title = patch.title.trim();
+    if (patch.html !== undefined) {
+      const html = boardHtmlToPlain(patch.html) ? sanitizeBoardHtml(patch.html) : "";
+      if (html !== el.html) next.html = html;
+    }
+    if (Object.keys(next).length) updateElement(id, next, { history: true });
+  }
+
+  /** Moves a scene one place up/down in the shot-list order: it takes the
+   * target number and the scene that had it gets this scene's old number,
+   * so the numbering stays unique. */
+  function setSceneNumber(id: string, delta: number) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el || el.type !== "scene") return;
+    const target = Math.max(1, el.number + delta);
+    if (target === el.number) return;
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((e) => {
+        if (e.id === id) return { ...e, number: target } as BoardElement;
+        if (e.type === "scene" && e.number === target) return { ...e, number: el.number };
+        return e;
+      }),
+    }));
+  }
+
+  function pickSceneImage(id: string) {
+    sceneImageTarget.current = id;
+    sceneImageInputRef.current?.click();
+  }
+
+  async function setSceneImage(id: string, file: File) {
+    if (!uploadFile) return;
+    const mime = guessMime(file);
+    if (!mime.startsWith("image/")) {
+      onError?.(t("ideaBoard.unsupportedType", { name: file.name }));
+      return;
+    }
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el) return;
+    const pid = newId();
+    setPending((p) => [...p, { id: pid, label: file.name, progress: 0, x: el.x, y: el.y, w: el.w, h: 64 }]);
+    try {
+      const { key, src } = await uploadFile(file, mime, (f) => setPending((p) => p.map((it) => (it.id === pid ? { ...it, progress: f } : it))));
+      updateElement(id, { image_key: key, image_src: src } as Partial<SceneElement>, { history: true });
+    } catch {
+      onError?.(t("ideaBoard.uploadFailed", { name: file.name }));
+    } finally {
+      setPending((p) => p.filter((it) => it.id !== pid));
+    }
+  }
+
+  function removeSceneImage(id: string) {
+    updateElement(id, { image_key: undefined, image_src: undefined } as Partial<SceneElement>, { history: true });
+  }
+
   function activate(el: BoardElement) {
-    if (el.type === "text" && editable) {
+    if ((el.type === "text" || el.type === "scene") && editable) {
       editingStartHtml.current = el.html;
       setSelection(new Set([el.id]));
       setEditingId(el.id);
@@ -549,7 +664,7 @@ export function IdeaBoard({
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-board-ui]")) return;
-    if (target.closest("[contenteditable='true']")) return;
+    if (target.closest("[contenteditable='true'], input, textarea")) return;
     const elNode = target.closest<HTMLElement>("[data-el-id]");
     if (target.closest("[data-no-drag]")) {
       // media controls / links inside a card: let the browser handle the click
@@ -928,6 +1043,9 @@ export function IdeaBoard({
         setTool("select");
       } else if (!mod && e.key.toLowerCase() === "p") {
         setTool("draw");
+      } else if (!mod && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        addScene(viewportCenterWorld(), true);
       } else if (!mod && e.key.toLowerCase() === "t") {
         e.preventDefault();
         addText(viewportCenterWorld(), true, true);
@@ -970,6 +1088,12 @@ export function IdeaBoard({
     e.preventDefault();
     const at = toWorld(e.clientX, e.clientY);
     const files = [...e.dataTransfer.files];
+    const sceneId = (e.target as HTMLElement).closest<HTMLElement>("[data-el-id]")?.dataset.elId;
+    const sceneEl = sceneId ? dataRef.current.elements.find((x) => x.id === sceneId) : null;
+    if (sceneEl?.type === "scene" && files.length === 1 && guessMime(files[0]).startsWith("image/")) {
+      void setSceneImage(sceneEl.id, files[0]);
+      return;
+    }
     if (files.length) {
       void addFiles(files, at);
       return;
@@ -988,6 +1112,10 @@ export function IdeaBoard({
     open: t("ideaBoard.open"),
     download: t("ideaBoard.download"),
     missingFile: t("ideaBoard.missingFile"),
+    scene: t("ideaBoard.scene"),
+    sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
+    sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
+    addImage: t("ideaBoard.addImage"),
   };
 
   let gridSize = GRID * view.scale;
@@ -1073,7 +1201,7 @@ export function IdeaBoard({
         {elements.map((el) => {
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
-          const growsWithContent = el.type === "text" || el.type === "link";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file";
           return (
             <div
@@ -1094,6 +1222,8 @@ export function IdeaBoard({
                 editable={editable}
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
+                onCommitScene={(patch) => commitScene(el.id, patch)}
+                onPickSceneImage={() => pickSceneImage(el.id)}
                 onMeasure={(h) => updateElement(el.id, { h: Math.ceil(h) }, { notify: editable })}
                 onNaturalSize={(nw, nh) => {
                   if (!nw || !nh) return;
@@ -1228,6 +1358,33 @@ export function IdeaBoard({
               <Divider />
             </>
           )}
+          {selectedEls.length === 1 && selectedEls[0].type === "image" && (
+            <>
+              <BarButton title={t("ideaBoard.toScene")} onPress={() => convertToScene(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1">{t("ideaBoard.toScene")}</span>
+              </BarButton>
+              <Divider />
+            </>
+          )}
+          {selectedEls.length === 1 && selectedEls[0].type === "scene" && (
+            <>
+              <BarButton title={t("ideaBoard.sceneNumberDown")} onPress={() => setSceneNumber(selectedEls[0].id, -1)}>−</BarButton>
+              <span className="text-xs font-semibold tabular-nums px-1 text-white/80 whitespace-nowrap">
+                {t("ideaBoard.scene")} {(selectedEls[0] as SceneElement).number}
+              </span>
+              <BarButton title={t("ideaBoard.sceneNumberUp")} onPress={() => setSceneNumber(selectedEls[0].id, 1)}>+</BarButton>
+              <Divider />
+              <BarButton title={t("ideaBoard.addImage")} onPress={() => pickSceneImage(selectedEls[0].id)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
+              </BarButton>
+              {(selectedEls[0] as SceneElement).image_key && (
+                <BarButton title={t("ideaBoard.removeImage")} onPress={() => removeSceneImage(selectedEls[0].id)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m4 4 16 16" /></svg>
+                </BarButton>
+              )}
+              <Divider />
+            </>
+          )}
           {selectedEls.length > 0 && (
             <>
               <BarButton title={t("ideaBoard.bringFront")} onPress={() => reorderSelection(true)}>
@@ -1255,6 +1412,9 @@ export function IdeaBoard({
           </ToolButton>
           <ToolButton title={t("ideaBoard.toolText")} onPress={() => addText(viewportCenterWorld(), true, true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V5h16v2M9 19h6M12 5v14" /></svg>
+          </ToolButton>
+          <ToolButton title={t("ideaBoard.toolScene")} onPress={() => addScene(viewportCenterWorld(), true)}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /><path d="m4 11-.9-3.3a2 2 0 0 1 1.4-2.5l11.6-3.1a2 2 0 0 1 2.4 1.4L19.4 6" /><path d="m8.5 4.6 2.6 3.6M13.4 3.3l2.6 3.6" /></svg>
           </ToolButton>
           <ToolButton title={t("ideaBoard.toolUpload")} onPress={() => fileInputRef.current?.click()}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
@@ -1327,6 +1487,17 @@ export function IdeaBoard({
           <ToolButton title={t("ideaBoard.redo")} onPress={redo} disabled={historySize.redo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
           </ToolButton>
+          <input
+            ref={sceneImageInputRef}
+            type="file"
+            accept="image/*,.heic"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file && sceneImageTarget.current) void setSceneImage(sceneImageTarget.current, file);
+            }}
+          />
           <input
             ref={fileInputRef}
             type="file"
