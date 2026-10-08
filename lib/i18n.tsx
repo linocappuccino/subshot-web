@@ -634,7 +634,7 @@ const translations = {
     "ideaBoard.delete": "Löschen (Entf)",
     "ideaBoard.color": "Farbe",
     "ideaBoard.connect": "Ziehen, um mit einem anderen Element zu verbinden",
-    "ideaBoard.emptyHint": "Doppelklick für eine Textbox – oder Bilder, Videos, Audio, PDFs und Links hierher ziehen bzw. einfügen.",
+    "ideaBoard.emptyHint": "Doppelklick für eine Textbox – oder Bilder, Videos, Audio, PDFs und Links hierher ziehen bzw. einfügen. Ziehen wählt mehrere Elemente aus, Leertaste halten verschiebt die Ansicht.",
     "ideaBoard.format.bold": "Fett",
     "ideaBoard.format.italic": "Kursiv",
     "ideaBoard.format.underline": "Unterstrichen",
@@ -666,6 +666,7 @@ const translations = {
     "ideaBoard.sceneNumberDown": "Nummer verkleinern",
     "ideaBoard.sceneNumberUp": "Nummer vergrössern",
     "ideaBoard.playVideo": "Video abspielen",
+    "ideaBoard.toolHand": "Ansicht verschieben (H) – oder Leertaste halten",
     "ideaBoard.stopVideo": "Video schliessen",
 
     // RichTextEditor.tsx (toolbar chrome only — slash-menu marker labels
@@ -1625,7 +1626,7 @@ const translations = {
     "ideaBoard.delete": "Delete (Del)",
     "ideaBoard.color": "Colour",
     "ideaBoard.connect": "Drag to connect with another element",
-    "ideaBoard.emptyHint": "Double-click for a text box – or drag & drop or paste images, videos, audio, PDFs and links.",
+    "ideaBoard.emptyHint": "Double-click for a text box – or drag & drop or paste images, videos, audio, PDFs and links. Drag to select several elements, hold Space to move the view.",
     "ideaBoard.format.bold": "Bold",
     "ideaBoard.format.italic": "Italic",
     "ideaBoard.format.underline": "Underline",
@@ -1657,6 +1658,7 @@ const translations = {
     "ideaBoard.sceneNumberDown": "Lower number",
     "ideaBoard.sceneNumberUp": "Raise number",
     "ideaBoard.playVideo": "Play video",
+    "ideaBoard.toolHand": "Move the view (H) – or hold Space",
     "ideaBoard.stopVideo": "Close video",
 
     // RichTextEditor.tsx (toolbar chrome only, see de block comment)

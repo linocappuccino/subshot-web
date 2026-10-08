@@ -40,7 +40,7 @@ import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, st
  * the upload + link-preview functions. `editable=false` is the read-only
  * viewer (team members without edit rights, the public client preview). */
 
-type Tool = "select" | "draw";
+type Tool = "select" | "draw" | "hand";
 interface View {
   x: number;
   y: number;
@@ -82,7 +82,7 @@ type Op =
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string }
   | { kind: "draw"; pointerId: number; points: [number, number][] }
-  | { kind: "marquee"; pointerId: number; x0: number; y0: number; base: Set<string> }
+  | { kind: "marquee"; pointerId: number; sx: number; sy: number; x0: number; y0: number; base: Set<string>; moved: boolean }
   | { kind: "pinch"; dist: number; center: Point; view: View };
 
 function clamp(v: number, lo: number, hi: number) {
@@ -183,6 +183,9 @@ export function IdeaBoard({
   const [historySize, setHistorySize] = useState({ undo: 0, redo: 0 });
 
   const pasteCatcherRef = useRef<HTMLTextAreaElement>(null);
+  const spaceHeld = useRef(false);
+  const [spaceDown, setSpaceDown] = useState(false);
+  const [panning, setPanning] = useState(false);
   const lastPasteAt = useRef(0);
   const undoStack = useRef<BoardData[]>([]);
   const redoStack = useRef<BoardData[]>([]);
@@ -676,7 +679,7 @@ export function IdeaBoard({
       }
       return;
     }
-    if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+    if (e.pointerType === "mouse" && e.button > 2) return;
     if (linkOpen) setLinkOpen(false);
 
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -704,8 +707,10 @@ export function IdeaBoard({
     if (editingRef.current) finishEditing();
     const world = toWorld(e.clientX, e.clientY);
 
-    if (e.button === 1) {
+    // panning without touch: middle/right mouse button, Space held, or the hand tool
+    if (e.button === 1 || e.button === 2 || spaceHeld.current || tool === "hand") {
       opRef.current = { kind: "pan", pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, view: viewRef.current, moved: false, onElement: null };
+      setPanning(true);
       return;
     }
 
@@ -783,10 +788,21 @@ export function IdeaBoard({
       return;
     }
 
-    // empty canvas (or any element in read-only mode)
-    if (editable && (e.shiftKey || e.metaKey) && !elNode) {
-      opRef.current = { kind: "marquee", pointerId: e.pointerId, x0: world.x, y0: world.y, base: new Set(selectionRef.current) };
-      setMarquee({ x0: world.x, y0: world.y, x1: world.x, y1: world.y });
+    // 2026-10-08, Lino: click-and-drag on the empty board draws a selection
+    // rectangle (mouse/pen); with Shift it adds to the current selection.
+    // A finger on the empty board still pans (touch has two-finger zoom and
+    // no hover, a rectangle there would block moving around).
+    if (editable && !elNode && e.pointerType !== "touch") {
+      opRef.current = {
+        kind: "marquee",
+        pointerId: e.pointerId,
+        sx: e.clientX,
+        sy: e.clientY,
+        x0: world.x,
+        y0: world.y,
+        base: e.shiftKey || e.metaKey ? new Set(selectionRef.current) : new Set(),
+        moved: false,
+      };
       return;
     }
     opRef.current = {
@@ -875,6 +891,9 @@ export function IdeaBoard({
         return;
       }
       case "marquee": {
+        if (!op.moved && Math.hypot(e.clientX - op.sx, e.clientY - op.sy) < 4) return;
+        if (!op.moved) setSelectedConnector(null);
+        op.moved = true;
         const w = toWorld(e.clientX, e.clientY);
         setMarquee({ x0: op.x0, y0: op.y0, x1: w.x, y1: w.y });
         const minX = Math.min(op.x0, w.x), maxX = Math.max(op.x0, w.x);
@@ -901,6 +920,7 @@ export function IdeaBoard({
     if (op.pointerId !== e.pointerId) return;
     opRef.current = null;
     setBusyOp(null);
+    setPanning(false);
 
     switch (op.kind) {
       case "pan": {
@@ -976,9 +996,19 @@ export function IdeaBoard({
         addElements([el], false);
         return;
       }
-      case "marquee":
+      case "marquee": {
         setMarquee(null);
+        if (op.moved) return;
+        // no drag: a plain click on the empty board (same as the pan case)
+        const now = Date.now();
+        const last = lastClick.current;
+        const isDouble = now - last.time < DOUBLE_CLICK_MS && last.id === null && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 10;
+        lastClick.current = { id: null, time: isDouble ? 0 : now, x: e.clientX, y: e.clientY };
+        if (!e.shiftKey && !e.metaKey) setSelection(new Set());
+        setSelectedConnector(null);
+        if (isDouble) addText(toWorld(e.clientX, e.clientY));
         return;
+      }
     }
   }
 
@@ -1051,6 +1081,8 @@ export function IdeaBoard({
         const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
         const ids = selectionRef.current;
         commit((d) => ({ ...d, elements: d.elements.map((el) => (ids.has(el.id) ? { ...el, x: el.x + dx, y: el.y + dy } : el)) }));
+      } else if (!mod && e.key.toLowerCase() === "h") {
+        setTool("hand");
       } else if (!mod && e.key.toLowerCase() === "v") {
         setTool("select");
       } else if (!mod && e.key.toLowerCase() === "p") {
@@ -1141,6 +1173,35 @@ export function IdeaBoard({
     if (!editingId) focusPasteCatcher();
   }, [editingId, focusPasteCatcher]);
 
+  // Space held = temporary hand tool (like Figma/Milanote)
+  useEffect(() => {
+    function typing() {
+      const a = document.activeElement as HTMLElement | null;
+      if (!a || a === pasteCatcherRef.current) return false;
+      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable;
+    }
+    function down(e: KeyboardEvent) {
+      if (e.code !== "Space" || typing()) return;
+      e.preventDefault();
+      if (!spaceHeld.current) {
+        spaceHeld.current = true;
+        setSpaceDown(true);
+      }
+    }
+    function up(e: KeyboardEvent) {
+      if (e.code !== "Space") return;
+      spaceHeld.current = false;
+      setSpaceDown(false);
+    }
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", () => up({ code: "Space" } as KeyboardEvent));
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
   function onDrop(e: React.DragEvent) {
     if (!editable) return;
     e.preventDefault();
@@ -1200,7 +1261,7 @@ export function IdeaBoard({
   return (
     <div
       ref={viewportRef}
-      className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${tool === "draw" ? "cursor-crosshair" : ""} ${className}`}
+      className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
       style={{
         backgroundColor: "#161616",
         backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.09) ${dot}px, transparent ${dot + 0.6}px)`,
@@ -1482,6 +1543,9 @@ export function IdeaBoard({
         <div data-board-ui className="absolute z-30 left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-2xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur">
           <ToolButton active={tool === "select"} title={t("ideaBoard.toolSelect")} onPress={() => setTool("select")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l14 8-6 2-2 6z" /></svg>
+          </ToolButton>
+          <ToolButton active={tool === "hand"} title={t("ideaBoard.toolHand")} onPress={() => setTool(tool === "hand" ? "select" : "hand")}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8" /><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" /></svg>
           </ToolButton>
           <ToolButton title={t("ideaBoard.toolText")} onPress={() => addText(viewportCenterWorld(), true, true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7V5h16v2M9 19h6M12 5v14" /></svg>
