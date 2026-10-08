@@ -202,6 +202,8 @@ export interface MoodboardItem {
   h: number;
   /** the image's width / height — its height follows from this */
   ar?: number;
+  /** layout 3: size factor (1 = normal) — bigger images make their row taller */
+  s?: number;
 }
 export interface MoodboardElement extends BaseElement {
   type: "moodboard";
@@ -215,15 +217,75 @@ export interface MoodboardElement extends BaseElement {
 
 export const MOODBOARD_UNITS = 24;
 
-/** items in the free-size format (older cards stored column/row spans) */
+/** items in the current format (justified rows, size factor `s`) — older
+ * cards stored a column/row span or a width in 24ths */
 export function moodboardItems(el: MoodboardElement): MoodboardItem[] {
-  if (el.layout === 2) return el.items;
+  if (el.layout === 3) return el.items;
   const cols = Math.max(1, el.cols || 3);
-  return el.items.map((it) => ({
-    ...it,
-    w: Math.max(2, Math.min(MOODBOARD_UNITS, Math.round((Math.min(it.w, cols) * MOODBOARD_UNITS) / cols))),
-    ar: it.ar ?? Math.min(it.w, cols) / Math.max(1, it.h),
-  }));
+  if (el.layout === 2) return el.items.map((it) => ({ ...it, s: it.s ?? clampS((it.w * cols) / MOODBOARD_UNITS) }));
+  return el.items.map((it) => ({ ...it, ar: it.ar ?? Math.min(it.w, cols) / Math.max(1, it.h), s: it.s ?? clampS(Math.min(it.w, cols)) }));
+}
+
+const clampS = (v: number) => Math.max(0.25, Math.min(4, Math.round(v * 1000) / 1000));
+export const clampMoodboardScale = clampS;
+
+export type MoodboardBox = { id: string; x: number; y: number; w: number; h: number };
+
+/** 2026-10-08, Lino: "es dürfen keine Lücken entstehen" — justified rows:
+ * images keep their aspect ratio, every row fills the full width exactly,
+ * so nothing ever leaves a hole. A row closes at the image count that brings
+ * its height closest to its target height; the target is `baseH` (≈ `cols`
+ * square images per row) times the row's size factor (area-weighted mean of
+ * its images' `s`) — so a bigger image makes its row hold fewer images and
+ * grow taller, a smaller one lets more images move up into its row. A short
+ * last row is merged into the one above instead of being left half empty. */
+export function layoutMoodboard(items: MoodboardItem[], width: number, cols: number, gap: number): { boxes: MoodboardBox[]; height: number } {
+  const W = Math.max(40, width);
+  const baseH = (W - gap * (Math.max(1, cols) - 1)) / Math.max(1, cols);
+  const ar = (it: MoodboardItem) => Math.max(0.1, it.ar || 1);
+  const sc = (it: MoodboardItem) => it.s ?? 1;
+  const heightOf = (row: MoodboardItem[]) => (W - gap * (row.length - 1)) / row.reduce((t, it) => t + ar(it), 0);
+  const targetOf = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + sc(it) * ar(it), 0)) / row.reduce((t, it) => t + ar(it), 0);
+
+  const rows: MoodboardItem[][] = [];
+  let cur: MoodboardItem[] = [];
+  for (const it of items) {
+    const next = [...cur, it];
+    const h = heightOf(next);
+    if (h > targetOf(next)) {
+      cur = next;
+      continue;
+    }
+    // over target now — close with or without this image, whichever is closer
+    if (cur.length && Math.abs(heightOf(cur) - targetOf(cur)) < Math.abs(h - targetOf(next))) {
+      rows.push(cur);
+      cur = [it];
+    } else {
+      rows.push(next);
+      cur = [];
+    }
+  }
+  if (cur.length) {
+    const tooTall = heightOf(cur) > targetOf(cur) * 1.5;
+    if (tooTall && rows.length) rows[rows.length - 1] = [...rows[rows.length - 1], ...cur];
+    else rows.push(cur);
+  }
+
+  const boxes: MoodboardBox[] = [];
+  let y = 0;
+  rows.forEach((row, ri) => {
+    let h = heightOf(row);
+    // only a board that is ONE short row keeps its natural height
+    if (rows.length === 1) h = Math.min(h, targetOf(row) * 1.5);
+    let x = 0;
+    for (const it of row) {
+      const w = ar(it) * h;
+      boxes.push({ id: it.id, x, y, w, h });
+      x += w + gap;
+    }
+    y += h + (ri < rows.length - 1 ? gap : 0);
+  });
+  return { boxes, height: y };
 }
 
 export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement;

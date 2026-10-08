@@ -1,23 +1,20 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { MOODBOARD_UNITS, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { clampMoodboardScale, layoutMoodboard, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
-/** 2026-10-08, Lino: moodboard card (bloom.site style). Every image keeps
- * its own aspect ratio and can be dragged to any size — no fixed column
- * widths: its width is stored in 24ths of the card (fine enough to feel
- * continuous), its height follows from the aspect ratio. The images pack
- * themselves masonry-style (CSS grid with 4 px rows + dense flow), so the
- * others flow around whatever you resize. While the card is selected (and
- * editable): drag an image's corner to resize, drag an image onto another
- * to change the order, × removes it, "+" adds more. */
+/** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
+ * in justified rows (see layoutMoodboard) — every row fills the full width,
+ * so resizing never leaves holes ("es dürfen keine Lücken entstehen").
+ * While the card is selected (and editable): hover an image's edge for the
+ * resize indicator and drag it (the image's size factor changes, its row
+ * reflows), drag an image onto another to change the order, × removes it,
+ * "+" adds more. Positions animate, so the reflow is easy to follow. */
 
 const PAD = 10;
 const GAP = 6;
-const ROW = 4; // px per grid row — fine, so heights are (almost) exact
+const ADD_ID = "__add";
 
-/** 2026-10-08, Lino: resize by an image's edges (indicator on hover)
- * instead of a corner grip; the aspect ratio stays locked either way */
 type Edge = "l" | "r" | "t" | "b";
 const EDGE_ZONE: Record<Edge, string> = {
   l: "left-0 top-0 bottom-0 w-3 cursor-ew-resize justify-start pl-1 items-center",
@@ -25,6 +22,7 @@ const EDGE_ZONE: Record<Edge, string> = {
   t: "top-0 left-0 right-0 h-3 cursor-ns-resize items-start pt-1 justify-center",
   b: "bottom-0 left-0 right-0 h-3 cursor-ns-resize items-end pb-1 justify-center",
 };
+const MOVE = "left .22s ease, top .22s ease, width .22s ease, height .22s ease";
 
 export function MoodboardNode({
   el,
@@ -52,12 +50,21 @@ export function MoodboardNode({
   const [resizing, setResizing] = useState<{ id: string; edge: Edge } | null>(null);
   // aspect ratios learned from the loaded images (older items had none)
   const [seenAr, setSeenAr] = useState<Record<string, number>>({});
-  const base = moodboardItems(el);
-  const items = (draft ?? base).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 }));
-  const inner = Math.max(60, el.w - PAD * 2);
-  const unit = (inner - GAP * (MOODBOARD_UNITS - 1)) / MOODBOARD_UNITS;
-  const widthOf = (w: number) => w * unit + (w - 1) * GAP;
-  const rowsOf = (it: MoodboardItem) => Math.max(1, Math.round((widthOf(it.w) / (it.ar || 1) + GAP) / (ROW + GAP)));
+  const items = useMemo(
+    () => (draft ?? moodboardItems(el)).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 })),
+    [draft, el, seenAr],
+  );
+  const inner = Math.max(60, el.w - PAD * 2 - 2); // minus the 1 px border on each side
+  const cols = Math.max(1, el.cols || 3);
+  const showAdd = active && !!onAdd;
+  // the "+" tile rides along at the end as a smallish square
+  const withAdd = (list: MoodboardItem[]) => (showAdd ? [...list, { id: ADD_ID, asset_key: "", name: "", mime: "", w: 1, h: 1, ar: 1, s: 0.8 }] : list);
+  const layout = useMemo(
+    () => layoutMoodboard(withAdd(items), inner, cols, GAP),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, inner, cols, showAdd],
+  );
+  const boxOf = useMemo(() => new Map(layout.boxes.map((b) => [b.id, b])), [layout]);
 
   // the card's height follows its content (both ways)
   const heightRef = useRef(el.h);
@@ -77,8 +84,7 @@ export function MoodboardNode({
     return () => ro.disconnect();
   }, []);
 
-  /** what gets saved: the free-size format, aspect ratios included */
-  const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 }));
+  const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1, s: it.s ?? 1 }));
 
   const screenScale = () => {
     const r = ref.current?.getBoundingClientRect();
@@ -104,23 +110,38 @@ export function MoodboardNode({
   function startResize(e: React.PointerEvent, it: MoodboardItem, edge: Edge) {
     e.stopPropagation();
     e.preventDefault();
+    const box = boxOf.get(it.id);
+    if (!box) return;
     const sx = e.clientX;
     const sy = e.clientY;
     const k = screenScale();
     const start = items;
-    const w0 = widthOf(it.w);
-    const ar = it.ar || 1;
+    // the dragged edge should end up under the pointer: for every move, try
+    // a range of size factors and keep the one whose resulting width/height
+    // (after the rows reflow) comes closest — the image follows the pointer
+    // directly, even when its row splits or merges on the way
+    const candidates = Array.from({ length: 72 }, (_, i) => clampMoodboardScale(0.25 * Math.pow(16, i / 71)));
+    const horizontal = edge === "l" || edge === "r";
     let latest = start;
     setResizing({ id: it.id, edge });
     track(
       (ev) => {
-        // the dragged edge follows the pointer; the ratio stays locked, so
-        // pulling top/bottom changes the width through the aspect ratio
         const dx = (ev.clientX - sx) / k;
-        const dy = ((ev.clientY - sy) / k) * ar;
-        const px = w0 + (edge === "r" ? dx : edge === "l" ? -dx : edge === "b" ? dy : -dy);
-        const w = Math.max(3, Math.min(MOODBOARD_UNITS, Math.round((px + GAP) / (unit + GAP))));
-        latest = start.map((x) => (x.id === it.id ? { ...x, w } : x));
+        const dy = (ev.clientY - sy) / k;
+        const want = edge === "r" ? box.w + dx : edge === "l" ? box.w - dx : edge === "b" ? box.h + dy : box.h - dy;
+        let best = it.s ?? 1;
+        let bestErr = Infinity;
+        for (const s of candidates) {
+          const trial = start.map((x) => (x.id === it.id ? { ...x, s } : x));
+          const b = layoutMoodboard(withAdd(trial), inner, cols, GAP).boxes.find((x) => x.id === it.id);
+          if (!b) continue;
+          const err = Math.abs((horizontal ? b.w : b.h) - want);
+          if (err < bestErr - 0.01) {
+            bestErr = err;
+            best = s;
+          }
+        }
+        latest = start.map((x) => (x.id === it.id ? { ...x, s: best } : x));
         setDraft(latest);
       },
       () => {
@@ -171,7 +192,7 @@ export function MoodboardNode({
     );
   }
 
-  const addSize = Math.round(MOODBOARD_UNITS / Math.max(1, el.cols || 3));
+  const addBox = boxOf.get(ADD_ID);
 
   return (
     <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)]" style={{ padding: PAD }}>
@@ -191,75 +212,70 @@ export function MoodboardNode({
           {emptyLabel}
         </button>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${MOODBOARD_UNITS}, minmax(0, 1fr))`,
-            gridAutoRows: ROW,
-            columnGap: GAP,
-            rowGap: GAP,
-            gridAutoFlow: "row dense",
-          }}
-        >
-          {items.map((it) => (
-            <div
-              key={it.id}
-              data-mb-item={it.id}
-              onPointerDown={active ? (e) => startDrag(e, it) : undefined}
-              className={`relative group/mb rounded-md overflow-hidden bg-white/5 ${active ? "cursor-grab active:cursor-grabbing" : ""} ${
-                dragId === it.id ? "opacity-40 ring-2 ring-blue-500" : resizing?.id === it.id ? "ring-2 ring-blue-500" : ""
-              }`}
-              style={{ gridColumn: `span ${it.w}`, gridRow: `span ${rowsOf(it)}` }}
-            >
-              {it.src && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={it.src}
-                  alt=""
-                  draggable={false}
-                  onLoad={(e) => {
-                    const { naturalWidth: nw, naturalHeight: nh } = e.currentTarget;
-                    if (!it.ar && nw && nh && !seenAr[it.id]) setSeenAr((m) => ({ ...m, [it.id]: nw / nh }));
-                  }}
-                  className="w-full h-full object-cover pointer-events-none select-none"
-                />
-              )}
-              {active && (
-                <>
-                  <button
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onChange?.(finalize(items.filter((x) => x.id !== it.id)));
+        <div className="relative" style={{ height: layout.height }}>
+          {items.map((it) => {
+            const b = boxOf.get(it.id);
+            if (!b) return null;
+            return (
+              <div
+                key={it.id}
+                data-mb-item={it.id}
+                onPointerDown={active ? (e) => startDrag(e, it) : undefined}
+                className={`absolute group/mb rounded-md overflow-hidden bg-white/5 ${active ? "cursor-grab active:cursor-grabbing" : ""} ${
+                  dragId === it.id ? "opacity-40 ring-2 ring-blue-500" : resizing?.id === it.id ? "ring-2 ring-blue-500 z-[1]" : ""
+                }`}
+                style={{ left: b.x, top: b.y, width: b.w, height: b.h, transition: MOVE }}
+              >
+                {it.src && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={it.src}
+                    alt=""
+                    draggable={false}
+                    onLoad={(e) => {
+                      const { naturalWidth: nw, naturalHeight: nh } = e.currentTarget;
+                      if (!it.ar && nw && nh && !seenAr[it.id]) setSeenAr((m) => ({ ...m, [it.id]: nw / nh }));
                     }}
-                    className="absolute z-20 top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white text-sm leading-none opacity-0 group-hover/mb:opacity-100 hover:bg-red-600 transition-opacity"
-                    aria-label="×"
-                  >
-                    ×
-                  </button>
-                  {(["l", "r", "t", "b"] as const).map((edge) => {
-                    const on = resizing?.id === it.id && resizing.edge === edge;
-                    return (
-                      <span key={edge} onPointerDown={(e) => startResize(e, it, edge)} className={`absolute z-10 flex group/edge ${EDGE_ZONE[edge]}`}>
-                        <span
-                          className={`block rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35),0_1px_4px_rgba(0,0,0,0.6)] transition-opacity ${
-                            edge === "l" || edge === "r" ? "w-1 h-8 max-h-[60%]" : "h-1 w-8 max-w-[60%]"
-                          } ${on ? "opacity-100" : "opacity-0 group-hover/edge:opacity-100 [@media(hover:none)]:opacity-50"}`}
-                        />
-                      </span>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          ))}
-          {active && onAdd && (
+                    className="w-full h-full object-cover pointer-events-none select-none"
+                  />
+                )}
+                {active && (
+                  <>
+                    <button
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onChange?.(finalize(items.filter((x) => x.id !== it.id)));
+                      }}
+                      className="absolute z-20 top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white text-sm leading-none opacity-0 group-hover/mb:opacity-100 hover:bg-red-600 transition-opacity"
+                      aria-label="×"
+                    >
+                      ×
+                    </button>
+                    {(["l", "r", "t", "b"] as const).map((edge) => {
+                      const on = resizing?.id === it.id && resizing.edge === edge;
+                      return (
+                        <span key={edge} onPointerDown={(e) => startResize(e, it, edge)} className={`absolute z-10 flex group/edge ${EDGE_ZONE[edge]}`}>
+                          <span
+                            className={`block rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35),0_1px_4px_rgba(0,0,0,0.6)] transition-opacity ${
+                              edge === "l" || edge === "r" ? "w-1 h-8 max-h-[60%]" : "h-1 w-8 max-w-[60%]"
+                            } ${on ? "opacity-100" : "opacity-0 group-hover/edge:opacity-100 [@media(hover:none)]:opacity-50"}`}
+                          />
+                        </span>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            );
+          })}
+          {addBox && (
             <button
               onPointerDown={(e) => e.stopPropagation()}
               onClick={onAdd}
               title={addLabel}
-              className="rounded-md border border-dashed border-white/20 text-white/45 hover:text-white/80 hover:border-white/40 text-2xl flex items-center justify-center"
-              style={{ gridColumn: `span ${addSize}`, gridRow: `span ${Math.round((widthOf(addSize) * 0.75 + GAP) / (ROW + GAP))}` }}
+              className="absolute rounded-md border border-dashed border-white/20 text-white/45 hover:text-white/80 hover:border-white/40 text-2xl flex items-center justify-center"
+              style={{ left: addBox.x, top: addBox.y, width: addBox.w, height: addBox.h, transition: MOVE }}
             >
               +
             </button>
