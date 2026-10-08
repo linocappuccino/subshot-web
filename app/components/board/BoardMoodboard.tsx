@@ -16,6 +16,16 @@ const PAD = 10;
 const GAP = 6;
 const ROW = 4; // px per grid row — fine, so heights are (almost) exact
 
+/** 2026-10-08, Lino: resize by an image's edges (indicator on hover)
+ * instead of a corner grip; the aspect ratio stays locked either way */
+type Edge = "l" | "r" | "t" | "b";
+const EDGE_ZONE: Record<Edge, string> = {
+  l: "left-0 top-0 bottom-0 w-3 cursor-ew-resize justify-start pl-1 items-center",
+  r: "right-0 top-0 bottom-0 w-3 cursor-ew-resize justify-end pr-1 items-center",
+  t: "top-0 left-0 right-0 h-3 cursor-ns-resize items-start pt-1 justify-center",
+  b: "bottom-0 left-0 right-0 h-3 cursor-ns-resize items-end pb-1 justify-center",
+};
+
 export function MoodboardNode({
   el,
   active,
@@ -39,7 +49,7 @@ export function MoodboardNode({
   const ref = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<MoodboardItem[] | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [resizingId, setResizingId] = useState<string | null>(null);
+  const [resizing, setResizing] = useState<{ id: string; edge: Edge } | null>(null);
   // aspect ratios learned from the loaded images (older items had none)
   const [seenAr, setSeenAr] = useState<Record<string, number>>({});
   const base = moodboardItems(el);
@@ -91,7 +101,7 @@ export function MoodboardNode({
     window.addEventListener("pointercancel", up);
   }
 
-  function startResize(e: React.PointerEvent, it: MoodboardItem) {
+  function startResize(e: React.PointerEvent, it: MoodboardItem, edge: Edge) {
     e.stopPropagation();
     e.preventDefault();
     const sx = e.clientX;
@@ -101,20 +111,20 @@ export function MoodboardNode({
     const w0 = widthOf(it.w);
     const ar = it.ar || 1;
     let latest = start;
-    setResizingId(it.id);
+    setResizing({ id: it.id, edge });
     track(
       (ev) => {
-        // the corner follows the pointer; with the ratio locked, whichever
-        // direction was dragged further decides the new width
+        // the dragged edge follows the pointer; the ratio stays locked, so
+        // pulling top/bottom changes the width through the aspect ratio
         const dx = (ev.clientX - sx) / k;
         const dy = ((ev.clientY - sy) / k) * ar;
-        const px = w0 + (Math.abs(dx) > Math.abs(dy) ? dx : dy);
+        const px = w0 + (edge === "r" ? dx : edge === "l" ? -dx : edge === "b" ? dy : -dy);
         const w = Math.max(3, Math.min(MOODBOARD_UNITS, Math.round((px + GAP) / (unit + GAP))));
         latest = start.map((x) => (x.id === it.id ? { ...x, w } : x));
         setDraft(latest);
       },
       () => {
-        setResizingId(null);
+        setResizing(null);
         setDraft(null);
         if (latest !== start) onChange?.(finalize(latest));
       },
@@ -197,7 +207,7 @@ export function MoodboardNode({
               data-mb-item={it.id}
               onPointerDown={active ? (e) => startDrag(e, it) : undefined}
               className={`relative group/mb rounded-md overflow-hidden bg-white/5 ${active ? "cursor-grab active:cursor-grabbing" : ""} ${
-                dragId === it.id ? "opacity-40 ring-2 ring-blue-500" : resizingId === it.id ? "ring-2 ring-blue-500" : ""
+                dragId === it.id ? "opacity-40 ring-2 ring-blue-500" : resizing?.id === it.id ? "ring-2 ring-blue-500" : ""
               }`}
               style={{ gridColumn: `span ${it.w}`, gridRow: `span ${rowsOf(it)}` }}
             >
@@ -222,14 +232,23 @@ export function MoodboardNode({
                       e.stopPropagation();
                       onChange?.(finalize(items.filter((x) => x.id !== it.id)));
                     }}
-                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white text-sm leading-none opacity-0 group-hover/mb:opacity-100 hover:bg-red-600 transition-opacity"
+                    className="absolute z-20 top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/60 text-white text-sm leading-none opacity-0 group-hover/mb:opacity-100 hover:bg-red-600 transition-opacity"
                     aria-label="×"
                   >
                     ×
                   </button>
-                  <span onPointerDown={(e) => startResize(e, it)} className="absolute right-0 bottom-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end p-1">
-                    <span className="block w-3 h-3 border-r-2 border-b-2 border-white rounded-br-sm drop-shadow-[0_0_2px_rgba(0,0,0,0.8)]" />
-                  </span>
+                  {(["l", "r", "t", "b"] as const).map((edge) => {
+                    const on = resizing?.id === it.id && resizing.edge === edge;
+                    return (
+                      <span key={edge} onPointerDown={(e) => startResize(e, it, edge)} className={`absolute z-10 flex group/edge ${EDGE_ZONE[edge]}`}>
+                        <span
+                          className={`block rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.35),0_1px_4px_rgba(0,0,0,0.6)] transition-opacity ${
+                            edge === "l" || edge === "r" ? "w-1 h-8 max-h-[60%]" : "h-1 w-8 max-w-[60%]"
+                          } ${on ? "opacity-100" : "opacity-0 group-hover/edge:opacity-100 [@media(hover:none)]:opacity-50"}`}
+                        />
+                      </span>
+                    );
+                  })}
                 </>
               )}
             </div>
