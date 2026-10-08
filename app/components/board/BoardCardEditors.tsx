@@ -104,6 +104,7 @@ export function LocationEditor({
   initialAddress,
   initialLat,
   initialLng,
+  initialStyle = "satellite",
   busy,
   onClose,
   onSave,
@@ -113,17 +114,20 @@ export function LocationEditor({
   initialAddress: string;
   initialLat: number | null;
   initialLng: number | null;
+  initialStyle?: "satellite" | "map";
   busy: boolean;
   onClose: () => void;
-  onSave: (title: string, address: string, lat: number | null, lng: number | null) => void;
+  onSave: (title: string, address: string, lat: number | null, lng: number | null, style: "satellite" | "map") => void;
 }) {
   const { t } = useLanguage();
   const [title, setTitle] = useState(initialTitle);
+  const [style, setStyle] = useState<"satellite" | "map">(initialStyle);
   const [loc, setLoc] = useState({ address: initialAddress, lat: initialLat, lng: initialLng });
 
   useEffect(() => {
     if (!open) return;
     setTitle(initialTitle);
+    setStyle(initialStyle);
     setLoc({ address: initialAddress, lat: initialLat, lng: initialLng });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -136,7 +140,7 @@ export function LocationEditor({
       footer={
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" disabled={busy || (!loc.address.trim() && !title.trim())} onClick={() => onSave(title.trim(), loc.address.trim(), loc.lat, loc.lng)}>
+          <Button variant="primary" disabled={busy || (!loc.address.trim() && !title.trim())} onClick={() => onSave(title.trim(), loc.address.trim(), loc.lat, loc.lng, style)}>
             {busy ? "…" : t("common.save")}
           </Button>
         </div>
@@ -156,6 +160,21 @@ export function LocationEditor({
             onChange={(address, lat, lng) => setLoc({ address, lat, lng })}
           />
         )}
+      </FieldGroup>
+      <FieldGroup>
+        <Label>{t("ideaBoard.location.view")}</Label>
+        <div className="inline-flex rounded-lg bg-white/5 border border-white/10 p-0.5">
+          {(["satellite", "map"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setStyle(s)}
+              className={`px-3 py-1.5 rounded-md text-sm font-semibold ${style === s ? "bg-white/15 text-white" : "text-white/55 hover:text-white"}`}
+            >
+              {s === "satellite" ? t("ideaBoard.location.satellite") : t("ideaBoard.location.streetMap")}
+            </button>
+          ))}
+        </div>
       </FieldGroup>
     </Modal>
   );

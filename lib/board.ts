@@ -157,6 +157,8 @@ export interface LocationElement extends BaseElement {
   lng?: number | null;
   image_key?: string;
   image_src?: string | null;
+  /** the map image's style: satellite (Google) or the street map */
+  map_style?: "satellite" | "map";
 }
 
 /** 2026-10-08, Lino: a post-it note — "muss wirklich wie ein Post-it

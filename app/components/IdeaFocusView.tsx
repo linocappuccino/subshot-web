@@ -613,9 +613,9 @@ function IdeaBoardScreen({
                 await api.boardGifDiscard(idea.id, key);
               },
             }}
-            createLocationMap={async (lat, lng) => {
-              const r = await api.boardLocationMap(idea.id, lat, lng);
-              return { key: r.key, src: r.url };
+            createLocationMap={async (lat, lng, style) => {
+              const r = await api.boardLocationMap(idea.id, lat, lng, style);
+              return { key: r.key, src: r.url, style: r.style };
             }}
             extractPalette={async (key) => (await api.boardPalette(idea.id, key)).colors}
             generateImage={async (prompt, style, aspect) => {

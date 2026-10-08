@@ -873,8 +873,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     toggleBoardVote: (ideaId: string, groupId: string, elementId: string) =>
       request<{ votes: BoardVote[]; me: string }>(`ideas/${ideaId}/board/votes`, { method: "POST", body: JSON.stringify({ group_id: groupId, element_id: elementId }) }),
     // board location card: static map stored as a board file (2026-10-08)
-    boardLocationMap: (ideaId: string, lat: number, lng: number) =>
-      request<{ key: string; url: string }>(`ideas/${ideaId}/board/location-map`, { method: "POST", body: JSON.stringify({ lat, lng }) }),
+    boardLocationMap: (ideaId: string, lat: number, lng: number, style: "satellite" | "map" = "satellite") =>
+      request<{ key: string; url: string; style: "satellite" | "map" }>(`ideas/${ideaId}/board/location-map`, { method: "POST", body: JSON.stringify({ lat, lng, style }) }),
     // board palette card from an image (2026-10-08)
     boardPalette: (ideaId: string, key: string) =>
       request<{ colors: string[] }>(`ideas/${ideaId}/board/palette`, { method: "POST", body: JSON.stringify({ key }) }),

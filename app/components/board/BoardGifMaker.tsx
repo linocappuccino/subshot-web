@@ -56,6 +56,28 @@ export function BoardGifMaker({
   const trackRef = useRef<HTMLDivElement>(null);
   const objectUrl = useRef<string | null>(null);
 
+  // ⌘V in the maker: a copied link loads it, a copied video/GIF file uploads it
+  useEffect(() => {
+    function onPaste(e: ClipboardEvent) {
+      if (stage !== "source") return;
+      const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("video/") || f.type === "image/gif");
+      if (file) {
+        e.preventDefault();
+        pickFile(file);
+        return;
+      }
+      const text = e.clipboardData?.getData("text/plain")?.trim() ?? "";
+      if (/^https?:\/\//i.test(text) && (e.target as HTMLElement)?.tagName !== "INPUT") {
+        e.preventDefault();
+        setUrl(text);
+        void loadLink(text);
+      }
+    }
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
+
   // closing without a GIF: the source video goes away again
   useEffect(
     () => () => {
@@ -68,12 +90,12 @@ export function BoardGifMaker({
     [],
   );
 
-  async function loadLink() {
-    if (!url.trim()) return;
+  async function loadLink(link = url) {
+    if (!link.trim()) return;
     setError(null);
     setStage("loading");
     try {
-      const r = await api.fromLink(url.trim());
+      const r = await api.fromLink(link.trim());
       sourceKey.current = r.key;
       setVideoSrc(r.src);
       setDuration(r.duration || 0);
@@ -84,7 +106,30 @@ export function BoardGifMaker({
     }
   }
 
+  async function pickGif(file: File) {
+    // a GIF can't play in the timeline's <video>: upload it, then let the
+    // server turn it into a video exactly like a GIF link
+    setError(null);
+    setStage("loading");
+    try {
+      const up = await api.upload(file, () => {});
+      try {
+        const r = await api.fromLink(up.src);
+        sourceKey.current = r.key;
+        setVideoSrc(r.src);
+        setDuration(r.duration || 0);
+        setStage("edit");
+      } finally {
+        void api.discard(up.key).catch(() => {});
+      }
+    } catch {
+      setError(tt("ideaBoard.gif.uploadFailed"));
+      setStage("source");
+    }
+  }
+
   function pickFile(file: File) {
+    if (file.type === "image/gif") return void pickGif(file);
     setError(null);
     objectUrl.current = URL.createObjectURL(file);
     setVideoSrc(objectUrl.current);
@@ -198,6 +243,14 @@ export function BoardGifMaker({
                 autoFocus
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
+                onPaste={(e) => {
+                  const text = e.clipboardData.getData("text/plain").trim();
+                  if (/^https?:\/\//i.test(text) && !url.trim()) {
+                    e.preventDefault();
+                    setUrl(text);
+                    void loadLink(text);
+                  }
+                }}
                 onKeyDown={(e) => e.key === "Enter" && void loadLink()}
                 placeholder="https://www.tiktok.com/…"
                 disabled={stage === "loading"}
@@ -214,10 +267,18 @@ export function BoardGifMaker({
             {tt("ideaBoard.gif.or")}
             <span className="h-px flex-1 bg-white/10" />
           </div>
-          <label className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 py-8 text-sm text-white/60 hover:text-white hover:border-white/40 cursor-pointer ${stage === "loading" ? "pointer-events-none opacity-50" : ""}`}>
+          <label
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const f = [...e.dataTransfer.files].find((x) => x.type.startsWith("video/") || x.type === "image/gif");
+              if (f) pickFile(f);
+            }}
+            className={`flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 py-8 text-sm text-white/60 hover:text-white hover:border-white/40 cursor-pointer ${stage === "loading" ? "pointer-events-none opacity-50" : ""}`}
+          >
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" /></svg>
             {tt("ideaBoard.gif.upload")}
-            <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm" className="hidden" onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])} />
+            <input type="file" accept="video/*,image/gif,.mov,.mp4,.m4v,.webm,.gif" className="hidden" onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])} />
           </label>
         </div>
       ) : (

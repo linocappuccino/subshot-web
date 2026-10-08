@@ -87,7 +87,7 @@ export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
 /** 2026-10-08, Lino: Feedback-Pins — a comment pinned to a spot on a node */
 export type BoardPin = { id: string; elementId: string; x: number; y: number; color: string; label: string; resolved?: boolean; active?: boolean; title?: string };
 export type BoardPinAnchor = { elementId: string; x: number; y: number };
-export type BoardLocationMapFn = (lat: number, lng: number) => Promise<{ key: string; src: string }>;
+export type BoardLocationMapFn = (lat: number, lng: number, style: "satellite" | "map") => Promise<{ key: string; src: string; style?: "satellite" | "map" }>;
 export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
 export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
@@ -1165,16 +1165,17 @@ export function IdeaBoard({
     addElements([el]);
   }
 
-  async function saveLocation(title: string, address: string, lat: number | null, lng: number | null) {
+  async function saveLocation(title: string, address: string, lat: number | null, lng: number | null, style: "satellite" | "map") {
     const ed = cardEditor;
     if (!ed) return;
     const prev = ed.id ? (dataRef.current.elements.find((e) => e.id === ed.id) as LocationElement | undefined) : undefined;
-    let map: { key: string; src: string } | null = null;
-    const moved = !prev || prev.lat !== lat || prev.lng !== lng;
+    let map: { key: string; src: string; style?: "satellite" | "map" } | null = null;
+    // a new map image when the spot moved or another view was picked
+    const moved = !prev || prev.lat !== lat || prev.lng !== lng || (prev.map_style ?? "map") !== style;
     if (lat != null && lng != null && moved && createLocationMap) {
       setCardBusy(true);
       try {
-        map = await createLocationMap(lat, lng);
+        map = await createLocationMap(lat, lng, style);
       } catch {
         onError?.(t("ideaBoard.location.mapFailed"));
       } finally {
@@ -1187,7 +1188,7 @@ export function IdeaBoard({
       address,
       lat,
       lng,
-      ...(map ? { image_key: map.key, image_src: map.src } : moved ? { image_key: undefined, image_src: null } : {}),
+      ...(map ? { image_key: map.key, image_src: map.src, map_style: map.style ?? style } : moved ? { image_key: undefined, image_src: null } : {}),
     };
     if (prev) {
       updateElement(prev.id, patch, { history: true });
@@ -3036,8 +3037,9 @@ export function IdeaBoard({
                   initialAddress={cur?.address ?? ""}
                   initialLat={cur?.lat ?? null}
                   initialLng={cur?.lng ?? null}
+                  initialStyle={cur ? cur.map_style ?? "map" : "satellite"}
                   onClose={() => setCardEditor(null)}
-                  onSave={(title, address, lat, lng) => void saveLocation(title, address, lat, lng)}
+                  onSave={(title, address, lat, lng, style) => void saveLocation(title, address, lat, lng, style)}
                 />
               );
             })()
