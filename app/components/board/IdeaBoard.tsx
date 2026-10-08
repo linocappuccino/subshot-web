@@ -182,6 +182,8 @@ export function IdeaBoard({
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [historySize, setHistorySize] = useState({ undo: 0, redo: 0 });
 
+  const pasteCatcherRef = useRef<HTMLTextAreaElement>(null);
+  const lastPasteAt = useRef(0);
   const undoStack = useRef<BoardData[]>([]);
   const redoStack = useRef<BoardData[]>([]);
   const opRef = useRef<Op | null>(null);
@@ -889,6 +891,7 @@ export function IdeaBoard({
 
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     pointers.current.delete(e.pointerId);
+    if (!editingRef.current) window.setTimeout(focusPasteCatcher, 0);
     const op = opRef.current;
     if (!op) return;
     if (op.kind === "pinch") {
@@ -995,7 +998,8 @@ export function IdeaBoard({
   useEffect(() => {
     function isTyping() {
       const a = document.activeElement as HTMLElement | null;
-      return !!a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable);
+      if (!a || a === pasteCatcherRef.current) return false;
+      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable;
     }
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
@@ -1016,6 +1020,14 @@ export function IdeaBoard({
         return;
       }
       if (isTyping() || !editable) return;
+      if (mod && e.key.toLowerCase() === "v") {
+        // a real paste event normally follows; if it doesn't, read the clipboard
+        const pressedAt = Date.now();
+        window.setTimeout(() => {
+          if (lastPasteAt.current < pressedAt) void pasteFromClipboardApi();
+        }, 150);
+        return;
+      }
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -1052,17 +1064,29 @@ export function IdeaBoard({
       }
     }
     function onPaste(e: ClipboardEvent) {
+      lastPasteAt.current = Date.now();
       if (!editable || isTyping()) return;
       const files = [...(e.clipboardData?.files ?? [])];
-      const at = viewportCenterWorld();
       if (files.length) {
         e.preventDefault();
-        void addFiles(files, at, true);
+        void addFiles(files, viewportCenterWorld(), true);
         return;
       }
       const text = e.clipboardData?.getData("text/plain")?.trim();
       if (!text) return;
       e.preventDefault();
+      pasteText(text);
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("paste", onPaste);
+    };
+  });
+
+  function pasteText(text: string) {
+      const at = viewportCenterWorld();
       if (looksLikeUrl(text)) {
         void addLink(text, at, true);
       } else {
@@ -1074,14 +1098,48 @@ export function IdeaBoard({
         const el: TextElement = { id: newId(), type: "text", x: spot.x, y: spot.y, w: 288, h: 72, z: maxZ(dataRef.current.elements) + 1, html, color: "default" };
         addElements([el]);
       }
+  }
+
+  /** Fallback for browsers that don't fire a paste event at all (Safari /
+   * Chrome on iPad without a focused editable): read the clipboard directly. */
+  async function pasteFromClipboardApi() {
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        const files: File[] = [];
+        for (const item of items) {
+          const type = item.types.find((t) => t.startsWith("image/"));
+          if (type) {
+            const blob = await item.getType(type);
+            files.push(new File([blob], `Bild.${type.split("/")[1] || "png"}`, { type }));
+          }
+        }
+        if (files.length) {
+          void addFiles(files, viewportCenterWorld(), true);
+          return;
+        }
+      }
+      const text = (await navigator.clipboard?.readText?.())?.trim();
+      if (text) pasteText(text);
+    } catch {
+      // permission denied / not supported — nothing to paste
     }
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("paste", onPaste);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("paste", onPaste);
-    };
-  });
+  }
+
+  /** Keeps keyboard focus on an invisible field while working on the board,
+   * so ⌘V / Ctrl+V reaches the board as a real paste event in every browser
+   * (Safari and Chrome on iPad only fire paste into something focused). */
+  const focusPasteCatcher = useCallback(() => {
+    const catcher = pasteCatcherRef.current;
+    if (!catcher || !editable) return;
+    const a = document.activeElement as HTMLElement | null;
+    if (a && a !== catcher && a !== document.body && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+    catcher.focus({ preventScroll: true });
+  }, [editable]);
+
+  useEffect(() => {
+    if (!editingId) focusPasteCatcher();
+  }, [editingId, focusPasteCatcher]);
 
   function onDrop(e: React.DragEvent) {
     if (!editable) return;
@@ -1402,6 +1460,19 @@ export function IdeaBoard({
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
           </BarButton>
         </FloatingBar>
+      )}
+
+      {editable && (
+        <textarea
+          ref={pasteCatcherRef}
+          data-board-ui
+          aria-hidden
+          tabIndex={-1}
+          inputMode="none"
+          value=""
+          onChange={() => {}}
+          className="absolute left-0 top-0 w-px h-px opacity-0 pointer-events-none resize-none overflow-hidden"
+        />
       )}
 
       {/* tools */}
