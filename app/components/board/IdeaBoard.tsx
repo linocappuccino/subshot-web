@@ -378,12 +378,16 @@ export function IdeaBoard({
   // `zoom` (real layout → painted at full resolution). While a zoom gesture is
   // running, a cheap transform covers the difference; ~150 ms after it stops
   // the layout zoom catches up and everything is repainted sharp.
+  // Only for zooming IN: below 100 % WebKit's minimum font size (9 px) would
+  // blow text up inside a `zoom`ed layout (Lino: "warum skaliert jetzt die
+  // Schrift mit?!") — and shrinking with a transform is sharp anyway.
   const [settledScale, setSettledScale] = useState(1);
+  const targetZoom = Math.max(1, view.scale);
   useEffect(() => {
-    if (view.scale === settledScale) return;
-    const t = window.setTimeout(() => setSettledScale(view.scale), 150);
+    if (targetZoom === settledScale) return;
+    const t = window.setTimeout(() => setSettledScale(targetZoom), 150);
     return () => window.clearTimeout(t);
-  }, [view.scale, settledScale]);
+  }, [targetZoom, settledScale]);
   const viewScaleRef = useRef(view.scale);
   viewScaleRef.current = view.scale;
   const viewRef = useRef(view);
