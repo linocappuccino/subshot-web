@@ -1603,7 +1603,13 @@ export function IdeaBoard({
   }
 
   // ── rendering helpers ─────────────────────────────────────────────────
-  const elements = useMemo(() => [...data.elements].sort((a, b) => a.z - b.z), [data.elements]);
+  // 2026-10-08, Lino: drawings always lie on top of the nodes — they're
+  // rendered as their own layer above everything else (z order kept within
+  // each layer); stacking uses the render position, not the raw z
+  const elements = useMemo(
+    () => [...data.elements].sort((a, b) => Number(a.type === "drawing") - Number(b.type === "drawing") || a.z - b.z),
+    [data.elements],
+  );
   const hidden = useMemo(() => hiddenElementIds(data.elements), [data.elements]);
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));
@@ -1731,7 +1737,7 @@ export function IdeaBoard({
           })()}
         </svg>
 
-        {elements.map((el) => {
+        {elements.map((el, rank) => {
           if (hidden.has(el.id)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
@@ -1742,13 +1748,14 @@ export function IdeaBoard({
             <div
               key={el.id}
               data-el-id={el.id}
-              className={`absolute group ${isDrawing || isFrame ? "pointer-events-none" : ""} ${editable && !isDrawing && !isFrame && editingId !== el.id ? "cursor-grab active:cursor-grabbing" : ""}`}
+              // draw tool: nodes ignore the pointer so a stroke can start anywhere on top of them
+              className={`absolute group ${isDrawing || isFrame || (editable && tool === "draw") ? "pointer-events-none" : ""} ${editable && !isDrawing && !isFrame && editingId !== el.id ? "cursor-grab active:cursor-grabbing" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
                 width: el.w,
                 height: growsWithContent ? undefined : el.h,
-                zIndex: el.z + 10,
+                zIndex: rank + 10,
               }}
             >
               <BoardElementView
