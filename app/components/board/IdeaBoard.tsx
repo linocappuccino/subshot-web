@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import {
   GRID,
@@ -88,7 +88,7 @@ type Op =
       wasSelected: boolean;
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
-  | { kind: "connect"; pointerId: number; from: string }
+  | { kind: "connect"; pointerId: number; from: string; target: string | null }
   | { kind: "draw"; pointerId: number; points: [number, number][] }
   | { kind: "marquee"; pointerId: number; sx: number; sy: number; x0: number; y0: number; base: Set<string>; moved: boolean }
   | { kind: "pinch"; dist: number; center: Point; view: View };
@@ -101,16 +101,45 @@ function maxZ(elements: BoardElement[]) {
   return elements.reduce((m, el) => Math.max(m, el.z), 0);
 }
 
-function rectEdgePoint(r: { x: number; y: number; w: number; h: number }, toward: Point, gap: number): Point {
-  const cx = r.x + r.w / 2;
-  const cy = r.y + r.h / 2;
-  const dx = toward.x - cx;
-  const dy = toward.y - cy;
-  if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const tx = dx !== 0 ? (r.w / 2 + gap) / Math.abs(dx) : Infinity;
-  const ty = dy !== 0 ? (r.h / 2 + gap) / Math.abs(dy) : Infinity;
-  const t = Math.min(tx, ty);
-  return { x: cx + dx * t, y: cy + dy * t };
+// ── connector geometry (2026-10-08, Lino: smooth curved lines, no arrow,
+// attached to the middle of the sides that face each other) ──────────────
+type Rect = { x: number; y: number; w: number; h: number };
+type Side = "left" | "right" | "top" | "bottom";
+const SIDE_DIR: Record<Side, [number, number]> = { left: [-1, 0], right: [1, 0], top: [0, -1], bottom: [0, 1] };
+const CONNECT_SNAP_PX = 56;
+
+function anchorOf(r: Rect, side: Side): Point {
+  if (side === "left") return { x: r.x, y: r.y + r.h / 2 };
+  if (side === "right") return { x: r.x + r.w, y: r.y + r.h / 2 };
+  if (side === "top") return { x: r.x + r.w / 2, y: r.y };
+  return { x: r.x + r.w / 2, y: r.y + r.h };
+}
+
+/** The pair of sides two boxes should be connected at: left/right when
+ * they're further apart horizontally than vertically, otherwise top/bottom. */
+function facingSides(a: Rect, b: Rect): [Side, Side] {
+  const gapX = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
+  const gapY = Math.max(b.y - (a.y + a.h), a.y - (b.y + b.h));
+  const dx = b.x + b.w / 2 - (a.x + a.w / 2);
+  const dy = b.y + b.h / 2 - (a.y + a.h / 2);
+  if (gapX >= gapY) return dx >= 0 ? ["right", "left"] : ["left", "right"];
+  return dy >= 0 ? ["bottom", "top"] : ["top", "bottom"];
+}
+
+/** Cubic curve leaving p1 straight out of side s1 and arriving at p2
+ * straight into side s2 (or just ending at p2 for a free end). */
+function curvePath(p1: Point, s1: Side, p2: Point, s2: Side | null): string {
+  const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const off = Math.max(36, Math.min(180, dist * 0.45));
+  const c1 = { x: p1.x + SIDE_DIR[s1][0] * off, y: p1.y + SIDE_DIR[s1][1] * off };
+  const c2 = s2 ? { x: p2.x + SIDE_DIR[s2][0] * off, y: p2.y + SIDE_DIR[s2][1] * off } : p2;
+  return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`;
+}
+
+function distanceToRect(p: Point, r: Rect): number {
+  const dx = Math.max(r.x - p.x, 0, p.x - (r.x + r.w));
+  const dy = Math.max(r.y - p.y, 0, p.y - (r.y + r.h));
+  return Math.hypot(dx, dy);
 }
 
 /** First spot at or below/right of (x, y) where a w×h box doesn't overlap any
@@ -161,7 +190,6 @@ export function IdeaBoard({
   className?: string;
 }) {
   const { t } = useLanguage();
-  const markerId = useId().replace(/:/g, "");
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -186,7 +214,7 @@ export function IdeaBoard({
   const [linkValue, setLinkValue] = useState("");
   const [busyOp, setBusyOp] = useState<null | "move" | "resize">(null);
   const [drawPreview, setDrawPreview] = useState<[number, number][] | null>(null);
-  const [connectPreview, setConnectPreview] = useState<{ from: string; to: Point } | null>(null);
+  const [connectPreview, setConnectPreview] = useState<{ from: string; to: Point; target: string | null } | null>(null);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [historySize, setHistorySize] = useState({ undo: 0, redo: 0 });
 
@@ -845,8 +873,8 @@ export function IdeaBoard({
       const el = dataRef.current.elements.find((x) => x.id === id);
       if (!el) return;
       if (handle.dataset.handle === "connect") {
-        opRef.current = { kind: "connect", pointerId: e.pointerId, from: id };
-        setConnectPreview({ from: id, to: world });
+        opRef.current = { kind: "connect", pointerId: e.pointerId, from: id, target: null };
+        setConnectPreview({ from: id, to: world, target: null });
         return;
       }
       const header = el.type === "video" ? VIDEO_HEADER : 0;
@@ -1018,9 +1046,26 @@ export function IdeaBoard({
         updateElement(op.id, { w, h }, { notify: false });
         return;
       }
-      case "connect":
-        setConnectPreview({ from: op.from, to: toWorld(e.clientX, e.clientY) });
+      case "connect": {
+        // the nearest other element within reach becomes the target: it gets
+        // highlighted, shows its connection point and the line snaps to it
+        const w = toWorld(e.clientX, e.clientY);
+        const hiddenNow = hiddenElementIds(dataRef.current.elements);
+        const reach = CONNECT_SNAP_PX / viewRef.current.scale;
+        let best: { id: string; d: number; area: number } | null = null;
+        for (const el of dataRef.current.elements) {
+          if (el.id === op.from || hiddenNow.has(el.id) || el.type === "drawing") continue;
+          if (el.type === "group" && !el.collapsed && el.children.includes(op.from)) continue;
+          const d = distanceToRect(w, el);
+          if (d > reach) continue;
+          const area = el.w * el.h;
+          // inside several (e.g. an element inside a group frame): the smallest wins
+          if (!best || d < best.d - 0.5 || (d < 0.5 && best.d < 0.5 && area < best.area)) best = { id: el.id, d, area };
+        }
+        op.target = best?.id ?? null;
+        setConnectPreview({ from: op.from, to: w, target: op.target });
         return;
+      }
       case "draw": {
         const w = toWorld(e.clientX, e.clientY);
         const last = op.points[op.points.length - 1];
@@ -1119,7 +1164,7 @@ export function IdeaBoard({
       case "connect": {
         setConnectPreview(null);
         const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-el-id]");
-        const to = hit?.dataset.elId;
+        const to = op.target ?? hit?.dataset.elId;
         if (!to || to === op.from) return;
         const exists = dataRef.current.connectors.some(
           (c) => (c.from === op.from && c.to === to) || (c.from === to && c.to === op.from),
@@ -1419,11 +1464,8 @@ export function IdeaBoard({
     const a = byId.get(hidden.get(c.from) ?? c.from);
     const b = byId.get(hidden.get(c.to) ?? c.to);
     if (!a || !b || a.id === b.id) return null;
-    const ca = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
-    const cb = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
-    const p1 = rectEdgePoint(a, cb, 6);
-    const p2 = rectEdgePoint(b, ca, 10);
-    return `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+    const [s1, s2] = facingSides(a, b);
+    return curvePath(anchorOf(a, s1), s1, anchorOf(b, s2), s2);
   }
 
   const editingEl = editingId ? byId.get(editingId) : null;
@@ -1452,12 +1494,7 @@ export function IdeaBoard({
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
       >
         {/* connectors (under the elements) */}
-        <svg className="absolute left-0 top-0 overflow-visible" width="1" height="1" style={{ zIndex: 0 }}>
-          <defs>
-            <marker id={`arrow-${markerId}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
-            </marker>
-          </defs>
+        <svg className="absolute left-0 top-0 overflow-visible pointer-events-none" width="1" height="1" style={{ zIndex: connectPreview ? 100003 : 0 }}>
           {data.connectors.map((c) => {
             const d = connectorPath(c);
             if (!d) return null;
@@ -1472,22 +1509,42 @@ export function IdeaBoard({
                   strokeWidth={2 / Math.min(1, view.scale)}
                   fill="none"
                   strokeLinecap="round"
-                  markerEnd={`url(#arrow-${markerId})`}
                   style={{ pointerEvents: "none" }}
                 />
               </g>
             );
           })}
-          {connectPreview && byId.get(connectPreview.from) && (
-            <path
-              d={`M ${byId.get(connectPreview.from)!.x + byId.get(connectPreview.from)!.w / 2} ${byId.get(connectPreview.from)!.y + byId.get(connectPreview.from)!.h / 2} L ${connectPreview.to.x} ${connectPreview.to.y}`}
-              stroke="#3b82f6"
-              strokeWidth={2 / view.scale}
-              strokeDasharray={`${6 / view.scale} ${5 / view.scale}`}
-              fill="none"
-              style={{ pointerEvents: "none" }}
-            />
-          )}
+          {connectPreview && byId.get(connectPreview.from) && (() => {
+            const src = byId.get(connectPreview.from)!;
+            const tgt = connectPreview.target ? byId.get(connectPreview.target) : null;
+            const point = { x: connectPreview.to.x, y: connectPreview.to.y, w: 0, h: 0 };
+            const [s1, s2] = facingSides(src, tgt ?? point);
+            const p1 = anchorOf(src, s1);
+            const p2 = tgt ? anchorOf(tgt, s2) : connectPreview.to;
+            const r = 7 / view.scale;
+            return (
+              <g style={{ pointerEvents: "none" }}>
+                <path d={curvePath(p1, s1, p2, tgt ? s2 : null)} stroke="#3b82f6" strokeWidth={2.5 / view.scale} fill="none" strokeLinecap="round" />
+                <circle cx={p1.x} cy={p1.y} r={r * 0.75} fill="#3b82f6" />
+                {tgt && (
+                  <>
+                    <rect
+                      x={tgt.x - 4 / view.scale}
+                      y={tgt.y - 4 / view.scale}
+                      width={tgt.w + 8 / view.scale}
+                      height={tgt.h + 8 / view.scale}
+                      rx={14}
+                      fill="rgba(59,130,246,0.08)"
+                      stroke="#3b82f6"
+                      strokeWidth={1.5 / view.scale}
+                    />
+                    <circle cx={p2.x} cy={p2.y} r={r * 1.8} fill="rgba(59,130,246,0.25)" />
+                    <circle cx={p2.x} cy={p2.y} r={r} fill="#ffffff" stroke="#3b82f6" strokeWidth={3 / view.scale} />
+                  </>
+                )}
+              </g>
+            );
+          })()}
         </svg>
 
         {elements.map((el) => {
@@ -1546,14 +1603,27 @@ export function IdeaBoard({
                   style={{ width: handleSize, height: handleSize, right: -handleSize / 2 - 2 / view.scale, bottom: -handleSize / 2 - 2 / view.scale, borderWidth: 2 / view.scale }}
                 />
               )}
-              {editable && tool === "select" && !isDrawing && editingId !== el.id && (
-                <div
-                  data-handle="connect"
-                  title={t("ideaBoard.connect")}
-                  className={`absolute pointer-events-auto rounded-full bg-blue-500 border-white cursor-crosshair transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                  style={{ width: handleSize, height: handleSize, right: -handleSize - 8 / view.scale, top: `calc(50% - ${handleSize / 2}px)`, borderWidth: 2 / view.scale }}
-                />
-              )}
+              {editable && tool === "select" && !isDrawing && editingId !== el.id && !connectPreview &&
+                (["right", "left", "top", "bottom"] as const).map((side) => {
+                  const out = -handleSize - 6 / view.scale;
+                  const pos: React.CSSProperties =
+                    side === "right"
+                      ? { right: out, top: `calc(50% - ${handleSize / 2}px)` }
+                      : side === "left"
+                        ? { left: out, top: `calc(50% - ${handleSize / 2}px)` }
+                        : side === "top"
+                          ? { top: out, left: `calc(50% - ${handleSize / 2}px)` }
+                          : { bottom: out, left: `calc(50% - ${handleSize / 2}px)` };
+                  return (
+                    <div
+                      key={side}
+                      data-handle="connect"
+                      title={t("ideaBoard.connect")}
+                      className={`absolute pointer-events-auto rounded-full bg-blue-500 border-white cursor-crosshair transition-opacity hover:scale-125 ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                      style={{ width: handleSize, height: handleSize, borderWidth: 2 / view.scale, ...pos }}
+                    />
+                  );
+                })}
             </div>
           );
         })}
