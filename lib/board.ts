@@ -100,6 +100,11 @@ export const GROUP_CARD_H = 132;
 /** Expanded groups get their frame recomputed from their members after
  * every change; members of collapsed groups are hidden. */
 export function normalizeGroups(data: BoardData): BoardData {
+  // a thumbnail whose element is gone (or lost its image) no longer counts
+  if (data.cover) {
+    const coverEl = data.elements.find((el) => el.id === data.cover);
+    if (!coverEl || !(coverEl.type === "image" || (coverEl.type === "scene" && coverEl.image_key))) data = { ...data, cover: null };
+  }
   if (!data.elements.some((el) => el.type === "group")) return data;
   const byId = new Map(data.elements.map((el) => [el.id, el]));
   let changed = false;
@@ -131,7 +136,7 @@ export function normalizeGroups(data: BoardData): BoardData {
   });
   if (!changed) return data;
   const connectors = dissolved.size ? data.connectors.filter((c) => !dissolved.has(c.from) && !dissolved.has(c.to)) : data.connectors;
-  return { elements, connectors };
+  return { ...data, elements, connectors };
 }
 
 export function hiddenElementIds(elements: BoardElement[]): Map<string, string> {
@@ -154,6 +159,17 @@ export interface Connector {
 export interface BoardData {
   elements: BoardElement[];
   connectors: Connector[];
+  /** 2026-10-08, Lino: id of the image (or scene card with an image) chosen
+   * via "Als Thumbnail verwenden" as the idea tile's cover */
+  cover?: string | null;
+}
+
+/** The image URL an element can lend the idea tile as its thumbnail. */
+export function coverSrcOf(el: BoardElement | undefined): string | null {
+  if (!el) return null;
+  if (el.type === "image") return el.src ?? null;
+  if (el.type === "scene") return el.image_src ?? null;
+  return null;
 }
 
 export interface BoardResponse {
@@ -192,6 +208,7 @@ export function snap(v: number, enabled = true): number {
  * keeps the request small). */
 export function forSave(data: BoardData): BoardData {
   return {
+    cover: data.cover ?? null,
     elements: data.elements.map((el) => {
       if (!("src" in el) && !("image_src" in el)) return el;
       const copy: Record<string, unknown> = { ...el };

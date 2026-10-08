@@ -553,6 +553,7 @@ export function IdeaBoard({
     for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
     if (ids.size === 0 && !selectedConnector) return;
     commit((d) => ({
+      ...d,
       elements: d.elements.filter((el) => !ids.has(el.id)),
       connectors: d.connectors.filter((c) => c.id !== selectedConnector && !ids.has(c.from) && !ids.has(c.to)),
     }));
@@ -578,7 +579,7 @@ export function IdeaBoard({
     const connectorCopies: Connector[] = dataRef.current.connectors
       .filter((c) => mapping.has(c.from) && mapping.has(c.to))
       .map((c) => ({ ...c, id: newId(), from: mapping.get(c.from)!, to: mapping.get(c.to)! }));
-    commit((d) => ({ elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
+    commit((d) => ({ ...d, elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
     const groupIds = copies.filter((c) => c.type === "group").map((c) => c.id);
     const inGroups = new Set(copies.flatMap((c) => (c.type === "group" ? c.children : [])));
     setSelection(new Set(groupIds.length ? [...groupIds, ...copies.filter((c) => c.type !== "group" && !inGroups.has(c.id)).map((c) => c.id)] : copies.map((c) => c.id)));
@@ -609,6 +610,7 @@ export function IdeaBoard({
     };
     const dropGroups = new Set(groupsInSel.map((g) => g.id));
     commit((d) => ({
+      ...d,
       elements: [
         ...d.elements
           .filter((el) => !dropGroups.has(el.id))
@@ -625,6 +627,7 @@ export function IdeaBoard({
     const g = dataRef.current.elements.find((el) => el.id === id);
     if (!g || g.type !== "group") return;
     commit((d) => ({
+      ...d,
       elements: d.elements.filter((el) => el.id !== id),
       connectors: d.connectors.filter((c) => c.from !== id && c.to !== id),
     }));
@@ -691,6 +694,7 @@ export function IdeaBoard({
     if (!boardHtmlToPlain(html) && !boardHtmlToPlain(editingStartHtml.current)) {
       // a freshly created text box left empty — drop it instead of keeping an empty card
       commit((d) => ({
+        ...d,
         elements: d.elements.filter((e) => e.id !== id),
         connectors: d.connectors.filter((c) => c.from !== id && c.to !== id),
       }));
@@ -827,6 +831,10 @@ export function IdeaBoard({
     if (targetId && !selectionRef.current.has(targetId)) setSelection(new Set([targetId]));
     if (!targetId) setSelectedConnector(null);
     setMenu({ x: clientX - rect.left, y: clientY - rect.top, world: toWorld(clientX, clientY), targetId, linkInput: false });
+  }
+
+  function setCover(id: string | null) {
+    commit((d) => ({ ...d, cover: id }));
   }
 
   function menuAction(fn: () => void) {
@@ -1648,6 +1656,15 @@ export function IdeaBoard({
                   if (Math.abs(want - el.h) > 2) updateElement(el.id, { h: want }, { notify: editable });
                 }}
               />
+              {data.cover === el.id && (
+                <div
+                  className="absolute left-2 top-2 z-10 pointer-events-none flex items-center gap-1 rounded-full bg-black/65 backdrop-blur px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white"
+                  style={{ transform: `scale(${1 / Math.max(view.scale, 0.5)})`, transformOrigin: "top left" }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" /></svg>
+                  {t("ideaBoard.thumbnailBadge")}
+                </div>
+              )}
               {selected && (
                 <div
                   className="absolute pointer-events-none rounded-[14px]"
@@ -1927,6 +1944,12 @@ export function IdeaBoard({
                   </>
                 )}
                 {!multi && (target.type === "link" || target.type === "pdf" || target.type === "file") && <MenuItem label={t("ideaBoard.open")} onPress={() => menuAction(() => activate(target))} />}
+                {!multi && (target.type === "image" || (target.type === "scene" && target.image_key)) &&
+                  (data.cover === target.id ? (
+                    <MenuItem label={t("ideaBoard.removeThumbnail")} onPress={() => menuAction(() => setCover(null))} />
+                  ) : (
+                    <MenuItem label={t("ideaBoard.useAsThumbnail")} onPress={() => menuAction(() => setCover(target.id))} />
+                  ))}
                 {!multi && target.type === "image" && <MenuItem label={t("ideaBoard.toScene")} onPress={() => menuAction(() => convertToScene(target.id))} />}
                 {multi && <MenuItem label={t("ideaBoard.groupAction")} hint="⌘G" onPress={() => menuAction(groupSelection)} />}
                 <MenuItem label={t("ideaBoard.duplicate")} hint="⌘D" onPress={() => menuAction(duplicateSelection)} />
