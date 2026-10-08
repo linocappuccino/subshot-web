@@ -71,7 +71,7 @@ const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
 
 type Op =
-  | { kind: "pan"; pointerId: number; sx: number; sy: number; view: View; moved: boolean; onElement: string | null }
+  | { kind: "pan"; pointerId: number; sx: number; sy: number; view: View; moved: boolean; onElement: string | null; rightClick?: boolean }
   | {
       kind: "move";
       pointerId: number;
@@ -83,6 +83,9 @@ type Op =
       moved: boolean;
       snapshot: BoardData;
       clickedId: string;
+      onGroupTitle: boolean;
+      /** the clicked element was already the only selected one when pressed */
+      wasSelected: boolean;
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string }
@@ -306,6 +309,7 @@ export function IdeaBoard({
     function onWheel(e: WheelEvent) {
       if ((e.target as HTMLElement).closest("[data-board-ui]")) return;
       e.preventDefault();
+      setMenu(null);
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
       const factor = Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.0018));
       zoomAt(e.clientX, e.clientY, viewRef.current.scale * factor);
@@ -735,6 +739,23 @@ export function IdeaBoard({
     updateElement(id, { image_key: undefined, image_src: undefined } as Partial<SceneElement>, { history: true });
   }
 
+  // ── right-click / long-press menu ─────────────────────────────────────
+  const [menu, setMenu] = useState<{ x: number; y: number; world: Point; targetId: string | null; linkInput: boolean } | null>(null);
+  const uploadAtRef = useRef<Point | null>(null);
+
+  function openContextMenu(clientX: number, clientY: number, targetId: string | null) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    if (targetId && !selectionRef.current.has(targetId)) setSelection(new Set([targetId]));
+    if (!targetId) setSelectedConnector(null);
+    setMenu({ x: clientX - rect.left, y: clientY - rect.top, world: toWorld(clientX, clientY), targetId, linkInput: false });
+  }
+
+  function menuAction(fn: () => void) {
+    setMenu(null);
+    fn();
+  }
+
   function activate(el: BoardElement) {
     if (el.type === "group" && editable) {
       setSelection(new Set([el.id]));
@@ -756,6 +777,7 @@ export function IdeaBoard({
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-board-ui]")) return;
+    if (menu) setMenu(null);
     if (target.closest("[contenteditable='true'], input, textarea")) return;
     const elNode = target.closest<HTMLElement>("[data-el-id]");
     if (target.closest("[data-no-drag]")) {
@@ -796,7 +818,16 @@ export function IdeaBoard({
 
     // panning without touch: middle/right mouse button, Space held, or the hand tool
     if (e.button === 1 || e.button === 2 || spaceHeld.current || tool === "hand") {
-      opRef.current = { kind: "pan", pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, view: viewRef.current, moved: false, onElement: null };
+      opRef.current = {
+        kind: "pan",
+        pointerId: e.pointerId,
+        sx: e.clientX,
+        sy: e.clientY,
+        view: viewRef.current,
+        moved: false,
+        onElement: e.button === 2 ? elNode?.dataset.elId ?? null : null,
+        rightClick: e.button === 2,
+      };
       setPanning(true);
       return;
     }
@@ -877,6 +908,8 @@ export function IdeaBoard({
         moved: false,
         snapshot: dataRef.current,
         clickedId: id,
+        onGroupTitle: !!target.closest("[data-group-title]"),
+        wasSelected: selectionRef.current.size === 1 && selectionRef.current.has(id),
       };
       return;
     }
@@ -898,7 +931,7 @@ export function IdeaBoard({
       };
       return;
     }
-    opRef.current = {
+    const panOp: Op = {
       kind: "pan",
       pointerId: e.pointerId,
       sx: e.clientX,
@@ -907,6 +940,19 @@ export function IdeaBoard({
       moved: false,
       onElement: elNode?.dataset.elId ?? null,
     };
+    opRef.current = panOp;
+    if (editable && e.pointerType === "touch") {
+      // long press with a finger = the right-click menu (iPad without trackpad)
+      const cx = e.clientX;
+      const cy = e.clientY;
+      const elId = elNode?.dataset.elId ?? null;
+      window.setTimeout(() => {
+        if (opRef.current === panOp && !panOp.moved) {
+          opRef.current = null;
+          openContextMenu(cx, cy, elId);
+        }
+      }, 550);
+    }
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
@@ -1024,6 +1070,10 @@ export function IdeaBoard({
     switch (op.kind) {
       case "pan": {
         if (op.moved) return;
+        if (op.rightClick) {
+          if (editable) openContextMenu(e.clientX, e.clientY, op.onElement);
+          return;
+        }
         // a click: on an element in read-only mode, or on the empty canvas
         const now = Date.now();
         const last = lastClick.current;
@@ -1050,7 +1100,13 @@ export function IdeaBoard({
         const last = lastClick.current;
         const isDouble = now - last.time < DOUBLE_CLICK_MS && last.id === op.clickedId;
         lastClick.current = { id: op.clickedId, time: isDouble ? 0 : now, x: e.clientX, y: e.clientY };
+        const wasSelected = op.wasSelected;
         if (!e.shiftKey && !e.metaKey && !e.ctrlKey) setSelection(new Set([op.clickedId]));
+        const clickedEl = dataRef.current.elements.find((x) => x.id === op.clickedId);
+        if (!isDouble && wasSelected && clickedEl?.type === "group" && op.onGroupTitle) {
+          setEditingId(clickedEl.id);
+          return;
+        }
         if (isDouble) {
           const el = dataRef.current.elements.find((x) => x.id === op.clickedId);
           if (el) activate(el);
@@ -1133,6 +1189,10 @@ export function IdeaBoard({
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
       if (e.key === "Escape") {
+        if (menu) {
+          setMenu(null);
+          return;
+        }
         if (editingRef.current) {
           finishEditing();
           e.stopPropagation();
@@ -1222,8 +1282,7 @@ export function IdeaBoard({
     };
   });
 
-  function pasteText(text: string) {
-      const at = viewportCenterWorld();
+  function pasteText(text: string, at: Point = viewportCenterWorld()) {
       if (looksLikeUrl(text)) {
         void addLink(text, at, true);
       } else {
@@ -1239,7 +1298,7 @@ export function IdeaBoard({
 
   /** Fallback for browsers that don't fire a paste event at all (Safari /
    * Chrome on iPad without a focused editable): read the clipboard directly. */
-  async function pasteFromClipboardApi() {
+  async function pasteFromClipboardApi(at: Point = viewportCenterWorld()) {
     try {
       if (navigator.clipboard?.read) {
         const items = await navigator.clipboard.read();
@@ -1252,12 +1311,12 @@ export function IdeaBoard({
           }
         }
         if (files.length) {
-          void addFiles(files, viewportCenterWorld(), true);
+          void addFiles(files, at, true);
           return;
         }
       }
       const text = (await navigator.clipboard?.readText?.())?.trim();
-      if (text) pasteText(text);
+      if (text) pasteText(text, at);
     } catch {
       // permission denied / not supported — nothing to paste
     }
@@ -1344,6 +1403,7 @@ export function IdeaBoard({
     play: t("ideaBoard.playVideo"),
     stop: t("ideaBoard.stopVideo"),
     group: t("ideaBoard.group"),
+    groupNamePlaceholder: t("ideaBoard.groupNamePlaceholder"),
     groupItems: t("ideaBoard.groupItems"),
     collapse: t("ideaBoard.collapse"),
     expand: t("ideaBoard.expand"),
@@ -1608,6 +1668,9 @@ export function IdeaBoard({
               <BarButton title={(selectedEls[0] as GroupElement).collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")} onPress={() => toggleGroup(selectedEls[0].id)}>
                 <span className="text-xs font-semibold px-1 whitespace-nowrap">{(selectedEls[0] as GroupElement).collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")}</span>
               </BarButton>
+              <BarButton title={t("ideaBoard.renameGroup")} onPress={() => setEditingId(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.renameGroup")}</span>
+              </BarButton>
               <BarButton title={t("ideaBoard.ungroup")} onPress={() => ungroup(selectedEls[0].id)}>
                 <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.ungroup")}</span>
               </BarButton>
@@ -1671,6 +1734,78 @@ export function IdeaBoard({
           onChange={() => {}}
           className="absolute left-0 top-0 w-px h-px opacity-0 pointer-events-none resize-none overflow-hidden"
         />
+      )}
+
+      {menu && editable && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          {(() => {
+            const target = menu.targetId ? byId.get(menu.targetId) : null;
+            if (!target) {
+              return menu.linkInput ? (
+                <form
+                  className="flex gap-1.5 p-1"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const value = (e.currentTarget.elements.namedItem("url") as HTMLInputElement).value;
+                    if (value.trim()) menuAction(() => void addLink(value, menu.world));
+                  }}
+                >
+                  <input
+                    name="url"
+                    autoFocus
+                    inputMode="url"
+                    placeholder={t("ideaBoard.linkPlaceholder")}
+                    className="w-56 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 select-text"
+                  />
+                  <button type="submit" className="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 text-sm font-semibold">
+                    {t("ideaBoard.linkAdd")}
+                  </button>
+                </form>
+              ) : (
+                <>
+                  <MenuItem label={t("ideaBoard.menu.text")} hint="T" onPress={() => menuAction(() => addText(menu.world))} />
+                  <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
+                  <MenuItem
+                    label={t("ideaBoard.menu.upload")}
+                    onPress={() =>
+                      menuAction(() => {
+                        uploadAtRef.current = menu.world;
+                        fileInputRef.current?.click();
+                      })
+                    }
+                  />
+                  <MenuItem label={t("ideaBoard.menu.link")} onPress={() => setMenu({ ...menu, linkInput: true })} />
+                  <MenuItem label={t("ideaBoard.menu.draw")} hint="P" onPress={() => menuAction(() => setTool("draw"))} />
+                  <MenuDivider />
+                  <MenuItem label={t("ideaBoard.menu.paste")} hint="⌘V" onPress={() => menuAction(() => void pasteFromClipboardApi(menu.world))} />
+                  <MenuItem label={t("ideaBoard.menu.selectAll")} hint="⌘A" onPress={() => menuAction(() => setSelection(new Set(dataRef.current.elements.filter((el) => !hidden.has(el.id)).map((el) => el.id))))} />
+                  <MenuItem label={t("ideaBoard.zoomFit")} onPress={() => menuAction(fitToContent)} />
+                </>
+              );
+            }
+            const multi = selection.size >= 2;
+            return (
+              <>
+                {!multi && (target.type === "text" || target.type === "scene") && <MenuItem label={t("ideaBoard.menu.edit")} onPress={() => menuAction(() => activate(target))} />}
+                {!multi && target.type === "group" && (
+                  <>
+                    <MenuItem label={t("ideaBoard.renameGroup")} onPress={() => menuAction(() => setEditingId(target.id))} />
+                    <MenuItem label={target.collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")} onPress={() => menuAction(() => toggleGroup(target.id))} />
+                    <MenuItem label={t("ideaBoard.ungroup")} hint="⇧⌘G" onPress={() => menuAction(() => ungroup(target.id))} />
+                  </>
+                )}
+                {!multi && (target.type === "link" || target.type === "pdf" || target.type === "file") && <MenuItem label={t("ideaBoard.open")} onPress={() => menuAction(() => activate(target))} />}
+                {!multi && target.type === "image" && <MenuItem label={t("ideaBoard.toScene")} onPress={() => menuAction(() => convertToScene(target.id))} />}
+                {multi && <MenuItem label={t("ideaBoard.groupAction")} hint="⌘G" onPress={() => menuAction(groupSelection)} />}
+                <MenuItem label={t("ideaBoard.duplicate")} hint="⌘D" onPress={() => menuAction(duplicateSelection)} />
+                <MenuItem label={t("ideaBoard.bringFront")} onPress={() => menuAction(() => reorderSelection(true))} />
+                <MenuItem label={t("ideaBoard.sendBack")} onPress={() => menuAction(() => reorderSelection(false))} />
+                <MenuDivider />
+                <MenuItem label={t("ideaBoard.delete")} danger onPress={() => menuAction(deleteSelection)} />
+              </>
+            );
+          })()}
+        </ContextMenu>
       )}
 
       {/* tools */}
@@ -1779,7 +1914,9 @@ export function IdeaBoard({
             onChange={(e) => {
               const files = [...(e.target.files ?? [])];
               e.target.value = "";
-              if (files.length) void addFiles(files, viewportCenterWorld(), true);
+              const at = uploadAtRef.current ?? viewportCenterWorld();
+              uploadAtRef.current = null;
+              if (files.length) void addFiles(files, at, true);
             }}
           />
         </div>
@@ -1802,6 +1939,57 @@ export function IdeaBoard({
       </div>
     </div>
   );
+}
+
+function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+  // keep the menu inside the board when opened near an edge
+  useLayoutEffect(() => {
+    const node = ref.current;
+    const parent = node?.parentElement;
+    if (!node || !parent) return;
+    setPos({
+      left: Math.max(8, Math.min(x, parent.clientWidth - node.offsetWidth - 8)),
+      top: Math.max(8, Math.min(y, parent.clientHeight - node.offsetHeight - 8)),
+    });
+  }, [x, y]);
+  useEffect(() => {
+    function onDown(e: PointerEvent) {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    }
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [onClose]);
+  return (
+    <div
+      ref={ref}
+      data-board-ui
+      role="menu"
+      onContextMenu={(e) => e.preventDefault()}
+      className="absolute z-40 min-w-[220px] p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-2xl backdrop-blur text-sm"
+      style={pos}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuItem({ label, hint, onPress, danger }: { label: string; hint?: string; onPress: () => void; danger?: boolean }) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onPress}
+      className={`w-full flex items-center justify-between gap-6 px-3 py-1.5 rounded-lg text-left ${danger ? "text-red-300 hover:bg-red-500/20" : "text-white/85 hover:bg-white/10"}`}
+    >
+      <span>{label}</span>
+      {hint && <span className="text-xs text-white/35">{hint}</span>}
+    </button>
+  );
+}
+
+function MenuDivider() {
+  return <div className="h-px bg-white/10 my-1 mx-1" />;
 }
 
 function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: number; y: number; w: number; h: number }; children: React.ReactNode }) {

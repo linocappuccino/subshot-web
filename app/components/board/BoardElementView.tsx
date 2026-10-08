@@ -49,6 +49,7 @@ export interface ElementViewLabels {
   play: string;
   stop: string;
   group: string;
+  groupNamePlaceholder: string;
   groupItems: string;
   collapse: string;
   expand: string;
@@ -564,7 +565,7 @@ function GroupNode({
     <input
       ref={titleRef}
       defaultValue={el.title}
-      placeholder={labels.group}
+      placeholder={labels.groupNamePlaceholder}
       onBlur={(e) => onCommitTitle(e.currentTarget.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
@@ -572,7 +573,7 @@ function GroupNode({
       className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-white/90 outline-none select-text"
     />
   ) : (
-    <span className={`min-w-0 flex-1 truncate text-sm font-semibold ${el.title ? "text-white/85" : "text-white/40"}`}>{el.title || labels.group}</span>
+    <span data-group-title className={`min-w-0 flex-1 truncate text-sm font-semibold ${el.title ? "text-white/85" : "text-white/40"}`}>{el.title || labels.group}</span>
   );
   const count = <span className="shrink-0 text-xs text-white/40 tabular-nums">{labels.groupItems.replace("{count}", String(members.length))}</span>;
   const toggle = (
