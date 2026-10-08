@@ -54,7 +54,7 @@ import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
-import { BoardDownloadContext, BoardZoomContext, DownloadButton } from "./BoardDownload";
+import { BoardDownloadContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -370,6 +370,22 @@ export function IdeaBoard({
   const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
   const dataRef = useRef(data);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  // 2026-10-08 (Lino, iPad: "immer noch super unscharf und verpixelt"):
+  // WebKit on Apple devices paints a composited layer at device resolution
+  // and IGNORES CSS scale transforms (GraphicsLayerCA::updateRootRelativeScale
+  // is disabled), so a board zoomed with transform: scale(4) is a 4× blown-up
+  // bitmap — images and text alike. The board is therefore zoomed with CSS
+  // `zoom` (real layout → painted at full resolution). While a zoom gesture is
+  // running, a cheap transform covers the difference; ~150 ms after it stops
+  // the layout zoom catches up and everything is repainted sharp.
+  const [settledScale, setSettledScale] = useState(1);
+  useEffect(() => {
+    if (view.scale === settledScale) return;
+    const t = window.setTimeout(() => setSettledScale(view.scale), 150);
+    return () => window.clearTimeout(t);
+  }, [view.scale, settledScale]);
+  const viewScaleRef = useRef(view.scale);
+  viewScaleRef.current = view.scale;
   const viewRef = useRef(view);
   viewRef.current = view;
   const [tool, setTool] = useState<Tool>("select");
@@ -2348,7 +2364,8 @@ export function IdeaBoard({
 
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
-    <BoardZoomContext.Provider value={view.scale <= 1.05 ? 1 : view.scale <= 2.1 ? 2 : 4}>
+    <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
+    <BoardScaleContext.Provider value={viewScaleRef}>
     <div
       ref={viewportRef}
       className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${pinPlacing ? "cursor-crosshair [&_*]:!cursor-crosshair" : ""} ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
@@ -2369,8 +2386,9 @@ export function IdeaBoard({
     >
       <div
         className="absolute left-0 top-0 origin-top-left"
-        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+        style={{ transform: `translate(${view.x}px, ${view.y}px)${view.scale === settledScale ? "" : ` scale(${view.scale / settledScale})`}` }}
       >
+      <div className="absolute left-0 top-0" style={{ zoom: settledScale }}>
         {/* connectors (under the elements) */}
         <svg className="absolute left-0 top-0 overflow-visible pointer-events-none" width="1" height="1" style={{ zIndex: connectPreview ? 100003 : 0 }}>
           {data.connectors.map((c) => {
@@ -2747,6 +2765,7 @@ export function IdeaBoard({
             }}
           />
         )}
+      </div>
       </div>
 
       {showEmptyHint && (
@@ -3450,6 +3469,7 @@ export function IdeaBoard({
         </ZoomButton>
       </div>
     </div>
+    </BoardScaleContext.Provider>
     </BoardZoomContext.Provider>
     </BoardDownloadContext.Provider>
   );

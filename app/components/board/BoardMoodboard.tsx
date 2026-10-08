@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useContext } from "react";
-import { BoardZoomContext, DownloadButton, SharpImg } from "./BoardDownload";
+import { BoardScaleContext, BoardZoomContext, DownloadButton, SharpImg } from "./BoardDownload";
 import { imageSources, clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
 /** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
@@ -86,10 +86,8 @@ export function MoodboardNode({
 
   const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1, s: it.s ?? 1 }));
 
-  const screenScale = () => {
-    const r = ref.current?.getBoundingClientRect();
-    return r && el.w ? r.width / el.w : 1;
-  };
+  const boardScale = useContext(BoardScaleContext);
+  const screenScale = () => boardScale.current;
 
   function track(onMove: (e: PointerEvent) => void, onUp: () => void) {
     const move = (e: PointerEvent) => {
