@@ -755,8 +755,9 @@ export function IdeaBoard({
 
   function addMoodboard(at: Point) {
     const w = 528;
-    const spot = place(at.x - w / 2, at.y - 160, w, 320, true);
-    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h: 320, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [], layout: 3 };
+    const h = 420;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [], layout: 3 };
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
@@ -809,15 +810,6 @@ export function IdeaBoard({
     updateElement(id, { items, layout: 3 } as Partial<MoodboardElement>, { history: true });
   }
 
-  /** "Spalten": about how many images share a row — the individual size
-   * factors stay, only the base row height changes */
-  function setMoodboardCols(id: string, delta: number) {
-    const mb = dataRef.current.elements.find((e) => e.id === id);
-    if (!mb || mb.type !== "moodboard") return;
-    const cols = Math.max(1, Math.min(8, mb.cols + delta));
-    if (cols === mb.cols) return;
-    updateElement(id, { cols, items: moodboardItems(mb), layout: 3 } as Partial<MoodboardElement>, { history: true });
-  }
 
   function setStickyColor(color: StickyColor) {
     const ids = selectionRef.current;
@@ -2450,7 +2442,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "moodboard";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -2881,12 +2873,6 @@ export function IdeaBoard({
           )}
           {selectedEls.length === 1 && selectedEls[0].type === "moodboard" && (
             <>
-              <BarButton title={t("ideaBoard.moodboard.fewerCols")} onPress={() => setMoodboardCols(selectedEls[0].id, -1)}>−</BarButton>
-              <span className="text-xs font-semibold tabular-nums px-1 text-white/80 whitespace-nowrap">
-                {t("ideaBoard.moodboard.cols", { count: (selectedEls[0] as MoodboardElement).cols })}
-              </span>
-              <BarButton title={t("ideaBoard.moodboard.moreCols")} onPress={() => setMoodboardCols(selectedEls[0].id, 1)}>+</BarButton>
-              <Divider />
               <BarButton title={t("ideaBoard.moodboard.add")} onPress={() => pickMoodboardImages(selectedEls[0].id)}>
                 <span className="text-xs font-semibold px-1 whitespace-nowrap">+ {t("ideaBoard.moodboard.addShort")}</span>
               </BarButton>

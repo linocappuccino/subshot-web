@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clampMoodboardScale, layoutMoodboard, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
+import { clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
 /** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
  * in justified rows (see layoutMoodboard) — every row fills the full width,
@@ -13,6 +13,7 @@ import { clampMoodboardScale, layoutMoodboard, moodboardItems, type MoodboardEle
 
 const PAD = 10;
 const GAP = 6;
+const HEADER = 26; // header row (20) + its margin (6)
 const ADD_ID = "__add";
 
 type Edge = "l" | "r" | "t" | "b";
@@ -55,34 +56,28 @@ export function MoodboardNode({
     [draft, el, seenAr],
   );
   const inner = Math.max(60, el.w - PAD * 2 - 2); // minus the 1 px border on each side
-  const cols = Math.max(1, el.cols || 3);
+  // 2026-10-08, Lino: the card is sized with its corner handle and the
+  // images always fill it — wider or taller, the layout follows its shape
+  const innerH = Math.max(40, el.h - PAD * 2 - 2 - HEADER);
   const showAdd = active && !!onAdd;
   // the "+" tile rides along at the end as a smallish square
   const withAdd = (list: MoodboardItem[]) => (showAdd ? [...list, { id: ADD_ID, asset_key: "", name: "", mime: "", w: 1, h: 1, ar: 1, s: 0.8 }] : list);
-  const layout = useMemo(
-    () => layoutMoodboard(withAdd(items), inner, cols, GAP),
+  // the density (row height) is chosen by a full fit only when the card's
+  // size or the set/order of images changes; resizing one image keeps it,
+  // so what you see while dragging is exactly what stays
+  const fitKey = `${Math.round(inner)}x${Math.round(innerH)}|${items.map((it) => it.id).join(",")}|${showAdd}`;
+  const density = useMemo(
+    () => fitMoodboard(withAdd(moodboardItems(el).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 }))), inner, innerH, GAP).baseH,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, inner, cols, showAdd],
+    [fitKey],
+  );
+  const layout = useMemo(
+    () => fitMoodboardAt(withAdd(items), inner, innerH, GAP, density),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, inner, innerH, showAdd, density],
   );
   const boxOf = useMemo(() => new Map(layout.boxes.map((b) => [b.id, b])), [layout]);
 
-  // the card's height follows its content (both ways)
-  const heightRef = useRef(el.h);
-  heightRef.current = el.h;
-  const measureRef = useRef(onMeasure);
-  measureRef.current = onMeasure;
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const check = () => {
-      const h = node.offsetHeight;
-      if (Math.abs(h - heightRef.current) > 1) measureRef.current(h);
-    };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, []);
 
   const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1, s: it.s ?? 1 }));
 
@@ -133,7 +128,7 @@ export function MoodboardNode({
         let bestErr = Infinity;
         for (const s of candidates) {
           const trial = start.map((x) => (x.id === it.id ? { ...x, s } : x));
-          const b = layoutMoodboard(withAdd(trial), inner, cols, GAP).boxes.find((x) => x.id === it.id);
+          const b = fitMoodboardAt(withAdd(trial), inner, innerH, GAP, density).boxes.find((x) => x.id === it.id);
           if (!b) continue;
           const err = Math.abs((horizontal ? b.w : b.h) - want);
           if (err < bestErr - 0.01) {
@@ -195,7 +190,7 @@ export function MoodboardNode({
   const addBox = boxOf.get(ADD_ID);
 
   return (
-    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)]" style={{ padding: PAD }}>
+    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden" style={{ padding: PAD, height: el.h }}>
       {/* also the handle to move the card while its images are interactive */}
       <div className="flex items-center gap-1.5 h-5 mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/40">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
@@ -206,7 +201,8 @@ export function MoodboardNode({
         <button
           data-no-drag={onAdd ? "" : undefined}
           onClick={() => onAdd?.()}
-          className="w-full aspect-[16/9] rounded-md border border-dashed border-white/20 text-white/45 hover:text-white/80 hover:border-white/40 text-sm flex flex-col items-center justify-center gap-2"
+          style={{ height: innerH }}
+          className="w-full rounded-md border border-dashed border-white/20 text-white/45 hover:text-white/80 hover:border-white/40 text-sm flex flex-col items-center justify-center gap-2"
         >
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
           {emptyLabel}

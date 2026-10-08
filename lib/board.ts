@@ -250,18 +250,79 @@ export type MoodboardBox = { id: string; x: number; y: number; w: number; h: num
  * nothing after it takes the images of the row before it as its side. */
 export function layoutMoodboard(items: MoodboardItem[], width: number, cols: number, gap: number): { boxes: MoodboardBox[]; height: number } {
   const W = Math.max(40, width);
+  return layoutMoodboardBase(items, W, (W - gap * (Math.max(1, cols) - 1)) / Math.max(1, cols), gap);
+}
+
+/** 2026-10-08, Lino: "die Moodboard-Node an der Ecke vergrössern — der
+ * Content muss sich der Form der Node anpassen". Finds the row height
+ * (density) whose layout comes closest to the card's height, then stretches
+ * the rows vertically by the small remainder so the images fill the card
+ * exactly (object-cover crops that bit). */
+export function fitMoodboard(items: MoodboardItem[], width: number, height: number, gap: number): { boxes: MoodboardBox[]; height: number; baseH: number } {
+  const W = Math.max(40, width);
+  const H = Math.max(40, height);
+  if (!items.length) return { boxes: [], height: H, baseH: W / 3 };
+  const lo = 16;
+  const hi = Math.max(lo * 2, Math.max(W, H) * 1.5);
+  const search = (list: MoodboardItem[]) => {
+    // coarse: every density as is; fine: the 4 closest get their rows tuned
+    const coarse: { baseH: number; err: number }[] = [];
+    for (let k = 0; k <= 90; k++) {
+      const baseH = lo * Math.pow(hi / lo, k / 90);
+      coarse.push({ baseH, err: Math.abs(Math.log(layoutMoodboardBase(list, W, baseH, gap).height / H)) });
+    }
+    coarse.sort((a, b) => a.err - b.err);
+    let best: { baseH: number; layout: { boxes: MoodboardBox[]; height: number }; err: number } | null = null;
+    for (const c of coarse.slice(0, 4)) {
+      const layout = layoutMoodboardBase(list, W, c.baseH, gap, H);
+      const err = Math.abs(Math.log(layout.height / H));
+      if (!best || err < best.err) best = { baseH: c.baseH, layout, err };
+    }
+    return best!;
+  };
+  // if the card's shape can't hold the enlarged images as they are, their
+  // enlargement is toned down (for display only) before images get cropped
+  let best = search(items);
+  for (const f of [0.66, 0.4, 0.2, 0]) {
+    // the user's enlargement wins: only toned down when the card's shape
+    // would otherwise crop the images by more than ~20 %
+    if (best.err < Math.log(1.2)) break;
+    const damped = items.map((it) => ((it.s ?? 1) > 1 ? { ...it, s: 1 + ((it.s ?? 1) - 1) * f } : it));
+    const next = search(damped);
+    if (next.err < best.err - 0.05) best = next;
+  }
+  const { layout, baseH } = best;
+  const k = H / Math.max(1, layout.height);
+  return { boxes: layout.boxes.map((b) => ({ ...b, y: b.y * k, h: b.h * k })), height: H, baseH };
+}
+
+/** the same fit at a fixed row height — cheap enough to run for every
+ * candidate size while an image is being dragged bigger/smaller */
+export function fitMoodboardAt(items: MoodboardItem[], width: number, height: number, gap: number, baseH: number): { boxes: MoodboardBox[]; height: number; baseH: number } {
+  const W = Math.max(40, width);
+  const H = Math.max(40, height);
+  const layout = layoutMoodboardBase(items, W, baseH, gap, H);
+  const k = H / Math.max(1, layout.height);
+  return { boxes: layout.boxes.map((b) => ({ ...b, y: b.y * k, h: b.h * k })), height: H, baseH };
+}
+
+export function layoutMoodboardBase(items: MoodboardItem[], width: number, rowH: number, gap: number, fitH?: number): { boxes: MoodboardBox[]; height: number } {
+  const W = Math.max(40, width);
   const G = gap;
-  const baseH = (W - G * (Math.max(1, cols) - 1)) / Math.max(1, cols);
+  const baseH = Math.max(8, rowH);
   const ar = (it: MoodboardItem) => Math.max(0.1, it.ar || 1);
   const sc = (it: MoodboardItem) => it.s ?? 1;
   const FEATURE = 1.15;
   const isFeature = (it: MoodboardItem) => sc(it) >= FEATURE;
   const sumAr = (row: MoodboardItem[]) => row.reduce((t, it) => t + ar(it), 0);
   const heightAt = (row: MoodboardItem[], w: number) => (w - G * (row.length - 1)) / sumAr(row);
-  const targetOf = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + Math.min(sc(it), FEATURE) * ar(it), 0)) / sumAr(row);
+  const targetCapped = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + Math.min(sc(it), FEATURE) * ar(it), 0)) / sumAr(row);
+  const targetFree = (row: MoodboardItem[]) => (baseH * row.reduce((t, it) => t + sc(it) * ar(it), 0)) / sumAr(row);
 
-  /** justified rows of `list` at width w (short last row merged upward) */
-  const buildRows = (list: MoodboardItem[], w: number): MoodboardItem[][] => {
+  /** justified rows of `list` at width w (short last row merged upward);
+   * rows of big images aim for their bigger target height */
+  const buildRows = (list: MoodboardItem[], w: number, big = false): MoodboardItem[][] => {
+    const targetOf = big ? targetFree : targetCapped;
     const rows: MoodboardItem[][] = [];
     let cur: MoodboardItem[] = [];
     for (const it of list) {
@@ -317,18 +378,30 @@ export function layoutMoodboard(items: MoodboardItem[], width: number, cols: num
     const wsEst = W - G - ar(F) * Hf;
     const pool: MoodboardItem[] = [];
     for (let j = i; j < items.length && !isFeature(items[j]) && pool.length < 24; j++) pool.push(items[j]);
-    let best: { k: number; err: number } | null = null;
+    // a feature must visibly span several rows: candidates with at least two
+    // stacked rows beside it win over a single row (which would just look
+    // like an ordinary row of equally tall images)
+    let best: { k: number; err: number; multi: boolean } | null = null;
     if (wsEst > W * 0.18) {
       for (let k = 1; k <= pool.length; k++) {
         const rows = buildRows(pool.slice(0, k), wsEst);
         const { H, wf, ws } = solve(F, rows);
         if (ws < W * 0.15 || wf < W * 0.15 || H <= 0) continue;
         const err = Math.abs(H - Hf);
-        if (!best || err < best.err) best = { k, err };
-        if (H < Hf * 0.6) break; // only getting shorter from here
+        const multi = rows.length >= 2;
+        if (!best || (multi && !best.multi) || (multi === best.multi && err < best.err)) best = { k, err, multi };
+        if (H < Hf * 0.5 && best.multi) break; // only getting shorter from here
       }
     }
     const side = best ? pool.slice(0, best.k) : [];
+    if (!side.length && pool.length) {
+      // nothing fits beside it (too wide for the card): it joins the
+      // following images as a row instead of taking a fixed full width
+      const run: MoodboardItem[] = [F];
+      while (i < items.length && !isFeature(items[i])) run.push(items[i++]);
+      blocks.push({ kind: "rows", items: run });
+      continue;
+    }
     i += side.length;
     blocks.push({ kind: "feature", F, side });
   }
@@ -367,20 +440,199 @@ export function layoutMoodboard(items: MoodboardItem[], width: number, cols: num
     return yy;
   };
   const live = blocks.filter((b) => b.kind === "feature" || b.items.length);
+  // rows of every row block, decided up front so they can be fine-tuned
+  const blockRows = live.map((blk) => (blk.kind === "rows" ? buildRows(blk.items, W, !!blk.feature) : null));
+  if (fitH) tuneRows();
+
+  /** fitting a card (2026-10-08): the total height only changes in steps
+   * (it depends on which image lands in which row), so move single images
+   * between neighbouring rows, or split/merge rows, while that brings the
+   * total closer to the card's height — every row staying a pleasant height */
+  function tuneRows() {
+    const rowsH = (rows: MoodboardItem[][]) => rows.reduce((t, r) => t + heightAt(r, W), 0) + G * Math.max(0, rows.length - 1);
+    const fixed = live.reduce((t, blk, bi) => {
+      if (blk.kind === "rows") return t;
+      const { side, F } = blk;
+      if (!side.length) return t + rowsH(buildRows([F], W, true));
+      return t + solve(F, buildRows(side, W - G - ar(F) * baseH * sc(F))).H;
+    }, 0) + G * Math.max(0, live.length - 1);
+    const total = () => fixed + blockRows.reduce((t, rows) => t + (rows ? rowsH(rows) : 0), 0);
+
+    // 1) optimal row breaks (like text justification): for a row height t,
+    //    dynamic programming finds the partition whose rows deviate least
+    //    from t; t itself is searched so the total lands on the card height
+    const dpRows = (list: MoodboardItem[], t: number, bigRows: boolean): MoodboardItem[][] => {
+      const n = list.length;
+      const best = new Array<number>(n + 1).fill(Infinity);
+      const from = new Array<number>(n + 1).fill(0);
+      best[0] = 0;
+      for (let j = 1; j <= n; j++) {
+        let A = 0;
+        let S = 0;
+        for (let i = j - 1; i >= 0 && j - i <= 14; i--) {
+          A += ar(list[i]);
+          S += (bigRows ? sc(list[i]) : Math.min(sc(list[i]), FEATURE)) * ar(list[i]);
+          const h = (W - G * (j - i - 1)) / A;
+          const tt = (t * S) / A;
+          const c = best[i] + (j - i) * Math.pow(Math.log(h / tt), 2);
+          if (c < best[j]) {
+            best[j] = c;
+            from[j] = i;
+          }
+        }
+      }
+      const rows: MoodboardItem[][] = [];
+      for (let j = n; j > 0; j = from[j]) rows.unshift(list.slice(from[j], j));
+      return rows;
+    };
+    const rowBlocks = live.map((blk) => (blk.kind === "rows" ? blk : null));
+    let bestT = baseH;
+    let bestErr = Math.abs(Math.log(total() / fitH!));
+    let bestRows = blockRows.slice();
+    const tryT = (t: number) => {
+      rowBlocks.forEach((blk, bi) => {
+        if (blk) blockRows[bi] = dpRows(blk.items, t, !!blk.feature);
+      });
+      const e = Math.abs(Math.log(total() / fitH!));
+      if (e < bestErr) {
+        bestErr = e;
+        bestT = t;
+        bestRows = blockRows.slice();
+      }
+      return total();
+    };
+    let lo = Math.log(10);
+    let hi = Math.log(4000);
+    for (let k = 0; k < 36; k++) {
+      const mid = (lo + hi) / 2;
+      if (tryT(Math.exp(mid)) < fitH!) lo = mid;
+      else hi = mid;
+    }
+    for (let i = 0; i < blockRows.length; i++) blockRows[i] = bestRows[i];
+
+    // 1b) balanced rows can't hit every height (2 even rows too short, 3 too
+    //     tall …); rows of different heights can — e.g. 4 bigger images over
+    //     10 smaller ones. Exact search: dynamic programming over (images
+    //     placed, height so far in small steps) keeps the most even partition
+    //     for every reachable height; take the one landing on the target.
+    if (bestErr > 0.01) {
+      const rowIdx = rowBlocks.map((b, i) => (b ? i : -1)).filter((i) => i >= 0);
+      const current = rowIdx.map((i) => rowsH(blockRows[i]!));
+      const rest = fitH! - fixed - (total() - fixed - current.reduce((x, y) => x + y, 0));
+      const sumCur = current.reduce((x, y) => x + y, 0) || 1;
+      rowIdx.forEach((bi, n) => {
+        const blk = rowBlocks[bi]!;
+        const list = blk.items;
+        const target = Math.max(20, (rest * current[n]) / sumCur);
+        const step = Math.max(2, target / 300);
+        const B = Math.ceil((target * 2) / step) + 2;
+        const m = list.length;
+        const cost = new Float64Array((m + 1) * (B + 1)).fill(Infinity);
+        const backI = new Int16Array((m + 1) * (B + 1));
+        const backB = new Int32Array((m + 1) * (B + 1));
+        cost[0] = 0;
+        for (let j = 1; j <= m; j++) {
+          let A = 0;
+          let S = 0;
+          for (let i = j - 1; i >= 0 && j - i <= 14; i--) {
+            A += ar(list[i]);
+            S += (blk.feature ? sc(list[i]) : Math.min(sc(list[i]), FEATURE)) * ar(list[i]);
+            const h = (W - G * (j - i - 1)) / A;
+            const tt = (bestT * S) / A;
+            const rc = (j - i) * Math.pow(Math.log(h / tt), 2);
+            const add = Math.round((h + (i > 0 ? G : 0)) / step);
+            for (let b0 = 0; b0 + add <= B; b0++) {
+              const c0 = cost[i * (B + 1) + b0];
+              if (c0 === Infinity) continue;
+              const k = j * (B + 1) + b0 + add;
+              if (c0 + rc < cost[k]) {
+                cost[k] = c0 + rc;
+                backI[k] = i;
+                backB[k] = b0;
+              }
+            }
+          }
+        }
+        const T = Math.round(target / step);
+        let pick = -1;
+        let pickScore = Infinity;
+        for (let b = 0; b <= B; b++) {
+          const c = cost[m * (B + 1) + b];
+          if (c === Infinity) continue;
+          // being off the height costs much more than uneven rows
+          const score = Math.abs(Math.log(Math.max(1, b) / Math.max(1, T))) * 40 + c;
+          if (score < pickScore) {
+            pickScore = score;
+            pick = b;
+          }
+        }
+        if (pick < 0) return;
+        const rows: MoodboardItem[][] = [];
+        for (let j = m, b = pick; j > 0; ) {
+          const k = j * (B + 1) + b;
+          const i = backI[k];
+          rows.unshift(list.slice(i, j));
+          b = backB[k];
+          j = i;
+        }
+        blockRows[bi] = rows;
+      });
+      const e = Math.abs(Math.log(total() / fitH!));
+      if (e < bestErr) {
+        bestErr = e;
+        bestRows = blockRows.slice();
+      }
+      for (let i = 0; i < blockRows.length; i++) blockRows[i] = bestRows[i];
+    }
+
+    // 2) polish: move single images between neighbouring rows
+    const okRow = (r: MoodboardItem[]) => {
+      const h = heightAt(r, W);
+      const t = (bestT * r.reduce((x, it) => x + Math.min(sc(it), FEATURE) * ar(it), 0)) / sumAr(r);
+      return r.length > 0 && h > t * 0.5 && h < t * 2;
+    };
+    const err = () => Math.abs(Math.log(total() / fitH!));
+    let cur = err();
+    for (let iter = 0; iter < 120 && cur > 0.004; iter++) {
+      let bestMove: { bi: number; rows: MoodboardItem[][]; e: number } | null = null;
+      blockRows.forEach((rows, bi) => {
+        if (!rows) return;
+        const tryRows = (next: MoodboardItem[][]) => {
+          if (!next.every(okRow)) return;
+          const saved = blockRows[bi];
+          blockRows[bi] = next;
+          const e = err();
+          blockRows[bi] = saved;
+          if (e < cur - 1e-4 && (!bestMove || e < bestMove.e)) bestMove = { bi, rows: next, e };
+        };
+        for (let r = 0; r < rows.length; r++) {
+          const row = rows[r];
+          if (r + 1 < rows.length) {
+            const nxt = rows[r + 1];
+            if (row.length > 1) tryRows([...rows.slice(0, r), row.slice(0, -1), [row[row.length - 1], ...nxt], ...rows.slice(r + 2)]);
+            if (nxt.length > 1) tryRows([...rows.slice(0, r), [...row, nxt[0]], nxt.slice(1), ...rows.slice(r + 2)]);
+            tryRows([...rows.slice(0, r), [...row, ...nxt], ...rows.slice(r + 2)]);
+          }
+          for (let cut = 1; cut < row.length; cut++) tryRows([...rows.slice(0, r), row.slice(0, cut), row.slice(cut), ...rows.slice(r + 1)]);
+        }
+      });
+      if (!bestMove) break;
+      const m = bestMove as { bi: number; rows: MoodboardItem[][]; e: number };
+      blockRows[m.bi] = m.rows;
+      cur = m.e;
+    }
+  }
+
   live.forEach((blk, bi) => {
     if (bi > 0) y += G;
     if (blk.kind === "rows") {
-      // big images side by side: exactly one row, as tall as the width allows
-      const rows = blk.feature ? [blk.items] : buildRows(blk.items, W);
-      y = placeRows(rows, 0, W, y);
+      y = placeRows(blockRows[bi]!, 0, W, y);
       return;
     }
     const { F, side } = blk;
     if (!side.length) {
-      // nothing can sit beside it: the full width
-      const h = W / ar(F);
-      boxes.push({ id: F.id, x: 0, y, w: W, h });
-      y += h;
+      // nothing can sit beside it (the board's only images are features)
+      y = placeRows(buildRows([F], W, true), 0, W, y);
       return;
     }
     const rowsEst = buildRows(side, W - G - ar(F) * baseH * sc(F));
