@@ -6,6 +6,7 @@ import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
 import { IdeaBoard, type BoardPin } from "./board/IdeaBoard";
 import { authorColor } from "@/lib/authorColor";
 import { subscribeToChanges } from "@/lib/realtime";
+import { forceGifLoop } from "@/lib/gifLoop";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
@@ -572,7 +573,9 @@ function IdeaBoardScreen({
             onChange={handleBoardChange}
             onError={(msg) => toast.showError(msg)}
             onEscape={onClose}
-            uploadFile={async (file, mime, onProgress) => {
+            uploadFile={async (picked, mime, onProgress) => {
+              // GIFs always loop on the board (see lib/gifLoop.ts)
+              const file = mime === "image/gif" ? await forceGifLoop(picked) : picked;
               const ticket = await api.createIdeaBoardUpload(idea.id, { filename: file.name, content_type: mime, size: file.size });
               await uploadWithType(ticket.upload_url, file, mime, onProgress);
               return { key: ticket.key, src: ticket.url };
