@@ -88,6 +88,8 @@ export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
 /** 2026-10-08, Lino: Feedback-Pins — a comment pinned to a spot on a node */
 export type BoardPin = { id: string; elementId: string; x: number; y: number; color: string; label: string; resolved?: boolean; active?: boolean; title?: string };
 export type BoardPinAnchor = { elementId: string; x: number; y: number };
+/** 2026-10-08 — live collaboration: another person on the board */
+export type BoardPeer = { clientId: number; name: string; color: string; cursor: { x: number; y: number } | null; selection: string[] };
 export type BoardLocationMapFn = (lat: number, lng: number, style: "satellite" | "map") => Promise<{ key: string; src: string; style?: "satellite" | "map" }>;
 export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
@@ -307,6 +309,10 @@ export function IdeaBoard({
   myVoterKey,
   onVote,
   gifMaker,
+  externalData,
+  historyApi,
+  peers,
+  onPresence,
   onError,
   onEscape,
   className = "",
@@ -339,6 +345,15 @@ export function IdeaBoard({
   onVote?: (groupId: string, elementId: string) => void;
   /** GIF maker (video link/upload → ≤3 s GIF image on the board) */
   gifMaker?: BoardGifApi;
+  /** live collaboration: the board as changed by someone else (or by a
+   * live undo) — taken over as is, without notifying onChange */
+  externalData?: { data: BoardData; nonce: number } | null;
+  /** live collaboration: undo/redo of only MY changes (Y.UndoManager) */
+  historyApi?: { undo: () => void; redo: () => void; canUndo: boolean; canRedo: boolean };
+  /** live collaboration: the others' cursors and selections */
+  peers?: BoardPeer[];
+  /** live collaboration: my pointer (board coordinates) and selection */
+  onPresence?: (p: { cursor?: { x: number; y: number } | null; selection?: string[] }) => void;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -388,8 +403,10 @@ export function IdeaBoard({
   onChangeRef.current = onChange;
 
   // ── document updates ──────────────────────────────────────────────────
+  const historyApiRef = useRef(historyApi);
+  historyApiRef.current = historyApi;
   const apply = useCallback((next: BoardData, opts: { history?: BoardData | null; notify?: boolean } = {}) => {
-    if (opts.history) {
+    if (opts.history && !historyApiRef.current) {
       undoStack.current.push(opts.history);
       if (undoStack.current.length > HISTORY_LIMIT) undoStack.current.shift();
       redoStack.current = [];
@@ -422,7 +439,34 @@ export function IdeaBoard({
     [apply],
   );
 
+  // live collaboration: someone else's change (or a live undo) arrives as a
+  // whole board — taken over without echoing it back through onChange
+  const onPresenceRef = useRef(onPresence);
+  onPresenceRef.current = onPresence;
+  useEffect(() => {
+    if (!externalData) return;
+    const op = opRef.current;
+    let next = externalData.data;
+    // a drag in progress keeps its own nodes where the pointer has them
+    if (op && op.kind === "move" && op.moved) {
+      const mine = new Map(dataRef.current.elements.filter((el) => op.origin.has(el.id)).map((el) => [el.id, el]));
+      next = { ...next, elements: next.elements.map((el) => mine.get(el.id) ?? el) };
+    }
+    apply(next, { notify: false });
+    const ids = new Set(next.elements.map((el) => el.id));
+    if ([...selectionRef.current].some((id) => !ids.has(id))) setSelection(new Set([...selectionRef.current].filter((id) => ids.has(id))));
+    if (editingRef.current && !ids.has(editingRef.current)) setEditingId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalData?.nonce]);
+  useEffect(() => {
+    onPresenceRef.current?.({ selection: [...selection] });
+  }, [selection]);
+
   function undo() {
+    if (historyApiRef.current) {
+      historyApiRef.current.undo();
+      return;
+    }
     const prev = undoStack.current.pop();
     if (!prev) return;
     redoStack.current.push(dataRef.current);
@@ -432,6 +476,10 @@ export function IdeaBoard({
     setSelectedConnector(null);
   }
   function redo() {
+    if (historyApiRef.current) {
+      historyApiRef.current.redo();
+      return;
+    }
     const next = redoStack.current.pop();
     if (!next) return;
     undoStack.current.push(dataRef.current);
@@ -1697,6 +1745,7 @@ export function IdeaBoard({
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (onPresenceRef.current && e.pointerType !== "touch") onPresenceRef.current({ cursor: toWorld(e.clientX, e.clientY) });
     const op = opRef.current;
     if (!op) return;
 
@@ -2315,6 +2364,7 @@ export function IdeaBoard({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
+      onPointerLeave={() => onPresenceRef.current?.({ cursor: null })}
       onDragOver={(e) => editable && e.preventDefault()}
       onDrop={onDrop}
       onContextMenu={(e) => editable && !(e.target as HTMLElement).closest("[contenteditable='true'],a,video,audio") && e.preventDefault()}
@@ -2567,6 +2617,44 @@ export function IdeaBoard({
             </button>
           </div>
         ))}
+
+        {/* live collaboration: the others' selections + cursors (2026-10-08) */}
+        {(peers ?? []).map((peer) =>
+          peer.selection.map((id) => {
+            const el = byId.get(hidden.get(id) ?? id);
+            if (!el) return null;
+            return (
+              <div
+                key={`peer-sel-${peer.clientId}-${id}`}
+                className="absolute pointer-events-none rounded-[12px]"
+                style={{ left: el.x - 4 / view.scale, top: el.y - 4 / view.scale, width: el.w + 8 / view.scale, height: el.h + 8 / view.scale, border: `${2 / view.scale}px solid ${peer.color}`, zIndex: 98800 }}
+              >
+                <span
+                  className="absolute left-0 top-0 rounded px-1.5 py-px text-[10px] font-semibold text-white whitespace-nowrap"
+                  style={{ background: peer.color, transform: `translateY(-100%) scale(${1 / view.scale})`, transformOrigin: "0 100%" }}
+                >
+                  {peer.name}
+                </span>
+              </div>
+            );
+          }),
+        )}
+        {(peers ?? []).map((peer) =>
+          peer.cursor ? (
+            <div
+              key={`peer-cur-${peer.clientId}`}
+              className="absolute pointer-events-none"
+              style={{ left: peer.cursor.x, top: peer.cursor.y, zIndex: 99900, transform: `scale(${1 / view.scale})`, transformOrigin: "0 0", transition: "left 80ms linear, top 80ms linear" }}
+            >
+              <svg width="18" height="20" viewBox="0 0 18 20" style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,.5))" }}>
+                <path d="M1 1 L1 16 L5.5 12 L9 19 L11.5 18 L8 11 L14 11 Z" fill={peer.color} stroke="white" strokeWidth="1.3" strokeLinejoin="round" />
+              </svg>
+              <span className="absolute left-3.5 top-4 rounded-md px-1.5 py-0.5 text-[11px] font-semibold text-white whitespace-nowrap shadow" style={{ background: peer.color }}>
+                {peer.name}
+              </span>
+            </div>
+          ) : null,
+        )}
 
         {/* feedback pins (2026-10-08) — constant screen size, above the nodes */}
         {(pins ?? []).map((p) => {
@@ -3187,10 +3275,10 @@ export function IdeaBoard({
             )}
           </div>
           <div className="h-px bg-white/10 my-1" />
-          <ToolButton title={t("ideaBoard.undo")} onPress={undo} disabled={historySize.undo === 0}>
+          <ToolButton title={t("ideaBoard.undo")} onPress={undo} disabled={historyApi ? !historyApi.canUndo : historySize.undo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
           </ToolButton>
-          <ToolButton title={t("ideaBoard.redo")} onPress={redo} disabled={historySize.redo === 0}>
+          <ToolButton title={t("ideaBoard.redo")} onPress={redo} disabled={historyApi ? !historyApi.canRedo : historySize.redo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
           </ToolButton>
           <input

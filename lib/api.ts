@@ -852,6 +852,11 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // live collaboration (2026-10-08): signed session for wss://subshot.ch/collab
+    boardCollab: (ideaId: string) =>
+      request<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(`ideas/${ideaId}/board/collab`, { method: "POST" }),
+    boardPresign: (ideaId: string, keys: string[]) =>
+      request<{ urls: Record<string, string> }>(`ideas/${ideaId}/board/presign`, { method: "POST", body: JSON.stringify({ keys }) }),
     // GIF maker (2026-10-08): link → source video job, render job, discard
     boardGifLink: (ideaId: string, url: string) =>
       request<{ job_id: string }>(`ideas/${ideaId}/board/gif/link`, { method: "POST", body: JSON.stringify({ url }) }),

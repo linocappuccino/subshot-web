@@ -7,6 +7,7 @@ import { IdeaBoard, type BoardPin } from "./board/IdeaBoard";
 import { authorColor } from "@/lib/authorColor";
 import { subscribeToChanges } from "@/lib/realtime";
 import { forceGifLoop } from "@/lib/gifLoop";
+import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
@@ -333,6 +334,38 @@ function IdeaBoardScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── live collaboration (2026-10-08) ──────────────────────────────────
+  // once the live connection is up, the collab server saves the board; the
+  // REST save below only runs while connecting / if live isn't available
+  const collab = useBoardCollab({
+    enabled: !!board?.data,
+    docKey: idea.id,
+    initial: board?.data ?? null,
+    getSession: () => api.boardCollab(idea.id),
+    presign: async (keys) => (await api.boardPresign(idea.id, keys)).urls,
+  });
+  const collabLive = collab.status === "live" || collab.status === "offline";
+  const summaryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updateSummarySoon = useCallback((data: BoardData) => {
+    if (summaryTimer.current) clearTimeout(summaryTimer.current);
+    summaryTimer.current = setTimeout(() => onUpdated({ ...ideaRef.current, ...boardSummary(data), has_board: true }), 1200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (collab.status !== "live") return;
+    // live now: anything still queued for the REST save is in the shared doc
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    pendingRef.current = null;
+    setSaveState("idle");
+  }, [collab.status]);
+  useEffect(() => {
+    if (collab.remote) {
+      latestRef.current = collab.remote.data;
+      updateSummarySoon(collab.remote.data);
+    }
+  }, [collab.remote, updateSummarySoon]);
+
   const flush = useCallback(async () => {
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
@@ -370,12 +403,18 @@ function IdeaBoardScreen({
   const handleBoardChange = useCallback(
     (data: BoardData) => {
       latestRef.current = data;
+      if (collab.status !== "off") collab.pushLocal(data);
+      if (collabLive) {
+        updateSummarySoon(data);
+        return;
+      }
       pendingRef.current = data;
       setSaveState("dirty");
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => void flush(), 800);
     },
-    [flush],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flush, collab.status, collabLive, collab.pushLocal],
   );
 
   // Leaving this idea (close, previous/next, unmount): save what's pending
@@ -488,7 +527,35 @@ function IdeaBoardScreen({
           placeholder={t("ideaBoard.titlePlaceholder")}
           className="min-w-0 flex-1 bg-transparent text-base sm:text-lg font-semibold outline-none rounded-lg px-2 py-1 focus:bg-white/5 disabled:opacity-100"
         />
-        <span className={`hidden md:inline text-xs whitespace-nowrap ${saveState === "error" ? "text-red-400" : "text-white/40"}`}>{saveLabel}</span>
+        {collabLive ? (
+          <div className="flex items-center gap-2">
+            {collab.peers.length > 0 && (
+              <div className="flex -space-x-1.5" title={collab.peers.map((p) => p.name).join(", ")}>
+                {collab.peers.slice(0, 5).map((p) => (
+                  <span
+                    key={p.clientId}
+                    className="w-7 h-7 rounded-full border-2 border-[#161616] flex items-center justify-center text-[11px] font-bold text-white"
+                    style={{ background: p.color }}
+                  >
+                    {p.name.trim()[0]?.toUpperCase() ?? "?"}
+                  </span>
+                ))}
+                {collab.peers.length > 5 && (
+                  <span className="w-7 h-7 rounded-full border-2 border-[#161616] bg-white/15 flex items-center justify-center text-[10px] font-bold">+{collab.peers.length - 5}</span>
+                )}
+              </div>
+            )}
+            <span
+              className={`hidden md:inline-flex items-center gap-1.5 text-xs whitespace-nowrap ${collab.status === "live" ? "text-emerald-400/90" : "text-amber-300"}`}
+              title={collab.status === "live" ? t("ideaBoard.live.hint") : t("ideaBoard.live.offlineHint")}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${collab.status === "live" ? "bg-emerald-400 animate-pulse" : "bg-amber-300"}`} />
+              {collab.status === "live" ? t("ideaBoard.live.on") : t("ideaBoard.live.offline")}
+            </span>
+          </div>
+        ) : (
+          <span className={`hidden md:inline text-xs whitespace-nowrap ${saveState === "error" ? "text-red-400" : "text-white/40"}`}>{saveLabel}</span>
+        )}
 
         {/* internal review (PL/Admin), unchanged rules from the old card */}
         {(idea.status === "open" || idea.internal_status) && (
@@ -571,6 +638,10 @@ function IdeaBoardScreen({
             initial={board.data}
             editable={board.editable}
             onChange={handleBoardChange}
+            externalData={collab.remote}
+            historyApi={collabLive ? collab.history : undefined}
+            peers={collab.peers}
+            onPresence={collab.setPresence}
             onError={(msg) => toast.showError(msg)}
             onEscape={onClose}
             uploadFile={async (picked, mime, onProgress) => {

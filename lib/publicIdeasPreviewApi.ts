@@ -44,6 +44,19 @@ export const publicIdeasPreviewApi = {
     handle<PublicBoardTodoList[]>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/todo-lists`, { headers: unlockHeaders(unlockToken) })
     ),
+  // live view of the board (2026-10-08) — read-only collab session + URLs for new files
+  boardCollab: (token: string, unlockToken: string | null, ideaId: string) =>
+    handle<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/collab`, { method: "POST", headers: unlockHeaders(unlockToken) })
+    ),
+  boardPresign: (token: string, unlockToken: string | null, ideaId: string, keys: string[]) =>
+    handle<{ urls: Record<string, string> }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/presign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
+        body: JSON.stringify({ keys }),
+      })
+    ),
   // board variant votes (2026-10-08) — the visitor votes under their name
   fetchBoardVotes: (token: string, unlockToken: string | null, ideaId: string) =>
     handle<{ votes: BoardVote[] }>(fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes`, { headers: unlockHeaders(unlockToken) })),

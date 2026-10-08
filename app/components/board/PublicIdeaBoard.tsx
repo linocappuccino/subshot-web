@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
 import type { BoardVote } from "@/lib/board";
+import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
@@ -45,6 +46,14 @@ export function PublicIdeaBoard({
   const [failed, setFailed] = useState(false);
   const [todoLists, setTodoLists] = useState<Record<string, PublicBoardTodoList>>({});
   const [votes, setVotes] = useState<BoardVote[]>([]);
+  // 2026-10-08 — the client watches the board live (read-only)
+  const collab = useBoardCollab({
+    enabled: !!data,
+    docKey: ideaId,
+    initial: data,
+    getSession: () => publicIdeasPreviewApi.boardCollab(token, unlockToken, ideaId),
+    presign: async (keys) => (await publicIdeasPreviewApi.boardPresign(token, unlockToken, ideaId, keys)).urls,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +110,7 @@ export function PublicIdeaBoard({
         onPlacePin={onPlacePin}
         pendingPin={pendingPin}
         focusRequest={focusRequest}
+        externalData={collab.remote}
         votes={votes}
         myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
         onVote={vote}
