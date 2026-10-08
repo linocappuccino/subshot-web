@@ -389,6 +389,7 @@ const translations = {
     "ideaFeedbackPanel.deleteFailed": "Löschen fehlgeschlagen.",
     "ideaFeedbackPanel.markOpen": "Als offen markieren",
     "ideaFeedbackPanel.markDone": "Als erledigt markieren",
+    "ideaFeedbackPanel.showOnBoard": "Auf dem Board zeigen",
 
     // TeamPanel.tsx
     "roles.owner": "Besitzer",
@@ -1040,6 +1041,12 @@ const translations = {
     // der letzte, unveränderliche Schritt (sperrt die Runde sofort nach
     // Bestätigung), der neue Name soll das klarer machen.
     "publicIdeaLightbox.sendFeedback": "Finales Feedback absenden",
+    "publicIdeaLightbox.pinButton": "Pin auf dem Board setzen",
+    "publicIdeaLightbox.pinHint": "Klicke auf die Stelle im Board, zu der du etwas sagen möchtest",
+    "publicIdeaLightbox.pinSet": "Pin gesetzt",
+    "publicIdeaLightbox.pinShow": "anzeigen",
+    "publicIdeaLightbox.pinRemove": "entfernen",
+    "publicIdeaLightbox.pinLocate": "Auf dem Board zeigen",
     "publicIdeaLightbox.enterNameFirst": "Bitte Namen eingeben.",
     "publicIdeaLightbox.confirmSendMessage": "Feedback senden? Damit wird diese Feedbackrunde abgeschlossen — bis zur nächsten Runde kann niemand mehr Kommentare hinzufügen oder bearbeiten.",
     "publicIdeaLightbox.draftSaved": "✓ Entwurf gespeichert.",
@@ -1452,6 +1459,7 @@ const translations = {
     "ideaFeedbackPanel.deleteFailed": "Delete failed.",
     "ideaFeedbackPanel.markOpen": "Mark as open",
     "ideaFeedbackPanel.markDone": "Mark as done",
+    "ideaFeedbackPanel.showOnBoard": "Show on board",
 
     "roles.owner": "Owner",
     "teamPanel.invitePerson": "Invite person",
@@ -2094,6 +2102,12 @@ const translations = {
     "publicIdeaLightbox.highlightCommentPlaceholder": "Comment (required) — Enter to save, Shift+Enter for a new line",
     "publicIdeaLightbox.saveFeedback": "Save feedback",
     "publicIdeaLightbox.sendFeedback": "Submit final feedback",
+    "publicIdeaLightbox.pinButton": "Pin on the board",
+    "publicIdeaLightbox.pinHint": "Click the spot on the board you want to comment on",
+    "publicIdeaLightbox.pinSet": "Pin placed",
+    "publicIdeaLightbox.pinShow": "show",
+    "publicIdeaLightbox.pinRemove": "remove",
+    "publicIdeaLightbox.pinLocate": "Show on the board",
     "publicIdeaLightbox.enterNameFirst": "Please enter your name.",
     "publicIdeaLightbox.confirmSendMessage": "Send feedback? This closes the current feedback round — no one will be able to add or edit comments until the next round.",
     "publicIdeaLightbox.draftSaved": "✓ Draft saved.",

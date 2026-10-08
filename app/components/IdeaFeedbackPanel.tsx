@@ -29,7 +29,13 @@ function formatEntryDate(iso: string): string {
  * scrollable list), this panel only ever shows/manages feedback. */
 export function IdeaFeedbackPanel({
   idea, onAllResolvedChange, annotations = [], highlightedAnnotationId = null, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated, canDeleteComments = false,
+  onFeedbackChange, onLocate,
 }: {
+  /** 2026-10-08 — Feedback-Pins: the board shows a pin for every pinned
+   * comment, so the board's owner needs this panel's (live) list too. */
+  onFeedbackChange?: (feedback: IdeaFeedback[]) => void;
+  /** 2026-10-08 — "📍" on a pinned comment: zoom the board to its node. */
+  onLocate?: (feedback: IdeaFeedback) => void;
   idea: Idea;
   /** 2026-07-18, Lino: "man kann erst Abgenommen drücken wenn man alle
    * Kommentare abgehackt hat. ansonsten kommt eine Meldung" — this panel
@@ -151,6 +157,11 @@ export function IdeaFeedbackPanel({
       .sort((a, b) => a[0] - b[0]);
   }, [feedback, highlightComments]);
 
+  useEffect(() => {
+    onFeedbackChange?.(feedback);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [feedback]);
+
   function updateOne(updated: IdeaFeedback) {
     setFeedback((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
   }
@@ -189,6 +200,7 @@ export function IdeaFeedbackPanel({
             ideaId={idea.id}
             onUpdated={updateOne}
             onDeleted={deleteOne}
+            onLocate={onLocate}
             canDeleteComments={canDeleteComments}
             highlightedAnnotationId={highlightedAnnotationId}
             onDeleteAnnotation={onDeleteAnnotation}
@@ -207,8 +219,9 @@ export function IdeaFeedbackPanel({
  * per-ROUND per 2026-07-18's follow-up spec). Defaults open, click the
  * title row to collapse/expand the whole round. */
 function FeedbackRound({
-  round, entries, ideaId, onUpdated, onDeleted, canDeleteComments, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated,
+  round, entries, ideaId, onUpdated, onDeleted, canDeleteComments, highlightedAnnotationId, onDeleteAnnotation, onSelectAnnotation, onAnnotationUpdated, onLocate,
 }: {
+  onLocate?: (feedback: IdeaFeedback) => void;
   round: number;
   entries: RoundEntry[];
   ideaId: string;
@@ -261,6 +274,7 @@ function FeedbackRound({
                   onUpdated={onUpdated}
                   onDeleted={canDeleteComments ? onDeleted : undefined}
                   highlighted={highlightedAnnotationId === entry.feedback.id}
+                  onLocate={onLocate}
                 />
               );
             }
@@ -381,8 +395,10 @@ function HighlightEntry({
  * die Kommentare abhacken können um sie abarbeiten zu können, sie werden
  * dann durchgestrichen dargestellt"). */
 function FeedbackEntry({
-  feedback, ideaId, onUpdated, onDeleted, highlighted = false,
+  feedback, ideaId, onUpdated, onDeleted, highlighted = false, onLocate,
 }: {
+  /** 2026-10-08 — Feedback-Pins: shown as "📍" on a pinned comment */
+  onLocate?: (feedback: IdeaFeedback) => void;
   feedback: IdeaFeedback;
   ideaId: string;
   onUpdated: (feedback: IdeaFeedback) => void;
@@ -473,6 +489,15 @@ function FeedbackEntry({
           {formatEntryDate(feedback.created_at)}
           {feedback.resolved && feedback.resolved_by_name && (
             <span className="ml-1.5">· ✓ {feedback.resolved_by_name}</span>
+          )}
+          {onLocate && feedback.board_element_id && (
+            <button
+              type="button"
+              onClick={() => onLocate(feedback)}
+              className="ml-2 inline-flex items-center gap-1 rounded-md bg-white/10 hover:bg-white/20 px-1.5 py-px text-[11px] text-white/75 hover:text-white"
+            >
+              📍 {t("ideaFeedbackPanel.showOnBoard")}
+            </button>
           )}
         </p>
       </div>

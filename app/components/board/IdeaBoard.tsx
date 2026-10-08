@@ -73,6 +73,9 @@ type Point = { x: number; y: number };
 
 export type BoardUploadFn = (file: File, mime: string, onProgress: (fraction: number) => void) => Promise<{ key: string; src: string }>;
 export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
+/** 2026-10-08, Lino: Feedback-Pins — a comment pinned to a spot on a node */
+export type BoardPin = { id: string; elementId: string; x: number; y: number; color: string; label: string; resolved?: boolean; active?: boolean; title?: string };
+export type BoardPinAnchor = { elementId: string; x: number; y: number };
 export type BoardLocationMapFn = (lat: number, lng: number) => Promise<{ key: string; src: string }>;
 export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
@@ -282,6 +285,12 @@ export function IdeaBoard({
   generateImage,
   createLocationMap,
   extractPalette,
+  pins,
+  onPinClick,
+  pinPlacing = false,
+  onPlacePin,
+  pendingPin,
+  focusRequest,
   onError,
   onEscape,
   className = "",
@@ -297,6 +306,16 @@ export function IdeaBoard({
   createLocationMap?: BoardLocationMapFn;
   /** palette card from an image: the image's dominant colors */
   extractPalette?: BoardPaletteFn;
+  /** feedback pins shown on their nodes (team board and client preview) */
+  pins?: BoardPin[];
+  onPinClick?: (id: string) => void;
+  /** pin mode: the next click on a node places a pin there (works read-only) */
+  pinPlacing?: boolean;
+  onPlacePin?: (anchor: BoardPinAnchor) => void;
+  /** the pin being composed, before it's saved */
+  pendingPin?: (BoardPinAnchor & { color?: string }) | null;
+  /** zoom to a node (e.g. clicking a pinned comment in the sidebar) */
+  focusRequest?: { elementId: string; nonce: number } | null;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -484,6 +503,20 @@ export function IdeaBoard({
   );
 
   const fitToContent = useCallback(() => zoomToRect(boundsOf(dataRef.current.elements)), [zoomToRect]);
+
+  // "zoom to the commented node" (Feedback-Pins): frame it and let it light up
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const els = dataRef.current.elements;
+    const groupId = hiddenElementIds(els).get(focusRequest.elementId);
+    const el = els.find((x) => x.id === (groupId ?? focusRequest.elementId));
+    if (!el) return;
+    zoomToRect(el, { animate: true, maxScale: 1.25, pad: 140 });
+    setFlash(focusRequest.elementId);
+    const timer = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(timer);
+  }, [focusRequest, zoomToRect]);
 
   useLayoutEffect(() => {
     fitToContent();
@@ -1207,6 +1240,17 @@ export function IdeaBoard({
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-board-ui]")) return;
+    // pin mode: a click on a node places the feedback pin at that spot
+    if (pinPlacing && onPlacePin && e.button === 0 && pointers.current.size === 0) {
+      const node = target.closest<HTMLElement>("[data-el-id]");
+      const el = node ? dataRef.current.elements.find((x) => x.id === node.dataset.elId) : null;
+      if (el && el.type !== "drawing") {
+        const w = toWorld(e.clientX, e.clientY);
+        e.preventDefault();
+        onPlacePin({ elementId: el.id, x: clamp((w.x - el.x) / Math.max(1, el.w), 0, 1), y: clamp((w.y - el.y) / Math.max(1, el.h), 0, 1) });
+        return;
+      }
+    }
     if (menu) setMenu(null);
     if (target.closest("[contenteditable='true'], input, textarea")) return;
     // the empty inside of an open group's (blurred) frame acts like the empty board
@@ -1951,10 +1995,20 @@ export function IdeaBoard({
   const editingEl = editingId ? byId.get(editingId) : null;
   const showEmptyHint = editable && data.elements.length === 0 && pending.length === 0;
 
+  // where a pin sits in world space — on its node, or on the collapsed
+  // group's card while the node is folded away
+  function pinPoint(elementId: string, x: number, y: number): Point | null {
+    const groupId = hidden.get(elementId);
+    const el = byId.get(groupId ?? elementId);
+    if (!el) return null;
+    if (groupId) return { x: el.x + el.w - 18, y: el.y + 10 };
+    return { x: el.x + x * el.w, y: el.y + y * el.h };
+  }
+
   return (
     <div
       ref={viewportRef}
-      className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
+      className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${pinPlacing ? "cursor-crosshair [&_*]:!cursor-crosshair" : ""} ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
       style={{
         backgroundColor: "#161616",
         backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.09) ${dot}px, transparent ${dot + 0.6}px)`,
@@ -2148,6 +2202,50 @@ export function IdeaBoard({
             </div>
           );
         })}
+
+        {/* feedback pins (2026-10-08) — constant screen size, above the nodes */}
+        {(pins ?? []).map((p) => {
+          const pt = pinPoint(p.elementId, p.x, p.y);
+          if (!pt) return null;
+          return (
+            <button
+              key={p.id}
+              data-board-ui
+              data-pin-id={p.id}
+              title={p.title}
+              onClick={() => onPinClick?.(p.id)}
+              className="absolute"
+              style={{ left: pt.x, top: pt.y, zIndex: p.active ? 99500 : 99000, transform: `translate(-50%, -100%) scale(${1 / view.scale})`, transformOrigin: "50% 100%" }}
+            >
+              <span
+                className={`flex items-center justify-center w-7 h-7 rounded-full rounded-br-none rotate-45 border-2 shadow-lg transition-transform ${p.active ? "scale-125 border-white" : "border-white/80 hover:scale-110"} ${p.resolved ? "opacity-45" : ""}`}
+                style={{ background: p.color }}
+              >
+                <span className="-rotate-45 text-[11px] font-bold text-white leading-none">{p.resolved ? "✓" : p.label}</span>
+              </span>
+            </button>
+          );
+        })}
+        {pendingPin && (() => {
+          const pt = pinPoint(pendingPin.elementId, pendingPin.x, pendingPin.y);
+          if (!pt) return null;
+          return (
+            <div className="absolute pointer-events-none" style={{ left: pt.x, top: pt.y, zIndex: 99600, transform: `translate(-50%, -100%) scale(${1 / view.scale})`, transformOrigin: "50% 100%" }}>
+              <span className="flex items-center justify-center w-7 h-7 rounded-full rounded-br-none rotate-45 border-2 border-white shadow-lg animate-pulse" style={{ background: pendingPin.color ?? "#3b82f6" }}>
+                <span className="-rotate-45 text-xs text-white leading-none">+</span>
+              </span>
+            </div>
+          );
+        })()}
+        {flash && byId.get(hidden.get(flash) ?? flash) && (() => {
+          const el = byId.get(hidden.get(flash) ?? flash)!;
+          return (
+            <div
+              className="absolute pointer-events-none rounded-[12px] subshot-pin-flash"
+              style={{ left: el.x - 6 / view.scale, top: el.y - 6 / view.scale, width: el.w + 12 / view.scale, height: el.h + 12 / view.scale, border: `${3 / view.scale}px solid #f59e0b`, zIndex: 98900 }}
+            />
+          );
+        })()}
 
         {pending.map((p) => (
           <div

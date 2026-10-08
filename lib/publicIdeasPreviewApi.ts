@@ -1,4 +1,4 @@
-import type { SharedIdeasPreviewData, IdeaFeedback, IdeaFeedbackSendResult, Annotation } from "./types";
+import type { SharedIdeasPreviewData, IdeaFeedback, IdeaFeedbackSendResult, Annotation, FeedbackPinAnchor } from "./types";
 import { ApiError } from "./api";
 import type { BoardResponse, PublicBoardTodoList } from "./board";
 
@@ -51,12 +51,12 @@ export const publicIdeasPreviewApi = {
 
   // "Feedback speichern" — always inserts a fresh 'draft' row (never
   // upserts), still editable/deletable afterward via deleteFeedback below.
-  saveFeedback: (token: string, unlockToken: string | null, ideaId: string, authorName: string, comment: string) =>
+  saveFeedback: (token: string, unlockToken: string | null, ideaId: string, authorName: string, comment: string, pin?: FeedbackPinAnchor | null) =>
     handle<IdeaFeedback>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/feedback-json`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
-        body: JSON.stringify({ author_name: authorName, comment }),
+        body: JSON.stringify({ author_name: authorName, comment, ...(pin ?? {}) }),
       })
     ),
 
@@ -64,12 +64,12 @@ export const publicIdeasPreviewApi = {
   // author name to 'sent' (plus one new 'sent' row if `comment` is
   // non-empty), bumps feedback_round once. Returns the idea's whole
   // refreshed feedback list, not just a delta.
-  sendFeedback: (token: string, unlockToken: string | null, ideaId: string, authorName: string, comment: string) =>
+  sendFeedback: (token: string, unlockToken: string | null, ideaId: string, authorName: string, comment: string, pin?: FeedbackPinAnchor | null) =>
     handle<IdeaFeedbackSendResult>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/feedback/send-json`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
-        body: JSON.stringify({ author_name: authorName, comment }),
+        body: JSON.stringify({ author_name: authorName, comment, ...(comment.trim() && pin ? pin : {}) }),
       })
     ),
 

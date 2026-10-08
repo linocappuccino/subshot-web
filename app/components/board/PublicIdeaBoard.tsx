@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IdeaBoard } from "./IdeaBoard";
+import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
@@ -10,7 +10,28 @@ import type { BoardData, PublicBoardTodoList } from "@/lib/board";
 /** 2026-10-08, Lino: "Board nur ansehen" — the client preview shows an idea's
  * board read-only (pan/zoom, play media, open links), in place of the old
  * slideshow + text, for every idea that has a board. */
-export function PublicIdeaBoard({ token, unlockToken, ideaId }: { token: string; unlockToken: string | null; ideaId: string }) {
+export function PublicIdeaBoard({
+  token,
+  unlockToken,
+  ideaId,
+  pins,
+  onPinClick,
+  pinPlacing,
+  onPlacePin,
+  pendingPin,
+  focusRequest,
+}: {
+  token: string;
+  unlockToken: string | null;
+  ideaId: string;
+  /** 2026-10-08 — Feedback-Pins (see PublicIdeaLightbox) */
+  pins?: BoardPin[];
+  onPinClick?: (id: string) => void;
+  pinPlacing?: boolean;
+  onPlacePin?: (anchor: BoardPinAnchor) => void;
+  pendingPin?: (BoardPinAnchor & { color?: string }) | null;
+  focusRequest?: { elementId: string; nonce: number } | null;
+}) {
   const { t } = useLanguage();
   const [data, setData] = useState<BoardData | null>(null);
   const [failed, setFailed] = useState(false);
@@ -40,7 +61,18 @@ export function PublicIdeaBoard({ token, unlockToken, ideaId }: { token: string;
   }
   return (
     <BoardTodoContext.Provider value={{ publicLists: todoLists }}>
-      <IdeaBoard key={ideaId} className="absolute inset-0" initial={data} editable={false} />
+      <IdeaBoard
+        key={ideaId}
+        className="absolute inset-0"
+        initial={data}
+        editable={false}
+        pins={pins}
+        onPinClick={onPinClick}
+        pinPlacing={pinPlacing}
+        onPlacePin={onPlacePin}
+        pendingPin={pendingPin}
+        focusRequest={focusRequest}
+      />
     </BoardTodoContext.Provider>
   );
 }

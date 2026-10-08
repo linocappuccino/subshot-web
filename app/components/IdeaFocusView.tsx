@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
-import { IdeaBoard } from "./board/IdeaBoard";
+import { IdeaBoard, type BoardPin } from "./board/IdeaBoard";
+import { authorColor } from "@/lib/authorColor";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
@@ -12,7 +13,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 import { coverSrcOf, forSave, type BoardData } from "@/lib/board";
-import type { Annotation, Idea, Member, TodoList } from "@/lib/types";
+import type { Annotation, Idea, IdeaFeedback, Member, TodoList } from "@/lib/types";
 
 /** Full-screen view for one idea at a time, opened from a tile or "+ Idee" in
  * the overview (IdeaGrid, unchanged). 2026-10-08, Lino: the old title/text/
@@ -174,6 +175,25 @@ function IdeaBoardScreen({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [title, setTitle] = useState(idea.title);
   const [feedbackOpen, setFeedbackOpen] = useState(!!highlightedAnnotationId);
+  // 2026-10-08, Lino: Feedback-Pins — pinned client comments show on the
+  // board; a pin opens its comment in the sidebar, "📍" in the sidebar zooms
+  // the board to the node
+  const [feedbackList, setFeedbackList] = useState<IdeaFeedback[]>([]);
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
+  const boardPins: BoardPin[] = feedbackList
+    .filter((f) => f.board_element_id && f.pin_x != null && f.pin_y != null && f.comment)
+    .map((f) => ({
+      id: f.id,
+      elementId: f.board_element_id!,
+      x: f.pin_x!,
+      y: f.pin_y!,
+      color: authorColor(f.author_name),
+      label: (f.author_name.trim()[0] ?? "?").toUpperCase(),
+      resolved: f.resolved,
+      active: f.id === activePinId,
+      title: `${f.author_name}: ${f.comment}`,
+    }));
   const [allFeedbackResolved, setAllFeedbackResolved] = useState(true);
   const [busy, setBusy] = useState<null | "approve" | "reject" | "internalApprove" | "internalReject" | "delete">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -539,6 +559,12 @@ function IdeaBoardScreen({
               return { key: ticket.key, src: ticket.url };
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
+            pins={boardPins}
+            onPinClick={(id) => {
+              setActivePinId(id);
+              setFeedbackOpen(true);
+            }}
+            focusRequest={pinFocus}
             createLocationMap={async (lat, lng) => {
               const r = await api.boardLocationMap(idea.id, lat, lng);
               return { key: r.key, src: r.url };
@@ -584,10 +610,18 @@ function IdeaBoardScreen({
               idea={idea}
               onAllResolvedChange={setAllFeedbackResolved}
               annotations={annotations}
-              highlightedAnnotationId={highlightedAnnotationId}
+              highlightedAnnotationId={activePinId ?? highlightedAnnotationId}
               onDeleteAnnotation={onDeleteAnnotation}
               onAnnotationUpdated={onAnnotationUpdated}
               canDeleteComments={canDeleteComments}
+              onFeedbackChange={setFeedbackList}
+              onLocate={(f) => {
+                if (!f.board_element_id) return;
+                setActivePinId(f.id);
+                setPinFocus({ elementId: f.board_element_id, nonce: Date.now() });
+                // on a phone the drawer covers the board — get it out of the way
+                if (window.innerWidth < 640) setFeedbackOpen(false);
+              }}
             />
             {idea.feedback_count === 0 && <p className="text-sm text-white/40 mt-5">{t("ideaBoard.noFeedback")}</p>}
           </div>

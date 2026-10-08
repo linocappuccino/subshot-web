@@ -570,6 +570,18 @@ export interface IdeaFeedback {
   /** 2026-07-26 (#330) — wer resolved auf true gesetzt hat, null solange
    * unresolved oder für alte Zeilen vor diesem Feld. */
   resolved_by_name: string | null;
+  /** 2026-10-08 — Feedback-Pin: the board node this comment is pinned to and
+   * the spot on it (0..1 of the node's width/height); null = plain comment. */
+  board_element_id?: string | null;
+  pin_x?: number | null;
+  pin_y?: number | null;
+}
+
+/** Feedback-Pin anchor while composing (board node + spot on it). */
+export interface FeedbackPinAnchor {
+  board_element_id: string;
+  pin_x: number;
+  pin_y: number;
 }
 
 /** Response shape of GET /share/{token}/ideas-preview (#262) — the public

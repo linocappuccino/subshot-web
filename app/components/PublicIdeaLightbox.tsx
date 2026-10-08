@@ -12,6 +12,7 @@ import { useLanguage } from "@/lib/i18n";
 import { wrapHighlights, wrapHighlightsInHtml, PENDING_ANNOTATION_ID } from "./PublicHighlightedText";
 import { isIdeaFeedbackLocked } from "@/lib/ideaFeedbackLock";
 import type { IdeaPreview, IdeaFeedback, Annotation } from "@/lib/types";
+import type { BoardPin, BoardPinAnchor } from "./board/IdeaBoard";
 
 const NAME_KEY = "subshotPreviewVisitorName";
 const SLIDESHOW_INTERVAL_MS = 4000;
@@ -114,6 +115,37 @@ export function PublicIdeaLightbox({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "saved" | "sent" | "deleted" | "error"; text: string } | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 2026-10-08, Lino: Feedback-Pins — pin a comment to a spot on a board node
+  const [pinPlacing, setPinPlacing] = useState(false);
+  const [pendingPin, setPendingPin] = useState<BoardPinAnchor | null>(null);
+  const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
+  const [activePinId, setActivePinId] = useState<string | null>(null);
+  const commentRef = useRef<HTMLTextAreaElement>(null);
+  const pinAnchor = pendingPin ? { board_element_id: pendingPin.elementId, pin_x: pendingPin.x, pin_y: pendingPin.y } : null;
+  const boardPins: BoardPin[] = idea.feedback
+    .filter((f) => f.board_element_id && f.pin_x != null && f.pin_y != null && f.comment)
+    .map((f) => ({
+      id: f.id,
+      elementId: f.board_element_id!,
+      x: f.pin_x!,
+      y: f.pin_y!,
+      color: authorColor(f.author_name),
+      label: (f.author_name.trim()[0] ?? "?").toUpperCase(),
+      resolved: f.resolved,
+      active: f.id === activePinId,
+      title: `${f.author_name}: ${f.comment}`,
+    }));
+
+  function locateFeedback(f: IdeaFeedback) {
+    if (!f.board_element_id) return;
+    setActivePinId(f.id);
+    setPinFocus({ elementId: f.board_element_id, nonce: Date.now() });
+  }
+
+  function onBoardPinClick(id: string) {
+    setActivePinId(id);
+    requestAnimationFrame(() => document.querySelector(`[data-feedback-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }
 
   useEffect(() => {
     setSlideIndex(0);
@@ -159,10 +191,11 @@ export function PublicIdeaLightbox({
     if (!authorName.trim() || !comment.trim() || saving) return;
     setSaving(true);
     try {
-      const created = await publicIdeasPreviewApi.saveFeedback(token, unlockToken, idea.id, authorName.trim(), comment.trim());
+      const created = await publicIdeasPreviewApi.saveFeedback(token, unlockToken, idea.id, authorName.trim(), comment.trim(), pinAnchor);
       onIdeaUpdated({ ...idea, feedback: [...idea.feedback, created] });
       persistName(authorName.trim());
       setComment("");
+      setPendingPin(null);
       showNotice("saved", t("publicIdeaLightbox.draftSaved"));
     } catch (e) {
       showNotice("error", e instanceof ApiError ? e.message : t("publicIdeaLightbox.saveFailed"));
@@ -189,10 +222,11 @@ export function PublicIdeaLightbox({
     if (!authorName.trim() || sending) return;
     setSending(true);
     try {
-      const result = await publicIdeasPreviewApi.sendFeedback(token, unlockToken, idea.id, authorName.trim(), comment.trim());
+      const result = await publicIdeasPreviewApi.sendFeedback(token, unlockToken, idea.id, authorName.trim(), comment.trim(), pinAnchor);
       onIdeaUpdated({ ...idea, feedback: result.feedback, feedback_round: result.feedback_round, round_advance_pending: result.round_advance_pending });
       persistName(authorName.trim());
       setComment("");
+      if (comment.trim()) setPendingPin(null);
       setConfirmingSend(false);
       showNotice("sent", t("publicIdeaLightbox.feedbackSent"));
     } catch (e) {
@@ -341,7 +375,27 @@ export function PublicIdeaLightbox({
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
           {idea.has_board ? (
             <div className="relative w-full md:flex-1 min-h-[60vh] md:min-h-0 mx-0 md:ml-8 mb-4 md:mb-8 rounded-2xl overflow-hidden border border-white/10">
-              <PublicIdeaBoard token={token} unlockToken={unlockToken} ideaId={idea.id} />
+              <PublicIdeaBoard
+                token={token}
+                unlockToken={unlockToken}
+                ideaId={idea.id}
+                pins={boardPins}
+                onPinClick={onBoardPinClick}
+                pinPlacing={pinPlacing}
+                onPlacePin={(anchor) => {
+                  setPendingPin(anchor);
+                  setPinPlacing(false);
+                  requestAnimationFrame(() => commentRef.current?.focus());
+                }}
+                pendingPin={pendingPin ? { ...pendingPin, color: authorColor(authorName.trim() || "?") } : null}
+                focusRequest={pinFocus}
+              />
+              {pinPlacing && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-blue-600 text-white text-xs font-semibold pl-3.5 pr-1.5 py-1.5 shadow-xl">
+                  📍 {t("publicIdeaLightbox.pinHint")}
+                  <button onClick={() => setPinPlacing(false)} className="w-6 h-6 rounded-full bg-white/20 hover:bg-white/30">×</button>
+                </div>
+              )}
             </div>
           ) : (
           <div className="w-full md:w-[46%] shrink-0 overflow-visible md:overflow-y-auto px-8 pb-4 md:pb-8 flex flex-col gap-3">
@@ -515,6 +569,8 @@ export function PublicIdeaLightbox({
                     onDeleteAnnotation={round === composeRound && !locked ? onDeleteAnnotation : undefined}
                     onDeleteDraft={handleDelete}
                     deletingDraftId={deletingId}
+                    onLocate={idea.has_board ? locateFeedback : undefined}
+                    activeFeedbackId={activePinId}
                     // 2026-07-31, Lino: "macht man einen markierten Kommentar
                     // und danach einen normalen, sehen die unterschiedlich
                     // aus... (noch nicht abgesendete Kommentare)" — a
@@ -624,7 +680,30 @@ export function PublicIdeaLightbox({
                       draft-save action itself stays: "das Zwischenspeichern
                       soll über die Enter Taste passieren" (Shift+Enter still
                       makes a line break, matching the placeholder hint). */}
+                  {idea.has_board && (
+                    pendingPin ? (
+                      <div className="flex items-center gap-2 text-xs rounded-[10px] bg-blue-500/15 border border-blue-500/30 text-blue-200 px-3 py-2">
+                        <span>📍 {t("publicIdeaLightbox.pinSet")}</span>
+                        <button onClick={() => setPinFocus({ elementId: pendingPin.elementId, nonce: Date.now() })} className="underline underline-offset-2 hover:text-white">
+                          {t("publicIdeaLightbox.pinShow")}
+                        </button>
+                        <div className="flex-1" />
+                        <button onClick={() => setPendingPin(null)} className="text-blue-200/70 hover:text-white">
+                          {t("publicIdeaLightbox.pinRemove")}
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setPinPlacing((v) => !v)}
+                        className={`self-start flex items-center gap-1.5 text-xs font-semibold rounded-[10px] px-3 py-2 transition-colors ${pinPlacing ? "bg-blue-600 text-white" : "bg-white/[0.06] border border-white/[0.12] text-white/75 hover:text-white"}`}
+                      >
+                        📍 {t("publicIdeaLightbox.pinButton")}
+                      </button>
+                    )
+                  )}
                   <textarea
+                    ref={commentRef}
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     onKeyDown={(e) => {
@@ -709,8 +788,11 @@ export function PublicIdeaLightbox({
  * list below. */
 function FeedbackRoundBlock({
   round, entries, defaultExpanded = true, onSelectAnnotation, highlightedAnnotationId, hoveredAnnotationId, onDeleteAnnotation,
-  onDeleteDraft, deletingDraftId, pendingHighlightRound = false,
+  onDeleteDraft, deletingDraftId, pendingHighlightRound = false, onLocate, activeFeedbackId = null,
 }: {
+  /** 2026-10-08 — Feedback-Pins: zoom the board to a pinned comment's node */
+  onLocate?: (feedback: IdeaFeedback) => void;
+  activeFeedbackId?: string | null;
   round: number;
   entries: RoundEntry[];
   /** 2026-07-27, Lino: a previous (not-current) round starts collapsed for
@@ -747,6 +829,22 @@ function FeedbackRoundBlock({
   // collapse the moment `defaultExpanded` flips true→false (current→past),
   // without fighting a manual expand/collapse click while it's genuinely
   // still current.
+  // a pin clicked on the board opens the round that holds its comment
+  useEffect(() => {
+    if (activeFeedbackId && entries.some((e) => e.kind !== "highlight" && e.feedback.id === activeFeedbackId)) setExpanded(true);
+  }, [activeFeedbackId, entries]);
+  const pinButton = (f: IdeaFeedback) =>
+    onLocate && f.board_element_id ? (
+      <button
+        type="button"
+        onClick={() => onLocate(f)}
+        title={t("publicIdeaLightbox.pinLocate")}
+        aria-label={t("publicIdeaLightbox.pinLocate")}
+        className="ml-1.5 inline-flex items-center rounded-md bg-white/10 hover:bg-white/20 px-1.5 text-[11px] align-middle"
+      >
+        📍
+      </button>
+    ) : null;
   const wasCurrent = useRef(defaultExpanded);
   useEffect(() => {
     if (wasCurrent.current && !defaultExpanded) setExpanded(false);
@@ -775,9 +873,15 @@ function FeedbackRoundBlock({
             if (entry.kind === "feedback") {
               const f = entry.feedback;
               return (
-                <div key={f.id} className="relative border-l-2 pl-2.5 pr-6" style={{ borderLeftColor: authorColor(f.author_name) }}>
+                <div
+                  key={f.id}
+                  data-feedback-id={f.id}
+                  className={`relative border-l-2 pl-2.5 pr-6 rounded-r-md transition-colors ${activeFeedbackId === f.id ? "bg-blue-500/[0.12]" : ""}`}
+                  style={{ borderLeftColor: authorColor(f.author_name) }}
+                >
                   <p className="text-sm text-white/90 whitespace-pre-line">
                     <span style={{ color: authorColor(f.author_name) }} className="font-bold">{f.author_name}:</span> {f.comment}
+                    {pinButton(f)}
                   </p>
                   <p className="text-[11px] text-white/35 mt-0.5">{formatEntryDate(f.created_at)}</p>
                 </div>
@@ -790,13 +894,20 @@ function FeedbackRoundBlock({
               // top-of-component doc comment on why).
               const f = entry.feedback;
               return (
-                <div key={f.id} className="bg-white/[0.03] border border-dashed border-white/20 rounded-xl px-3 py-2.5">
+                <div
+                  key={f.id}
+                  data-feedback-id={f.id}
+                  className={`border border-dashed rounded-xl px-3 py-2.5 transition-colors ${activeFeedbackId === f.id ? "bg-blue-500/[0.12] border-blue-400/50" : "bg-white/[0.03] border-white/20"}`}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-[11px] font-semibold" style={{ color: authorColor(f.author_name) }}>
                         {f.author_name} <span className="text-white/35 font-normal">{t("publicIdeaLightbox.draftLabel")}</span>
                       </p>
-                      <p className="text-[13.5px] text-[#e5e5e5] whitespace-pre-line mt-1">{f.comment}</p>
+                      <p className="text-[13.5px] text-[#e5e5e5] whitespace-pre-line mt-1">
+                        {f.comment}
+                        {pinButton(f)}
+                      </p>
                       <p className="text-[11px] text-white/35 mt-0.5">{formatEntryDate(f.created_at)}</p>
                     </div>
                     {onDeleteDraft && (
