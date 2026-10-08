@@ -38,6 +38,8 @@ import {
   type StickyElement,
   type StickyColor,
   type BoardVote,
+  type MoodboardElement,
+  type MoodboardItem,
   tagColor,
   type ColorElement,
   STICKY_COLORS,
@@ -50,6 +52,7 @@ import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
+import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -302,6 +305,7 @@ export function IdeaBoard({
   votes,
   myVoterKey,
   onVote,
+  gifMaker,
   onError,
   onEscape,
   className = "",
@@ -332,6 +336,8 @@ export function IdeaBoard({
   /** whose vote is "mine" (highlighted) — "user:<id>" or "name:<name>" */
   myVoterKey?: string | null;
   onVote?: (groupId: string, elementId: string) => void;
+  /** GIF maker (video link/upload → ≤3 s GIF image on the board) */
+  gifMaker?: BoardGifApi;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -678,6 +684,88 @@ export function IdeaBoard({
     setTool("select");
     editingStartHtml.current = "";
     setEditingId(el.id);
+  }
+
+  // ── GIF maker (2026-10-08) ────────────────────────────────────────────
+  const [gifAt, setGifAt] = useState<Point | null>(null);
+  function addGif(gif: { key: string; src: string; w: number; h: number }) {
+    const at = gifAt ?? viewportCenterWorld();
+    setGifAt(null);
+    const w = Math.min(360, gif.w);
+    const h = Math.round((w * gif.h) / Math.max(1, gif.w));
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: MediaElement = { id: newId(), type: "image", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, asset_key: gif.key, src: gif.src, name: "clip.gif", mime: "image/gif" };
+    addElements([el]);
+    setSelection(new Set([el.id]));
+  }
+
+  // ── moodboard cards (2026-10-08) ──────────────────────────────────────
+  const moodboardInputRef = useRef<HTMLInputElement>(null);
+  const moodboardTarget = useRef<string | null>(null);
+  const [moodboardBusy, setMoodboardBusy] = useState<Record<string, number>>({});
+
+  function addMoodboard(at: Point) {
+    const w = 528;
+    const spot = place(at.x - w / 2, at.y - 160, w, 320, true);
+    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h: 320, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [] };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+    pickMoodboardImages(el.id);
+  }
+
+  function pickMoodboardImages(id: string) {
+    moodboardTarget.current = id;
+    moodboardInputRef.current?.click();
+  }
+
+  /** a new image's default span from its shape: wide → 2×1, tall → 1×2 */
+  function spanFor(size: { w: number; h: number } | null, cols: number): { w: number; h: number } {
+    const r = size && size.h ? size.w / size.h : 1;
+    if (r > 1.5) return { w: Math.min(2, cols), h: 1 };
+    if (r < 0.7) return { w: 1, h: 2 };
+    return { w: 1, h: 1 };
+  }
+
+  function appendMoodboardItems(id: string, add: MoodboardItem[]) {
+    if (!add.length) return;
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => (el.id === id && el.type === "moodboard" ? { ...el, items: [...el.items, ...add].slice(0, 60) } : el)),
+    }));
+  }
+
+  async function addMoodboardFiles(id: string, files: File[]) {
+    const images = files.filter((f) => guessMime(f).startsWith("image/"));
+    if (!images.length || !uploadFile) return;
+    setMoodboardBusy((b) => ({ ...b, [id]: (b[id] ?? 0) + images.length }));
+    await Promise.all(
+      images.map(async (file) => {
+        try {
+          const mime = guessMime(file);
+          const [size, up] = await Promise.all([mediaSize(file, "image"), uploadFile(file, mime, () => {})]);
+          const mb = dataRef.current.elements.find((e) => e.id === id);
+          const cols = mb?.type === "moodboard" ? mb.cols : 3;
+          appendMoodboardItems(id, [{ id: newId(), asset_key: up.key, src: up.src, name: file.name, mime, ...spanFor(size, cols) }]);
+        } catch {
+          onError?.(t("ideaBoard.uploadFailed", { name: file.name }));
+        } finally {
+          setMoodboardBusy((b) => ({ ...b, [id]: Math.max(0, (b[id] ?? 1) - 1) }));
+        }
+      }),
+    );
+  }
+
+  function setMoodboardItems(id: string, items: MoodboardItem[]) {
+    updateElement(id, { items } as Partial<MoodboardElement>, { history: true });
+  }
+
+  function setMoodboardCols(id: string, delta: number) {
+    const mb = dataRef.current.elements.find((e) => e.id === id);
+    if (!mb || mb.type !== "moodboard") return;
+    const cols = Math.max(1, Math.min(8, mb.cols + delta));
+    if (cols === mb.cols) return;
+    updateElement(id, { cols, items: mb.items.map((it) => ({ ...it, w: Math.min(it.w, cols) })) } as Partial<MoodboardElement>, { history: true });
   }
 
   function setStickyColor(color: StickyColor) {
@@ -1375,6 +1463,10 @@ export function IdeaBoard({
       setEditingId(el.id);
       return;
     }
+    if (el.type === "moodboard" && editable) {
+      setSelection(new Set([el.id]));
+      return;
+    }
     if ((el.type === "palette" || el.type === "location" || el.type === "color") && editable) {
       setSelection(new Set([el.id]));
       setCardEditor({ kind: el.type, id: el.id, at: { x: el.x, y: el.y } });
@@ -1761,6 +1853,34 @@ export function IdeaBoard({
       }
       case "move": {
         if (op.moved) {
+          // image cards dropped onto a moodboard card go into it (2026-10-08)
+          const w = toWorld(e.clientX, e.clientY);
+          const els = dataRef.current.elements;
+          const moving = els.filter((x) => op.origin.has(x.id));
+          const mb = els.find(
+            (x): x is MoodboardElement =>
+              x.type === "moodboard" && !op.origin.has(x.id) && w.x >= x.x && w.x <= x.x + x.w && w.y >= x.y && w.y <= x.y + x.h,
+          );
+          if (mb && moving.length && moving.every((x) => x.type === "image")) {
+            const ids = new Set(moving.map((x) => x.id));
+            const add = moving.map((x) => {
+              const img = x as MediaElement;
+              return { id: newId(), asset_key: img.asset_key, src: img.src ?? null, name: img.name, mime: img.mime, ...spanFor({ w: img.w, h: img.h }, mb.cols) };
+            });
+            apply(
+              {
+                ...dataRef.current,
+                elements: els
+                  .filter((x) => !ids.has(x.id))
+                  .map((x) => (x.id === mb.id && x.type === "moodboard" ? { ...x, items: [...x.items, ...add].slice(0, 60) } : x))
+                  .map((x) => (x.type === "group" ? { ...x, children: x.children.filter((c) => !ids.has(c)) } : x)),
+                connectors: dataRef.current.connectors.filter((c) => !ids.has(c.from) && !ids.has(c.to)),
+              },
+              { history: op.snapshot },
+            );
+            setSelection(new Set([mb.id]));
+            return;
+          }
           apply(dataRef.current, { history: op.snapshot });
           return;
         }
@@ -2053,6 +2173,10 @@ export function IdeaBoard({
     const files = [...e.dataTransfer.files];
     const sceneId = (e.target as HTMLElement).closest<HTMLElement>("[data-el-id]")?.dataset.elId;
     const sceneEl = sceneId ? dataRef.current.elements.find((x) => x.id === sceneId) : null;
+    if (sceneEl?.type === "moodboard" && files.some((f) => guessMime(f).startsWith("image/"))) {
+      void addMoodboardFiles(sceneEl.id, files);
+      return;
+    }
     if (sceneEl?.type === "scene" && files.length === 1 && guessMime(files[0]).startsWith("image/")) {
       void setSceneImage(sceneEl.id, files[0]);
       return;
@@ -2102,6 +2226,9 @@ export function IdeaBoard({
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
     palette: t("ideaBoard.palette.label"),
     stickyPlaceholder: t("ideaBoard.sticky.placeholder"),
+    moodboard: t("ideaBoard.moodboard.label"),
+    moodboardEmpty: t("ideaBoard.moodboard.empty"),
+    moodboardAdd: t("ideaBoard.moodboard.add"),
     voteGroup: t("ideaBoard.vote.label"),
     location: t("ideaBoard.location.label"),
     openInMaps: t("ideaBoard.location.openInMaps"),
@@ -2269,7 +2396,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "moodboard";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -2291,6 +2418,9 @@ export function IdeaBoard({
                 el={el}
                 editing={editingId === el.id}
                 editable={editable}
+                moodboardActive={el.type === "moodboard" && editable && selected && selection.size === 1 && !busyOp}
+                onMoodboardChange={(items) => setMoodboardItems(el.id, items)}
+                onMoodboardAdd={editable && uploadFile ? () => pickMoodboardImages(el.id) : undefined}
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
@@ -2319,6 +2449,14 @@ export function IdeaBoard({
                   if (Math.abs(want - el.h) > 2) updateElement(el.id, { h: want }, { notify: editable });
                 }}
               />
+              {el.type === "moodboard" && (moodboardBusy[el.id] ?? 0) > 0 && (
+                <div
+                  className="absolute left-1/2 bottom-3 z-10 pointer-events-none rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white animate-pulse whitespace-nowrap"
+                  style={{ transform: `translateX(-50%) scale(${1 / Math.max(view.scale, 0.5)})`, transformOrigin: "50% 100%" }}
+                >
+                  {t("ideaBoard.moodboard.uploading", { count: moodboardBusy[el.id] })}
+                </div>
+              )}
               {data.cover === el.id && (
                 <div
                   className="absolute left-2 top-2 z-10 pointer-events-none flex items-center gap-1 rounded-full bg-black/65 backdrop-blur px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white"
@@ -2649,6 +2787,20 @@ export function IdeaBoard({
               <Divider />
             </>
           )}
+          {selectedEls.length === 1 && selectedEls[0].type === "moodboard" && (
+            <>
+              <BarButton title={t("ideaBoard.moodboard.fewerCols")} onPress={() => setMoodboardCols(selectedEls[0].id, -1)}>−</BarButton>
+              <span className="text-xs font-semibold tabular-nums px-1 text-white/80 whitespace-nowrap">
+                {t("ideaBoard.moodboard.cols", { count: (selectedEls[0] as MoodboardElement).cols })}
+              </span>
+              <BarButton title={t("ideaBoard.moodboard.moreCols")} onPress={() => setMoodboardCols(selectedEls[0].id, 1)}>+</BarButton>
+              <Divider />
+              <BarButton title={t("ideaBoard.moodboard.add")} onPress={() => pickMoodboardImages(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">+ {t("ideaBoard.moodboard.addShort")}</span>
+              </BarButton>
+              <Divider />
+            </>
+          )}
           {selectedEls.length === 1 && (selectedEls[0].type === "palette" || selectedEls[0].type === "location" || selectedEls[0].type === "color") && (
             <>
               <BarButton
@@ -2792,6 +2944,8 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
+                  <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
+                  {gifMaker && <MenuItem label={t("ideaBoard.menu.gif")} onPress={() => menuAction(() => setGifAt(menu.world))} />}
                   <MenuItem label={t("ideaBoard.menu.sticky")} hint="N" onPress={() => menuAction(() => addSticky(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.color")} onPress={() => menuAction(() => setCardEditor({ kind: "color", id: null, at: menu.world }))} />
                   <MenuItem label={t("ideaBoard.menu.palette")} onPress={() => menuAction(() => setCardEditor({ kind: "palette", id: null, at: menu.world }))} />
@@ -2941,6 +3095,14 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
             </ToolButton>
           )}
+          <ToolButton title={t("ideaBoard.toolMoodboard")} onPress={() => addMoodboard(viewportCenterWorld())}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
+          </ToolButton>
+          {gifMaker && (
+            <ToolButton title={t("ideaBoard.toolGif")} onPress={() => setGifAt(viewportCenterWorld())}>
+              <span className="text-[11px] font-bold tracking-tight">GIF</span>
+            </ToolButton>
+          )}
           <ToolButton title={t("ideaBoard.toolSticky")} onPress={() => addSticky(viewportCenterWorld())}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" /><path d="M15 21v-4a2 2 0 0 1 2-2h4" /></svg>
           </ToolButton>
@@ -3027,6 +3189,18 @@ export function IdeaBoard({
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
           </ToolButton>
           <input
+            ref={moodboardInputRef}
+            type="file"
+            multiple
+            accept="image/*,.heic"
+            className="hidden"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (files.length && moodboardTarget.current) void addMoodboardFiles(moodboardTarget.current, files);
+            }}
+          />
+          <input
             ref={sceneImageInputRef}
             type="file"
             accept="image/*,.heic"
@@ -3092,6 +3266,20 @@ export function IdeaBoard({
             setView(next);
           }}
         />
+      )}
+      {editable && gifMaker && gifAt && (
+        <div
+          className="contents"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <BoardGifMaker api={gifMaker} onClose={() => setGifAt(null)} onDone={addGif} />
+        </div>
       )}
       {editable && tagEditorOpen && (
         <div

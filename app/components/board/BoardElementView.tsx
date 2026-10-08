@@ -1,5 +1,6 @@
 "use client";
 
+import { MoodboardNode } from "./BoardMoodboard";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -20,6 +21,7 @@ import {
   type LocationElement,
   type StickyElement,
   type ColorElement,
+  type MoodboardItem,
   STICKY_STYLES,
   colorCodes,
   googleMapsLink,
@@ -56,6 +58,9 @@ export interface ElementViewLabels extends TodoLabels {
   palette: string;
   location: string;
   stickyPlaceholder: string;
+  moodboard: string;
+  moodboardEmpty: string;
+  moodboardAdd: string;
   voteGroup: string;
   openInMaps: string;
   sceneTitlePlaceholder: string;
@@ -93,6 +98,9 @@ export function BoardElementView({
   onCommitGroupTitle,
   onMeasure,
   onNaturalSize,
+  moodboardActive,
+  onMoodboardChange,
+  onMoodboardAdd,
 }: {
   el: BoardElement;
   editing: boolean;
@@ -112,6 +120,10 @@ export function BoardElementView({
   onMeasure: (height: number) => void;
   /** media reported its real pixel size (used to fix the element's aspect ratio) */
   onNaturalSize: (w: number, h: number) => void;
+  /** moodboard card selected alone (+ editable): its images are interactive */
+  moodboardActive?: boolean;
+  onMoodboardChange?: (items: MoodboardItem[]) => void;
+  onMoodboardAdd?: () => void;
 }) {
   switch (el.type) {
     case "text":
@@ -137,6 +149,19 @@ export function BoardElementView({
       return <TextNode el={el} editing={editing} placeholder={labels.stickyPlaceholder} onCommit={onCommitText} onMeasure={onMeasure} />;
     case "color":
       return <ColorNode el={el} onMeasure={onMeasure} />;
+    case "moodboard":
+      return (
+        <MoodboardNode
+          el={el}
+          active={!!moodboardActive}
+          emptyLabel={labels.moodboardEmpty}
+          addLabel={labels.moodboardAdd}
+          headerLabel={labels.moodboard}
+          onMeasure={onMeasure}
+          onChange={onMoodboardChange}
+          onAdd={onMoodboardAdd}
+        />
+      );
     case "location":
       return <LocationNode el={el} labels={labels} onMeasure={onMeasure} />;
     case "group":

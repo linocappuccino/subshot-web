@@ -180,6 +180,16 @@ function IdeaBoardScreen({
   // board; a pin opens its comment in the sidebar, "📍" in the sidebar zooms
   // the board to the node
   const [feedbackList, setFeedbackList] = useState<IdeaFeedback[]>([]);
+  // GIF maker jobs run in the background (download / ffmpeg) — poll them
+  async function pollGifJob(jobId: string) {
+    for (let i = 0; i < 150; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const job = await api.boardGifJob(idea.id, jobId);
+      if (job.status === "ready") return job;
+      if (job.status === "failed") throw new Error(job.error === "blocked" ? "blocked" : "failed");
+    }
+    throw new Error("failed");
+  }
   // 2026-10-08, Lino: 👍🏼 votes on board variants — live, like the feedback
   const [votes, setVotes] = useState<{ votes: BoardVote[]; me: string } | null>(null);
   useEffect(() => {
@@ -582,6 +592,27 @@ function IdeaBoardScreen({
               setFeedbackOpen(true);
             }}
             focusRequest={pinFocus}
+            gifMaker={{
+              fromLink: async (url) => {
+                const { job_id } = await api.boardGifLink(idea.id, url);
+                const job = await pollGifJob(job_id);
+                return { key: job.key!, src: job.url!, duration: job.duration ?? 0 };
+              },
+              upload: async (file, onProgress) => {
+                const mime = file.type || "video/mp4";
+                const ticket = await api.createIdeaBoardUpload(idea.id, { filename: file.name, content_type: mime, size: file.size });
+                await uploadWithType(ticket.upload_url, file, mime, onProgress);
+                return { key: ticket.key, src: ticket.url };
+              },
+              render: async (key, start, duration) => {
+                const { job_id } = await api.boardGifRender(idea.id, key, start, duration);
+                const job = await pollGifJob(job_id);
+                return { key: job.key!, src: job.url!, w: job.w ?? 480, h: job.h ?? 270 };
+              },
+              discard: async (key) => {
+                await api.boardGifDiscard(idea.id, key);
+              },
+            }}
             createLocationMap={async (lat, lng) => {
               const r = await api.boardLocationMap(idea.id, lat, lng);
               return { key: r.key, src: r.url };

@@ -852,6 +852,19 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // GIF maker (2026-10-08): link → source video job, render job, discard
+    boardGifLink: (ideaId: string, url: string) =>
+      request<{ job_id: string }>(`ideas/${ideaId}/board/gif/link`, { method: "POST", body: JSON.stringify({ url }) }),
+    boardGifRender: (ideaId: string, sourceKey: string, start: number, duration: number) =>
+      request<{ job_id: string }>(`ideas/${ideaId}/board/gif/render`, { method: "POST", body: JSON.stringify({ source_key: sourceKey, start, duration }) }),
+    boardGifJob: (ideaId: string, jobId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/board/gif/jobs/${jobId}`);
+      return request<{ status: "working" | "ready" | "failed"; error?: string | null; key?: string; url?: string; duration?: number; w?: number; h?: number }>(
+        `ideas/${ideaId}/board/gif/jobs/${jobId}`,
+      );
+    },
+    boardGifDiscard: (ideaId: string, key: string) =>
+      request<{ ok: boolean }>(`ideas/${ideaId}/board/gif/discard`, { method: "POST", body: JSON.stringify({ key }) }),
     // board variant votes (2026-10-08) — toggle: same variant again removes it
     boardVotes: (ideaId: string) => {
       invalidateGetCache(`ideas/${ideaId}/board/votes`);

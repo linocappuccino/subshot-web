@@ -185,7 +185,26 @@ export interface ColorElement extends BaseElement {
   name?: string;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement;
+/** 2026-10-08, Lino: bloom.site-style moodboard — several images in one card,
+ * laid out on a grid with `cols` columns; each image spans w columns × h rows
+ * (drag its corner), the others flow around it; order by drag and drop. */
+export interface MoodboardItem {
+  id: string;
+  asset_key: string;
+  src?: string | null;
+  name: string;
+  mime: string;
+  w: number;
+  h: number;
+}
+export interface MoodboardElement extends BaseElement {
+  type: "moodboard";
+  title: string;
+  cols: number;
+  items: MoodboardItem[];
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement;
 
 /** HEX / RGB / HSL / CMYK of a "#rrggbb" color (color swatch card). */
 export function colorCodes(hex: string): { hex: string; rgb: string; hsl: string; cmyk: string } {
@@ -362,6 +381,7 @@ export function forSave(data: BoardData): BoardData {
   return {
     cover: data.cover ?? null,
     elements: data.elements.map((el) => {
+      if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, ...it }) => it) } as BoardElement;
       if (!("src" in el) && !("image_src" in el)) return el;
       const copy: Record<string, unknown> = { ...el };
       delete copy.src;
