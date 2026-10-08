@@ -1201,7 +1201,7 @@ export function IdeaBoard({
       className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${tool === "draw" ? "cursor-crosshair" : ""} ${className}`}
       style={{
         backgroundColor: "#161616",
-        backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.16) ${dot}px, transparent ${dot + 0.6}px)`,
+        backgroundImage: `radial-gradient(circle, rgba(255,255,255,0.09) ${dot}px, transparent ${dot + 0.6}px)`,
         backgroundSize: `${gridSize}px ${gridSize}px`,
         backgroundPosition: `${view.x - gridSize / 2}px ${view.y - gridSize / 2}px`,
       }}
