@@ -840,6 +840,7 @@ export function IdeaBoard({
       html: "",
       image_key: el.asset_key,
       image_src: el.src ?? null,
+      ...(el.w > 0 && el.h > 0 ? { image_ratio: Math.round((el.w / el.h) * 1000) / 1000 } : {}),
     };
     commit((d) => ({ ...d, elements: d.elements.map((e) => (e.id === id ? scene : e)) }));
     setSelection(new Set([id]));
@@ -1780,6 +1781,11 @@ export function IdeaBoard({
                 onMeasure={(h) => updateElement(el.id, { h: Math.ceil(h) }, { notify: editable })}
                 onNaturalSize={(nw, nh) => {
                   if (!nw || !nh) return;
+                  if (el.type === "scene") {
+                    const ratio = Math.round((nw / nh) * 1000) / 1000;
+                    if (Math.abs(ratio - (el.image_ratio ?? 0)) > 0.005) updateElement(el.id, { image_ratio: ratio } as Partial<SceneElement>, { notify: editable });
+                    return;
+                  }
                   const header = el.type === "video" ? VIDEO_HEADER : 0;
                   const want = Math.round((el.w * nh) / nw) + header;
                   if (Math.abs(want - el.h) > 2) updateElement(el.id, { h: want }, { notify: editable });

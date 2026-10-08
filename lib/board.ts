@@ -78,6 +78,9 @@ export interface SceneElement extends BaseElement {
   html: string;
   image_key?: string;
   image_src?: string | null;
+  /** 2026-10-08, Lino: width / height of the image — the card shows it in its
+   * own format (9:16, 1:1, …) instead of cropping to 16:9 */
+  image_ratio?: number;
   /** spoken lines — each becomes its own dialogue entry of the shot-list scene */
   dialogues?: string[];
 }

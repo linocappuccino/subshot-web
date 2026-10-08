@@ -141,6 +141,7 @@ export function BoardElementView({
           addDialogueOnEdit={!!addDialogueOnEdit}
           onGenerate={onGenerateSceneImage}
           generating={!!sceneGenerating}
+          onImageSize={onNaturalSize}
           onMeasure={onMeasure}
         />
       );
@@ -158,6 +159,7 @@ function SceneNode({
   addDialogueOnEdit,
   onGenerate,
   generating,
+  onImageSize,
   onMeasure,
 }: {
   el: SceneElement;
@@ -170,6 +172,7 @@ function SceneNode({
   addDialogueOnEdit: boolean;
   onGenerate?: () => void;
   generating: boolean;
+  onImageSize: (w: number, h: number) => void;
   onMeasure: (h: number) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -257,7 +260,15 @@ function SceneNode({
           </div>
         ) : el.image_src ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={el.image_src} alt="" draggable={false} className="w-full aspect-video object-cover rounded-lg bg-white/5 pointer-events-none select-none" />
+          <img
+            src={el.image_src}
+            alt=""
+            draggable={false}
+            onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+            // the image's own format; only extreme panoramas/strips get cropped
+            style={{ aspectRatio: Math.min(3, Math.max(0.5, el.image_ratio ?? 16 / 9)) }}
+            className="w-full object-cover rounded-lg bg-white/5 pointer-events-none select-none"
+          />
         ) : editable ? (
           <div className="w-full aspect-video rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 p-2">
             <span className="text-xs text-white/40">{labels.addImage}</span>
