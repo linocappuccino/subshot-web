@@ -56,6 +56,7 @@ export interface ElementViewLabels extends TodoLabels {
   palette: string;
   location: string;
   stickyPlaceholder: string;
+  voteGroup: string;
   openInMaps: string;
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
@@ -849,7 +850,12 @@ function GroupNode({
   ) : (
     <span data-group-title className={`min-w-0 flex-1 truncate text-sm font-semibold ${el.title ? "text-white/85" : "text-white/40"}`}>{el.title || labels.group}</span>
   );
-  const count = <span className="shrink-0 text-xs text-white/40 tabular-nums">{labels.groupItems.replace("{count}", String(members.length))}</span>;
+  const count = (
+    <span className="shrink-0 text-xs text-white/40 tabular-nums">
+      {el.vote && <span className="mr-1.5 text-amber-300/90">🗳️ {labels.voteGroup}</span>}
+      {labels.groupItems.replace("{count}", String(members.length))}
+    </span>
+  );
   const toggle = (
     <button
       data-no-drag

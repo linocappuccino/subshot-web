@@ -32,6 +32,8 @@ interface BaseElement {
   w: number;
   h: number;
   z: number;
+  /** 2026-10-08, Lino: tags (search / filter), up to 10 */
+  tags?: string[];
 }
 
 export interface TextElement extends BaseElement {
@@ -100,6 +102,26 @@ export interface GroupElement extends BaseElement {
   title: string;
   collapsed: boolean;
   children: string[];
+  /** 2026-10-08, Lino: "Varianten zur Wahl" — members are variants people
+   * vote on with 👍🏼 (votes are stored server-side, not in the board) */
+  vote?: boolean;
+}
+
+/** one 👍🏼 on a variant (GET …/board/votes) */
+export interface BoardVote {
+  group_id: string;
+  element_id: string;
+  voter_name: string;
+  voter_key: string;
+}
+
+const TAG_HUES = [212, 152, 32, 280, 340, 188, 48, 0, 260, 120];
+/** a stable color per tag name (same tag → same color everywhere) */
+export function tagColor(tag: string): { bg: string; fg: string } {
+  let h = 0;
+  for (const ch of tag.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = TAG_HUES[h % TAG_HUES.length];
+  return { bg: `hsla(${hue}, 70%, 55%, 0.22)`, fg: `hsl(${hue}, 85%, 78%)` };
 }
 
 /** 2026-10-08, Lino: a to-do list node. The items are a real project

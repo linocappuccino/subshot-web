@@ -1,6 +1,6 @@
 import type { SharedIdeasPreviewData, IdeaFeedback, IdeaFeedbackSendResult, Annotation, FeedbackPinAnchor } from "./types";
 import { ApiError } from "./api";
-import type { BoardResponse, PublicBoardTodoList } from "./board";
+import type { BoardResponse, BoardVote, PublicBoardTodoList } from "./board";
 
 // 2026-07-21 (#262) — the public no-login "Ideen-Preview" page's own tiny
 // API client, same reasoning/shape as lib/publicPreviewApi.ts (#254, video):
@@ -43,6 +43,17 @@ export const publicIdeasPreviewApi = {
   fetchIdeaTodoLists: (token: string, unlockToken: string | null, ideaId: string) =>
     handle<PublicBoardTodoList[]>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/todo-lists`, { headers: unlockHeaders(unlockToken) })
+    ),
+  // board variant votes (2026-10-08) — the visitor votes under their name
+  fetchBoardVotes: (token: string, unlockToken: string | null, ideaId: string) =>
+    handle<{ votes: BoardVote[] }>(fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes`, { headers: unlockHeaders(unlockToken) })),
+  toggleBoardVote: (token: string, unlockToken: string | null, ideaId: string, groupId: string, elementId: string, voterName: string) =>
+    handle<{ votes: BoardVote[] }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
+        body: JSON.stringify({ group_id: groupId, element_id: elementId, voter_name: voterName }),
+      })
     ),
   fetchIdeaBoard: (token: string, unlockToken: string | null, ideaId: string) =>
     handle<BoardResponse>(

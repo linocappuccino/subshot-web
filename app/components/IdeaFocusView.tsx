@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
 import { IdeaBoard, type BoardPin } from "./board/IdeaBoard";
 import { authorColor } from "@/lib/authorColor";
+import { subscribeToChanges } from "@/lib/realtime";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
@@ -12,7 +13,7 @@ import { useToast } from "./ui/Toast";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
-import { coverSrcOf, forSave, type BoardData } from "@/lib/board";
+import { coverSrcOf, forSave, type BoardData, type BoardVote } from "@/lib/board";
 import type { Annotation, Idea, IdeaFeedback, Member, TodoList } from "@/lib/types";
 
 /** Full-screen view for one idea at a time, opened from a tile or "+ Idee" in
@@ -179,6 +180,14 @@ function IdeaBoardScreen({
   // board; a pin opens its comment in the sidebar, "📍" in the sidebar zooms
   // the board to the node
   const [feedbackList, setFeedbackList] = useState<IdeaFeedback[]>([]);
+  // 2026-10-08, Lino: 👍🏼 votes on board variants — live, like the feedback
+  const [votes, setVotes] = useState<{ votes: BoardVote[]; me: string } | null>(null);
+  useEffect(() => {
+    const load = () => api.boardVotes(idea.id).then(setVotes).catch(() => {});
+    load();
+    return subscribeToChanges("idea", idea.id, load);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea.id]);
   const [activePinId, setActivePinId] = useState<string | null>(null);
   const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
   const boardPins: BoardPin[] = feedbackList
@@ -559,6 +568,14 @@ function IdeaBoardScreen({
               return { key: ticket.key, src: ticket.url };
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
+            votes={votes?.votes}
+            myVoterKey={votes?.me}
+            onVote={(groupId, elementId) =>
+              api
+                .toggleBoardVote(idea.id, groupId, elementId)
+                .then(setVotes)
+                .catch((e) => toast.showError(e instanceof ApiError ? e.message : t("common.failed")))
+            }
             pins={boardPins}
             onPinClick={(id) => {
               setActivePinId(id);

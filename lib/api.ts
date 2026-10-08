@@ -45,7 +45,7 @@ import type {
   VideoVersion,
 } from "./types";
 
-import type { BoardData, BoardResponse, BoardUploadTicket, LinkPreview } from "./board";
+import type { BoardData, BoardResponse, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -852,6 +852,13 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // board variant votes (2026-10-08) — toggle: same variant again removes it
+    boardVotes: (ideaId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/board/votes`);
+      return request<{ votes: BoardVote[]; me: string }>(`ideas/${ideaId}/board/votes`);
+    },
+    toggleBoardVote: (ideaId: string, groupId: string, elementId: string) =>
+      request<{ votes: BoardVote[]; me: string }>(`ideas/${ideaId}/board/votes`, { method: "POST", body: JSON.stringify({ group_id: groupId, element_id: elementId }) }),
     // board location card: static map stored as a board file (2026-10-08)
     boardLocationMap: (ideaId: string, lat: number, lng: number) =>
       request<{ key: string; url: string }>(`ideas/${ideaId}/board/location-map`, { method: "POST", body: JSON.stringify({ lat, lng }) }),

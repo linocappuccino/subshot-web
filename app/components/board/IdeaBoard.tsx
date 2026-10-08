@@ -37,6 +37,8 @@ import {
   type LocationElement,
   type StickyElement,
   type StickyColor,
+  type BoardVote,
+  tagColor,
   type ColorElement,
   STICKY_COLORS,
   STICKY_STYLES,
@@ -47,6 +49,7 @@ import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
+import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -296,6 +299,9 @@ export function IdeaBoard({
   onPlacePin,
   pendingPin,
   focusRequest,
+  votes,
+  myVoterKey,
+  onVote,
   onError,
   onEscape,
   className = "",
@@ -321,6 +327,11 @@ export function IdeaBoard({
   pendingPin?: (BoardPinAnchor & { color?: string }) | null;
   /** zoom to a node (e.g. clicking a pinned comment in the sidebar) */
   focusRequest?: { elementId: string; nonce: number } | null;
+  /** 👍🏼 on the variants of vote groups (see GroupElement.vote) */
+  votes?: BoardVote[];
+  /** whose vote is "mine" (highlighted) — "user:<id>" or "name:<name>" */
+  myVoterKey?: string | null;
+  onVote?: (groupId: string, elementId: string) => void;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -513,17 +524,94 @@ export function IdeaBoard({
 
   // "zoom to the commented node" (Feedback-Pins): frame it and let it light up
   const [flash, setFlash] = useState<string | null>(null);
+  const [innerFocus, setInnerFocus] = useState<{ elementId: string; nonce: number } | null>(null);
+  const activeFocus = !focusRequest ? innerFocus : !innerFocus ? focusRequest : focusRequest.nonce > innerFocus.nonce ? focusRequest : innerFocus;
   useEffect(() => {
-    if (!focusRequest) return;
+    if (!activeFocus) return;
     const els = dataRef.current.elements;
-    const groupId = hiddenElementIds(els).get(focusRequest.elementId);
-    const el = els.find((x) => x.id === (groupId ?? focusRequest.elementId));
+    const groupId = hiddenElementIds(els).get(activeFocus.elementId);
+    const el = els.find((x) => x.id === (groupId ?? activeFocus.elementId));
     if (!el) return;
     zoomToRect(el, { animate: true, maxScale: 1.25, pad: 140 });
-    setFlash(focusRequest.elementId);
+    setFlash(activeFocus.elementId);
     const timer = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(timer);
-  }, [focusRequest, zoomToRect]);
+  }, [activeFocus, zoomToRect]);
+
+  // ── search, tags, navigation (2026-10-08) ─────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [tagEditorOpen, setTagEditorOpen] = useState(false);
+  /** ids matching the search + tag filter (an open group counts when any
+   * member matches); null = no filter, nothing dimmed */
+  const matches = useMemo(() => {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!searchOpen || (!words.length && !tagFilter.length)) return null;
+    const want = tagFilter.map((x) => x.toLowerCase());
+    const set = new Set<string>();
+    for (const el of data.elements) {
+      const text = elementSearchText(el).toLowerCase();
+      const tags = (el.tags ?? []).map((x) => x.toLowerCase());
+      if (words.every((w) => text.includes(w)) && want.every((w) => tags.includes(w))) set.add(el.id);
+    }
+    for (const el of data.elements) if (el.type === "group" && el.children.some((c) => set.has(c))) set.add(el.id);
+    return set;
+  }, [data.elements, query, tagFilter, searchOpen]);
+
+  function pickFromSearch(el: BoardElement) {
+    setSelection(new Set([el.id]));
+    setInnerFocus({ elementId: el.id, nonce: Date.now() });
+  }
+
+  const allTags = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const el of data.elements) for (const tg of el.tags ?? []) if (!seen.has(tg.toLowerCase())) seen.set(tg.toLowerCase(), tg);
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  }, [data.elements]);
+
+  function saveTags(add: string[], remove: string[]) {
+    setTagEditorOpen(false);
+    const ids = new Set(selectionRef.current);
+    const rm = remove.map((x) => x.toLowerCase());
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => {
+        if (!ids.has(el.id)) return el;
+        const kept = (el.tags ?? []).filter((x) => !rm.includes(x.toLowerCase()));
+        const next = [...kept, ...add.filter((x) => !kept.some((k) => k.toLowerCase() === x.toLowerCase()))].slice(0, 10);
+        const out = { ...el, tags: next } as BoardElement;
+        if (!next.length) delete out.tags;
+        return out;
+      }),
+    }));
+  }
+
+  // ── variant votes (2026-10-08) ────────────────────────────────────────
+  function toggleVoteGroup(id: string) {
+    const g = dataRef.current.elements.find((e) => e.id === id);
+    if (!g || g.type !== "group") return;
+    updateElement(id, { vote: !g.vote } as Partial<GroupElement>, { history: true });
+  }
+
+  /** per open vote group: its variants in reading order with letter + votes */
+  const voteInfo = useMemo(() => {
+    const out: { groupId: string; el: BoardElement; letter: string; voters: BoardVote[]; mine: boolean; leader: boolean }[] = [];
+    for (const g of data.elements) {
+      if (g.type !== "group" || !g.vote || g.collapsed) continue;
+      const members = data.elements
+        .filter((e) => g.children.includes(e.id))
+        .sort((a, b) => (Math.abs(a.y - b.y) > GRID * 2 ? a.y - b.y : a.x - b.x));
+      const rows = members.map((el, i) => {
+        const voters = (votes ?? []).filter((v) => v.group_id === g.id && v.element_id === el.id);
+        return { groupId: g.id, el, letter: String.fromCharCode(65 + (i % 26)), voters, mine: !!myVoterKey && voters.some((v) => v.voter_key === myVoterKey), leader: false };
+      });
+      const top = Math.max(0, ...rows.map((r) => r.voters.length));
+      for (const r of rows) r.leader = top > 0 && r.voters.length === top;
+      out.push(...rows);
+    }
+    return out;
+  }, [data.elements, votes, myVoterKey]);
 
   useLayoutEffect(() => {
     fitToContent();
@@ -1789,6 +1877,11 @@ export function IdeaBoard({
         onEscape?.();
         return;
       }
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((v) => !v);
+        return;
+      }
       if (isTyping() || !editable) return;
       if (mod && e.key.toLowerCase() === "v") {
         // a real paste event normally follows; if it doesn't, read the clipboard
@@ -2009,6 +2102,7 @@ export function IdeaBoard({
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
     palette: t("ideaBoard.palette.label"),
     stickyPlaceholder: t("ideaBoard.sticky.placeholder"),
+    voteGroup: t("ideaBoard.vote.label"),
     location: t("ideaBoard.location.label"),
     openInMaps: t("ideaBoard.location.openInMaps"),
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
@@ -2189,6 +2283,8 @@ export function IdeaBoard({
                 width: el.w,
                 height: growsWithContent ? undefined : el.h,
                 zIndex: rank + 10,
+                opacity: matches && !matches.has(el.id) ? 0.18 : undefined,
+                transition: "opacity .2s",
               }}
             >
               <BoardElementView
@@ -2273,6 +2369,62 @@ export function IdeaBoard({
             </div>
           );
         })}
+
+        {/* tags on the nodes (2026-10-08) — little labels above the top edge */}
+        {view.scale >= 0.35 &&
+          elements.map((el) => {
+            if (!el.tags?.length || hidden.has(el.id) || (matches && !matches.has(el.id))) return null;
+            return (
+              <div
+                key={`tags-${el.id}`}
+                className="absolute flex gap-1 pointer-events-none"
+                style={{ left: el.x, top: el.y - 4 / view.scale, zIndex: 97000, transform: `translateY(-100%) scale(${1 / view.scale})`, transformOrigin: "0 100%" }}
+              >
+                {el.tags.map((tg) => (
+                  <span key={tg} className="rounded-full px-1.5 py-px text-[10px] font-semibold whitespace-nowrap" style={{ background: tagColor(tg).bg, color: tagColor(tg).fg }}>
+                    #{tg}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+
+        {/* variant votes (2026-10-08): letter top-left, 👍🏼 bottom-right */}
+        {voteInfo.map((v) => (
+          <div key={`vote-${v.el.id}`} style={{ opacity: matches && !matches.has(v.el.id) ? 0.18 : undefined, transition: "opacity .2s" }}>
+            {v.leader && (
+              <div
+                className="absolute pointer-events-none rounded-[12px]"
+                style={{ left: v.el.x - 5 / view.scale, top: v.el.y - 5 / view.scale, width: v.el.w + 10 / view.scale, height: v.el.h + 10 / view.scale, border: `${2.5 / view.scale}px solid #f59e0b`, zIndex: 98500 }}
+              />
+            )}
+            <div
+              className="absolute pointer-events-none"
+              style={{ left: v.el.x, top: v.el.y, zIndex: 98600, transform: `translate(-35%, -35%) scale(${1 / view.scale})`, transformOrigin: "0 0" }}
+            >
+              <span className={`flex items-center justify-center min-w-7 h-7 px-1.5 rounded-full text-xs font-bold shadow-lg border-2 border-[#161616] ${v.leader ? "bg-amber-500 text-black" : "bg-white text-black"}`}>
+                {v.letter}
+                {v.leader && <span className="ml-0.5">★</span>}
+              </span>
+            </div>
+            <button
+              data-board-ui
+              onClick={() => onVote?.(v.groupId, v.el.id)}
+              disabled={!onVote}
+              title={v.voters.length ? v.voters.map((x) => x.voter_name).join(", ") : t("ideaBoard.vote.hint")}
+              className="absolute"
+              style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${1 / view.scale})`, transformOrigin: "0 0" }}
+            >
+              <span
+                className={`flex items-center gap-1 h-8 pl-2 pr-2.5 rounded-full text-sm font-semibold shadow-lg border transition-colors ${
+                  v.mine ? "bg-blue-600 border-blue-400 text-white" : "bg-[#1c1c1e] border-white/20 text-white hover:bg-[#2a2a2d]"
+                }`}
+              >
+                👍🏼 <span className="tabular-nums">{v.voters.length}</span>
+              </span>
+            </button>
+          </div>
+        ))}
 
         {/* feedback pins (2026-10-08) — constant screen size, above the nodes */}
         {(pins ?? []).map((p) => {
@@ -2485,6 +2637,9 @@ export function IdeaBoard({
                 <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.ungroup")}</span>
               </BarButton>
               <Divider />
+              <BarButton title={t("ideaBoard.vote.toggle")} active={!!(selectedEls[0] as GroupElement).vote} onPress={() => toggleVoteGroup(selectedEls[0].id)}>
+                <span className="text-xs font-semibold px-1 whitespace-nowrap">🗳️ {t("ideaBoard.vote.label")}</span>
+              </BarButton>
               <BarButton title={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.row")}`} onPress={() => arrangeGroup(selectedEls[0].id, "row")}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="5" height="10" rx="1" /><rect x="9.5" y="7" width="5" height="10" rx="1" /><rect x="17" y="7" width="5" height="10" rx="1" /></svg>
               </BarButton>
@@ -2562,6 +2717,9 @@ export function IdeaBoard({
           )}
           {selectedEls.length > 0 && (
             <>
+              <BarButton title={t("ideaBoard.tags.title")} onPress={() => setTagEditorOpen(true)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" /></svg>
+              </BarButton>
               <BarButton title={t("ideaBoard.bringFront")} onPress={() => reorderSelection(true)}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="8" y="8" width="12" height="12" rx="2" fill="currentColor" fillOpacity="0.35" /><path d="M4 16V6a2 2 0 0 1 2-2h10" /></svg>
               </BarButton>
@@ -2665,6 +2823,7 @@ export function IdeaBoard({
                     <MenuItem label={t("ideaBoard.renameGroup")} onPress={() => menuAction(() => setEditingId(target.id))} />
                     <MenuItem label={target.collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")} onPress={() => menuAction(() => toggleGroup(target.id))} />
                     <MenuItem label={t("ideaBoard.ungroup")} hint="⇧⌘G" onPress={() => menuAction(() => ungroup(target.id))} />
+                    <MenuItem label={target.vote ? t("ideaBoard.vote.off") : t("ideaBoard.vote.on")} onPress={() => menuAction(() => toggleVoteGroup(target.id))} />
                     <MenuItem label={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.row")}`} onPress={() => menuAction(() => arrangeGroup(target.id, "row"))} />
                     <MenuItem label={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.grid")}`} onPress={() => menuAction(() => arrangeGroup(target.id, "grid"))} />
                   </>
@@ -2896,6 +3055,68 @@ export function IdeaBoard({
       )}
 
       {/* zoom */}
+      {searchOpen ? (
+        <BoardSearchPanel
+          elements={data.elements.filter((el) => !hidden.has(el.id))}
+          query={query}
+          onQuery={setQuery}
+          tagFilter={tagFilter}
+          onTagFilter={setTagFilter}
+          matches={matches}
+          onPick={pickFromSearch}
+          onClose={() => setSearchOpen(false)}
+        />
+      ) : (
+        <button
+          data-board-ui
+          onClick={() => setSearchOpen(true)}
+          title={t("ideaBoard.search.hint")}
+          className="absolute z-30 top-3 right-3 h-9 pl-3 pr-2.5 flex items-center gap-2 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-sm text-white/70 hover:text-white"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <span className="hidden sm:inline">{t("ideaBoard.search.button")}</span>
+          <kbd className="hidden sm:inline text-[10px] text-white/40 border border-white/15 rounded px-1">⌘K</kbd>
+        </button>
+      )}
+      {data.elements.length > 0 && viewportRef.current && (
+        <BoardMinimap
+          elements={data.elements.filter((el) => !hidden.has(el.id))}
+          view={view}
+          size={{ w: viewportRef.current.clientWidth, h: viewportRef.current.clientHeight }}
+          dimmed={matches}
+          bottom={storyScenes.length > 0 ? 104 : 58}
+          onNavigate={(wx, wy) => {
+            const r = viewportRef.current!;
+            const next = { scale: view.scale, x: r.clientWidth / 2 - wx * view.scale, y: r.clientHeight / 2 - wy * view.scale };
+            viewRef.current = next;
+            setView(next);
+          }}
+        />
+      )}
+      {editable && tagEditorOpen && (
+        <div
+          className="contents"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <TagEditor
+            open
+            current={(() => {
+              const seen = new Map<string, string>();
+              for (const el of selectedEls) for (const tg of el.tags ?? []) if (!seen.has(tg.toLowerCase())) seen.set(tg.toLowerCase(), tg);
+              return [...seen.values()];
+            })()}
+            allTags={allTags}
+            onClose={() => setTagEditorOpen(false)}
+            onSave={saveTags}
+          />
+        </div>
+      )}
       {storyScenes.length > 0 && (
         <div data-board-ui className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
           {editable && storyScenes.length > 1 && (

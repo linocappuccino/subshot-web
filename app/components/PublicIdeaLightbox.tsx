@@ -121,6 +121,7 @@ export function PublicIdeaLightbox({
   const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
   const commentRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   const pinAnchor = pendingPin ? { board_element_id: pendingPin.elementId, pin_x: pendingPin.x, pin_y: pendingPin.y } : null;
   const boardPins: BoardPin[] = idea.feedback
     .filter((f) => f.board_element_id && f.pin_x != null && f.pin_y != null && f.comment)
@@ -389,6 +390,12 @@ export function PublicIdeaLightbox({
                 }}
                 pendingPin={pendingPin ? { ...pendingPin, color: authorColor(authorName.trim() || "?") } : null}
                 focusRequest={pinFocus}
+                voterName={authorName}
+                onNeedName={() => {
+                  showNotice("error", t("ideaBoard.vote.needName"));
+                  nameRef.current?.focus();
+                }}
+                onVoteError={(msg) => showNotice("error", msg)}
               />
               {pinPlacing && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-blue-600 text-white text-xs font-semibold pl-3.5 pr-1.5 py-1.5 shadow-xl">
@@ -669,6 +676,7 @@ export function PublicIdeaLightbox({
               ) : pendingSelection ? null : (
                 <div className="flex flex-col gap-2">
                   <input
+                    ref={nameRef}
                     value={authorName}
                     onChange={(e) => setAuthorName(e.target.value)}
                     placeholder={t("videoReviewModal.visitorNamePlaceholder")}

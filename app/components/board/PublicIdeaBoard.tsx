@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
+import type { BoardVote } from "@/lib/board";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
@@ -20,7 +21,14 @@ export function PublicIdeaBoard({
   onPlacePin,
   pendingPin,
   focusRequest,
+  voterName = "",
+  onNeedName,
+  onVoteError,
 }: {
+  /** 2026-10-08 — 👍🏼 votes are cast under the visitor's feedback name */
+  voterName?: string;
+  onNeedName?: () => void;
+  onVoteError?: (message: string) => void;
   token: string;
   unlockToken: string | null;
   ideaId: string;
@@ -36,6 +44,27 @@ export function PublicIdeaBoard({
   const [data, setData] = useState<BoardData | null>(null);
   const [failed, setFailed] = useState(false);
   const [todoLists, setTodoLists] = useState<Record<string, PublicBoardTodoList>>({});
+  const [votes, setVotes] = useState<BoardVote[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    publicIdeasPreviewApi
+      .fetchBoardVotes(token, unlockToken, ideaId)
+      .then((r) => !cancelled && setVotes(r.votes))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token, unlockToken, ideaId]);
+
+  function vote(groupId: string, elementId: string) {
+    const name = voterName.trim();
+    if (!name) return onNeedName?.();
+    publicIdeasPreviewApi
+      .toggleBoardVote(token, unlockToken, ideaId, groupId, elementId, name)
+      .then((r) => setVotes(r.votes))
+      .catch((e) => onVoteError?.(e instanceof Error ? e.message : "…"));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -72,6 +101,9 @@ export function PublicIdeaBoard({
         onPlacePin={onPlacePin}
         pendingPin={pendingPin}
         focusRequest={focusRequest}
+        votes={votes}
+        myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
+        onVote={vote}
       />
     </BoardTodoContext.Provider>
   );
