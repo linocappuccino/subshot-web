@@ -145,28 +145,49 @@ function distanceToRect(p: Point, r: Rect): number {
 /** First spot at or below/right of (x, y) where a w×h box doesn't overlap any
  * existing element or reserved box — so things added from the toolbar or by
  * pasting don't land on top of what's already in the middle of the screen. */
+function clampInto(x: number, y: number, w: number, h: number, b: Rect): Point {
+  return {
+    x: w >= b.w ? b.x : Math.min(Math.max(x, b.x), b.x + b.w - w),
+    y: h >= b.h ? b.y : Math.min(Math.max(y, b.y), b.y + b.h - h),
+  };
+}
+
+/** 2026-10-08, Lino: things added from the toolbar, menu or by pasting must
+ * land in view. Searches outward from (x, y) — first for a spot that doesn't
+ * overlap anything, only ever inside `bounds` (the visible part of the
+ * board); if the view is full, the spot is just clamped into view. */
 function freeSpot(
   x: number,
   y: number,
   w: number,
   h: number,
-  taken: { x: number; y: number; w: number; h: number }[],
+  taken: Rect[],
+  bounds: Rect,
+  avoidOverlap = true,
 ): Point {
+  const start = clampInto(x, y, w, h, bounds);
+  const fits = (px: number, py: number) => px >= bounds.x - 0.5 && py >= bounds.y - 0.5 && px + w <= bounds.x + bounds.w + 0.5 && py + h <= bounds.y + bounds.h + 0.5;
   const hits = (px: number, py: number) =>
     taken.some((r) => px < r.x + r.w + GRID / 2 && px + w + GRID / 2 > r.x && py < r.y + r.h + GRID / 2 && py + h + GRID / 2 > r.y);
-  for (let ring = 0; ring < 30; ring++) {
-    const step = GRID * 2 * ring;
-    const candidates: Point[] = ring === 0 ? [{ x, y }] : [
-      { x, y: y + step }, { x: x + step, y }, { x, y: y - step }, { x: x - step, y },
-      { x: x + step, y: y + step }, { x: x - step, y: y + step },
-    ];
-    for (const c of candidates) {
-      const cx = snap(c.x);
-      const cy = snap(c.y);
-      if (!hits(cx, cy)) return { x: cx, y: cy };
-    }
+  const snapIn = (px: number, py: number) => {
+    // snap to the grid, but never off the visible area because of it
+    const c = clampInto(snap(px), snap(py), w, h, bounds);
+    return { x: fits(snap(px), snap(py)) ? snap(px) : c.x, y: fits(snap(px), snap(py)) ? snap(py) : c.y };
+  };
+  if (!avoidOverlap) return snapIn(start.x, start.y);
+  const s0 = snap(start.x);
+  const t0 = snap(start.y);
+  if (fits(s0, t0) && !hits(s0, t0)) return { x: s0, y: t0 };
+  // every grid position in view where the box fits, nearest to the wish first
+  // (coarser grid when zoomed far out, so this stays a few thousand checks)
+  const step = Math.max(GRID, snap(Math.max(bounds.w, bounds.h) / 80) || GRID);
+  const candidates: Point[] = [];
+  for (let cy = Math.ceil(bounds.y / step) * step; cy + h <= bounds.y + bounds.h; cy += step) {
+    for (let cx = Math.ceil(bounds.x / step) * step; cx + w <= bounds.x + bounds.w; cx += step) candidates.push({ x: cx, y: cy });
   }
-  return { x: snap(x), y: snap(y) };
+  candidates.sort((p, q) => Math.hypot(p.x - start.x, p.y - start.y) - Math.hypot(q.x - start.x, q.y - start.y));
+  for (const c of candidates) if (!hits(c.x, c.y)) return c;
+  return snapIn(start.x, start.y);
 }
 
 export function IdeaBoard({
@@ -289,6 +310,28 @@ export function IdeaBoard({
     const v = viewRef.current;
     return { x: (clientX - rect.left - v.x) / v.scale, y: (clientY - rect.top - v.y) / v.scale };
   }
+  /** The part of the board currently on screen (world coords), minus the
+   * tool bar on the left and the zoom bar at the bottom. */
+  function visibleWorldRect(): Rect {
+    const rect = viewportRef.current!.getBoundingClientRect();
+    const v = viewRef.current;
+    const left = editable ? 84 : 16;
+    const top = 16;
+    const right = 16;
+    const bottom = 64;
+    return {
+      x: (left - v.x) / v.scale,
+      y: (top - v.y) / v.scale,
+      w: Math.max(1, (rect.width - left - right) / v.scale),
+      h: Math.max(1, (rect.height - top - bottom) / v.scale),
+    };
+  }
+  function place(x: number, y: number, w: number, h: number, avoidOverlap: boolean, extra: Rect[] = []): Point {
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    const taken = dataRef.current.elements.filter((el) => !hiddenNow.has(el.id) && !(el.type === "group" && !el.collapsed));
+    return freeSpot(x, y, w, h, [...taken, ...extra], visibleWorldRect(), avoidOverlap);
+  }
+
   function viewportCenterWorld(): Point {
     const rect = viewportRef.current!.getBoundingClientRect();
     return toWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
@@ -361,7 +404,7 @@ export function IdeaBoard({
   }
 
   function addText(at: Point, edit = true, avoidOverlap = false) {
-    const spot = avoidOverlap ? freeSpot(at.x - 144, at.y - 36, 288, 72, dataRef.current.elements) : { x: snap(at.x - 120), y: snap(at.y - 24) };
+    const spot = avoidOverlap ? place(at.x - 144, at.y - 36, 288, 72, true) : place(at.x - 120, at.y - 24, 288, 72, false);
     const el: TextElement = {
       id: newId(),
       type: "text",
@@ -436,7 +479,7 @@ export function IdeaBoard({
         w = 336;
         h = 120;
       }
-      const spot = avoidOverlap ? freeSpot(cursorX, y, w, h, [...dataRef.current.elements, ...reserved]) : { x: cursorX, y };
+      const spot = place(cursorX, y, w, h, avoidOverlap, reserved);
       reserved.push({ x: spot.x, y: spot.y, w, h });
       cursorX = spot.x + w + GRID;
       const pid = newId();
@@ -476,7 +519,7 @@ export function IdeaBoard({
   async function addLink(rawUrl: string, at: Point, avoidOverlap = false) {
     const url = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
     const pid = newId();
-    const { x, y } = avoidOverlap ? freeSpot(at.x - 168, at.y - 80, 336, 288, dataRef.current.elements) : { x: snap(at.x - 168), y: snap(at.y - 80) };
+    const { x, y } = place(at.x - 168, at.y - 80, 336, 288, avoidOverlap);
     setPending((p) => [...p, { id: pid, label: t("ideaBoard.linkLoading"), progress: null, x, y, w: 336, h: 120 }]);
     let preview: LinkPreview | null = null;
     try {
@@ -667,7 +710,7 @@ export function IdeaBoard({
   function addScene(at: Point, avoidOverlap = false) {
     const w = 312;
     const h = 300;
-    const spot = avoidOverlap ? freeSpot(at.x - w / 2, at.y - h / 2, w, h, dataRef.current.elements) : { x: snap(at.x - w / 2), y: snap(at.y - h / 2) };
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, avoidOverlap);
     const el: SceneElement = {
       id: newId(),
       type: "scene",
@@ -1342,7 +1385,7 @@ export function IdeaBoard({
           .split(/\r?\n/)
           .map((line) => `<div>${line ? line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "<br>"}</div>`)
           .join("");
-        const spot = freeSpot(at.x - 144, at.y - 36, 288, 72, dataRef.current.elements);
+        const spot = place(at.x - 144, at.y - 36, 288, 72, true);
         const el: TextElement = { id: newId(), type: "text", x: spot.x, y: spot.y, w: 288, h: 72, z: maxZ(dataRef.current.elements) + 1, html, color: "default" };
         addElements([el]);
       }
@@ -1519,7 +1562,7 @@ export function IdeaBoard({
                   d={d}
                   stroke={selected ? "#3b82f6" : c.color ?? "#f0f0f0"}
                   strokeOpacity={selected ? 1 : 0.7}
-                  strokeWidth={2 / Math.min(1, view.scale)}
+                  strokeWidth={1.4 / Math.min(1, view.scale)}
                   fill="none"
                   strokeLinecap="round"
                   style={{ pointerEvents: "none" }}
@@ -1537,7 +1580,7 @@ export function IdeaBoard({
             const r = 7 / view.scale;
             return (
               <g style={{ pointerEvents: "none" }}>
-                <path d={curvePath(p1, s1, p2, tgt ? s2 : null)} stroke="#3b82f6" strokeWidth={2.5 / view.scale} fill="none" strokeLinecap="round" />
+                <path d={curvePath(p1, s1, p2, tgt ? s2 : null)} stroke="#3b82f6" strokeWidth={1.8 / view.scale} fill="none" strokeLinecap="round" />
                 <circle cx={p1.x} cy={p1.y} r={r * 0.75} fill="#3b82f6" />
                 {tgt && (
                   <>
