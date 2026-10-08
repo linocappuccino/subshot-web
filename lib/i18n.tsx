@@ -665,6 +665,8 @@ const translations = {
     "ideaBoard.toScene": "In Szene umwandeln",
     "ideaBoard.sceneNumberDown": "Nummer verkleinern",
     "ideaBoard.sceneNumberUp": "Nummer vergrössern",
+    "ideaBoard.playVideo": "Video abspielen",
+    "ideaBoard.stopVideo": "Video schliessen",
 
     // RichTextEditor.tsx (toolbar chrome only — slash-menu marker labels
     // are data-format tokens parsed by exact-match regex server-side in
@@ -1654,6 +1656,8 @@ const translations = {
     "ideaBoard.toScene": "Turn into scene",
     "ideaBoard.sceneNumberDown": "Lower number",
     "ideaBoard.sceneNumberUp": "Raise number",
+    "ideaBoard.playVideo": "Play video",
+    "ideaBoard.stopVideo": "Close video",
 
     // RichTextEditor.tsx (toolbar chrome only, see de block comment)
     "richTextEditor.bold": "Bold",

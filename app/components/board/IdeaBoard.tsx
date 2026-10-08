@@ -1174,6 +1174,8 @@ export function IdeaBoard({
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
+    play: t("ideaBoard.playVideo"),
+    stop: t("ideaBoard.stopVideo"),
   };
 
   let gridSize = GRID * view.scale;

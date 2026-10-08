@@ -1,11 +1,12 @@
 "use client";
 
 import DOMPurify from "dompurify";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   TEXT_COLOR_STYLES,
   formatBytes,
   hostOf,
+  videoEmbedFor,
   type BoardElement,
   type DrawingElement,
   type LinkElement,
@@ -44,6 +45,8 @@ export interface ElementViewLabels {
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
   addImage: string;
+  play: string;
+  stop: string;
 }
 
 export function BoardElementView({
@@ -210,7 +213,10 @@ function SceneNode({
   );
 }
 
-function useGrowToContent(ref: React.RefObject<HTMLElement | null>, height: number, onMeasure: (h: number) => void) {
+/** Reports the content's height when it needs more than el.h (text grows).
+ * With `exact`, also when it needs less — link cards follow their content
+ * both ways (a playing video makes them taller, closing it shrinks them). */
+function useGrowToContent(ref: React.RefObject<HTMLElement | null>, height: number, onMeasure: (h: number) => void, exact = false) {
   const heightRef = useRef(height);
   heightRef.current = height;
   const cb = useRef(onMeasure);
@@ -221,13 +227,13 @@ function useGrowToContent(ref: React.RefObject<HTMLElement | null>, height: numb
     const check = () => {
       // offsetHeight is layout size, unaffected by the board's scale transform
       const h = node.offsetHeight;
-      if (h > heightRef.current + 1) cb.current(h);
+      if (h > heightRef.current + 1 || (exact && h < heightRef.current - 1)) cb.current(h);
     };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(node);
     return () => ro.disconnect();
-  }, [ref]);
+  }, [ref, exact]);
 }
 
 function TextNode({
@@ -402,16 +408,58 @@ function LinkNode({
   labels: ElementViewLabels;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  useGrowToContent(ref, el.h, onMeasure);
+  useGrowToContent(ref, el.h, onMeasure, true);
+  const embed = videoEmbedFor(el.url);
+  const [playing, setPlaying] = useState(false);
   return (
     <div
       ref={ref}
       className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
-      style={{ minHeight: el.h }}
     >
-      {el.image_src && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={el.image_src} alt="" draggable={false} className="w-full aspect-[1.91/1] object-cover bg-white/5 pointer-events-none select-none" />
+      {embed && playing ? (
+        <div className="relative w-full bg-black" style={{ aspectRatio: String(embed.aspect) }} data-no-drag>
+          {embed.kind === "iframe" ? (
+            <iframe
+              src={embed.src}
+              title={el.title || el.url}
+              className="absolute inset-0 w-full h-full"
+              allow="autoplay; encrypted-media; picture-in-picture; fullscreen; clipboard-write"
+              allowFullScreen
+            />
+          ) : (
+            <video src={embed.src} controls autoPlay playsInline className="absolute inset-0 w-full h-full object-contain" />
+          )}
+          <button
+            data-no-drag
+            onClick={() => setPlaying(false)}
+            aria-label={labels.stop}
+            title={labels.stop}
+            className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center hover:bg-black/80"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </button>
+        </div>
+      ) : embed ? (
+        <div className="relative w-full aspect-[1.91/1] bg-black/40">
+          {el.image_src && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={el.image_src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none" />
+          )}
+          <button
+            data-no-drag
+            onClick={() => setPlaying(true)}
+            aria-label={labels.play}
+            title={labels.play}
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-black/60 hover:bg-black/80 hover:scale-105 transition-transform text-white flex items-center justify-center shadow-xl backdrop-blur-sm"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+          </button>
+        </div>
+      ) : (
+        el.image_src && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={el.image_src} alt="" draggable={false} className="w-full aspect-[1.91/1] object-cover bg-white/5 pointer-events-none select-none" />
+        )
       )}
       <div className="p-3">
         <div className="text-sm font-semibold text-white/90 line-clamp-2 break-words">{el.title || hostOf(el.url)}</div>

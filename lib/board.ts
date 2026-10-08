@@ -195,3 +195,58 @@ export function looksLikeUrl(text: string): boolean {
   if (/\s/.test(t) || t.length > 2000) return false;
   return /^https?:\/\/\S+\.\S+/i.test(t) || /^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(\/\S*)?$/i.test(t);
 }
+
+/** 2026-10-08, Lino: "Jegliche link-videos soll man per Klick auf dem Board
+ * abspielen können" — the embeddable player for a link card's URL (YouTube
+ * incl. Shorts, Vimeo, TikTok, Instagram posts/reels, direct video files),
+ * or null for ordinary links. `aspect` = width / height of the player. */
+export interface VideoEmbed {
+  kind: "iframe" | "video";
+  src: string;
+  aspect: number;
+}
+
+export function videoEmbedFor(rawUrl: string): VideoEmbed | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www|m)\./, "");
+  const path = url.pathname;
+
+  if (host === "youtube.com" || host === "youtu.be" || host === "youtube-nocookie.com") {
+    const id =
+      (host === "youtu.be" ? path.slice(1, 12) : null) ||
+      url.searchParams.get("v") ||
+      path.match(/^\/(?:shorts|live|embed|v)\/([A-Za-z0-9_-]{11})/)?.[1];
+    if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) return null;
+    const start = parseInt(url.searchParams.get("t") ?? "", 10);
+    return {
+      kind: "iframe",
+      src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&rel=0&playsinline=1${start > 0 ? `&start=${start}` : ""}`,
+      aspect: path.startsWith("/shorts/") ? 9 / 16 : 16 / 9,
+    };
+  }
+  if (host === "vimeo.com" || host === "player.vimeo.com") {
+    const m = path.match(/^\/(?:video\/)?(\d+)(?:\/([0-9a-f]+))?/);
+    if (!m) return null;
+    return { kind: "iframe", src: `https://player.vimeo.com/video/${m[1]}?autoplay=1${m[2] ? `&h=${m[2]}` : ""}`, aspect: 16 / 9 };
+  }
+  if (host.endsWith("tiktok.com")) {
+    const id = path.match(/\/video\/(\d+)/)?.[1];
+    if (!id) return null;
+    return { kind: "iframe", src: `https://www.tiktok.com/player/v1/${id}?autoplay=1&music_info=1&description=1`, aspect: 9 / 16 };
+  }
+  if (host === "instagram.com") {
+    const m = path.match(/^\/(?:[A-Za-z0-9_.]+\/)?(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    if (!m) return null;
+    const kind = m[1] === "p" ? "p" : "reel";
+    return { kind: "iframe", src: `https://www.instagram.com/${kind}/${m[2]}/embed/`, aspect: kind === "reel" ? 9 / 16 : 4 / 5 };
+  }
+  if (/\.(mp4|mov|webm|m4v)$/i.test(path)) {
+    return { kind: "video", src: url.toString(), aspect: 16 / 9 };
+  }
+  return null;
+}
