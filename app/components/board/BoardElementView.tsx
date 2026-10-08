@@ -1,0 +1,331 @@
+"use client";
+
+import DOMPurify from "dompurify";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import {
+  TEXT_COLOR_STYLES,
+  formatBytes,
+  hostOf,
+  type BoardElement,
+  type DrawingElement,
+  type LinkElement,
+  type MediaElement,
+  type TextElement,
+} from "@/lib/board";
+
+/** Renders one board element's CONTENT (the board engine in IdeaBoard.tsx owns
+ * the positioned wrapper, selection outline and handles around it). */
+
+const ALLOWED_TAGS = [
+  "b", "strong", "i", "em", "u", "s", "strike", "br", "div", "p", "big", "small", "code",
+  "ul", "ol", "li", "h1", "h2", "h3", "blockquote",
+];
+
+export function sanitizeBoardHtml(html: string): string {
+  return DOMPurify.sanitize(html ?? "", { ALLOWED_TAGS, ALLOWED_ATTR: [] });
+}
+
+export function boardHtmlToPlain(html: string): string {
+  if (typeof document === "undefined") return html.replace(/<[^>]*>/g, " ").trim();
+  const div = document.createElement("div");
+  div.innerHTML = sanitizeBoardHtml(html);
+  return (div.innerText || div.textContent || "").trim();
+}
+
+export const VIDEO_HEADER = 32;
+
+export interface ElementViewLabels {
+  textPlaceholder: string;
+  open: string;
+  download: string;
+  missingFile: string;
+}
+
+export function BoardElementView({
+  el,
+  editing,
+  editable,
+  labels,
+  onCommitText,
+  onMeasure,
+  onNaturalSize,
+}: {
+  el: BoardElement;
+  editing: boolean;
+  editable: boolean;
+  labels: ElementViewLabels;
+  onCommitText: (html: string) => void;
+  /** content needs more height than el.h (text/link cards grow with content) */
+  onMeasure: (height: number) => void;
+  /** media reported its real pixel size (used to fix the element's aspect ratio) */
+  onNaturalSize: (w: number, h: number) => void;
+}) {
+  switch (el.type) {
+    case "text":
+      return <TextNode el={el} editing={editing} placeholder={labels.textPlaceholder} onCommit={onCommitText} onMeasure={onMeasure} />;
+    case "image":
+      return <ImageNode el={el} onNaturalSize={onNaturalSize} missing={labels.missingFile} />;
+    case "video":
+      return <VideoNode el={el} onNaturalSize={onNaturalSize} />;
+    case "audio":
+      return <AudioNode el={el} />;
+    case "pdf":
+    case "file":
+      return <FileNode el={el} labels={labels} />;
+    case "link":
+      return <LinkNode el={el} onMeasure={onMeasure} editable={editable} labels={labels} />;
+    case "drawing":
+      return <DrawingNode el={el} />;
+  }
+}
+
+function useGrowToContent(ref: React.RefObject<HTMLElement | null>, height: number, onMeasure: (h: number) => void) {
+  const heightRef = useRef(height);
+  heightRef.current = height;
+  const cb = useRef(onMeasure);
+  cb.current = onMeasure;
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const check = () => {
+      // offsetHeight is layout size, unaffected by the board's scale transform
+      const h = node.offsetHeight;
+      if (h > heightRef.current + 1) cb.current(h);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [ref]);
+}
+
+function TextNode({
+  el,
+  editing,
+  placeholder,
+  onCommit,
+  onMeasure,
+}: {
+  el: TextElement;
+  editing: boolean;
+  placeholder: string;
+  onCommit: (html: string) => void;
+  onMeasure: (h: number) => void;
+}) {
+  const style = TEXT_COLOR_STYLES[el.color] ?? TEXT_COLOR_STYLES.default;
+  const cardRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  useGrowToContent(cardRef, el.h, onMeasure);
+
+  useLayoutEffect(() => {
+    const node = editorRef.current;
+    if (!editing || !node) return;
+    node.innerHTML = sanitizeBoardHtml(el.html);
+    node.dataset.empty = String(!node.textContent);
+    node.focus({ preventScroll: true });
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    try {
+      document.execCommand("styleWithCSS", false, "false");
+      document.execCommand("defaultParagraphSeparator", false, "div");
+    } catch {
+      // older engines — harmless
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  const isEmpty = !el.html || !el.html.replace(/<[^>]*>/g, "").trim();
+  return (
+    <div
+      ref={cardRef}
+      className="rounded-xl px-3.5 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      style={{
+        background: style.bg,
+        color: style.fg,
+        border: `1px solid ${style.border}`,
+        minHeight: el.h,
+        boxShadow: el.color === "transparent" ? "none" : undefined,
+      }}
+    >
+      {editing ? (
+        <div
+          ref={editorRef}
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder={placeholder}
+          className="board-text outline-none cursor-text select-text min-h-[1.5em]"
+          onInput={(e) => {
+            const node = e.currentTarget;
+            node.dataset.empty = String(!node.textContent);
+          }}
+          onBlur={(e) => onCommit(e.currentTarget.innerHTML)}
+        />
+      ) : (
+        <div
+          className="board-text"
+          data-empty={isEmpty ? "true" : "false"}
+          data-placeholder={placeholder}
+          dangerouslySetInnerHTML={{ __html: sanitizeBoardHtml(el.html) }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; missing: string }) {
+  if (!el.src) {
+    return (
+      <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
+        {missing}
+      </div>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={el.src}
+      alt={el.name || ""}
+      draggable={false}
+      className="w-full h-full object-cover rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"
+      onLoad={(e) => onNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+    />
+  );
+}
+
+function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
+  return (
+    <div className="w-full h-full rounded-xl overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      <div className="shrink-0 flex items-center gap-2 px-3 text-xs text-white/60" style={{ height: VIDEO_HEADER }}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 opacity-70"><path d="M8 5v14l11-7z" /></svg>
+        <span className="truncate">{el.name || "Video"}</span>
+      </div>
+      {el.src ? (
+        <video
+          src={el.src}
+          controls
+          playsInline
+          preload="metadata"
+          data-no-drag
+          className="flex-1 min-h-0 w-full bg-black object-contain"
+          onLoadedMetadata={(e) => onNaturalSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+        />
+      ) : (
+        <div className="flex-1 bg-black" />
+      )}
+    </div>
+  );
+}
+
+function AudioNode({ el }: { el: MediaElement }) {
+  return (
+    <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 p-3 flex flex-col justify-between gap-2 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      <div className="flex items-center gap-2.5 min-w-0">
+        <div className="w-9 h-9 shrink-0 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
+        </div>
+        <span className="text-sm text-white/85 truncate">{el.name || "Audio"}</span>
+      </div>
+      {el.src && <audio src={el.src} controls preload="metadata" data-no-drag className="w-full h-9" />}
+    </div>
+  );
+}
+
+function FileNode({ el, labels }: { el: MediaElement; labels: ElementViewLabels }) {
+  const isPdf = el.type === "pdf";
+  return (
+    <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 p-3 flex items-center gap-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      <div className={`w-11 h-14 shrink-0 rounded-md flex items-end justify-center pb-1.5 text-[10px] font-bold ${isPdf ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white/60"}`}>
+        {isPdf ? "PDF" : (el.name.split(".").pop() ?? "").slice(0, 4).toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-white/90 font-medium line-clamp-2 break-words">{el.name || "Datei"}</div>
+        <div className="text-xs text-white/40 mt-0.5">{formatBytes(el.size)}</div>
+        {el.src && (
+          <a
+            href={el.src}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-no-drag
+            className="inline-block mt-1.5 text-xs font-semibold text-blue-400 hover:text-blue-300"
+          >
+            {labels.open} ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LinkNode({
+  el,
+  onMeasure,
+  labels,
+}: {
+  el: LinkElement;
+  onMeasure: (h: number) => void;
+  editable: boolean;
+  labels: ElementViewLabels;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGrowToContent(ref, el.h, onMeasure);
+  return (
+    <div
+      ref={ref}
+      className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      style={{ minHeight: el.h }}
+    >
+      {el.image_src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={el.image_src} alt="" draggable={false} className="w-full aspect-[1.91/1] object-cover bg-white/5 pointer-events-none select-none" />
+      )}
+      <div className="p-3">
+        <div className="text-sm font-semibold text-white/90 line-clamp-2 break-words">{el.title || hostOf(el.url)}</div>
+        {el.description && <div className="text-xs text-white/55 mt-1 line-clamp-3 break-words">{el.description}</div>}
+        <a
+          href={el.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-no-drag
+          title={labels.open}
+          className="mt-2 flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 min-w-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+          <span className="truncate">{el.site_name || hostOf(el.url)}</span>
+        </a>
+      </div>
+    </div>
+  );
+}
+
+export function strokePath(points: [number, number][]): string {
+  if (points.length === 0) return "";
+  if (points.length === 1) {
+    const [x, y] = points[0];
+    return `M ${x} ${y} L ${x + 0.01} ${y + 0.01}`;
+  }
+  // quadratic curves through midpoints — smooth without a dependency
+  let d = `M ${points[0][0]} ${points[0][1]}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const [x, y] = points[i];
+    const [nx, ny] = points[i + 1];
+    d += ` Q ${x} ${y} ${(x + nx) / 2} ${(y + ny) / 2}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L ${last[0]} ${last[1]}`;
+  return d;
+}
+
+function DrawingNode({ el }: { el: DrawingElement }) {
+  const d = strokePath(el.points);
+  return (
+    <svg width={el.w} height={el.h} className="absolute inset-0 overflow-visible pointer-events-none">
+      {/* wide invisible path = comfortable hit area for selecting a thin stroke */}
+      <path d={d} fill="none" stroke="transparent" strokeWidth={el.stroke_width + 14} strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "stroke" }} />
+      <path d={d} fill="none" stroke={el.color} strokeWidth={el.stroke_width} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

@@ -1,5 +1,6 @@
 import type { SharedIdeasPreviewData, IdeaFeedback, IdeaFeedbackSendResult, Annotation } from "./types";
 import { ApiError } from "./api";
+import type { BoardResponse } from "./board";
 
 // 2026-07-21 (#262) — the public no-login "Ideen-Preview" page's own tiny
 // API client, same reasoning/shape as lib/publicPreviewApi.ts (#254, video):
@@ -35,6 +36,13 @@ export const publicIdeasPreviewApi = {
   fetchIdeasPreview: (token: string, unlockToken: string | null) =>
     handle<SharedIdeasPreviewData>(
       fetch(`${BASE_URL}/share/${token}/ideas-preview`, { headers: unlockHeaders(unlockToken) })
+    ),
+
+  // 2026-10-08 — read-only idea board (see lib/board.ts), only for ideas
+  // with has_board.
+  fetchIdeaBoard: (token: string, unlockToken: string | null, ideaId: string) =>
+    handle<BoardResponse>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board`, { headers: unlockHeaders(unlockToken) })
     ),
 
   // "Feedback speichern" — always inserts a fresh 'draft' row (never

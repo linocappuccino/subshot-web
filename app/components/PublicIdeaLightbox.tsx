@@ -5,6 +5,7 @@ import { PublicIdeaMedia } from "./PublicIdeaMedia";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { renderIdeaForPresentation } from "@/lib/ideaPresentation";
 import { sanitizeRichTextHtml } from "@/lib/richText";
+import { PublicIdeaBoard } from "./board/PublicIdeaBoard";
 import { authorColor } from "@/lib/authorColor";
 import { ApiError } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
@@ -338,6 +339,11 @@ export function PublicIdeaLightbox({
             flow) instead of two independently-scrolling side-by-side
             panes; `md:` and up restores the original two-pane row exactly. */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
+          {idea.has_board ? (
+            <div className="relative w-full md:flex-1 min-h-[60vh] md:min-h-0 mx-0 md:ml-8 mb-4 md:mb-8 rounded-2xl overflow-hidden border border-white/10">
+              <PublicIdeaBoard token={token} unlockToken={unlockToken} ideaId={idea.id} />
+            </div>
+          ) : (
           <div className="w-full md:w-[46%] shrink-0 overflow-visible md:overflow-y-auto px-8 pb-4 md:pb-8 flex flex-col gap-3">
           <div
             className={`relative rounded-2xl overflow-hidden bg-black/20 ${readyImages.length > 1 ? "cursor-pointer" : ""}`}
@@ -420,8 +426,9 @@ export function PublicIdeaLightbox({
             )}
           </div>
           </div>
+          )}
 
-          <div className="flex-1 min-h-0 min-w-0 flex flex-col border-l-0 md:border-l border-white/10 overflow-visible md:overflow-y-auto px-8 pb-8">
+          <div className={`${idea.has_board ? "md:w-[400px] md:flex-none" : "flex-1"} min-h-0 min-w-0 flex flex-col border-l-0 md:border-l border-white/10 overflow-visible md:overflow-y-auto px-8 pb-8`}>
             {/* 2026-07-22, Lino: "die kommentar box ist nun einfach vor dem
                 geschriebenen Text" — this column is a flex COLUMN now (used
                 to be plain block layout, see this component's own layout
@@ -438,6 +445,7 @@ export function PublicIdeaLightbox({
                 PARENT's own `overflow-y-auto` is what should handle
                 anything that doesn't fit, exactly like it already did
                 before this was a flex column. */}
+            {!idea.has_board && (
             <div
               className="shrink-0 min-h-[80px] text-[15px] leading-relaxed text-[#e5e5e5] whitespace-pre-line mb-5 [&>div]:mb-2 mt-8"
               data-field="idea.text"
@@ -450,6 +458,8 @@ export function PublicIdeaLightbox({
                   those styles depend on). */}
               {wrapHighlightsInHtml(renderIdeaForPresentation(sanitizeRichTextHtml(idea.text)), textAnnotations, onMarkClick, onMarkHoverChange)}
             </div>
+            )}
+            {idea.has_board && <div className="mt-8" />}
 
             {/* 2026-07-26, Todoist #327 (Lino) — this whole section used to
                 disappear ENTIRELY once approved/rejected (no history, no

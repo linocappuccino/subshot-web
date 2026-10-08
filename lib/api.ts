@@ -45,6 +45,8 @@ import type {
   VideoVersion,
 } from "./types";
 
+import type { BoardData, BoardResponse, BoardUploadTicket, LinkPreview } from "./board";
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export class ApiError extends Error {
@@ -835,6 +837,23 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         method: "POST",
         body: JSON.stringify({ ordered_image_ids: orderedImageIds }),
       }),
+
+    // ── Idea board (2026-10-08, see lib/board.ts) ────────────────────────
+    // Board GETs bypass the 4s GET cache: reopening an idea right after
+    // editing it must never show the pre-save board.
+    getIdeaBoard: (ideaId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/board`);
+      return request<BoardResponse>(`ideas/${ideaId}/board`);
+    },
+    saveIdeaBoard: (ideaId: string, version: number, data: BoardData) =>
+      request<{ version: number }>(`ideas/${ideaId}/board`, {
+        method: "PUT",
+        body: JSON.stringify({ version, data }),
+      }),
+    createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
+      request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    ideaBoardLinkPreview: (ideaId: string, url: string) =>
+      request<LinkPreview>(`ideas/${ideaId}/board/link-preview`, { method: "POST", body: JSON.stringify({ url }) }),
 
     // ── Todo lists ───────────────────────────────────────────────────────
     createTodoList: (projectId: string, name: string, sortOrder = 0) =>

@@ -518,6 +518,11 @@ export interface Idea {
   sort_order: number;
   status: "open" | "approved" | "rejected";
   section_id: string | null;
+  /** 2026-10-08 — idea board (see lib/board.ts): whether a board was saved,
+   * plus its top-left image (presigned) and first text box for the tile. */
+  has_board?: boolean;
+  board_cover_url?: string | null;
+  board_text_preview?: string | null;
   scene_id: string | null;
   created_at: string;
   /** Wann die Idee angenommen wurde (2026-07-17) — null solange status
@@ -589,6 +594,10 @@ export interface IdeaPreview {
   round_advance_pending: boolean;
   images: IdeaImage[];
   feedback: IdeaFeedback[];
+  /** 2026-10-08 — true once the idea has a board; the preview then shows it read-only. */
+  has_board?: boolean;
+  board_cover_url?: string | null;
+  board_text_preview?: string | null;
 }
 
 export interface SharedIdeasPreviewData {

@@ -239,3 +239,34 @@ html {
    style (the tapered "druck vom stift" look), see segmentWidths(). */
 .subshot-annot-pen-core { opacity: 0.88; }
 .subshot-annot-pen-glow { opacity: 0.18; }
+
+/* 2026-10-08 — text boxes on the idea board (app/components/board/IdeaBoard.tsx).
+   Plain readable type: the global h1 rule above (Bebas, uppercase) is for page
+   headings, not for headings someone writes inside a board note. */
+.board-text {
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.board-text h1,
+.board-text h2,
+.board-text h3 {
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0.2em 0 0.35em;
+}
+.board-text h1 { font-size: 1.6em; }
+.board-text h2 { font-size: 1.3em; }
+.board-text h3 { font-size: 1.1em; }
+.board-text ul { list-style: disc; padding-left: 1.3em; }
+.board-text ol { list-style: decimal; padding-left: 1.3em; }
+.board-text blockquote { border-left: 3px solid currentColor; opacity: 0.85; padding-left: 0.7em; }
+.board-text code { font-family: var(--font-mono); font-size: 0.9em; }
+.board-text:empty::before,
+.board-text[data-empty="true"]::before {
+  content: attr(data-placeholder);
+  opacity: 0.4;
+}

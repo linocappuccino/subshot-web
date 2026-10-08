@@ -22,13 +22,19 @@ export function IdeaTile({
 }) {
   const { t } = useLanguage();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: idea.id });
-  const cover = idea.images.find((img) => img.status === "ready" && img.image_url);
+  // 2026-10-08 — once an idea has a board, the tile shows the board's
+  // top-left image and first text box (backend: IdeaOut.board_cover_url /
+  // board_text_preview); older ideas keep their first slideshow image.
+  const boardCover = idea.has_board ? idea.board_cover_url : null;
+  const cover = idea.has_board ? null : idea.images.find((img) => img.status === "ready" && img.image_url);
   const approved = idea.status === "approved";
   const rejected = idea.status === "rejected";
   // idea.text can now contain bold/italic HTML (RichTextEditor, 2026-07-17)
   // — a plain-text preview snippet here should show the words, not the
   // literal <b>/<i> tags.
-  const textPreview = idea.text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const textPreview = idea.has_board
+    ? (idea.board_text_preview ?? "").replace(/\s+/g, " ").trim()
+    : idea.text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 
   return (
     <div
@@ -92,7 +98,9 @@ export function IdeaTile({
         </div>
       )}
       <div className="aspect-video bg-white/5 flex items-center justify-center overflow-hidden">
-        {cover ? (
+        {boardCover ? (
+          <AuthImage path={boardCover} alt="" className="w-full h-full object-cover" />
+        ) : cover ? (
           isVideoUrl(cover.image_url ?? "") ? (
             <AuthVideo path={cover.image_url ?? ""} className="w-full h-full object-cover" />
           ) : (

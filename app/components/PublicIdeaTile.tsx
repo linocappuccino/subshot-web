@@ -17,7 +17,12 @@ export function PublicIdeaTile({
   onClick: () => void;
 }) {
   const { t } = useLanguage();
-  const cover = idea.images.find((img) => img.status === "ready" && img.image_url);
+  // 2026-10-08 — ideas with a board show its top-left image (see IdeaTile.tsx).
+  const cover = idea.has_board
+    ? idea.board_cover_url
+      ? { image_url: idea.board_cover_url, focus_x: null, focus_y: null }
+      : undefined
+    : idea.images.find((img) => img.status === "ready" && img.image_url);
   const approved = idea.status === "approved";
   const rejected = idea.status === "rejected";
   // 2026-08-09, Lino: "dürfen nie die / funktionen gezeigt werden oder
@@ -33,7 +38,7 @@ export function PublicIdeaTile({
   // sanitize-then-reshape order PublicIdeaLightbox uses) removes every
   // marker/end-cap the same way; the tag-strip below then only needs to
   // clean up the bold/italic spans renderIdeaForPresentation itself adds.
-  const textPreview = renderIdeaForPresentation(sanitizeRichTextHtml(idea.text))
+  const textPreview = (idea.has_board ? sanitizeRichTextHtml(idea.board_text_preview ?? "") : renderIdeaForPresentation(sanitizeRichTextHtml(idea.text)))
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
