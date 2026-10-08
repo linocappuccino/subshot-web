@@ -223,7 +223,7 @@ function SceneNode({
   return (
     <div
       ref={cardRef}
-      className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      className="rounded-lg bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
     >
       <div className="flex items-center gap-2.5 px-3 pt-3 pb-2">
         <div className="shrink-0 h-7 min-w-7 px-2 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center tabular-nums">
@@ -254,7 +254,7 @@ function SceneNode({
       </div>
       <div className="px-3">
         {generating ? (
-          <div className="w-full aspect-video rounded-lg bg-gradient-to-br from-violet-500/25 via-blue-500/15 to-transparent animate-pulse flex flex-col items-center justify-center gap-1.5 text-xs text-white/70">
+          <div className="w-full aspect-video rounded-md bg-gradient-to-br from-violet-500/25 via-blue-500/15 to-transparent animate-pulse flex flex-col items-center justify-center gap-1.5 text-xs text-white/70">
             <span className="text-lg">✨</span>
             {labels.aiGenerating}
           </div>
@@ -267,10 +267,10 @@ function SceneNode({
             onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
             // the image's own format; only extreme panoramas/strips get cropped
             style={{ aspectRatio: Math.min(3, Math.max(0.5, el.image_ratio ?? 16 / 9)) }}
-            className="w-full object-cover rounded-lg bg-white/5 pointer-events-none select-none"
+            className="w-full object-cover rounded-md bg-white/5 pointer-events-none select-none"
           />
         ) : editable ? (
-          <div className="w-full aspect-video rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 p-2">
+          <div className="w-full aspect-video rounded-md border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 p-2">
             <span className="text-xs text-white/40">{labels.addImage}</span>
             <div className="flex gap-1.5">
               <button
@@ -293,7 +293,7 @@ function SceneNode({
             </div>
           </div>
         ) : (
-          <div className="w-full aspect-video rounded-lg bg-white/5" />
+          <div className="w-full aspect-video rounded-md bg-white/5" />
         )}
       </div>
       <div className="px-3.5 pt-2.5 pb-3 text-white/85">
@@ -321,7 +321,7 @@ function SceneNode({
       {(editing ? lines.length > 0 : (el.dialogues?.length ?? 0) > 0) && (
         <div className="px-3 pb-2 flex flex-col gap-1.5">
           {(editing ? lines : el.dialogues ?? []).map((line, i) => (
-            <div key={i} className="flex items-start gap-2 rounded-lg bg-white/[0.05] border border-white/10 px-2.5 py-1.5">
+            <div key={i} className="flex items-start gap-2 rounded-md bg-white/[0.05] border border-white/10 px-2.5 py-1.5">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-[3px] text-violet-300">
                 <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5z" />
               </svg>
@@ -448,7 +448,7 @@ function TextNode({
   return (
     <div
       ref={cardRef}
-      className="rounded-xl px-3.5 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      className="rounded-lg px-3.5 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
       style={{
         background: style.bg,
         color: style.fg,
@@ -486,7 +486,7 @@ function TextNode({
 function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; missing: string }) {
   if (!el.src) {
     return (
-      <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
+      <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
         {missing}
       </div>
     );
@@ -497,7 +497,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
       src={el.src}
       alt={el.name || ""}
       draggable={false}
-      className="w-full h-full object-cover rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"
+      className="w-full h-full object-cover rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"
       onLoad={(e) => onNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
     />
   );
@@ -505,7 +505,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
 
 function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
   return (
-    <div className="w-full h-full rounded-xl overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+    <div className="w-full h-full rounded-lg overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="shrink-0 flex items-center gap-2 px-3 text-xs text-white/60" style={{ height: VIDEO_HEADER }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 opacity-70"><path d="M8 5v14l11-7z" /></svg>
         <span className="truncate">{el.name || "Video"}</span>
@@ -529,7 +529,7 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
 
 function AudioNode({ el }: { el: MediaElement }) {
   return (
-    <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 p-3 flex flex-col justify-between gap-2 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+    <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 p-3 flex flex-col justify-between gap-2 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-2.5 min-w-0">
         <div className="w-9 h-9 shrink-0 rounded-lg bg-violet-500/20 text-violet-300 flex items-center justify-center">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg>
@@ -544,7 +544,7 @@ function AudioNode({ el }: { el: MediaElement }) {
 function FileNode({ el, labels }: { el: MediaElement; labels: ElementViewLabels }) {
   const isPdf = el.type === "pdf";
   return (
-    <div className="w-full h-full rounded-xl bg-[#232325] border border-white/10 p-3 flex items-center gap-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+    <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 p-3 flex items-center gap-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className={`w-11 h-14 shrink-0 rounded-md flex items-end justify-center pb-1.5 text-[10px] font-bold ${isPdf ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white/60"}`}>
         {isPdf ? "PDF" : (el.name.split(".").pop() ?? "").slice(0, 4).toUpperCase()}
       </div>
@@ -584,7 +584,7 @@ function LinkNode({
   return (
     <div
       ref={ref}
-      className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
+      className="rounded-lg bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
     >
       {embed && playing ? (
         <div className="relative w-full bg-black" style={{ aspectRatio: String(embed.aspect) }} data-no-drag>
@@ -755,10 +755,10 @@ function GroupNode({
     return (
       <div
         data-group-body
-        className="absolute inset-0 rounded-2xl border border-white/15 pointer-events-auto"
+        className="absolute inset-0 rounded-[10px] border border-white/15 pointer-events-auto"
         style={{ background: "rgba(28,28,30,0.55)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
       >
-        <div data-group-header className="pointer-events-auto flex items-center gap-2 px-2.5 h-10 rounded-t-2xl bg-white/[0.04] border-b border-white/10 cursor-grab">
+        <div data-group-header className="pointer-events-auto flex items-center gap-2 px-2.5 h-10 rounded-t-[10px] bg-white/[0.04] border-b border-white/10 cursor-grab">
           {toggle}
           {title}
           {count}
@@ -769,7 +769,7 @@ function GroupNode({
 
   const thumbs = members.map(previewOf).filter((x): x is string => !!x).slice(0, 4);
   return (
-    <div className="w-full h-full rounded-2xl bg-[#232325] border border-white/15 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col">
+    <div className="w-full h-full rounded-[10px] bg-[#232325] border border-white/15 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden flex flex-col">
       <div className="flex items-center gap-2 px-2.5 h-10 border-b border-white/10">
         {toggle}
         {title}
@@ -779,10 +779,10 @@ function GroupNode({
         {thumbs.length > 0 ? (
           thumbs.map((src, i) => (
             // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={src} alt="" draggable={false} className="h-full flex-1 min-w-0 object-cover rounded-lg bg-white/5 pointer-events-none" />
+            <img key={i} src={src} alt="" draggable={false} className="h-full flex-1 min-w-0 object-cover rounded-md bg-white/5 pointer-events-none" />
           ))
         ) : (
-          <div className="flex-1 rounded-lg border border-dashed border-white/15 flex items-center justify-center gap-1.5 text-white/30">
+          <div className="flex-1 rounded-md border border-dashed border-white/15 flex items-center justify-center gap-1.5 text-white/30">
             {members.slice(0, 6).map((m) => (
               <span key={m.id} className="w-2 h-2 rounded-full bg-white/25" />
             ))}

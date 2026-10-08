@@ -212,7 +212,7 @@ export function TodoNode({ el, editable, labels }: { el: TodoElement; editable: 
   const canEdit = editable && !!api && !!list;
 
   return (
-    <div className="rounded-xl bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+    <div className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
         <div className="w-7 h-7 shrink-0 rounded-lg bg-emerald-500/20 text-emerald-300 flex items-center justify-center">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 11 3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></svg>

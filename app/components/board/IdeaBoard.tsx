@@ -1741,7 +1741,7 @@ export function IdeaBoard({
                       y={tgt.y - 4 / view.scale}
                       width={tgt.w + 8 / view.scale}
                       height={tgt.h + 8 / view.scale}
-                      rx={14}
+                      rx={10}
                       fill="rgba(59,130,246,0.08)"
                       stroke="#3b82f6"
                       strokeWidth={1.5 / view.scale}
@@ -1819,11 +1819,11 @@ export function IdeaBoard({
               )}
               {selected && (
                 <div
-                  className="absolute pointer-events-none rounded-[14px]"
+                  className="absolute pointer-events-none rounded-[12px]"
                   style={{
                     inset: -4 / view.scale,
                     border: `${2 / view.scale}px solid #3b82f6`,
-                    borderRadius: 14,
+                    borderRadius: 12,
                   }}
                 />
               )}
@@ -1862,7 +1862,7 @@ export function IdeaBoard({
         {pending.map((p) => (
           <div
             key={p.id}
-            className="absolute rounded-xl bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60"
+            className="absolute rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60"
             style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: 100000 }}
           >
             <span className="truncate max-w-full">{p.progress === null ? p.label : `${t("ideaBoard.uploading")} ${p.label}`}</span>
