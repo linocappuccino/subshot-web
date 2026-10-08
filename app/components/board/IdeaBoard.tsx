@@ -661,6 +661,8 @@ export function IdeaBoard({
   // ── scene cards ───────────────────────────────────────────────────────
   const sceneImageInputRef = useRef<HTMLInputElement>(null);
   const sceneImageTarget = useRef<string | null>(null);
+  /** scene whose edit mode was opened by "+ Dialog" (starts with a new empty line) */
+  const dialogueOnEdit = useRef<string | null>(null);
 
   function addScene(at: Point, avoidOverlap = false) {
     const w = 312;
@@ -707,10 +709,15 @@ export function IdeaBoard({
     setEditingId(id);
   }
 
-  function commitScene(id: string, patch: { title?: string; html?: string }) {
+  function commitScene(id: string, patch: { title?: string; html?: string; dialogues?: string[] }) {
     const el = dataRef.current.elements.find((e) => e.id === id);
     if (!el || el.type !== "scene") return;
     const next: Partial<SceneElement> = {};
+    if (patch.dialogues !== undefined) {
+      // empty lines are kept while typing in edit mode, but never saved
+      const lines = patch.dialogues.map((l) => l.trim()).filter(Boolean);
+      if (JSON.stringify(lines) !== JSON.stringify(el.dialogues ?? [])) next.dialogues = lines;
+    }
     if (patch.title !== undefined && patch.title.trim() !== el.title) next.title = patch.title.trim();
     if (patch.html !== undefined) {
       const html = boardHtmlToPlain(patch.html) ? sanitizeBoardHtml(patch.html) : "";
@@ -1379,7 +1386,10 @@ export function IdeaBoard({
   }, [editable]);
 
   useEffect(() => {
-    if (!editingId) focusPasteCatcher();
+    if (!editingId) {
+      dialogueOnEdit.current = null;
+      focusPasteCatcher();
+    }
   }, [editingId, focusPasteCatcher]);
 
   // Space held = temporary hand tool (like Figma/Milanote)
@@ -1445,6 +1455,9 @@ export function IdeaBoard({
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
+    addDialogue: t("ideaBoard.addDialogue"),
+    dialoguePlaceholder: t("ideaBoard.dialoguePlaceholder"),
+    removeDialogue: t("ideaBoard.removeDialogue"),
     play: t("ideaBoard.playVideo"),
     stop: t("ideaBoard.stopVideo"),
     group: t("ideaBoard.group"),
@@ -1574,6 +1587,12 @@ export function IdeaBoard({
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
+                onRequestDialogue={() => {
+                  dialogueOnEdit.current = el.id;
+                  setSelection(new Set([el.id]));
+                  setEditingId(el.id);
+                }}
+                addDialogueOnEdit={editingId === el.id && dialogueOnEdit.current === el.id}
                 onPickSceneImage={() => pickSceneImage(el.id)}
                 groupMembers={el.type === "group" ? el.children.map((c) => byId.get(c)).filter((m): m is BoardElement => !!m) : undefined}
                 onToggleGroup={() => toggleGroup(el.id)}

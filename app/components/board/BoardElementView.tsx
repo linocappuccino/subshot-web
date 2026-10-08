@@ -46,6 +46,9 @@ export interface ElementViewLabels {
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
   addImage: string;
+  addDialogue: string;
+  dialoguePlaceholder: string;
+  removeDialogue: string;
   play: string;
   stop: string;
   group: string;
@@ -62,6 +65,8 @@ export function BoardElementView({
   labels,
   onCommitText,
   onCommitScene,
+  onRequestDialogue,
+  addDialogueOnEdit,
   onPickSceneImage,
   groupMembers,
   onToggleGroup,
@@ -74,7 +79,9 @@ export function BoardElementView({
   editable: boolean;
   labels: ElementViewLabels;
   onCommitText: (html: string) => void;
-  onCommitScene?: (patch: { title?: string; html?: string }) => void;
+  onCommitScene?: (patch: { title?: string; html?: string; dialogues?: string[] }) => void;
+  onRequestDialogue?: () => void;
+  addDialogueOnEdit?: boolean;
   onPickSceneImage?: () => void;
   groupMembers?: BoardElement[];
   onToggleGroup?: () => void;
@@ -120,6 +127,8 @@ export function BoardElementView({
           labels={labels}
           onCommit={(patch) => onCommitScene?.(patch)}
           onPickImage={() => onPickSceneImage?.()}
+          onRequestDialogue={() => onRequestDialogue?.()}
+          addDialogueOnEdit={!!addDialogueOnEdit}
           onMeasure={onMeasure}
         />
       );
@@ -133,38 +142,69 @@ function SceneNode({
   labels,
   onCommit,
   onPickImage,
+  onRequestDialogue,
+  addDialogueOnEdit,
   onMeasure,
 }: {
   el: SceneElement;
   editing: boolean;
   editable: boolean;
   labels: ElementViewLabels;
-  onCommit: (patch: { title?: string; html?: string }) => void;
+  onCommit: (patch: { title?: string; html?: string; dialogues?: string[] }) => void;
   onPickImage: () => void;
+  onRequestDialogue: () => void;
+  addDialogueOnEdit: boolean;
   onMeasure: (h: number) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
-  useGrowToContent(cardRef, el.h, onMeasure);
+  // the card follows its content both ways (dialogue lines come and go)
+  useGrowToContent(cardRef, el.h, onMeasure, true);
+
+  // dialogue lines being edited (only while the card is in edit mode)
+  const [lines, setLines] = useState<string[]>([]);
+  const linesRef = useRef<string[]>([]);
+  linesRef.current = lines;
+  const lineRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const focusLine = useRef<number | null>(null);
 
   useLayoutEffect(() => {
     if (!editing) return;
     if (editorRef.current) editorRef.current.innerHTML = sanitizeBoardHtml(el.html);
+    const start = [...(el.dialogues ?? [])];
+    if (addDialogueOnEdit) {
+      start.push("");
+      focusLine.current = start.length - 1;
+    }
+    setLines(start);
     const title = titleRef.current;
-    if (title) {
+    if (title && !addDialogueOnEdit) {
       title.focus({ preventScroll: true });
       title.select();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
+  useLayoutEffect(() => {
+    if (focusLine.current === null) return;
+    lineRefs.current[focusLine.current]?.focus({ preventScroll: true });
+    focusLine.current = null;
+  }, [lines]);
+
+  function addLine() {
+    focusLine.current = linesRef.current.length;
+    setLines([...linesRef.current, ""]);
+  }
+  function commitLines(next: string[]) {
+    onCommit({ dialogues: next });
+  }
+
   const textEmpty = !el.html || !el.html.replace(/<[^>]*>/g, "").trim();
   return (
     <div
       ref={cardRef}
       className="rounded-xl bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
-      style={{ minHeight: el.h }}
     >
       <div className="flex items-center gap-2.5 px-3 pt-3 pb-2">
         <div className="shrink-0 h-7 min-w-7 px-2 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center tabular-nums">
@@ -232,6 +272,66 @@ function SceneNode({
           />
         )}
       </div>
+      {(editing ? lines.length > 0 : (el.dialogues?.length ?? 0) > 0) && (
+        <div className="px-3 pb-2 flex flex-col gap-1.5">
+          {(editing ? lines : el.dialogues ?? []).map((line, i) => (
+            <div key={i} className="flex items-start gap-2 rounded-lg bg-white/[0.05] border border-white/10 px-2.5 py-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-[3px] text-violet-300">
+                <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.8-.9L3 21l1.9-5.2A8.4 8.4 0 1 1 21 11.5z" />
+              </svg>
+              {editing ? (
+                <>
+                  <input
+                    ref={(n) => {
+                      lineRefs.current[i] = n;
+                    }}
+                    value={line}
+                    placeholder={labels.dialoguePlaceholder}
+                    onChange={(e) => setLines(linesRef.current.map((l, j) => (j === i ? e.target.value : l)))}
+                    onBlur={() => commitLines(linesRef.current)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addLine();
+                      }
+                    }}
+                    className="min-w-0 flex-1 bg-transparent text-sm italic text-white/90 outline-none placeholder:text-white/30 select-text"
+                  />
+                  <button
+                    data-no-drag
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => {
+                      const next = linesRef.current.filter((_, j) => j !== i);
+                      setLines(next);
+                      commitLines(next);
+                    }}
+                    title={labels.removeDialogue}
+                    aria-label={labels.removeDialogue}
+                    className="shrink-0 w-5 h-5 rounded-md text-white/40 hover:text-white hover:bg-white/10 flex items-center justify-center"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                  </button>
+                </>
+              ) : (
+                <span className="min-w-0 flex-1 text-sm italic text-white/80 break-words">{line}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {editable && (
+        <div className="px-3 pb-3">
+          <button
+            data-no-drag
+            onMouseDown={(e) => editing && e.preventDefault()}
+            onClick={() => (editing ? addLine() : onRequestDialogue())}
+            className="w-full rounded-lg border border-dashed border-white/15 text-white/45 hover:text-white/80 hover:border-white/35 text-xs font-semibold py-1.5 flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+            {labels.addDialogue}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

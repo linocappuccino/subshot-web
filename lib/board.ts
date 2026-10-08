@@ -74,6 +74,8 @@ export interface SceneElement extends BaseElement {
   html: string;
   image_key?: string;
   image_src?: string | null;
+  /** spoken lines — each becomes its own dialogue entry of the shot-list scene */
+  dialogues?: string[];
 }
 
 /** 2026-10-08, Lino: a group — a frame drawn around its member elements
