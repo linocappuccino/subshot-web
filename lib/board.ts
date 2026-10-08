@@ -53,6 +53,8 @@ export interface MediaElement extends BaseElement {
   mime: string;
   size?: number;
   src?: string | null;
+  /** small display version (≤1000 px image / video poster), added on read */
+  thumb_src?: string | null;
 }
 
 export interface LinkElement extends BaseElement {
@@ -85,6 +87,8 @@ export interface SceneElement extends BaseElement {
   /** 2026-10-08, Lino: width / height of the image — the card shows it in its
    * own format (9:16, 1:1, …) instead of cropping to 16:9 */
   image_ratio?: number;
+  /** small display version of the image, added on read */
+  image_thumb_src?: string | null;
   /** 2026-10-08, Lino: same priorities as the shot list (number badge color),
    * carried over to the shot-list scene on "Abgenommen" */
   priority?: Priority | null;
@@ -204,6 +208,8 @@ export interface MoodboardItem {
   ar?: number;
   /** layout 3: size factor (1 = normal) — bigger images make their row taller */
   s?: number;
+  /** small display version, added on read */
+  thumb_src?: string | null;
 }
 export interface MoodboardElement extends BaseElement {
   type: "moodboard";
@@ -822,11 +828,13 @@ export function forSave(data: BoardData): BoardData {
   return {
     cover: data.cover ?? null,
     elements: data.elements.map((el) => {
-      if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, ...it }) => it) } as BoardElement;
+      if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, thumb_src: _t, ...it }) => it) } as BoardElement;
       if (!("src" in el) && !("image_src" in el)) return el;
       const copy: Record<string, unknown> = { ...el };
       delete copy.src;
       delete copy.image_src;
+      delete copy.thumb_src;
+      delete copy.image_thumb_src;
       return copy as unknown as BoardElement;
     }),
     connectors: data.connectors,
@@ -951,4 +959,18 @@ export function startDownload(url: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+/** 2026-10-08 (Lino: "warum laden Bilder so langsam?") — <img> sources that
+ * let the browser pick the small version (≤1000 px) at normal zoom and the
+ * big web version only when the image is shown large. `cssWidth` is the
+ * size it's drawn at (board px × zoom bucket); the browser adds the screen's
+ * pixel density itself. */
+export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number) {
+  if (!src) return { src: thumb ?? undefined };
+  if (!thumb) return { src };
+  const ar = aspect > 0 ? aspect : 1;
+  const tw = Math.round(ar >= 1 ? 1000 : 1000 * ar);
+  const ww = Math.round(ar >= 1 ? 2400 : 2400 * ar);
+  return { src: thumb, srcSet: `${thumb} ${tw}w, ${src} ${ww}w`, sizes: `${Math.max(40, Math.round(cssWidth))}px` };
 }

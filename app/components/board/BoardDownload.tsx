@@ -7,6 +7,10 @@ import { createContext, useContext } from "react";
  * itself shows the lighter web version). Provided by IdeaBoard. */
 export const BoardDownloadContext = createContext<((key: string, name: string) => void) | null>(null);
 
+/** current zoom, bucketed (1, 2, 4) — images ask for a bigger file only
+ * when the board is zoomed in far enough to need it */
+export const BoardZoomContext = createContext(1);
+
 export function DownloadButton({ fileKey, name, title, scale = 1, className = "" }: { fileKey: string; name: string; title: string; scale?: number; className?: string }) {
   const download = useContext(BoardDownloadContext);
   if (!download) return null;

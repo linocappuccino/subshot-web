@@ -52,7 +52,7 @@ export function PublicIdeaBoard({
     docKey: ideaId,
     initial: data,
     getSession: () => publicIdeasPreviewApi.boardCollab(token, unlockToken, ideaId),
-    presign: async (keys) => (await publicIdeasPreviewApi.boardPresign(token, unlockToken, ideaId, keys)).urls,
+    presign: (keys) => publicIdeasPreviewApi.boardPresign(token, unlockToken, ideaId, keys),
   });
 
   useEffect(() => {

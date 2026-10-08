@@ -342,7 +342,7 @@ function IdeaBoardScreen({
     docKey: idea.id,
     initial: board?.data ?? null,
     getSession: () => api.boardCollab(idea.id),
-    presign: async (keys) => (await api.boardPresign(idea.id, keys)).urls,
+    presign: (keys) => api.boardPresign(idea.id, keys),
   });
   const collabLive = collab.status === "live" || collab.status === "offline";
   const summaryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

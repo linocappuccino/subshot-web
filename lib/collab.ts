@@ -44,7 +44,9 @@ function plain(el: BoardElement): BoardElement {
   const copy = { ...el } as Record<string, unknown>;
   delete copy.src;
   delete copy.image_src;
-  if (el.type === "moodboard") copy.items = el.items.map(({ src: _s, ...it }) => it);
+  delete copy.thumb_src;
+  delete copy.image_thumb_src;
+  if (el.type === "moodboard") copy.items = el.items.map(({ src: _s, thumb_src: _t, ...it }) => it);
   return copy as unknown as BoardElement;
 }
 
@@ -70,7 +72,7 @@ export function useBoardCollab({
   /** the board as loaded over REST (with URLs) — seeds the URL cache */
   initial: BoardData | null;
   getSession: () => Promise<CollabSession>;
-  presign: (keys: string[]) => Promise<Record<string, string>>;
+  presign: (keys: string[]) => Promise<{ urls: Record<string, string>; thumbs?: Record<string, string> }>;
 }) {
   const [status, setStatus] = useState<CollabStatus>(enabled ? "connecting" : "off");
   const [remote, setRemote] = useState<{ data: BoardData; nonce: number } | null>(null);
@@ -85,6 +87,7 @@ export function useBoardCollab({
   const pendingLocal = useRef<BoardData | null>(null);
   const lastJson = useRef(new Map<string, string>()); // "e:<id>" / "c:<id>" -> JSON in the doc
   const urls = useRef(new Map<string, string>());
+  const thumbs = useRef(new Map<string, string>());
   const asked = useRef(new Set<string>());
   const presignRef = useRef(presign);
   presignRef.current = presign;
@@ -98,15 +101,27 @@ export function useBoardCollab({
       const r = el as unknown as Record<string, unknown>;
       if (typeof r.asset_key === "string" && typeof r.src === "string") urls.current.set(r.asset_key, r.src);
       if (typeof r.image_key === "string" && typeof r.image_src === "string") urls.current.set(r.image_key, r.image_src);
-      if (el.type === "moodboard") for (const it of el.items) if (it.src) urls.current.set(it.asset_key, it.src);
+      if (typeof r.asset_key === "string" && typeof r.thumb_src === "string") thumbs.current.set(r.asset_key, r.thumb_src);
+      if (typeof r.image_key === "string" && typeof r.image_thumb_src === "string") thumbs.current.set(r.image_key, r.image_thumb_src);
+      if (el.type === "moodboard")
+        for (const it of el.items) {
+          if (it.src) urls.current.set(it.asset_key, it.src);
+          if (it.thumb_src) thumbs.current.set(it.asset_key, it.thumb_src);
+        }
     }
   }, [initial]);
 
   const hydrate = useCallback((el: BoardElement): BoardElement => {
     const r = { ...el } as Record<string, unknown>;
-    if (typeof r.asset_key === "string") r.src = urls.current.get(r.asset_key) ?? null;
-    if (typeof r.image_key === "string") r.image_src = urls.current.get(r.image_key) ?? null;
-    if (el.type === "moodboard") r.items = el.items.map((it) => ({ ...it, src: urls.current.get(it.asset_key) ?? null }));
+    if (typeof r.asset_key === "string") {
+      r.src = urls.current.get(r.asset_key) ?? null;
+      r.thumb_src = thumbs.current.get(r.asset_key) ?? null;
+    }
+    if (typeof r.image_key === "string") {
+      r.image_src = urls.current.get(r.image_key) ?? null;
+      r.image_thumb_src = thumbs.current.get(r.image_key) ?? null;
+    }
+    if (el.type === "moodboard") r.items = el.items.map((it) => ({ ...it, src: urls.current.get(it.asset_key) ?? null, thumb_src: thumbs.current.get(it.asset_key) ?? null }));
     return r as unknown as BoardElement;
   }, []);
 
@@ -125,8 +140,9 @@ export function useBoardCollab({
       missing.forEach((k) => asked.current.add(k));
       presignRef
         .current(missing)
-        .then((map) => {
-          for (const [k, v] of Object.entries(map)) urls.current.set(k, v);
+        .then((res) => {
+          for (const [k, v] of Object.entries(res.urls)) urls.current.set(k, v);
+          for (const [k, v] of Object.entries(res.thumbs ?? {})) thumbs.current.set(k, v);
           emitSoon();
         })
         .catch(() => missing.forEach((k) => asked.current.delete(k)));

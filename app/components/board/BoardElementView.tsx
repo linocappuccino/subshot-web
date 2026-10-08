@@ -1,10 +1,11 @@
 "use client";
 
+import { BoardZoomContext } from "./BoardDownload";
 import { MoodboardNode } from "./BoardMoodboard";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   TEXT_COLOR_STYLES,
   formatBytes,
@@ -25,6 +26,7 @@ import {
   STICKY_STYLES,
   colorCodes,
   googleMapsLink,
+  imageSources,
 } from "@/lib/board";
 
 /** Renders one board element's CONTENT (the board engine in IdeaBoard.tsx owns
@@ -223,6 +225,7 @@ function SceneNode({
   onImageSize: (w: number, h: number) => void;
   onMeasure: (h: number) => void;
 }) {
+  const zoom = useContext(BoardZoomContext);
   const cardRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -320,7 +323,7 @@ function SceneNode({
         ) : el.image_src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={el.image_src}
+            {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom)}
             alt=""
             draggable={false}
             onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
@@ -627,6 +630,7 @@ function LocationNode({ el, labels, onMeasure }: { el: LocationElement; labels: 
 }
 
 function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; missing: string }) {
+  const zoom = useContext(BoardZoomContext);
   if (!el.src) {
     return (
       <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
@@ -637,7 +641,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={el.src}
+      {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom)}
       alt={el.name || ""}
       draggable={false}
       className="w-full h-full object-cover rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"
@@ -658,7 +662,9 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
           src={el.src}
           controls
           playsInline
-          preload="metadata"
+          // with a poster nothing of the video loads until it's played
+          poster={el.thumb_src ?? undefined}
+          preload={el.thumb_src ? "none" : "metadata"}
           data-no-drag
           className="flex-1 min-h-0 w-full bg-black object-contain"
           onLoadedMetadata={(e) => onNaturalSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}

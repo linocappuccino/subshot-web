@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DownloadButton } from "./BoardDownload";
-import { clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
+import { useContext } from "react";
+import { BoardZoomContext, DownloadButton } from "./BoardDownload";
+import { imageSources, clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
 /** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
  * in justified rows (see layoutMoodboard) — every row fills the full width,
@@ -49,6 +50,7 @@ export function MoodboardNode({
   onAdd?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const zoom = useContext(BoardZoomContext);
   const [draft, setDraft] = useState<MoodboardItem[] | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [resizing, setResizing] = useState<{ id: string; edge: Edge } | null>(null);
@@ -228,7 +230,7 @@ export function MoodboardNode({
                 {it.src && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={it.src}
+                    {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * zoom)}
                     alt=""
                     draggable={false}
                     onLoad={(e) => {

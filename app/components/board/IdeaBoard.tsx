@@ -54,7 +54,7 @@ import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
-import { BoardDownloadContext, DownloadButton } from "./BoardDownload";
+import { BoardDownloadContext, BoardZoomContext, DownloadButton } from "./BoardDownload";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -2348,6 +2348,7 @@ export function IdeaBoard({
 
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
+    <BoardZoomContext.Provider value={view.scale <= 1.05 ? 1 : view.scale <= 2.1 ? 2 : 4}>
     <div
       ref={viewportRef}
       className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${pinPlacing ? "cursor-crosshair [&_*]:!cursor-crosshair" : ""} ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
@@ -3449,6 +3450,7 @@ export function IdeaBoard({
         </ZoomButton>
       </div>
     </div>
+    </BoardZoomContext.Provider>
     </BoardDownloadContext.Provider>
   );
 }
