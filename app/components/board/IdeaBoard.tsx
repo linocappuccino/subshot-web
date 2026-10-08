@@ -1602,7 +1602,7 @@ export function IdeaBoard({
 
   let gridSize = GRID * view.scale;
   while (gridSize < 12) gridSize *= 2;
-  const dot = Math.max(1, Math.min(1.6, 1.4 * Math.sqrt(view.scale)));
+  const dot = Math.max(0.7, Math.min(1.15, 1.0 * Math.sqrt(view.scale)));
   const handleSize = 12 / view.scale;
 
   function connectorPath(c: Connector) {
