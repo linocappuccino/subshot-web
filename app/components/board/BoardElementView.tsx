@@ -1,6 +1,6 @@
 "use client";
 
-import { BoardZoomContext } from "./BoardDownload";
+import { BoardZoomContext, SharpImg } from "./BoardDownload";
 import { MoodboardNode } from "./BoardMoodboard";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
@@ -321,16 +321,19 @@ function SceneNode({
             {labels.aiGenerating}
           </div>
         ) : el.image_src ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom, el.image_srcset)}
-            alt=""
-            draggable={false}
-            onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
-            // the image's own format; only extreme panoramas/strips get cropped
+          // the image's own format; only extreme panoramas/strips get cropped
+          <div
+            className="relative w-full rounded-md overflow-hidden bg-white/5"
             style={{ aspectRatio: Math.min(3, Math.max(0.5, el.image_ratio ?? 16 / 9)) }}
-            className="w-full object-cover rounded-md bg-white/5 pointer-events-none select-none"
-          />
+          >
+            <SharpImg
+              {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom, el.image_srcset)}
+              alt=""
+              draggable={false}
+              onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+              className="object-cover pointer-events-none select-none"
+            />
+          </div>
         ) : editable ? (
           <div className="w-full aspect-video rounded-md border border-dashed border-white/20 flex flex-col items-center justify-center gap-2 p-2">
             <span className="text-xs text-white/40">{labels.addImage}</span>
@@ -639,14 +642,15 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
     );
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom, el.srcset)}
-      alt={el.name || ""}
-      draggable={false}
-      className="w-full h-full object-cover rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"
-      onLoad={(e) => onNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
-    />
+    <div className="relative w-full h-full rounded-lg overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5">
+      <SharpImg
+        {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom, el.srcset)}
+        alt={el.name || ""}
+        draggable={false}
+        className="object-cover pointer-events-none select-none"
+        onLoad={(e) => onNaturalSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
+      />
+    </div>
   );
 }
 

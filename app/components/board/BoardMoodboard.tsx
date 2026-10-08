@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useContext } from "react";
-import { BoardZoomContext, DownloadButton } from "./BoardDownload";
+import { BoardZoomContext, DownloadButton, SharpImg } from "./BoardDownload";
 import { imageSources, clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
 /** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
@@ -228,8 +228,7 @@ export function MoodboardNode({
                 style={{ left: b.x, top: b.y, width: b.w, height: b.h, transition: MOVE }}
               >
                 {it.src && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <SharpImg
                     {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * zoom, it.srcset)}
                     alt=""
                     draggable={false}
@@ -237,7 +236,7 @@ export function MoodboardNode({
                       const { naturalWidth: nw, naturalHeight: nh } = e.currentTarget;
                       if (!it.ar && nw && nh && !seenAr[it.id]) setSeenAr((m) => ({ ...m, [it.id]: nw / nh }));
                     }}
-                    className="w-full h-full object-cover pointer-events-none select-none"
+                    className="object-cover pointer-events-none select-none"
                   />
                 )}
                 <DownloadButton fileKey={it.asset_key} name={it.name || it.asset_key.split("/").pop() || "bild"} title={downloadLabel} className={active ? "right-9 top-1.5" : "right-1.5 top-1.5"} />
