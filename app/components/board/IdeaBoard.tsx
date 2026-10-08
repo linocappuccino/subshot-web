@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import {
   GRID,
@@ -31,8 +31,10 @@ import {
   type StrokeColor,
   type TextColor,
   type TextElement,
+  type TodoElement,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
+import { BoardTodoContext } from "./BoardTodo";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -760,6 +762,23 @@ export function IdeaBoard({
       updateElement(id, { html } as Partial<TextElement>, { history: true });
     }
     if (editingRef.current === id) setEditingId(null);
+  }
+
+  // ── to-do lists ───────────────────────────────────────────────────────
+  const todoCtx = useContext(BoardTodoContext);
+  async function addTodo(at: Point, avoidOverlap = true) {
+    const todoApi = todoCtx?.api;
+    if (!todoApi) return;
+    const w = 336;
+    const h = 120;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, avoidOverlap);
+    try {
+      const list = await todoApi.createList(t("ideaBoard.todoDefaultName"));
+      const el: TodoElement = { id: newId(), type: "todo", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, list_id: list.id, title: list.name };
+      addElements([el]);
+    } catch {
+      onError?.(t("ideaBoard.todoCreateFailed"));
+    }
   }
 
   // ── scene cards ───────────────────────────────────────────────────────
@@ -1563,6 +1582,12 @@ export function IdeaBoard({
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
+    todoDefaultName: t("ideaBoard.todoDefaultName"),
+    todoAddPlaceholder: t("ideaBoard.todoAddPlaceholder"),
+    todoMissing: t("ideaBoard.todoMissing"),
+    todoUnassign: t("ideaBoard.todoUnassign"),
+    todoDelete: t("ideaBoard.todoDelete"),
+    todoNoMatch: t("ideaBoard.todoNoMatch"),
     addDialogue: t("ideaBoard.addDialogue"),
     dialoguePlaceholder: t("ideaBoard.dialoguePlaceholder"),
     removeDialogue: t("ideaBoard.removeDialogue"),
@@ -1673,7 +1698,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -1971,6 +1996,7 @@ export function IdeaBoard({
                 <>
                   <MenuItem label={t("ideaBoard.menu.text")} hint="T" onPress={() => menuAction(() => addText(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
+                  {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   <MenuItem
                     label={t("ideaBoard.menu.upload")}
                     onPress={() =>
@@ -2035,6 +2061,11 @@ export function IdeaBoard({
           <ToolButton title={t("ideaBoard.toolScene")} onPress={() => addScene(viewportCenterWorld(), true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 11h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /><path d="m4 11-.9-3.3a2 2 0 0 1 1.4-2.5l11.6-3.1a2 2 0 0 1 2.4 1.4L19.4 6" /><path d="m8.5 4.6 2.6 3.6M13.4 3.3l2.6 3.6" /></svg>
           </ToolButton>
+          {todoCtx?.api && (
+            <ToolButton title={t("ideaBoard.toolTodo")} onPress={() => void addTodo(viewportCenterWorld())}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
+            </ToolButton>
+          )}
           <ToolButton title={t("ideaBoard.toolUpload")} onPress={() => fileInputRef.current?.click()}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
           </ToolButton>

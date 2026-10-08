@@ -90,7 +90,23 @@ export interface GroupElement extends BaseElement {
   children: string[];
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement;
+/** 2026-10-08, Lino: a to-do list node. The items are a real project
+ * TodoList (idea_id = this idea): assignees via @, notifications and
+ * "Meine To-dos" work like any other project to-do. */
+export interface TodoElement extends BaseElement {
+  type: "todo";
+  list_id: string;
+  title: string;
+}
+
+/** Read-only to-do list as the client preview gets it (names, no user ids). */
+export interface PublicBoardTodoList {
+  id: string;
+  name: string;
+  items: { id: string; text: string; done: boolean; assignee_name: string | null }[];
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement;
 
 export const GROUP_PAD = 24;
 export const GROUP_HEADER = 40;

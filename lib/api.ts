@@ -852,6 +852,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    ideaTodoLists: (ideaId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/todo-lists`);
+      return request<TodoList[]>(`ideas/${ideaId}/todo-lists`);
+    },
+    createIdeaTodoList: (ideaId: string, name: string) =>
+      request<TodoList>(`ideas/${ideaId}/todo-lists`, { method: "POST", body: JSON.stringify({ name }) }),
     ideaBoardLinkPreview: (ideaId: string, url: string) =>
       request<LinkPreview>(`ideas/${ideaId}/board/link-preview`, { method: "POST", body: JSON.stringify({ url }) }),
 

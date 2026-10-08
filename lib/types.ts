@@ -837,6 +837,8 @@ export interface TodoList {
   /** Set when this list belongs to a "Projektinfo" scene tile's own todo
    * section. See Scene.is_project_info. */
   scene_id: string | null;
+  /** 2026-10-08 — set for a to-do node's list on an idea board */
+  idea_id?: string | null;
   name: string;
   sort_order: number;
   items: TodoItem[];

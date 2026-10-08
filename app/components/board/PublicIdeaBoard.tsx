@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { IdeaBoard } from "./IdeaBoard";
+import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
-import type { BoardData } from "@/lib/board";
+import type { BoardData, PublicBoardTodoList } from "@/lib/board";
 
 /** 2026-10-08, Lino: "Board nur ansehen" — the client preview shows an idea's
  * board read-only (pan/zoom, play media, open links), in place of the old
@@ -13,6 +14,7 @@ export function PublicIdeaBoard({ token, unlockToken, ideaId }: { token: string;
   const { t } = useLanguage();
   const [data, setData] = useState<BoardData | null>(null);
   const [failed, setFailed] = useState(false);
+  const [todoLists, setTodoLists] = useState<Record<string, PublicBoardTodoList>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -20,6 +22,10 @@ export function PublicIdeaBoard({ token, unlockToken, ideaId }: { token: string;
       .fetchIdeaBoard(token, unlockToken, ideaId)
       .then((res) => !cancelled && setData(res.data))
       .catch(() => !cancelled && setFailed(true));
+    publicIdeasPreviewApi
+      .fetchIdeaTodoLists(token, unlockToken, ideaId)
+      .then((ls) => !cancelled && setTodoLists(Object.fromEntries(ls.map((l) => [l.id, l]))))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -32,5 +38,9 @@ export function PublicIdeaBoard({ token, unlockToken, ideaId }: { token: string;
       </div>
     );
   }
-  return <IdeaBoard key={ideaId} className="absolute inset-0" initial={data} editable={false} />;
+  return (
+    <BoardTodoContext.Provider value={{ publicLists: todoLists }}>
+      <IdeaBoard key={ideaId} className="absolute inset-0" initial={data} editable={false} />
+    </BoardTodoContext.Provider>
+  );
 }

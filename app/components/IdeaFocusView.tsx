@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
 import { IdeaBoard } from "./board/IdeaBoard";
+import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { useToast } from "./ui/Toast";
@@ -11,7 +12,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 import { coverSrcOf, forSave, type BoardData } from "@/lib/board";
-import type { Annotation, Idea, Member } from "@/lib/types";
+import type { Annotation, Idea, Member, TodoList } from "@/lib/types";
 
 /** Full-screen view for one idea at a time, opened from a tile or "+ Idee" in
  * the overview (IdeaGrid, unchanged). 2026-10-08, Lino: the old title/text/
@@ -222,6 +223,67 @@ function IdeaBoardScreen({
   useEffect(() => {
     loadBoard();
   }, [loadBoard]);
+
+  // ── to-do nodes (2026-10-08): the idea's project to-do lists + the people
+  // who can be @-assigned. Edits show instantly; a failed request reloads.
+  const [todoLists, setTodoLists] = useState<Record<string, TodoList>>({});
+  const [members, setMembers] = useState<Member[]>([]);
+  const loadTodos = useCallback(() => {
+    api
+      .ideaTodoLists(idea.id)
+      .then((ls) => setTodoLists(Object.fromEntries(ls.map((l) => [l.id, l]))))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea.id]);
+  useEffect(() => {
+    loadTodos();
+    api.members(idea.project_id).then(setMembers).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idea.id]);
+  const todoApi = useMemo<BoardTodoApi>(() => {
+    const fail = (e: unknown) => {
+      toast.showError(e instanceof ApiError ? e.message : t("ideaBoard.saveFailed"));
+      loadTodos();
+    };
+    const setList = (id: string, fn: (l: TodoList) => TodoList) =>
+      setTodoLists((prev) => (prev[id] ? { ...prev, [id]: fn(prev[id]) } : prev));
+    return {
+      lists: todoLists,
+      members,
+      createList: async (name) => {
+        const list = await api.createIdeaTodoList(idea.id, name);
+        setTodoLists((prev) => ({ ...prev, [list.id]: list }));
+        return list;
+      },
+      renameList: async (id, name) => {
+        setList(id, (l) => ({ ...l, name }));
+        await api.patchTodoList(id, { name }).catch(fail);
+      },
+      addItem: async (listId, text, assigneeId) => {
+        try {
+          const order = todoLists[listId]?.items.length ?? 0;
+          const item = await api.createTodoItem(listId, text, assigneeId ?? undefined, order);
+          setList(listId, (l) => ({ ...l, items: [...l.items, item] }));
+        } catch (e) {
+          fail(e);
+        }
+      },
+      patchItem: async (item, patch) => {
+        setList(item.todo_list_id, (l) => ({ ...l, items: l.items.map((i) => (i.id === item.id ? { ...i, ...patch } : i)) }));
+        try {
+          const updated = await api.patchTodoItem(item.id, patch);
+          setList(item.todo_list_id, (l) => ({ ...l, items: l.items.map((i) => (i.id === item.id ? updated : i)) }));
+        } catch (e) {
+          fail(e);
+        }
+      },
+      deleteItem: async (item) => {
+        setList(item.todo_list_id, (l) => ({ ...l, items: l.items.filter((i) => i.id !== item.id) }));
+        await api.deleteTodoItem(item.id).catch(fail);
+      },
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todoLists, members, idea.id]);
 
   useEffect(() => {
     if (isNew) {
@@ -462,6 +524,7 @@ function IdeaBoardScreen({
       {/* board + feedback side panel */}
       <div className="relative flex-1 min-h-0">
         {board ? (
+          <BoardTodoContext.Provider value={{ api: todoApi }}>
           <IdeaBoard
             key={boardKey}
             className="absolute inset-0"
@@ -477,6 +540,7 @@ function IdeaBoardScreen({
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
           />
+          </BoardTodoContext.Provider>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40">
             {loadError ? (

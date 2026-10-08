@@ -1,6 +1,7 @@
 "use client";
 
 import DOMPurify from "dompurify";
+import { TodoNode, type TodoLabels } from "./BoardTodo";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   TEXT_COLOR_STYLES,
@@ -37,7 +38,7 @@ export function boardHtmlToPlain(html: string): string {
 
 export const VIDEO_HEADER = 32;
 
-export interface ElementViewLabels {
+export interface ElementViewLabels extends TodoLabels {
   textPlaceholder: string;
   open: string;
   download: string;
@@ -107,6 +108,8 @@ export function BoardElementView({
       return <LinkNode el={el} onMeasure={onMeasure} editable={editable} labels={labels} />;
     case "drawing":
       return <DrawingNode el={el} />;
+    case "todo":
+      return <TodoWrapper el={el} editable={editable} labels={labels} onMeasure={onMeasure} />;
     case "group":
       return (
         <GroupNode
@@ -629,6 +632,17 @@ function DrawingNode({ el }: { el: DrawingElement }) {
       <path d={d} fill="none" stroke="transparent" strokeWidth={el.stroke_width + 14} strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: "stroke" }} />
       <path d={d} fill="none" stroke={el.color} strokeWidth={el.stroke_width} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function TodoWrapper({ el, editable, labels, onMeasure }: { el: Extract<BoardElement, { type: "todo" }>; editable: boolean; labels: ElementViewLabels; onMeasure: (h: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // follows its content both ways (items come and go, the @ picker opens)
+  useGrowToContent(ref, el.h, onMeasure, true);
+  return (
+    <div ref={ref}>
+      <TodoNode el={el} editable={editable} labels={labels} />
+    </div>
   );
 }
 
