@@ -35,12 +35,17 @@ import {
   type TextElement,
   type PaletteElement,
   type LocationElement,
+  type StickyElement,
+  type StickyColor,
+  type ColorElement,
+  STICKY_COLORS,
+  STICKY_STYLES,
   type TodoElement,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
-import { LocationEditor, PaletteEditor } from "./BoardCardEditors";
+import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
@@ -440,7 +445,9 @@ export function IdeaBoard({
   }
   function place(x: number, y: number, w: number, h: number, avoidOverlap: boolean, extra: Rect[] = []): Point {
     const hiddenNow = hiddenElementIds(dataRef.current.elements);
-    const taken = dataRef.current.elements.filter((el) => !hiddenNow.has(el.id) && !(el.type === "group" && !el.collapsed));
+    // an open group's whole (frosted) frame counts as taken — something new
+    // placed inside it would end up blurred behind the glass
+    const taken = dataRef.current.elements.filter((el) => !hiddenNow.has(el.id));
     return freeSpot(x, y, w, h, [...taken, ...extra], visibleWorldRect(), avoidOverlap);
   }
 
@@ -573,6 +580,21 @@ export function IdeaBoard({
       editingStartHtml.current = "";
       setEditingId(el.id);
     }
+  }
+
+  // 2026-10-08, Lino: post-it note — square, edited like a text box
+  function addSticky(at: Point) {
+    const spot = place(at.x - 120, at.y - 120, 240, 240, true);
+    const el: StickyElement = { id: newId(), type: "sticky", x: spot.x, y: spot.y, w: 240, h: 240, z: maxZ(dataRef.current.elements) + 1, html: "", color: "yellow" };
+    addElements([el]);
+    setTool("select");
+    editingStartHtml.current = "";
+    setEditingId(el.id);
+  }
+
+  function setStickyColor(color: StickyColor) {
+    const ids = selectionRef.current;
+    commit((d) => ({ ...d, elements: d.elements.map((el) => (ids.has(el.id) && el.type === "sticky" ? { ...el, color } : el)) }));
   }
 
   async function mediaSize(file: File, kind: MediaElement["type"]): Promise<{ w: number; h: number } | null> {
@@ -868,7 +890,7 @@ export function IdeaBoard({
   function setTextAlign(ids: Set<string>, align: TextAlign) {
     commit((d) => ({
       ...d,
-      elements: d.elements.map((el) => (ids.has(el.id) && el.type === "text" ? { ...el, align } : el)),
+      elements: d.elements.map((el) => (ids.has(el.id) && (el.type === "text" || el.type === "sticky") ? { ...el, align } : el)),
     }));
   }
 
@@ -901,8 +923,8 @@ export function IdeaBoard({
   function commitText(id: string, rawHtml: string) {
     const html = sanitizeBoardHtml(rawHtml);
     const el = dataRef.current.elements.find((e) => e.id === id);
-    if (!el || el.type !== "text") return;
-    if (!boardHtmlToPlain(html) && !boardHtmlToPlain(editingStartHtml.current)) {
+    if (!el || (el.type !== "text" && el.type !== "sticky")) return;
+    if (el.type === "text" && !boardHtmlToPlain(html) && !boardHtmlToPlain(editingStartHtml.current)) {
       // a freshly created text box left empty — drop it instead of keeping an empty card
       commit((d) => ({
         ...d,
@@ -911,7 +933,7 @@ export function IdeaBoard({
       }));
       setSelection(new Set());
     } else if (html !== el.html) {
-      updateElement(id, { html } as Partial<TextElement>, { history: true });
+      updateElement(id, { html } as Partial<TextElement | StickyElement>, { history: true });
     }
     if (editingRef.current === id) setEditingId(null);
   }
@@ -935,7 +957,21 @@ export function IdeaBoard({
 
   // ── palette + location cards (2026-10-08) ─────────────────────────────
   // edited in a popup; `id` null = a new card at `at`
-  const [cardEditor, setCardEditor] = useState<{ kind: "palette" | "location"; id: string | null; at: Point } | null>(null);
+  const [cardEditor, setCardEditor] = useState<{ kind: "palette" | "location" | "color"; id: string | null; at: Point } | null>(null);
+
+  function saveColor(hex: string, name: string) {
+    const ed = cardEditor;
+    setCardEditor(null);
+    if (!ed) return;
+    if (ed.id) {
+      updateElement(ed.id, { hex, name } as Partial<ColorElement>, { history: true });
+      return;
+    }
+    const w = 192;
+    const h = 290;
+    const spot = place(ed.at.x - w / 2, ed.at.y - h / 2, w, h, true);
+    addElements([{ id: newId(), type: "color", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, hex, name } as ColorElement]);
+  }
   const [cardBusy, setCardBusy] = useState(false);
 
   function savePalette(title: string, colors: string[]) {
@@ -1001,6 +1037,37 @@ export function IdeaBoard({
     } catch (e) {
       onError?.(e instanceof Error && e.message ? e.message : t("ideaBoard.palette.failed"));
     }
+  }
+
+  /** 2026-10-08, Lino: sort a group's members — one row, or a grid
+   * (≈ square, reading order kept); the frame follows (normalizeGroups) */
+  function arrangeGroup(groupId: string, mode: "row" | "grid") {
+    const els = dataRef.current.elements;
+    const g = els.find((e) => e.id === groupId);
+    if (!g || g.type !== "group") return;
+    const members = els.filter((e) => g.children.includes(e.id));
+    if (members.length < 2) return;
+    // reading order: rows (by top, with tolerance), then left to right
+    const sorted = [...members].sort((a, b) => (Math.abs(a.y - b.y) > GRID * 2 ? a.y - b.y : a.x - b.x));
+    const gap = GRID;
+    const x0 = Math.min(...members.map((m) => m.x));
+    const y0 = Math.min(...members.map((m) => m.y));
+    const cols = mode === "row" ? sorted.length : Math.ceil(Math.sqrt(sorted.length));
+    // columns as wide as their widest member, so a grid lines up
+    const colX: number[] = [];
+    for (let c = 0, x = x0; c < cols; c++) {
+      colX.push(x);
+      const w = Math.max(0, ...sorted.filter((_, i) => i % cols === c).map((m) => m.w));
+      x = snap(x + w + gap);
+    }
+    const pos = new Map<string, Point>();
+    let y = y0;
+    for (let r = 0; r * cols < sorted.length; r++) {
+      const row = sorted.slice(r * cols, r * cols + cols);
+      row.forEach((m, c) => pos.set(m.id, { x: colX[c], y }));
+      y = snap(y + Math.max(...row.map((m) => m.h)) + gap);
+    }
+    commit((d) => ({ ...d, elements: d.elements.map((el) => (pos.has(el.id) ? ({ ...el, ...pos.get(el.id)! } as BoardElement) : el)) }));
   }
 
   // ── storyboard + presentation (2026-10-08) ────────────────────────────
@@ -1220,12 +1287,12 @@ export function IdeaBoard({
       setEditingId(el.id);
       return;
     }
-    if ((el.type === "palette" || el.type === "location") && editable) {
+    if ((el.type === "palette" || el.type === "location" || el.type === "color") && editable) {
       setSelection(new Set([el.id]));
       setCardEditor({ kind: el.type, id: el.id, at: { x: el.x, y: el.y } });
       return;
     }
-    if ((el.type === "text" || el.type === "scene") && editable) {
+    if ((el.type === "text" || el.type === "scene" || el.type === "sticky") && editable) {
       editingStartHtml.current = el.html;
       setSelection(new Set([el.id]));
       setEditingId(el.id);
@@ -1766,6 +1833,9 @@ export function IdeaBoard({
         setTool("select");
       } else if (!mod && e.key.toLowerCase() === "p") {
         setTool("draw");
+      } else if (!mod && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        addSticky(viewportCenterWorld());
       } else if (!mod && e.key.toLowerCase() === "s") {
         e.preventDefault();
         addScene(viewportCenterWorld(), true);
@@ -1938,6 +2008,7 @@ export function IdeaBoard({
     scene: t("ideaBoard.scene"),
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
     palette: t("ideaBoard.palette.label"),
+    stickyPlaceholder: t("ideaBoard.sticky.placeholder"),
     location: t("ideaBoard.location.label"),
     openInMaps: t("ideaBoard.location.openInMaps"),
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
@@ -2104,7 +2175,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -2295,7 +2366,7 @@ export function IdeaBoard({
       )}
 
       {/* formatting bar while a text box is being edited */}
-      {editable && editingEl && editingEl.type === "text" && (
+      {editable && editingEl && (editingEl.type === "text" || editingEl.type === "sticky") && (
         <FloatingBar view={view} bounds={editingEl}>
           {(
             [
@@ -2340,6 +2411,32 @@ export function IdeaBoard({
             })()
           }
         >
+          {selectedEls.length > 0 && selectedEls.every((el) => el.type === "sticky") && (
+            <>
+              {STICKY_COLORS.map((c) => (
+                <button
+                  key={c}
+                  title={t("ideaBoard.color")}
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => setStickyColor(c)}
+                  className={`w-5 h-5 rounded-[3px] shrink-0 hover:scale-110 transition-transform ${selectedEls.every((el) => (el as StickyElement).color === c) ? "ring-2 ring-white ring-offset-1 ring-offset-[#1c1c1e]" : ""}`}
+                  style={{ background: STICKY_STYLES[c].paper }}
+                />
+              ))}
+              <Divider />
+              {TEXT_ALIGNS.map((a) => (
+                <BarButton
+                  key={a}
+                  title={t(`ideaBoard.align.${a}`)}
+                  active={selectedEls.every((el) => ((el as StickyElement).align ?? "left") === a)}
+                  onPress={() => setTextAlign(new Set(selectedEls.map((el) => el.id)), a)}
+                >
+                  <AlignIcon align={a} />
+                </BarButton>
+              ))}
+              <Divider />
+            </>
+          )}
           {selectedEls.length > 0 && selectedEls.every((el) => el.type === "text") && (
             <>
               {TEXT_COLORS.map((c) => (
@@ -2388,13 +2485,20 @@ export function IdeaBoard({
                 <span className="text-xs font-semibold px-1 whitespace-nowrap">{t("ideaBoard.ungroup")}</span>
               </BarButton>
               <Divider />
+              <BarButton title={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.row")}`} onPress={() => arrangeGroup(selectedEls[0].id, "row")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="5" height="10" rx="1" /><rect x="9.5" y="7" width="5" height="10" rx="1" /><rect x="17" y="7" width="5" height="10" rx="1" /></svg>
+              </BarButton>
+              <BarButton title={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.grid")}`} onPress={() => arrangeGroup(selectedEls[0].id, "grid")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+              </BarButton>
+              <Divider />
             </>
           )}
-          {selectedEls.length === 1 && (selectedEls[0].type === "palette" || selectedEls[0].type === "location") && (
+          {selectedEls.length === 1 && (selectedEls[0].type === "palette" || selectedEls[0].type === "location" || selectedEls[0].type === "color") && (
             <>
               <BarButton
                 title={t("ideaBoard.editCard")}
-                onPress={() => setCardEditor({ kind: selectedEls[0].type as "palette" | "location", id: selectedEls[0].id, at: { x: selectedEls[0].x, y: selectedEls[0].y } })}
+                onPress={() => setCardEditor({ kind: selectedEls[0].type as "palette" | "location" | "color", id: selectedEls[0].id, at: { x: selectedEls[0].x, y: selectedEls[0].y } })}
               >
                 <span className="text-xs font-semibold px-1">{t("ideaBoard.editCard")}</span>
               </BarButton>
@@ -2530,6 +2634,8 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
+                  <MenuItem label={t("ideaBoard.menu.sticky")} hint="N" onPress={() => menuAction(() => addSticky(menu.world))} />
+                  <MenuItem label={t("ideaBoard.menu.color")} onPress={() => menuAction(() => setCardEditor({ kind: "color", id: null, at: menu.world }))} />
                   <MenuItem label={t("ideaBoard.menu.palette")} onPress={() => menuAction(() => setCardEditor({ kind: "palette", id: null, at: menu.world }))} />
                   {createLocationMap && <MenuItem label={t("ideaBoard.menu.location")} onPress={() => menuAction(() => setCardEditor({ kind: "location", id: null, at: menu.world }))} />}
                   <MenuItem
@@ -2559,6 +2665,8 @@ export function IdeaBoard({
                     <MenuItem label={t("ideaBoard.renameGroup")} onPress={() => menuAction(() => setEditingId(target.id))} />
                     <MenuItem label={target.collapsed ? t("ideaBoard.expand") : t("ideaBoard.collapse")} onPress={() => menuAction(() => toggleGroup(target.id))} />
                     <MenuItem label={t("ideaBoard.ungroup")} hint="⇧⌘G" onPress={() => menuAction(() => ungroup(target.id))} />
+                    <MenuItem label={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.row")}`} onPress={() => menuAction(() => arrangeGroup(target.id, "row"))} />
+                    <MenuItem label={`${t("ideaBoard.groupArrange.title")}: ${t("ideaBoard.groupArrange.grid")}`} onPress={() => menuAction(() => arrangeGroup(target.id, "grid"))} />
                   </>
                 )}
                 {!multi && (target.type === "link" || target.type === "pdf" || target.type === "file") && <MenuItem label={t("ideaBoard.open")} onPress={() => menuAction(() => activate(target))} />}
@@ -2592,7 +2700,12 @@ export function IdeaBoard({
           onContextMenu={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          {cardEditor.kind === "palette" ? (
+          {cardEditor.kind === "color" ? (
+            (() => {
+              const cur = cardEditor.id ? (byId.get(cardEditor.id) as ColorElement | undefined) : undefined;
+              return <ColorEditor open initialHex={cur?.hex ?? ""} initialName={cur?.name ?? ""} onClose={() => setCardEditor(null)} onSave={saveColor} />;
+            })()
+          ) : cardEditor.kind === "palette" ? (
             (() => {
               const cur = cardEditor.id ? (byId.get(cardEditor.id) as PaletteElement | undefined) : undefined;
               return (
@@ -2669,6 +2782,12 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
             </ToolButton>
           )}
+          <ToolButton title={t("ideaBoard.toolSticky")} onPress={() => addSticky(viewportCenterWorld())}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z" /><path d="M15 21v-4a2 2 0 0 1 2-2h4" /></svg>
+          </ToolButton>
+          <ToolButton title={t("ideaBoard.toolColor")} onPress={() => setCardEditor({ kind: "color", id: null, at: viewportCenterWorld() })}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="13" rx="2" fill="currentColor" fillOpacity="0.35" /><path d="M4 20h16" /></svg>
+          </ToolButton>
           <ToolButton title={t("ideaBoard.toolPalette")} onPress={() => setCardEditor({ kind: "palette", id: null, at: viewportCenterWorld() })}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-1.5a1.5 1.5 0 0 0-1.1 2.5A2 2 0 0 1 12 22z" /><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" /><circle cx="11" cy="7" r="1.2" fill="currentColor" /><circle cx="15.5" cy="8" r="1.2" fill="currentColor" /></svg>
           </ToolButton>

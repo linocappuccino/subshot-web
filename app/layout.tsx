@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { Geist, Geist_Mono, Anton, Bebas_Neue } from "next/font/google";
+import { Geist, Geist_Mono, Anton, Bebas_Neue, Kalam } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { deDE, enUS } from "@clerk/localizations";
 import { LANGUAGE_COOKIE } from "@/lib/i18nConstants";
@@ -45,6 +45,15 @@ const bebas = Bebas_Neue({
   subsets: ["latin"],
 });
 
+// 2026-10-08, Lino: idea board sticky notes ("muss wirklich wie ein Post-it
+// aussehen") — handwriting face, only fetched where a note is on screen
+const kalam = Kalam({
+  variable: "--font-kalam",
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  preload: false,
+});
+
 export const metadata: Metadata = {
   title: "Subshot",
   description: "Storyboard & shot list, in the browser.",
@@ -74,7 +83,7 @@ export default async function RootLayout({
     <ClerkProvider localization={clerkLocalization}>
       <html
         lang={isEnglish ? "en" : "de"}
-        className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} ${bebas.variable} h-full antialiased dark`}
+        className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} ${bebas.variable} ${kalam.variable} h-full antialiased dark`}
       >
         <body className="min-h-full flex flex-col bg-[#161616] text-[#f0f0f0]">
           <ToastProvider>{children}</ToastProvider>

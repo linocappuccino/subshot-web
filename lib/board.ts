@@ -137,7 +137,62 @@ export interface LocationElement extends BaseElement {
   image_src?: string | null;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement;
+/** 2026-10-08, Lino: a post-it note — "muss wirklich wie ein Post-it
+ * Klebezettel aussehen", paper color changeable. Edited like a text box. */
+export type StickyColor = "yellow" | "pink" | "green" | "blue" | "orange" | "purple";
+export const STICKY_COLORS: StickyColor[] = ["yellow", "pink", "green", "blue", "orange", "purple"];
+export const STICKY_STYLES: Record<StickyColor, { paper: string; glue: string }> = {
+  yellow: { paper: "#fff383", glue: "#f3e35e" },
+  pink: { paper: "#ffbcd8", glue: "#f6a3c6" },
+  green: { paper: "#c3f2ad", glue: "#a9e48f" },
+  blue: { paper: "#b4e1ff", glue: "#97d0f7" },
+  orange: { paper: "#ffd093", glue: "#f8bb6f" },
+  purple: { paper: "#ddc9ff", glue: "#c9adfb" },
+};
+export interface StickyElement extends BaseElement {
+  type: "sticky";
+  html: string;
+  color: StickyColor;
+  align?: TextAlign;
+}
+
+/** 2026-10-08, Lino: one color as a big square with its codes underneath. */
+export interface ColorElement extends BaseElement {
+  type: "color";
+  hex: string;
+  name?: string;
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement;
+
+/** HEX / RGB / HSL / CMYK of a "#rrggbb" color (color swatch card). */
+export function colorCodes(hex: string): { hex: string; rgb: string; hsl: string; cmyk: string } {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const [rf, gf, bf] = [r / 255, g / 255, b / 255];
+  const max = Math.max(rf, gf, bf);
+  const min = Math.min(rf, gf, bf);
+  const l = (max + min) / 2;
+  const d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === rf) h = ((gf - bf) / d) % 6;
+    else if (max === gf) h = (bf - rf) / d + 2;
+    else h = (rf - gf) / d + 4;
+    h = Math.round(h * 60 + 360) % 360;
+  }
+  const s = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
+  const k = 1 - max;
+  const cmy = (v: number) => (k >= 1 ? 0 : Math.round(((1 - v - k) / (1 - k)) * 100));
+  return {
+    hex: hex.toUpperCase(),
+    rgb: `${r}, ${g}, ${b}`,
+    hsl: `${h}°, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%`,
+    cmyk: `${cmy(rf)}, ${cmy(gf)}, ${cmy(bf)}, ${Math.round(k * 100)}`,
+  };
+}
 
 export function googleMapsLink(el: LocationElement): string {
   const q = el.lat != null && el.lng != null ? `${el.lat},${el.lng}` : el.address || el.title;

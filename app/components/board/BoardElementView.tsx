@@ -18,6 +18,10 @@ import {
   type TextElement,
   type PaletteElement,
   type LocationElement,
+  type StickyElement,
+  type ColorElement,
+  STICKY_STYLES,
+  colorCodes,
   googleMapsLink,
 } from "@/lib/board";
 
@@ -51,6 +55,7 @@ export interface ElementViewLabels extends TodoLabels {
   priorities: Record<Priority, string>;
   palette: string;
   location: string;
+  stickyPlaceholder: string;
   openInMaps: string;
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
@@ -127,6 +132,10 @@ export function BoardElementView({
       return <TodoWrapper el={el} editable={editable} labels={labels} onMeasure={onMeasure} />;
     case "palette":
       return <PaletteNode el={el} labels={labels} onMeasure={onMeasure} />;
+    case "sticky":
+      return <TextNode el={el} editing={editing} placeholder={labels.stickyPlaceholder} onCommit={onCommitText} onMeasure={onMeasure} />;
+    case "color":
+      return <ColorNode el={el} onMeasure={onMeasure} />;
     case "location":
       return <LocationNode el={el} labels={labels} onMeasure={onMeasure} />;
     case "group":
@@ -435,13 +444,14 @@ function TextNode({
   onCommit,
   onMeasure,
 }: {
-  el: TextElement;
+  el: TextElement | StickyElement;
   editing: boolean;
   placeholder: string;
   onCommit: (html: string) => void;
   onMeasure: (h: number) => void;
 }) {
-  const style = TEXT_COLOR_STYLES[el.color] ?? TEXT_COLOR_STYLES.default;
+  const sticky = el.type === "sticky" ? STICKY_STYLES[el.color] ?? STICKY_STYLES.yellow : null;
+  const style = el.type === "text" ? TEXT_COLOR_STYLES[el.color] ?? TEXT_COLOR_STYLES.default : TEXT_COLOR_STYLES.default;
   const cardRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   useGrowToContent(cardRef, el.h, onMeasure);
@@ -471,15 +481,26 @@ function TextNode({
   return (
     <div
       ref={cardRef}
-      className="rounded-lg px-3.5 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
-      style={{
-        background: style.bg,
-        color: style.fg,
-        border: `1px solid ${style.border}`,
-        minHeight: el.h,
-        textAlign: el.align ?? "left",
-        boxShadow: el.color === "transparent" ? "none" : undefined,
-      }}
+      className={sticky ? "relative board-sticky rounded-[2px] px-5 pt-7 pb-6" : "rounded-lg px-3.5 py-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]"}
+      style={
+        sticky
+          ? {
+              // paper with a slightly darker glue strip at the top and a
+              // lifted, curling bottom edge (shadow strongest at the corners)
+              background: `linear-gradient(180deg, ${sticky.glue} 0, ${sticky.paper} 22px, ${sticky.paper} 100%)`,
+              color: "#2b2a26",
+              minHeight: Math.max(el.h, el.w),
+              textAlign: el.align ?? "left",
+            }
+          : {
+              background: style.bg,
+              color: style.fg,
+              border: `1px solid ${style.border}`,
+              minHeight: el.h,
+              textAlign: el.align ?? "left",
+              boxShadow: el.type === "text" && el.color === "transparent" ? "none" : undefined,
+            }
+      }
     >
       {editing ? (
         <div
@@ -502,6 +523,26 @@ function TextNode({
           dangerouslySetInnerHTML={{ __html: sanitizeBoardHtml(el.html) }}
         />
       )}
+    </div>
+  );
+}
+
+function ColorNode({ el, onMeasure }: { el: ColorElement; onMeasure: (h: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGrowToContent(ref, el.h, onMeasure, true);
+  const codes = colorCodes(el.hex);
+  return (
+    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 p-2.5 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      <div className="w-full aspect-square rounded-md border border-black/20" style={{ background: el.hex }} />
+      {el.name && <div className="text-sm font-semibold text-white/90 mt-2.5 truncate">{el.name}</div>}
+      <dl className={`grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-0.5 text-[11px] font-mono ${el.name ? "mt-1" : "mt-2.5"}`}>
+        {(["hex", "rgb", "hsl", "cmyk"] as const).map((k) => (
+          <div key={k} className="contents">
+            <dt className="uppercase text-white/35">{k}</dt>
+            <dd className="text-white/80 truncate select-text">{codes[k]}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }

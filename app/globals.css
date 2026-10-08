@@ -283,3 +283,26 @@ html {
   20%, 60% { opacity: 1; }
 }
 .subshot-pin-flash { animation: subshot-pin-flash 1.8s ease both; }
+
+/* 2026-10-08 — idea board post-it note: handwriting, lifted paper edge */
+.board-sticky {
+  font-family: var(--font-kalam), "Comic Sans MS", cursive;
+  font-size: 17px;
+  line-height: 1.35;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.12), 0 12px 14px -10px rgba(0, 0, 0, 0.65);
+}
+.board-sticky::after {
+  /* curl: a soft shadow under the lower right corner */
+  content: "";
+  position: absolute;
+  right: 4px;
+  bottom: 6px;
+  width: 45%;
+  height: 18px;
+  z-index: -1;
+  transform: rotate(3deg);
+  box-shadow: 8px 12px 14px rgba(0, 0, 0, 0.45);
+}
+.board-sticky .board-text,
+.board-sticky .board-text * { color: inherit; }
+.board-sticky [data-empty="true"]::before { color: rgba(43, 42, 38, 0.4); }

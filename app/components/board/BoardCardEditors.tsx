@@ -160,3 +160,67 @@ export function LocationEditor({
     </Modal>
   );
 }
+
+export function ColorEditor({
+  open,
+  initialHex,
+  initialName,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  initialHex: string;
+  initialName: string;
+  onClose: () => void;
+  onSave: (hex: string, name: string) => void;
+}) {
+  const { t } = useLanguage();
+  const [hex, setHex] = useState(initialHex || "#3b82f6");
+  const [name, setName] = useState(initialName);
+
+  useEffect(() => {
+    if (!open) return;
+    setHex(initialHex || "#3b82f6");
+    setName(initialName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // accepts "ff8800", "#FF8800" and the short "#f80"
+  const normalized = (() => {
+    let v = hex.trim().replace(/^#?/, "#").toLowerCase();
+    if (/^#[0-9a-f]{3}$/.test(v)) v = "#" + [...v.slice(1)].map((c) => c + c).join("");
+    return /^#[0-9a-f]{6}$/.test(v) ? v : null;
+  })();
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t("ideaBoard.color.editTitle")}
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="primary" disabled={!normalized} onClick={() => normalized && onSave(normalized, name.trim())}>
+            {t("common.save")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex gap-4 items-start">
+        <label className="relative w-24 h-24 shrink-0 rounded-lg overflow-hidden border border-white/15 cursor-pointer" style={{ background: normalized ?? "#000" }}>
+          <input type="color" value={normalized ?? "#000000"} onChange={(e) => setHex(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
+        </label>
+        <div className="flex-1 min-w-0">
+          <FieldGroup>
+            <Label>{t("ideaBoard.color.hex")}</Label>
+            <Input value={hex} onChange={(e) => setHex(e.target.value)} placeholder="#FF8800" maxLength={7} className="font-mono uppercase" />
+          </FieldGroup>
+          <FieldGroup>
+            <Label>{t("ideaBoard.color.name")}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("ideaBoard.color.namePlaceholder")} maxLength={200} />
+          </FieldGroup>
+        </div>
+      </div>
+    </Modal>
+  );
+}
