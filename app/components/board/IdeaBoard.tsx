@@ -54,6 +54,7 @@ import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
+import { BoardDownloadContext, DownloadButton } from "./BoardDownload";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -313,6 +314,7 @@ export function IdeaBoard({
   historyApi,
   peers,
   onPresence,
+  downloadFile,
   onError,
   onEscape,
   className = "",
@@ -354,6 +356,8 @@ export function IdeaBoard({
   peers?: BoardPeer[];
   /** live collaboration: my pointer (board coordinates) and selection */
   onPresence?: (p: { cursor?: { x: number; y: number } | null; selection?: string[] }) => void;
+  /** download the ORIGINAL of a board file (key + original file name) */
+  downloadFile?: (key: string, name: string) => void;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -2343,6 +2347,7 @@ export function IdeaBoard({
   }
 
   return (
+    <BoardDownloadContext.Provider value={downloadFile ?? null}>
     <div
       ref={viewportRef}
       className={`${className.includes("absolute") ? "" : "relative"} overflow-hidden touch-none select-none ${pinPlacing ? "cursor-crosshair [&_*]:!cursor-crosshair" : ""} ${tool === "draw" ? "cursor-crosshair" : panning ? "cursor-grabbing" : tool === "hand" || spaceDown ? "cursor-grab" : ""} ${className}`}
@@ -2503,6 +2508,16 @@ export function IdeaBoard({
                   {t("ideaBoard.moodboard.uploading", { count: moodboardBusy[el.id] })}
                 </div>
               )}
+              {/* download the original (2026-10-08) — every uploaded file */}
+              {(() => {
+                const f =
+                  el.type === "image" || el.type === "video" || el.type === "audio" || el.type === "pdf" || el.type === "file"
+                    ? { key: el.asset_key, name: el.name || el.asset_key.split("/").pop() || "download" }
+                    : el.type === "scene" && el.image_key
+                      ? { key: el.image_key, name: `${el.title || `${t("ideaBoard.scene")} ${el.number}`}.${el.image_key.split(".").pop()}` }
+                      : null;
+                return f ? <DownloadButton fileKey={f.key} name={f.name} title={t("ideaBoard.download")} scale={1 / Math.max(view.scale, 0.5)} className="right-2 top-2" /> : null;
+              })()}
               {data.cover === el.id && (
                 <div
                   className="absolute left-2 top-2 z-10 pointer-events-none flex items-center gap-1 rounded-full bg-black/65 backdrop-blur px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white"
@@ -3434,6 +3449,7 @@ export function IdeaBoard({
         </ZoomButton>
       </div>
     </div>
+    </BoardDownloadContext.Provider>
   );
 }
 

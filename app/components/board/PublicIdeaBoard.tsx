@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
-import type { BoardVote } from "@/lib/board";
+import { startDownload, type BoardVote } from "@/lib/board";
 import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
@@ -111,6 +111,9 @@ export function PublicIdeaBoard({
         pendingPin={pendingPin}
         focusRequest={focusRequest}
         externalData={collab.remote}
+        downloadFile={(key, name) => {
+          publicIdeasPreviewApi.boardDownload(token, unlockToken, ideaId, key, name).then((r) => startDownload(r.url)).catch(() => {});
+        }}
         votes={votes}
         myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
         onVote={vote}

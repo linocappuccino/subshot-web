@@ -852,6 +852,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // download a board file's ORIGINAL (2026-10-08) — presigned, attachment
+    boardDownload: (ideaId: string, key: string, name: string) => {
+      const q = `key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}`;
+      invalidateGetCache(`ideas/${ideaId}/board/download?${q}`);
+      return request<{ url: string }>(`ideas/${ideaId}/board/download?${q}`);
+    },
     // live collaboration (2026-10-08): signed session for wss://subshot.ch/collab
     boardCollab: (ideaId: string) =>
       request<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(`ideas/${ideaId}/board/collab`, { method: "POST" }),

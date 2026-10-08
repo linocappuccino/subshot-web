@@ -157,6 +157,7 @@ export function BoardElementView({
           emptyLabel={labels.moodboardEmpty}
           addLabel={labels.moodboardAdd}
           headerLabel={labels.moodboard}
+          downloadLabel={labels.download}
           onMeasure={onMeasure}
           onChange={onMoodboardChange}
           onAdd={onMoodboardAdd}

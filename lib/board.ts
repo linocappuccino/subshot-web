@@ -942,3 +942,13 @@ export function videoEmbedFor(rawUrl: string): VideoEmbed | null {
   }
   return null;
 }
+
+/** start a browser download from a presigned attachment URL */
+export function startDownload(url: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}

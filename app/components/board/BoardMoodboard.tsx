@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DownloadButton } from "./BoardDownload";
 import { clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
 
 /** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
@@ -31,6 +32,7 @@ export function MoodboardNode({
   emptyLabel,
   addLabel,
   headerLabel,
+  downloadLabel,
   onMeasure,
   onChange,
   onAdd,
@@ -41,6 +43,7 @@ export function MoodboardNode({
   emptyLabel: string;
   addLabel: string;
   headerLabel: string;
+  downloadLabel: string;
   onMeasure: (h: number) => void;
   onChange?: (items: MoodboardItem[]) => void;
   onAdd?: () => void;
@@ -235,6 +238,7 @@ export function MoodboardNode({
                     className="w-full h-full object-cover pointer-events-none select-none"
                   />
                 )}
+                <DownloadButton fileKey={it.asset_key} name={it.name || it.asset_key.split("/").pop() || "bild"} title={downloadLabel} className={active ? "right-9 top-1.5" : "right-1.5 top-1.5"} />
                 {active && (
                   <>
                     <button
