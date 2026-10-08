@@ -57,7 +57,7 @@ export const publicIdeasPreviewApi = {
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/collab`, { method: "POST", headers: unlockHeaders(unlockToken) })
     ),
   boardPresign: (token: string, unlockToken: string | null, ideaId: string, keys: string[]) =>
-    handle<{ urls: Record<string, string>; thumbs?: Record<string, string> }>(
+    handle<{ urls: Record<string, string>; thumbs?: Record<string, string>; srcsets?: Record<string, string> }>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/presign`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },

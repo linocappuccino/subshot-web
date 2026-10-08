@@ -55,6 +55,8 @@ export interface MediaElement extends BaseElement {
   src?: string | null;
   /** small display version (≤1000 px image / video poster), added on read */
   thumb_src?: string | null;
+  /** all display sizes with their pixel widths (images), added on read */
+  srcset?: string | null;
 }
 
 export interface LinkElement extends BaseElement {
@@ -89,6 +91,7 @@ export interface SceneElement extends BaseElement {
   image_ratio?: number;
   /** small display version of the image, added on read */
   image_thumb_src?: string | null;
+  image_srcset?: string | null;
   /** 2026-10-08, Lino: same priorities as the shot list (number badge color),
    * carried over to the shot-list scene on "Abgenommen" */
   priority?: Priority | null;
@@ -210,6 +213,7 @@ export interface MoodboardItem {
   s?: number;
   /** small display version, added on read */
   thumb_src?: string | null;
+  srcset?: string | null;
 }
 export interface MoodboardElement extends BaseElement {
   type: "moodboard";
@@ -828,13 +832,15 @@ export function forSave(data: BoardData): BoardData {
   return {
     cover: data.cover ?? null,
     elements: data.elements.map((el) => {
-      if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, thumb_src: _t, ...it }) => it) } as BoardElement;
+      if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, thumb_src: _t, srcset: _ss, ...it }) => it) } as BoardElement;
       if (!("src" in el) && !("image_src" in el)) return el;
       const copy: Record<string, unknown> = { ...el };
       delete copy.src;
       delete copy.image_src;
       delete copy.thumb_src;
       delete copy.image_thumb_src;
+      delete copy.srcset;
+      delete copy.image_srcset;
       return copy as unknown as BoardElement;
     }),
     connectors: data.connectors,
@@ -966,8 +972,10 @@ export function startDownload(url: string) {
  * big web version only when the image is shown large. `cssWidth` is the
  * size it's drawn at (board px × zoom bucket); the browser adds the screen's
  * pixel density itself. */
-export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number) {
+export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number, srcset?: string | null) {
   if (!src) return { src: thumb ?? undefined };
+  // the server knows every size and its real pixel width (thumb/mid/full)
+  if (srcset) return { src: thumb ?? src, srcSet: srcset, sizes: `${Math.max(40, Math.round(cssWidth))}px` };
   if (!thumb) return { src };
   const ar = aspect > 0 ? aspect : 1;
   const tw = Math.round(ar >= 1 ? 1000 : 1000 * ar);

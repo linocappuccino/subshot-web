@@ -323,7 +323,7 @@ function SceneNode({
         ) : el.image_src ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom)}
+            {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom, el.image_srcset)}
             alt=""
             draggable={false}
             onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
@@ -641,7 +641,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom)}
+      {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom, el.srcset)}
       alt={el.name || ""}
       draggable={false}
       className="w-full h-full object-cover rounded-lg shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5 pointer-events-none select-none"

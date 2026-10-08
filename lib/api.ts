@@ -862,7 +862,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     boardCollab: (ideaId: string) =>
       request<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(`ideas/${ideaId}/board/collab`, { method: "POST" }),
     boardPresign: (ideaId: string, keys: string[]) =>
-      request<{ urls: Record<string, string>; thumbs?: Record<string, string> }>(`ideas/${ideaId}/board/presign`, { method: "POST", body: JSON.stringify({ keys }) }),
+      request<{ urls: Record<string, string>; thumbs?: Record<string, string>; srcsets?: Record<string, string> }>(`ideas/${ideaId}/board/presign`, { method: "POST", body: JSON.stringify({ keys }) }),
     // GIF maker (2026-10-08): link → source video job, render job, discard
     boardGifLink: (ideaId: string, url: string) =>
       request<{ job_id: string }>(`ideas/${ideaId}/board/gif/link`, { method: "POST", body: JSON.stringify({ url }) }),

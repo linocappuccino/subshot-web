@@ -230,7 +230,7 @@ export function MoodboardNode({
                 {it.src && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * zoom)}
+                    {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * zoom, it.srcset)}
                     alt=""
                     draggable={false}
                     onLoad={(e) => {
