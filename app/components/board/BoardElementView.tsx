@@ -16,6 +16,9 @@ import {
   type MediaElement,
   type SceneElement,
   type TextElement,
+  type PaletteElement,
+  type LocationElement,
+  googleMapsLink,
 } from "@/lib/board";
 
 /** Renders one board element's CONTENT (the board engine in IdeaBoard.tsx owns
@@ -46,6 +49,9 @@ export interface ElementViewLabels extends TodoLabels {
   missingFile: string;
   scene: string;
   priorities: Record<Priority, string>;
+  palette: string;
+  location: string;
+  openInMaps: string;
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
   addImage: string;
@@ -119,6 +125,10 @@ export function BoardElementView({
       return <DrawingNode el={el} />;
     case "todo":
       return <TodoWrapper el={el} editable={editable} labels={labels} onMeasure={onMeasure} />;
+    case "palette":
+      return <PaletteNode el={el} labels={labels} onMeasure={onMeasure} />;
+    case "location":
+      return <LocationNode el={el} labels={labels} onMeasure={onMeasure} />;
     case "group":
       return (
         <GroupNode
@@ -492,6 +502,58 @@ function TextNode({
           dangerouslySetInnerHTML={{ __html: sanitizeBoardHtml(el.html) }}
         />
       )}
+    </div>
+  );
+}
+
+function PaletteNode({ el, labels, onMeasure }: { el: PaletteElement; labels: ElementViewLabels; onMeasure: (h: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGrowToContent(ref, el.h, onMeasure, true);
+  return (
+    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 p-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-0.5">{labels.palette}</div>
+      {el.title && <div className="text-sm font-semibold text-white/90 mb-2 truncate">{el.title}</div>}
+      <div className="flex rounded-md overflow-hidden h-20 mt-1.5">
+        {el.colors.map((c, i) => (
+          <div key={i} className="flex-1" style={{ background: c }} />
+        ))}
+      </div>
+      <div className="flex mt-1.5">
+        {el.colors.map((c, i) => (
+          <div key={i} className="flex-1 min-w-0 text-center text-[10px] font-mono uppercase text-white/55 truncate">
+            {c}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LocationNode({ el, labels, onMeasure }: { el: LocationElement; labels: ElementViewLabels; onMeasure: (h: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useGrowToContent(ref, el.h, onMeasure, true);
+  return (
+    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+      {el.image_src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={el.image_src} alt="" draggable={false} className="w-full aspect-[64/34] object-cover bg-white/5 pointer-events-none select-none" />
+      ) : (
+        <div className="w-full aspect-[64/34] bg-white/5 flex items-center justify-center text-3xl">📍</div>
+      )}
+      <div className="p-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-0.5">📍 {labels.location}</div>
+        {el.title && <div className="text-sm font-semibold text-white/90 truncate">{el.title}</div>}
+        {el.address && <div className="text-xs text-white/60 mt-0.5 line-clamp-2">{el.address}</div>}
+        <a
+          data-no-drag
+          href={googleMapsLink(el)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 mt-2 text-xs font-semibold text-blue-300 hover:text-blue-200"
+        >
+          {labels.openInMaps} ↗
+        </a>
+      </div>
     </div>
   );
 }

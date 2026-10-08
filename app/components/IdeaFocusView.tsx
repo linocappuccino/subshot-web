@@ -539,6 +539,11 @@ function IdeaBoardScreen({
               return { key: ticket.key, src: ticket.url };
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
+            createLocationMap={async (lat, lng) => {
+              const r = await api.boardLocationMap(idea.id, lat, lng);
+              return { key: r.key, src: r.url };
+            }}
+            extractPalette={async (key) => (await api.boardPalette(idea.id, key)).colors}
             generateImage={async (prompt, style, aspect) => {
               const { job_id } = await api.createBoardImageJob(idea.id, { prompt, style, aspect_ratio: aspect });
               // Gemini usually needs 10–40 s; give up after ~4 minutes

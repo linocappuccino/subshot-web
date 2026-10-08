@@ -852,6 +852,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     createIdeaBoardUpload: (ideaId: string, body: { filename: string; content_type: string; size: number }) =>
       request<BoardUploadTicket>(`ideas/${ideaId}/board/uploads`, { method: "POST", body: JSON.stringify(body) }),
+    // board location card: static map stored as a board file (2026-10-08)
+    boardLocationMap: (ideaId: string, lat: number, lng: number) =>
+      request<{ key: string; url: string }>(`ideas/${ideaId}/board/location-map`, { method: "POST", body: JSON.stringify({ lat, lng }) }),
+    // board palette card from an image (2026-10-08)
+    boardPalette: (ideaId: string, key: string) =>
+      request<{ colors: string[] }>(`ideas/${ideaId}/board/palette`, { method: "POST", body: JSON.stringify({ key }) }),
     // scene card "AI generieren" (2026-10-08): starts a job, poll for the result
     createBoardImageJob: (ideaId: string, body: { prompt: string; style: "realistic" | "sketch" | "funny_sketch"; aspect_ratio: "16:9" | "9:16" }) =>
       request<{ job_id: string }>(`ideas/${ideaId}/board/generate-image`, { method: "POST", body: JSON.stringify(body) }),

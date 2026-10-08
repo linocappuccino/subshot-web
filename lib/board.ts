@@ -118,7 +118,31 @@ export interface PublicBoardTodoList {
   items: { id: string; text: string; done: boolean; assignee_name: string | null }[];
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement;
+/** 2026-10-08, Lino: a color palette card (manual, or read from an image). */
+export interface PaletteElement extends BaseElement {
+  type: "palette";
+  title: string;
+  colors: string[];
+}
+
+/** 2026-10-08, Lino: a location card — address (Google Places search, same as
+ * the shot list), coordinates and a rendered map stored as a board file. */
+export interface LocationElement extends BaseElement {
+  type: "location";
+  title: string;
+  address: string;
+  lat?: number | null;
+  lng?: number | null;
+  image_key?: string;
+  image_src?: string | null;
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement;
+
+export function googleMapsLink(el: LocationElement): string {
+  const q = el.lat != null && el.lng != null ? `${el.lat},${el.lng}` : el.address || el.title;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+}
 
 export const GROUP_PAD = 24;
 export const GROUP_HEADER = 40;
@@ -203,6 +227,8 @@ export interface Connector {
   from: string;
   to: string;
   color?: StrokeColor;
+  /** 2026-10-08, Lino: text on the line (e.g. "Übergang", "Rückblende") */
+  label?: string;
 }
 
 export interface BoardData {

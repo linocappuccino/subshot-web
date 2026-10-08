@@ -33,11 +33,14 @@ import {
   type TextColor,
   type TextAlign,
   type TextElement,
+  type PaletteElement,
+  type LocationElement,
   type TodoElement,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
+import { LocationEditor, PaletteEditor } from "./BoardCardEditors";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -69,6 +72,8 @@ type Point = { x: number; y: number };
 
 export type BoardUploadFn = (file: File, mime: string, onProgress: (fraction: number) => void) => Promise<{ key: string; src: string }>;
 export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
+export type BoardLocationMapFn = (lat: number, lng: number) => Promise<{ key: string; src: string }>;
+export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
 export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
 
@@ -93,6 +98,9 @@ type Op =
       onGroupTitle: boolean;
       /** the clicked element was already the only selected one when pressed */
       wasSelected: boolean;
+      /** smart guides: the moving set's bounds at the start + what it can align to */
+      box: Rect;
+      others: Rect[];
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string; target: string | null }
@@ -135,12 +143,67 @@ function facingSides(a: Rect, b: Rect): [Side, Side] {
 
 /** Cubic curve leaving p1 straight out of side s1 and arriving at p2
  * straight into side s2 (or just ending at p2 for a free end). */
-function curvePath(p1: Point, s1: Side, p2: Point, s2: Side | null): string {
+function curveGeom(p1: Point, s1: Side, p2: Point, s2: Side | null): { d: string; mid: Point } {
   const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
   const off = Math.max(36, Math.min(180, dist * 0.45));
   const c1 = { x: p1.x + SIDE_DIR[s1][0] * off, y: p1.y + SIDE_DIR[s1][1] * off };
   const c2 = s2 ? { x: p2.x + SIDE_DIR[s2][0] * off, y: p2.y + SIDE_DIR[s2][1] * off } : p2;
-  return `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`;
+  return {
+    d: `M ${p1.x} ${p1.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`,
+    // the curve's own midpoint (t = 0.5) — where a connector's label sits
+    mid: { x: (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8, y: (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8 },
+  };
+}
+
+function curvePath(p1: Point, s1: Side, p2: Point, s2: Side | null): string {
+  return curveGeom(p1, s1, p2, s2).d;
+}
+
+const GUIDE_SNAP_PX = 6;
+type GuideLine = { x1: number; y1: number; x2: number; y2: number };
+
+/** Smart guides: aligns the moving box (its left/center/right and
+ * top/middle/bottom) to the nearest matching line of another node within
+ * `reach`; returns the corrected offset and the guide lines to draw. */
+function smartGuides(box: Rect, ddx: number, ddy: number, others: Rect[], reach: number): { ddx: number; ddy: number; lines: GuideLine[] } {
+  const bx = box.x + ddx;
+  const by = box.y + ddy;
+  const mx = [bx, bx + box.w / 2, bx + box.w];
+  const my = [by, by + box.h / 2, by + box.h];
+  let bestX: { d: number; adj: number } | null = null;
+  let bestY: { d: number; adj: number } | null = null;
+  for (const o of others) {
+    const ox = [o.x, o.x + o.w / 2, o.x + o.w];
+    const oy = [o.y, o.y + o.h / 2, o.y + o.h];
+    for (const a of mx) for (const b of ox) {
+      const d = Math.abs(a - b);
+      if (d <= reach && (!bestX || d < bestX.d)) bestX = { d, adj: b - a };
+    }
+    for (const a of my) for (const b of oy) {
+      const d = Math.abs(a - b);
+      if (d <= reach && (!bestY || d < bestY.d)) bestY = { d, adj: b - a };
+    }
+  }
+  const fx = ddx + (bestX?.adj ?? 0);
+  const fy = ddy + (bestY?.adj ?? 0);
+  const fb = { x: box.x + fx, y: box.y + fy, w: box.w, h: box.h };
+  const lines: GuideLine[] = [];
+  // one line per aligned position, spanning the box and every node on it
+  if (bestX) {
+    for (const a of [fb.x, fb.x + fb.w / 2, fb.x + fb.w]) {
+      const hits = others.filter((o) => [o.x, o.x + o.w / 2, o.x + o.w].some((b) => Math.abs(a - b) < 0.5));
+      if (!hits.length) continue;
+      lines.push({ x1: a, x2: a, y1: Math.min(fb.y, ...hits.map((o) => o.y)), y2: Math.max(fb.y + fb.h, ...hits.map((o) => o.y + o.h)) });
+    }
+  }
+  if (bestY) {
+    for (const a of [fb.y, fb.y + fb.h / 2, fb.y + fb.h]) {
+      const hits = others.filter((o) => [o.y, o.y + o.h / 2, o.y + o.h].some((b) => Math.abs(a - b) < 0.5));
+      if (!hits.length) continue;
+      lines.push({ y1: a, y2: a, x1: Math.min(fb.x, ...hits.map((o) => o.x)), x2: Math.max(fb.x + fb.w, ...hits.map((o) => o.x + o.w)) });
+    }
+  }
+  return { ddx: fx, ddy: fy, lines };
 }
 
 function distanceToRect(p: Point, r: Rect): number {
@@ -216,6 +279,8 @@ export function IdeaBoard({
   uploadFile,
   fetchLinkPreview,
   generateImage,
+  createLocationMap,
+  extractPalette,
   onError,
   onEscape,
   className = "",
@@ -227,6 +292,10 @@ export function IdeaBoard({
   fetchLinkPreview?: BoardLinkPreviewFn;
   /** scene cards' "AI generieren" — same popup/engine as the shot list */
   generateImage?: BoardGenerateImageFn;
+  /** location card: renders + stores the static map for picked coordinates */
+  createLocationMap?: BoardLocationMapFn;
+  /** palette card from an image: the image's dominant colors */
+  extractPalette?: BoardPaletteFn;
   onError?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
@@ -256,6 +325,7 @@ export function IdeaBoard({
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
   const [busyOp, setBusyOp] = useState<null | "move" | "resize">(null);
+  const [guides, setGuides] = useState<GuideLine[] | null>(null);
   const [drawPreview, setDrawPreview] = useState<[number, number][] | null>(null);
   const [connectPreview, setConnectPreview] = useState<{ from: string; to: Point; target: string | null } | null>(null);
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -804,6 +874,76 @@ export function IdeaBoard({
     }
   }
 
+  // ── palette + location cards (2026-10-08) ─────────────────────────────
+  // edited in a popup; `id` null = a new card at `at`
+  const [cardEditor, setCardEditor] = useState<{ kind: "palette" | "location"; id: string | null; at: Point } | null>(null);
+  const [cardBusy, setCardBusy] = useState(false);
+
+  function savePalette(title: string, colors: string[]) {
+    const ed = cardEditor;
+    setCardEditor(null);
+    if (!ed) return;
+    if (ed.id) {
+      updateElement(ed.id, { title, colors } as Partial<PaletteElement>, { history: true });
+      return;
+    }
+    const w = 360;
+    const h = 150;
+    const spot = place(ed.at.x - w / 2, ed.at.y - h / 2, w, h, true);
+    const el: PaletteElement = { id: newId(), type: "palette", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title, colors };
+    addElements([el]);
+  }
+
+  async function saveLocation(title: string, address: string, lat: number | null, lng: number | null) {
+    const ed = cardEditor;
+    if (!ed) return;
+    const prev = ed.id ? (dataRef.current.elements.find((e) => e.id === ed.id) as LocationElement | undefined) : undefined;
+    let map: { key: string; src: string } | null = null;
+    const moved = !prev || prev.lat !== lat || prev.lng !== lng;
+    if (lat != null && lng != null && moved && createLocationMap) {
+      setCardBusy(true);
+      try {
+        map = await createLocationMap(lat, lng);
+      } catch {
+        onError?.(t("ideaBoard.location.mapFailed"));
+      } finally {
+        setCardBusy(false);
+      }
+    }
+    setCardEditor(null);
+    const patch: Partial<LocationElement> = {
+      title,
+      address,
+      lat,
+      lng,
+      ...(map ? { image_key: map.key, image_src: map.src } : moved ? { image_key: undefined, image_src: null } : {}),
+    };
+    if (prev) {
+      updateElement(prev.id, patch, { history: true });
+      return;
+    }
+    const w = 320;
+    const h = 280;
+    const spot = place(ed.at.x - w / 2, ed.at.y - h / 2, w, h, true);
+    addElements([{ id: newId(), type: "location", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title, address, ...patch } as LocationElement]);
+  }
+
+  async function paletteFromImage(id: string) {
+    const img = dataRef.current.elements.find((e) => e.id === id);
+    if (!img || img.type !== "image" || !extractPalette) return;
+    try {
+      const colors = await extractPalette(img.asset_key);
+      const w = 360;
+      const h = 150;
+      const spot = place(img.x + img.w + GRID, img.y, w, h, true);
+      const el: PaletteElement = { id: newId(), type: "palette", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "", colors };
+      addElements([el]);
+      setSelection(new Set([el.id]));
+    } catch (e) {
+      onError?.(e instanceof Error && e.message ? e.message : t("ideaBoard.palette.failed"));
+    }
+  }
+
   // ── scene cards ───────────────────────────────────────────────────────
   const sceneImageInputRef = useRef<HTMLInputElement>(null);
   const sceneImageTarget = useRef<string | null>(null);
@@ -969,6 +1109,11 @@ export function IdeaBoard({
       setEditingId(el.id);
       return;
     }
+    if ((el.type === "palette" || el.type === "location") && editable) {
+      setSelection(new Set([el.id]));
+      setCardEditor({ kind: el.type, id: el.id, at: { x: el.x, y: el.y } });
+      return;
+    }
     if ((el.type === "text" || el.type === "scene") && editable) {
       editingStartHtml.current = el.html;
       setSelection(new Set([el.id]));
@@ -1017,6 +1162,7 @@ export function IdeaBoard({
         view: viewRef.current,
       };
       setBusyOp(null);
+      setGuides(null);
       return;
     }
     if (pointers.current.size > 2) return;
@@ -1118,6 +1264,19 @@ export function IdeaBoard({
         clickedId: id,
         onGroupTitle: !!target.closest("[data-group-title]"),
         wasSelected: selectionRef.current.size === 1 && selectionRef.current.has(id),
+        ...(() => {
+          const all = dataRef.current.elements;
+          const hiddenNow = hiddenElementIds(all);
+          const movingEls = all.filter((el) => moving.has(el.id) && !(el.type === "group" && !el.collapsed));
+          return {
+            box: boundsOf(movingEls.length ? movingEls : all.filter((el) => moving.has(el.id))) ?? { x: 0, y: 0, w: 0, h: 0 },
+            others: all
+              .filter((el) => !moving.has(el.id) && !hiddenNow.has(el.id) && el.type !== "drawing")
+              // an open group that contains what's being moved isn't a target
+              .filter((el) => !(el.type === "group" && !el.collapsed && el.children.some((c) => moving.has(c))))
+              .map((el) => ({ x: el.x, y: el.y, w: el.w, h: el.h })),
+          };
+        })(),
       };
       return;
     }
@@ -1204,8 +1363,14 @@ export function IdeaBoard({
         if (!op.moved) setBusyOp("move");
         op.moved = true;
         const p = op.origin.get(op.primary)!;
-        const ddx = snap(p.x + dx, !freePlace) - p.x;
-        const ddy = snap(p.y + dy, !freePlace) - p.y;
+        let ddx = snap(p.x + dx, !freePlace) - p.x;
+        let ddy = snap(p.y + dy, !freePlace) - p.y;
+        // 2026-10-08, Lino: smart guides — edges/centers within a few screen
+        // pixels of another node's edges/centers snap onto them exactly
+        const g = smartGuides(op.box, ddx, ddy, op.others, GUIDE_SNAP_PX / scale);
+        ddx = g.ddx;
+        ddy = g.ddy;
+        setGuides(g.lines.length ? g.lines : null);
         const next: BoardData = {
           ...dataRef.current,
           elements: dataRef.current.elements.map((el) => {
@@ -1290,6 +1455,7 @@ export function IdeaBoard({
     if (op.pointerId !== e.pointerId) return;
     opRef.current = null;
     setBusyOp(null);
+      setGuides(null);
     setPanning(false);
 
     switch (op.kind) {
@@ -1399,6 +1565,7 @@ export function IdeaBoard({
     if (op && op.kind === "resize") apply(dataRef.current, { history: op.snapshot });
     opRef.current = null;
     setBusyOp(null);
+      setGuides(null);
     setDrawPreview(null);
     setMarquee(null);
     setConnectPreview(null);
@@ -1648,6 +1815,9 @@ export function IdeaBoard({
     missingFile: t("ideaBoard.missingFile"),
     scene: t("ideaBoard.scene"),
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
+    palette: t("ideaBoard.palette.label"),
+    location: t("ideaBoard.location.label"),
+    openInMaps: t("ideaBoard.location.openInMaps"),
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
@@ -1683,7 +1853,21 @@ export function IdeaBoard({
     const b = byId.get(hidden.get(c.to) ?? c.to);
     if (!a || !b || a.id === b.id) return null;
     const [s1, s2] = facingSides(a, b);
-    return curvePath(anchorOf(a, s1), s1, anchorOf(b, s2), s2);
+    return curveGeom(anchorOf(a, s1), s1, anchorOf(b, s2), s2);
+  }
+
+  function setConnectorLabel(id: string, label: string) {
+    const c = dataRef.current.connectors.find((x) => x.id === id);
+    if (!c || (c.label ?? "") === label.trim()) return;
+    commit((d) => ({
+      ...d,
+      connectors: d.connectors.map((x) => {
+        if (x.id !== id) return x;
+        const next: Connector = { ...x, label: label.trim() };
+        if (!next.label) delete next.label;
+        return next;
+      }),
+    }));
   }
 
   const editingEl = editingId ? byId.get(editingId) : null;
@@ -1714,7 +1898,7 @@ export function IdeaBoard({
         {/* connectors (under the elements) */}
         <svg className="absolute left-0 top-0 overflow-visible pointer-events-none" width="1" height="1" style={{ zIndex: connectPreview ? 100003 : 0 }}>
           {data.connectors.map((c) => {
-            const d = connectorPath(c);
+            const d = connectorPath(c)?.d;
             if (!d) return null;
             const selected = selectedConnector === c.id;
             return (
@@ -1765,12 +1949,30 @@ export function IdeaBoard({
           })()}
         </svg>
 
+        {/* connector labels — on the line's midpoint, under the nodes */}
+        {data.connectors.map((c) => {
+          if (!c.label) return null;
+          const geom = connectorPath(c);
+          if (!geom) return null;
+          const selected = selectedConnector === c.id;
+          return (
+            <div
+              key={`label-${c.id}`}
+              data-connector-id={c.id}
+              className={`absolute max-w-[240px] truncate rounded-md px-2 py-0.5 text-xs font-medium whitespace-nowrap ${editable ? "cursor-pointer" : ""} ${selected ? "bg-blue-600 text-white" : "bg-[#1c1c1e] text-white/80 border border-white/15"}`}
+              style={{ left: geom.mid.x, top: geom.mid.y, transform: "translate(-50%, -50%)", zIndex: 9 }}
+            >
+              {c.label}
+            </div>
+          );
+        })}
+
         {elements.map((el, rank) => {
           if (hidden.has(el.id)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -1882,6 +2084,13 @@ export function IdeaBoard({
           </div>
         ))}
 
+        {guides && (
+          <svg className="absolute left-0 top-0 overflow-visible pointer-events-none" width="1" height="1" style={{ zIndex: 100001 }}>
+            {guides.map((l, i) => (
+              <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="#f43f5e" strokeWidth={1 / view.scale} />
+            ))}
+          </svg>
+        )}
         {drawPreview && (
           <svg className="absolute left-0 top-0 overflow-visible pointer-events-none" width="1" height="1" style={{ zIndex: 100001 }}>
             <path d={strokePath(drawPreview)} fill="none" stroke={strokeColor} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
@@ -2005,11 +2214,27 @@ export function IdeaBoard({
               <Divider />
             </>
           )}
+          {selectedEls.length === 1 && (selectedEls[0].type === "palette" || selectedEls[0].type === "location") && (
+            <>
+              <BarButton
+                title={t("ideaBoard.editCard")}
+                onPress={() => setCardEditor({ kind: selectedEls[0].type as "palette" | "location", id: selectedEls[0].id, at: { x: selectedEls[0].x, y: selectedEls[0].y } })}
+              >
+                <span className="text-xs font-semibold px-1">{t("ideaBoard.editCard")}</span>
+              </BarButton>
+              <Divider />
+            </>
+          )}
           {selectedEls.length === 1 && selectedEls[0].type === "image" && (
             <>
               <BarButton title={t("ideaBoard.toScene")} onPress={() => convertToScene(selectedEls[0].id)}>
                 <span className="text-xs font-semibold px-1">{t("ideaBoard.toScene")}</span>
               </BarButton>
+              {extractPalette && (
+                <BarButton title={t("ideaBoard.palette.fromImage")} onPress={() => void paletteFromImage(selectedEls[0].id)}>
+                  <span className="text-xs font-semibold px-1 whitespace-nowrap">🎨 {t("ideaBoard.palette.fromImageShort")}</span>
+                </BarButton>
+              )}
               <Divider />
             </>
           )}
@@ -2068,6 +2293,17 @@ export function IdeaBoard({
               </BarButton>
             </>
           )}
+          {selectedConnector && selectedEls.length === 0 && (
+            <>
+              <ConnectorLabelInput
+                key={selectedConnector}
+                initial={data.connectors.find((c) => c.id === selectedConnector)?.label ?? ""}
+                placeholder={t("ideaBoard.connectorLabel")}
+                onCommit={(label) => setConnectorLabel(selectedConnector, label)}
+              />
+              <Divider />
+            </>
+          )}
           <BarButton title={t("ideaBoard.delete")} onPress={deleteSelection} danger>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
           </BarButton>
@@ -2117,6 +2353,8 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.text")} hint="T" onPress={() => menuAction(() => addText(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
+                  <MenuItem label={t("ideaBoard.menu.palette")} onPress={() => menuAction(() => setCardEditor({ kind: "palette", id: null, at: menu.world }))} />
+                  {createLocationMap && <MenuItem label={t("ideaBoard.menu.location")} onPress={() => menuAction(() => setCardEditor({ kind: "location", id: null, at: menu.world }))} />}
                   <MenuItem
                     label={t("ideaBoard.menu.upload")}
                     onPress={() =>
@@ -2164,6 +2402,44 @@ export function IdeaBoard({
             );
           })()}
         </ContextMenu>
+      )}
+
+      {editable && cardEditor && (
+        <div
+          className="contents"
+          onPointerDown={(e) => e.stopPropagation()}
+          onPointerMove={(e) => e.stopPropagation()}
+          onPointerUp={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          {cardEditor.kind === "palette" ? (
+            (() => {
+              const cur = cardEditor.id ? (byId.get(cardEditor.id) as PaletteElement | undefined) : undefined;
+              return (
+                <PaletteEditor open initialTitle={cur?.title ?? ""} initialColors={cur?.colors ?? []} onClose={() => setCardEditor(null)} onSave={savePalette} />
+              );
+            })()
+          ) : (
+            (() => {
+              const cur = cardEditor.id ? (byId.get(cardEditor.id) as LocationElement | undefined) : undefined;
+              return (
+                <LocationEditor
+                  open
+                  busy={cardBusy}
+                  initialTitle={cur?.title ?? ""}
+                  initialAddress={cur?.address ?? ""}
+                  initialLat={cur?.lat ?? null}
+                  initialLng={cur?.lng ?? null}
+                  onClose={() => setCardEditor(null)}
+                  onSave={(title, address, lat, lng) => void saveLocation(title, address, lat, lng)}
+                />
+              );
+            })()
+          )}
+        </div>
       )}
 
       {editable && generateImage && (
@@ -2214,6 +2490,14 @@ export function IdeaBoard({
           {todoCtx?.api && (
             <ToolButton title={t("ideaBoard.toolTodo")} onPress={() => void addTodo(viewportCenterWorld())}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
+            </ToolButton>
+          )}
+          <ToolButton title={t("ideaBoard.toolPalette")} onPress={() => setCardEditor({ kind: "palette", id: null, at: viewportCenterWorld() })}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-1.5a1.5 1.5 0 0 0-1.1 2.5A2 2 0 0 1 12 22z" /><circle cx="7.5" cy="10.5" r="1.2" fill="currentColor" /><circle cx="11" cy="7" r="1.2" fill="currentColor" /><circle cx="15.5" cy="8" r="1.2" fill="currentColor" /></svg>
+          </ToolButton>
+          {createLocationMap && (
+            <ToolButton title={t("ideaBoard.toolLocation")} onPress={() => setCardEditor({ kind: "location", id: null, at: viewportCenterWorld() })}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" /><circle cx="12" cy="10" r="3" /></svg>
             </ToolButton>
           )}
           <ToolButton title={t("ideaBoard.toolUpload")} onPress={() => fileInputRef.current?.click()}>
@@ -2409,6 +2693,28 @@ function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: numb
     >
       {children}
     </div>
+  );
+}
+
+/** the label field in a selected connector's bar — commits on Enter, blur
+ * and also when the bar goes away (clicking elsewhere unmounts it first) */
+function ConnectorLabelInput({ initial, placeholder, onCommit }: { initial: string; placeholder: string; onCommit: (label: string) => void }) {
+  const [value, setValue] = useState(initial);
+  const latest = useRef({ value, onCommit });
+  latest.current = { value, onCommit };
+  useEffect(() => () => latest.current.onCommit(latest.current.value), []);
+  return (
+    <input
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      placeholder={placeholder}
+      maxLength={200}
+      onBlur={() => onCommit(value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+      }}
+      className="w-44 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-sm text-white outline-none focus:border-blue-500 select-text"
+    />
   );
 }
 
