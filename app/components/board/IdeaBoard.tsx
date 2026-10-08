@@ -977,7 +977,8 @@ export function IdeaBoard({
     if (target.closest("[data-board-ui]")) return;
     if (menu) setMenu(null);
     if (target.closest("[contenteditable='true'], input, textarea")) return;
-    const elNode = target.closest<HTMLElement>("[data-el-id]");
+    // the empty inside of an open group's (blurred) frame acts like the empty board
+    const elNode = target.closest("[data-group-body]") && !target.closest("[data-group-header]") ? null : target.closest<HTMLElement>("[data-el-id]");
     if (target.closest("[data-no-drag]")) {
       // media controls / links inside a card: let the browser handle the click
       if (editable && elNode) {
@@ -1607,10 +1608,26 @@ export function IdeaBoard({
   // 2026-10-08, Lino: drawings always lie on top of the nodes — they're
   // rendered as their own layer above everything else (z order kept within
   // each layer); stacking uses the render position, not the raw z
-  const elements = useMemo(
-    () => [...data.elements].sort((a, b) => Number(a.type === "drawing") - Number(b.type === "drawing") || a.z - b.z),
-    [data.elements],
-  );
+  // 2026-10-08, Lino: an expanded group (frame + its members) lies above the
+  // loose nodes, its frame blurring whatever is behind it — so opening a
+  // collapsed group next to other nodes doesn't end up in a tangle
+  const elements = useMemo(() => {
+    const byZ = (a: BoardElement, b: BoardElement) => a.z - b.z;
+    const openGroups = data.elements.filter((el): el is GroupElement => el.type === "group" && !el.collapsed).sort(byZ);
+    const inOpenGroup = new Set(openGroups.flatMap((g) => g.children));
+    const drawings = data.elements.filter((el) => el.type === "drawing").sort(byZ);
+    const loose = data.elements.filter((el) => el.type !== "drawing" && !(el.type === "group" && !el.collapsed) && !inOpenGroup.has(el.id)).sort(byZ);
+    const grouped = openGroups.flatMap((g) => [
+      g,
+      ...data.elements.filter((el) => el.type !== "drawing" && g.children.includes(el.id)).sort(byZ),
+    ]);
+    // a loose node being dragged stays visible above the glass
+    if (busyOp === "move" && openGroups.length) {
+      const lifted = loose.filter((el) => selection.has(el.id));
+      return [...loose.filter((el) => !selection.has(el.id)), ...grouped, ...lifted, ...drawings];
+    }
+    return [...loose, ...grouped, ...drawings];
+  }, [data.elements, busyOp, selection]);
   const hidden = useMemo(() => hiddenElementIds(data.elements), [data.elements]);
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));

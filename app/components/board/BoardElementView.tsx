@@ -749,11 +749,16 @@ function GroupNode({
   );
 
   if (!el.collapsed) {
-    // frame around the members — only the header bar takes clicks, the inside
-    // stays click-through so the members (and the empty board) work as usual
+    // frame around the members, frosted: whatever lies behind the open group
+    // is blurred (2026-10-08, Lino). Its empty inside behaves like the empty
+    // board (data-group-body), so nothing behind the glass can be grabbed.
     return (
-      <div className="absolute inset-0 rounded-2xl border border-white/15 bg-white/[0.035] pointer-events-none">
-        <div className="pointer-events-auto flex items-center gap-2 px-2.5 h-10 rounded-t-2xl bg-white/[0.04] border-b border-white/10 cursor-grab">
+      <div
+        data-group-body
+        className="absolute inset-0 rounded-2xl border border-white/15 pointer-events-auto"
+        style={{ background: "rgba(28,28,30,0.55)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)" }}
+      >
+        <div data-group-header className="pointer-events-auto flex items-center gap-2 px-2.5 h-10 rounded-t-2xl bg-white/[0.04] border-b border-white/10 cursor-grab">
           {toggle}
           {title}
           {count}
