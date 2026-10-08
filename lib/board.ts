@@ -3,6 +3,8 @@
  * positions/sizes are in board ("world") pixels; `src`/`image_src` are
  * presigned URLs the API adds on read and strips again on save. */
 
+import type { Priority } from "./types";
+
 export const GRID = 24;
 
 export type TextColor = "default" | "yellow" | "green" | "blue" | "pink" | "purple" | "orange" | "red" | "transparent";
@@ -81,6 +83,9 @@ export interface SceneElement extends BaseElement {
   /** 2026-10-08, Lino: width / height of the image — the card shows it in its
    * own format (9:16, 1:1, …) instead of cropping to 16:9 */
   image_ratio?: number;
+  /** 2026-10-08, Lino: same priorities as the shot list (number badge color),
+   * carried over to the shot-list scene on "Abgenommen" */
+  priority?: Priority | null;
   /** spoken lines — each becomes its own dialogue entry of the shot-list scene */
   dialogues?: string[];
 }

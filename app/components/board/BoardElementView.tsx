@@ -1,5 +1,6 @@
 "use client";
 
+import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -44,6 +45,7 @@ export interface ElementViewLabels extends TodoLabels {
   download: string;
   missingFile: string;
   scene: string;
+  priorities: Record<Priority, string>;
   sceneTitlePlaceholder: string;
   sceneTextPlaceholder: string;
   addImage: string;
@@ -226,11 +228,22 @@ function SceneNode({
       className="rounded-lg bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]"
     >
       <div className="flex items-center gap-2.5 px-3 pt-3 pb-2">
-        <div className="shrink-0 h-7 min-w-7 px-2 rounded-lg bg-blue-600 text-white text-sm font-bold flex items-center justify-center tabular-nums">
+        <div
+          className="shrink-0 h-7 min-w-7 px-2 rounded-md text-white text-sm font-bold flex items-center justify-center tabular-nums"
+          style={{ background: PRIORITY_COLORS[el.priority ?? "none"] }}
+        >
           {el.number}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40 leading-none mb-1">{labels.scene}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-white/40 leading-none mb-1">
+            {labels.scene}
+            {el.priority && (
+              <span style={{ color: PRIORITY_COLORS[el.priority] }}>
+                {" · "}
+                {labels.priorities[el.priority]}
+              </span>
+            )}
+          </div>
           {editing ? (
             <input
               ref={titleRef}

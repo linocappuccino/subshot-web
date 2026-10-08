@@ -1,5 +1,6 @@
 "use client";
 
+import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 import {
@@ -739,6 +740,14 @@ export function IdeaBoard({
     commit((d) => ({
       ...d,
       elements: d.elements.map((el) => (ids.has(el.id) && el.type === "text" ? { ...el, align } : el)),
+    }));
+  }
+
+  function setScenePriority(priority: Priority | null) {
+    const ids = selectionRef.current;
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => (ids.has(el.id) && el.type === "scene" ? { ...el, priority } : el)),
     }));
   }
 
@@ -1638,6 +1647,7 @@ export function IdeaBoard({
     download: t("ideaBoard.download"),
     missingFile: t("ideaBoard.missingFile"),
     scene: t("ideaBoard.scene"),
+    priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
@@ -2000,6 +2010,24 @@ export function IdeaBoard({
               <BarButton title={t("ideaBoard.toScene")} onPress={() => convertToScene(selectedEls[0].id)}>
                 <span className="text-xs font-semibold px-1">{t("ideaBoard.toScene")}</span>
               </BarButton>
+              <Divider />
+            </>
+          )}
+          {selectedEls.length > 0 && selectedEls.every((el) => el.type === "scene") && (
+            <>
+              {(["none", "must", "should", "optional"] as const).map((p) => {
+                const current = selectedEls.every((el) => ((el as SceneElement).priority ?? "none") === p);
+                return (
+                  <button
+                    key={p}
+                    title={`${t("sceneEditModal.priority")}: ${p === "none" ? t("sceneEditModal.none") : t(`priority.${p}`)}`}
+                    onPointerDown={(e) => e.preventDefault()}
+                    onClick={() => setScenePriority(p === "none" ? null : p)}
+                    className={`w-5 h-5 rounded-full shrink-0 hover:scale-110 transition-transform ${current ? "ring-2 ring-white ring-offset-1 ring-offset-[#1c1c1e]" : ""}`}
+                    style={{ background: PRIORITY_COLORS[p] }}
+                  />
+                );
+              })}
               <Divider />
             </>
           )}
