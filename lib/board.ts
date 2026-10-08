@@ -196,14 +196,34 @@ export interface MoodboardItem {
   src?: string | null;
   name: string;
   mime: string;
+  /** layout 2: width in 24ths of the card (old layout: column span) */
   w: number;
+  /** old layout only: row span */
   h: number;
+  /** the image's width / height — its height follows from this */
+  ar?: number;
 }
 export interface MoodboardElement extends BaseElement {
   type: "moodboard";
   title: string;
+  /** how many images fit side by side by default ("Spalten") */
   cols: number;
   items: MoodboardItem[];
+  /** 2 = free sizes (2026-10-08, Lino: "keine festen Spaltenbreiten") */
+  layout?: number;
+}
+
+export const MOODBOARD_UNITS = 24;
+
+/** items in the free-size format (older cards stored column/row spans) */
+export function moodboardItems(el: MoodboardElement): MoodboardItem[] {
+  if (el.layout === 2) return el.items;
+  const cols = Math.max(1, el.cols || 3);
+  return el.items.map((it) => ({
+    ...it,
+    w: Math.max(2, Math.min(MOODBOARD_UNITS, Math.round((Math.min(it.w, cols) * MOODBOARD_UNITS) / cols))),
+    ar: it.ar ?? Math.min(it.w, cols) / Math.max(1, it.h),
+  }));
 }
 
 export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement;

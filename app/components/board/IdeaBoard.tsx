@@ -40,6 +40,8 @@ import {
   type BoardVote,
   type MoodboardElement,
   type MoodboardItem,
+  MOODBOARD_UNITS,
+  moodboardItems,
   tagColor,
   type ColorElement,
   STICKY_COLORS,
@@ -707,7 +709,7 @@ export function IdeaBoard({
   function addMoodboard(at: Point) {
     const w = 528;
     const spot = place(at.x - w / 2, at.y - 160, w, 320, true);
-    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h: 320, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [] };
+    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h: 320, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [], layout: 2 };
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
@@ -719,19 +721,19 @@ export function IdeaBoard({
     moodboardInputRef.current?.click();
   }
 
-  /** a new image's default span from its shape: wide → 2×1, tall → 1×2 */
-  function spanFor(size: { w: number; h: number } | null, cols: number): { w: number; h: number } {
-    const r = size && size.h ? size.w / size.h : 1;
-    if (r > 1.5) return { w: Math.min(2, cols), h: 1 };
-    if (r < 0.7) return { w: 1, h: 2 };
-    return { w: 1, h: 1 };
+  /** a new image: the card's default width ("Spalten"), its own aspect ratio */
+  function spanFor(size: { w: number; h: number } | null, cols: number): { w: number; h: number; ar: number } {
+    const ar = size && size.w && size.h ? Math.round((size.w / size.h) * 1000) / 1000 : 1;
+    return { w: Math.max(3, Math.round(MOODBOARD_UNITS / Math.max(1, cols))), h: 1, ar };
   }
 
   function appendMoodboardItems(id: string, add: MoodboardItem[]) {
     if (!add.length) return;
     commit((d) => ({
       ...d,
-      elements: d.elements.map((el) => (el.id === id && el.type === "moodboard" ? { ...el, items: [...el.items, ...add].slice(0, 60) } : el)),
+      elements: d.elements.map((el) =>
+        el.id === id && el.type === "moodboard" ? { ...el, layout: 2, items: [...moodboardItems(el), ...add].slice(0, 60) } : el,
+      ),
     }));
   }
 
@@ -757,15 +759,19 @@ export function IdeaBoard({
   }
 
   function setMoodboardItems(id: string, items: MoodboardItem[]) {
-    updateElement(id, { items } as Partial<MoodboardElement>, { history: true });
+    updateElement(id, { items, layout: 2 } as Partial<MoodboardElement>, { history: true });
   }
 
+  /** "Spalten": how many images sit side by side — every image scales by the
+   * same factor, so individual size differences are kept */
   function setMoodboardCols(id: string, delta: number) {
     const mb = dataRef.current.elements.find((e) => e.id === id);
     if (!mb || mb.type !== "moodboard") return;
     const cols = Math.max(1, Math.min(8, mb.cols + delta));
     if (cols === mb.cols) return;
-    updateElement(id, { cols, items: mb.items.map((it) => ({ ...it, w: Math.min(it.w, cols) })) } as Partial<MoodboardElement>, { history: true });
+    const k = mb.cols / cols;
+    const items = moodboardItems(mb).map((it) => ({ ...it, w: Math.max(3, Math.min(MOODBOARD_UNITS, Math.round(it.w * k))) }));
+    updateElement(id, { cols, items, layout: 2 } as Partial<MoodboardElement>, { history: true });
   }
 
   function setStickyColor(color: StickyColor) {
@@ -1873,7 +1879,7 @@ export function IdeaBoard({
                 ...dataRef.current,
                 elements: els
                   .filter((x) => !ids.has(x.id))
-                  .map((x) => (x.id === mb.id && x.type === "moodboard" ? { ...x, items: [...x.items, ...add].slice(0, 60) } : x))
+                  .map((x) => (x.id === mb.id && x.type === "moodboard" ? { ...x, layout: 2, items: [...moodboardItems(x), ...add].slice(0, 60) } : x))
                   .map((x) => (x.type === "group" ? { ...x, children: x.children.filter((c) => !ids.has(c)) } : x)),
                 connectors: dataRef.current.connectors.filter((c) => !ids.has(c.from) && !ids.has(c.to)),
               },
