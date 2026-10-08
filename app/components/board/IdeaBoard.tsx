@@ -41,6 +41,7 @@ import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, st
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { LocationEditor, PaletteEditor } from "./BoardCardEditors";
+import { BoardPresentation } from "./BoardPresentation";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -442,22 +443,47 @@ export function IdeaBoard({
     setView(next);
   }, []);
 
-  const fitToContent = useCallback(() => {
-    const rect = viewportRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const b = boundsOf(dataRef.current.elements);
-    if (!b) {
-      const next = { scale: 1, x: rect.width / 2 - 216, y: Math.min(160, rect.height / 4) };
+  // smooth camera move (storyboard, feedback pins); a new move cancels the last
+  const viewAnim = useRef<number | null>(null);
+  const animateViewTo = useCallback((target: View) => {
+    if (viewAnim.current) cancelAnimationFrame(viewAnim.current);
+    const from = viewRef.current;
+    const start = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - start) / 380);
+      const e = 1 - Math.pow(1 - k, 3);
+      const next = { scale: from.scale + (target.scale - from.scale) * e, x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e };
       viewRef.current = next;
       setView(next);
-      return;
-    }
-    const pad = 96;
-    const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), 1), MIN_SCALE, 1);
-    const next = { scale: s, x: rect.width / 2 - (b.x + b.w / 2) * s, y: rect.height / 2 - (b.y + b.h / 2) * s };
-    viewRef.current = next;
-    setView(next);
+      viewAnim.current = k < 1 ? requestAnimationFrame(step) : null;
+    };
+    viewAnim.current = requestAnimationFrame(step);
   }, []);
+
+  /** frames a world rect in the viewport (null = the empty-board default) */
+  const zoomToRect = useCallback(
+    (b: Rect | null, opts: { pad?: number; maxScale?: number; animate?: boolean } = {}) => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      let next: View;
+      if (!b) {
+        next = { scale: 1, x: rect.width / 2 - 216, y: Math.min(160, rect.height / 4) };
+      } else {
+        const pad = opts.pad ?? 96;
+        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), MIN_SCALE, opts.maxScale ?? 1);
+        next = { scale: s, x: rect.width / 2 - (b.x + b.w / 2) * s, y: rect.height / 2 - (b.y + b.h / 2) * s };
+      }
+      if (opts.animate) {
+        animateViewTo(next);
+        return;
+      }
+      viewRef.current = next;
+      setView(next);
+    },
+    [animateViewTo],
+  );
+
+  const fitToContent = useCallback(() => zoomToRect(boundsOf(dataRef.current.elements)), [zoomToRect]);
 
   useLayoutEffect(() => {
     fitToContent();
@@ -942,6 +968,58 @@ export function IdeaBoard({
     } catch (e) {
       onError?.(e instanceof Error && e.message ? e.message : t("ideaBoard.palette.failed"));
     }
+  }
+
+  // ── storyboard + presentation (2026-10-08) ────────────────────────────
+  const [presenting, setPresenting] = useState<number | null>(null);
+  const storyScenes = useMemo(() => {
+    const hiddenNow = hiddenElementIds(data.elements);
+    return data.elements
+      .filter((el): el is SceneElement => el.type === "scene" && !hiddenNow.has(el.id))
+      .sort((a, b) => a.number - b.number || a.y - b.y || a.x - b.x);
+  }, [data.elements]);
+
+  /** "Storyboard anordnen": the scene cards in number order as a grid
+   * (4 per row), starting where the scenes currently begin; one undo step. */
+  function arrangeStoryboard() {
+    const scenes = storyScenes;
+    if (!scenes.length) return;
+    const cols = 4;
+    const gap = GRID * 2;
+    const x0 = snap(Math.min(...scenes.map((s) => s.x)));
+    const y0 = snap(Math.min(...scenes.map((s) => s.y)));
+    const colW = Math.max(...scenes.map((s) => s.w));
+    const layout = (ox: number, oy: number) => {
+      const pos = new Map<string, Point>();
+      let y = oy;
+      for (let r = 0; r * cols < scenes.length; r++) {
+        const row = scenes.slice(r * cols, r * cols + cols);
+        row.forEach((s, i) => pos.set(s.id, { x: ox + i * (colW + gap), y }));
+        y += Math.max(...row.map((s) => s.h)) + gap;
+      }
+      return pos;
+    };
+    // where the scenes begin — unless other nodes are in the way, then the
+    // storyboard goes below everything else on the board
+    const sceneIds = new Set(scenes.map((s) => s.id));
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    const others = dataRef.current.elements.filter(
+      (el) => !sceneIds.has(el.id) && !hiddenNow.has(el.id) && el.type !== "drawing" && !(el.type === "group" && !el.collapsed),
+    );
+    let pos = layout(x0, y0);
+    const hits = (p: Map<string, Point>) =>
+      scenes.some((s) => {
+        const q = p.get(s.id)!;
+        return others.some((o) => q.x < o.x + o.w && q.x + s.w > o.x && q.y < o.y + o.h && q.y + s.h > o.y);
+      });
+    if (hits(pos)) {
+      const below = boundsOf(others)!;
+      pos = layout(x0, snap(below.y + below.h + gap * 2));
+    }
+    commit((d) => ({ ...d, elements: d.elements.map((el) => (pos.has(el.id) ? ({ ...el, ...pos.get(el.id)! } as BoardElement) : el)) }));
+    setSelection(new Set(scenes.map((s) => s.id)));
+    const cards = scenes.map((s) => ({ ...s, ...pos.get(s.id)! }));
+    requestAnimationFrame(() => zoomToRect(boundsOf(cards), { animate: true }));
   }
 
   // ── scene cards ───────────────────────────────────────────────────────
@@ -2353,6 +2431,7 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.text")} hint="T" onPress={() => menuAction(() => addText(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
+                  {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
                   <MenuItem label={t("ideaBoard.menu.palette")} onPress={() => menuAction(() => setCardEditor({ kind: "palette", id: null, at: menu.world }))} />
                   {createLocationMap && <MenuItem label={t("ideaBoard.menu.location")} onPress={() => menuAction(() => setCardEditor({ kind: "location", id: null, at: menu.world }))} />}
                   <MenuItem
@@ -2600,6 +2679,41 @@ export function IdeaBoard({
       )}
 
       {/* zoom */}
+      {storyScenes.length > 0 && (
+        <div data-board-ui className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
+          {editable && storyScenes.length > 1 && (
+            <button title={t("ideaBoard.arrangeHint")} onClick={arrangeStoryboard} className="h-8 px-2.5 rounded-lg text-xs font-semibold hover:bg-white/10 flex items-center gap-1.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+              {t("ideaBoard.arrange")}
+            </button>
+          )}
+          <button
+            title={t("ideaBoard.present.hint")}
+            onClick={() => {
+              const sel = storyScenes.findIndex((s) => selectionRef.current.has(s.id));
+              setPresenting(Math.max(0, sel));
+            }}
+            className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
+            {t("ideaBoard.present.button")}
+          </button>
+        </div>
+      )}
+      {presenting !== null && (
+        <BoardPresentation
+          scenes={storyScenes}
+          startIndex={presenting}
+          onClose={(i) => {
+            setPresenting(null);
+            const sc = storyScenes[i];
+            if (sc) {
+              setSelection(new Set([sc.id]));
+              zoomToRect(sc, { animate: true, maxScale: 1, pad: 120 });
+            }
+          }}
+        />
+      )}
       <div data-board-ui className="absolute z-30 right-3 bottom-3 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
         <ZoomButton title={t("ideaBoard.zoomOut")} onPress={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, view.scale / 1.25); }}>−</ZoomButton>
         <button

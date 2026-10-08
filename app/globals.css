@@ -270,3 +270,9 @@ html {
   content: attr(data-placeholder);
   opacity: 0.4;
 }
+
+/* 2026-10-08 — board presentation mode: each slide fades in */
+@keyframes subshot-present-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
