@@ -2,6 +2,7 @@
 
 import { BoardZoomContext, SharpImg } from "./BoardDownload";
 import { MoodboardNode } from "./BoardMoodboard";
+import { LocationMap } from "./BoardMap";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -608,7 +609,9 @@ function LocationNode({ el, labels, onMeasure }: { el: LocationElement; labels: 
   useGrowToContent(ref, el.h, onMeasure, true);
   return (
     <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
-      {el.image_src ? (
+      {typeof el.lat === "number" && typeof el.lng === "number" ? (
+        <LocationMap lat={el.lat} lng={el.lng} style={el.map_style ?? "map"} w={el.w - 2} fallbackSrc={el.image_src} />
+      ) : el.image_src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={el.image_src} alt="" draggable={false} className="w-full aspect-[64/34] object-cover bg-white/5 pointer-events-none select-none" />
       ) : (
