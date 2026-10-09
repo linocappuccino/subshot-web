@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from "@hocuspocus/provider";
-import type { BoardData, BoardElement, Connector } from "./board";
+import type { BoardData, BoardElement, BoardView, Connector } from "./board";
 
 /** 2026-10-08, Lino: live collaboration on the idea board ("direkte
  * Zusammenarbeit — jede Änderung live mitverfolgen").
@@ -12,7 +12,7 @@ import type { BoardData, BoardElement, Connector } from "./board";
  * (Hocuspocus, /opt/subshot-collab, wss://subshot.ch/collab):
  *   Y.Map "elements"   id -> element (plain JSON, no presigned URLs)
  *   Y.Map "connectors" id -> connector
- *   Y.Map "meta"       "cover" -> element id | null
+ *   Y.Map "meta"       "cover" -> element id | null, "views" -> saved views (Szenen)
  * One element is one map entry, so two people editing different nodes never
  * conflict; the same node edited at once: the later change wins.
  *
@@ -156,7 +156,11 @@ export function useBoardCollab({
         })
         .catch(() => missing.forEach((k) => asked.current.delete(k)));
     }
-    setRemote({ data: { elements: els.map(hydrate), connectors: cons, cover: (doc.getMap("meta").get("cover") as string | null) ?? null }, nonce: Date.now() + Math.random() });
+    const meta = doc.getMap("meta");
+    setRemote({
+      data: { elements: els.map(hydrate), connectors: cons, cover: (meta.get("cover") as string | null) ?? null, views: (meta.get("views") as BoardView[] | undefined) ?? [] },
+      nonce: Date.now() + Math.random(),
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrate]);
 
@@ -213,6 +217,7 @@ export function useBoardCollab({
       }
       const meta = doc.getMap("meta");
       if ((meta.get("cover") ?? null) !== (data.cover ?? null)) meta.set("cover", data.cover ?? null);
+      if (JSON.stringify(meta.get("views") ?? []) !== JSON.stringify(data.views ?? [])) meta.set("views", data.views ?? []);
     }, LOCAL);
   }, []);
 

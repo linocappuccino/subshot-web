@@ -22,6 +22,7 @@ import {
   snap,
   type BoardData,
   type BoardElement,
+  type BoardView,
   type Connector,
   type DrawingElement,
   type GroupElement,
@@ -57,6 +58,7 @@ import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, st
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
+import { BoardScenesBar } from "./BoardScenes";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
@@ -622,6 +624,30 @@ export function IdeaBoard({
     const timer = setTimeout(() => setFlash(null), 1800);
     return () => clearTimeout(timer);
   }, [activeFocus, zoomToRect]);
+
+  // ── Szenen (2026-10-09, Lino: like Apple Freeform) ────────────────────
+  // a scene = the board area on screen when it was saved; a click frames
+  // exactly that area again (animated)
+  const [activeScene, setActiveScene] = useState<string | null>(null);
+  function captureScene(name: string) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const v = viewRef.current;
+    const scene: BoardView = { id: newId(), name: name.slice(0, 80), x: -v.x / v.scale, y: -v.y / v.scale, w: rect.width / v.scale, h: rect.height / v.scale };
+    commit((d) => ({ ...d, views: [...(d.views ?? []), scene].slice(0, 50) }));
+    setActiveScene(scene.id);
+  }
+  function renameScene(id: string, name: string) {
+    commit((d) => ({ ...d, views: (d.views ?? []).map((s) => (s.id === id ? { ...s, name: name.slice(0, 80) } : s)) }));
+  }
+  function deleteScene(id: string) {
+    commit((d) => ({ ...d, views: (d.views ?? []).filter((s) => s.id !== id) }));
+    if (activeScene === id) setActiveScene(null);
+  }
+  function goToScene(scene: BoardView) {
+    zoomToRect(scene, { animate: true, pad: 0, maxScale: MAX_SCALE });
+    setActiveScene(scene.id);
+  }
 
   // ── search, tags, navigation (2026-10-08) ─────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -3482,6 +3508,16 @@ export function IdeaBoard({
           }}
         />
       )}
+      <BoardScenesBar
+        views={data.views ?? []}
+        elements={data.elements}
+        editable={editable}
+        activeId={activeScene}
+        onCapture={captureScene}
+        onRename={renameScene}
+        onDelete={deleteScene}
+        onGo={goToScene}
+      />
       <div data-board-ui className="absolute z-30 right-3 bottom-3 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
         <ZoomButton title={t("ideaBoard.zoomOut")} onPress={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, view.scale / 1.25); }}>−</ZoomButton>
         <button

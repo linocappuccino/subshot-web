@@ -792,6 +792,19 @@ export interface BoardData {
   /** 2026-10-08, Lino: id of the image (or scene card with an image) chosen
    * via "Als Thumbnail verwenden" as the idea tile's cover */
   cover?: string | null;
+  /** 2026-10-09, Lino: "Szenen" like Apple Freeform — saved views of the
+   * board, shown at the bottom; a click flies back to exactly that spot */
+  views?: BoardView[];
+}
+
+/** a saved view: the board area that was on screen (world coordinates) */
+export interface BoardView {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** The image URL an element can lend the idea tile as its thumbnail. */
@@ -839,6 +852,7 @@ export function snap(v: number, enabled = true): number {
 export function forSave(data: BoardData): BoardData {
   return {
     cover: data.cover ?? null,
+    views: data.views ?? [],
     elements: data.elements.map((el) => {
       if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, thumb_src: _t, srcset: _ss, ...it }) => it) } as BoardElement;
       if (!("src" in el) && !("image_src" in el)) return el;
