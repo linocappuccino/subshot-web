@@ -101,7 +101,7 @@ function DevlogPageInner() {
 
   return (
     <AppShell>
-      <div className={`${open ? "max-w-2xl" : "max-w-6xl"} mx-auto w-full px-4 sm:px-6 py-8`}>
+      <div className={`${open ? "max-w-[948px]" : "max-w-6xl"} mx-auto w-full px-4 sm:px-6 py-8`}>
         {open ? (
           <div>
             <Button variant="ghost" size="sm" onClick={() => setOpen(null)} className="mb-4">
