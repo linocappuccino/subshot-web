@@ -836,6 +836,21 @@ export function IdeaBoard({
     setSelection(new Set([el.id]));
   }
 
+  // 2026-10-09, Lino: an image dragged over a scene card (from the canvas or
+  // from the Finder) becomes its image — while hovering, the card shows that
+  // its image will be set / replaced. Moodboards get the same hint.
+  const [imageDropTarget, setImageDropTarget] = useState<string | null>(null);
+  function imageTargetAt(w: Point, exclude: Set<string>, kinds: ("scene" | "moodboard")[]): BoardElement | null {
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    let best: BoardElement | null = null;
+    for (const x of dataRef.current.elements) {
+      if (!kinds.includes(x.type as "scene") || exclude.has(x.id) || hiddenNow.has(x.id)) continue;
+      if (w.x < x.x || w.x > x.x + x.w || w.y < x.y || w.y > x.y + x.h) continue;
+      if (!best || x.z > best.z) best = x;
+    }
+    return best;
+  }
+
   // "Make GIF" (2026-10-09, Lino): the maker closes, a progress node in the
   // video's format holds the spot until the GIF is ready and replaces it.
   // Local to this browser — nothing is saved until the GIF exists.
@@ -2047,6 +2062,14 @@ export function IdeaBoard({
         ddx = g.ddx;
         ddy = g.ddy;
         setGuides(g.lines.length ? g.lines : null);
+        // dragging image cards: the scene card (one image) or moodboard under
+        // the pointer is highlighted as the place they'll go into
+        {
+          const moving = dataRef.current.elements.filter((x) => op.origin.has(x.id));
+          const images = moving.length > 0 && moving.every((x) => x.type === "image");
+          const target = images ? imageTargetAt(toWorld(e.clientX, e.clientY), new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null;
+          if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
+        }
         const next: BoardData = {
           ...dataRef.current,
           elements: dataRef.current.elements.map((el) => {
@@ -2159,11 +2182,35 @@ export function IdeaBoard({
         return;
       }
       case "move": {
+        setImageDropTarget(null);
         if (op.moved) {
           // image cards dropped onto a moodboard card go into it (2026-10-08)
           const w = toWorld(e.clientX, e.clientY);
           const els = dataRef.current.elements;
           const moving = els.filter((x) => op.origin.has(x.id));
+          // one image dropped onto a scene card becomes (replaces) its image
+          // (2026-10-09, Lino) — the image card itself goes into the scene
+          const sceneTarget = moving.length === 1 && moving[0].type === "image" ? imageTargetAt(w, new Set(op.origin.keys()), ["scene", "moodboard"]) : null;
+          if (sceneTarget?.type === "scene") {
+            const img = moving[0] as MediaElement;
+            apply(
+              {
+                ...dataRef.current,
+                elements: els
+                  .filter((x) => x.id !== img.id)
+                  .map((x) =>
+                    x.id === sceneTarget.id
+                      ? ({ ...x, image_key: img.asset_key, image_src: img.src ?? null, image_thumb_src: img.thumb_src ?? null, image_srcset: img.srcset ?? null, image_ratio: img.w / Math.max(1, img.h) } as BoardElement)
+                      : x,
+                  )
+                  .map((x) => (x.type === "group" ? { ...x, children: x.children.filter((c) => c !== img.id) } : x)),
+                connectors: dataRef.current.connectors.filter((c) => c.from !== img.id && c.to !== img.id),
+              },
+              { history: op.snapshot },
+            );
+            setSelection(new Set([sceneTarget.id]));
+            return;
+          }
           const mb = els.find(
             (x): x is MoodboardElement =>
               x.type === "moodboard" && !op.origin.has(x.id) && w.x >= x.x && w.x <= x.x + x.w && w.y >= x.y && w.y <= x.y + x.h,
@@ -2511,12 +2558,13 @@ export function IdeaBoard({
   }, []);
 
   function onDrop(e: React.DragEvent) {
+    setImageDropTarget(null);
     if (!editable) return;
     e.preventDefault();
     const at = toWorld(e.clientX, e.clientY);
     const files = [...e.dataTransfer.files];
-    const sceneId = (e.target as HTMLElement).closest<HTMLElement>("[data-el-id]")?.dataset.elId;
-    const sceneEl = sceneId ? dataRef.current.elements.find((x) => x.id === sceneId) : null;
+    // the same card the drop hint showed (topmost scene / moodboard under the pointer)
+    const sceneEl = imageTargetAt(at, new Set(), files.length === 1 ? ["scene", "moodboard"] : ["moodboard"]);
     if (sceneEl?.type === "moodboard" && files.some((f) => guessMime(f).startsWith("image/"))) {
       void addMoodboardFiles(sceneEl.id, files);
       return;
@@ -2662,7 +2710,18 @@ export function IdeaBoard({
         lastPointer.current = null;
         onPresenceRef.current?.({ cursor: null });
       }}
-      onDragOver={(e) => editable && e.preventDefault()}
+      onDragOver={(e) => {
+        if (!editable) return;
+        e.preventDefault();
+        // a file from the Finder over a scene card / moodboard: show where it goes
+        const files = e.dataTransfer.types.includes("Files");
+        const one = e.dataTransfer.items.length <= 1;
+        const target = files ? imageTargetAt(toWorld(e.clientX, e.clientY), new Set(), one ? ["scene", "moodboard"] : ["moodboard"]) : null;
+        if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImageDropTarget(null);
+      }}
       onDrop={onDrop}
       onContextMenu={(e) => editable && !(e.target as HTMLElement).closest("[contenteditable='true'],a,video,audio") && e.preventDefault()}
     >
@@ -3034,6 +3093,29 @@ export function IdeaBoard({
           </svg>
         )}
 
+        {(() => {
+          const tgt = imageDropTarget ? data.elements.find((x) => x.id === imageDropTarget) : null;
+          if (!tgt) return null;
+          const label =
+            tgt.type === "scene"
+              ? t((tgt.image_key ? "ideaBoard.dropReplaceSceneImage" : "ideaBoard.dropSetSceneImage") as never)
+              : t("ideaBoard.dropIntoMoodboard" as never);
+          return (
+            // "the image goes here" — ring + veil over the target card
+            <div
+              className="absolute rounded-lg pointer-events-none flex items-center justify-center bg-blue-500/15"
+              style={{ left: tgt.x, top: tgt.y, width: tgt.w, height: tgt.h, zIndex: 100000, boxShadow: `0 0 0 ${3 / view.scale}px #3b82f6` }}
+            >
+              <span
+                className="flex items-center gap-2 rounded-full bg-blue-600 text-white font-semibold shadow-lg whitespace-nowrap"
+                style={{ fontSize: 13 / view.scale, padding: `${6 / view.scale}px ${12 / view.scale}px` }}
+              >
+                <svg width={14 / view.scale} height={14 / view.scale} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
+                {label}
+              </span>
+            </div>
+          );
+        })()}
         {pendingGifs.map((g) => (
           // "GIF wird erstellt …" — holds the GIF's spot until it's ready
           <div
