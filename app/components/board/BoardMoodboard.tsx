@@ -3,20 +3,33 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useContext } from "react";
 import { BoardScaleContext, BoardZoomContext, DownloadButton, SharpImg } from "./BoardDownload";
-import { imageSources, clampMoodboardScale, fitMoodboard, fitMoodboardAt, moodboardItems, type MoodboardElement, type MoodboardItem } from "@/lib/board";
+import {
+  imageSources,
+  fitMosaicRowH,
+  layoutMosaic,
+  mbCardH,
+  mbInnerH,
+  mbInnerW,
+  mbLevel,
+  moodboardItems,
+  mosaicBoxes,
+  MB_PAD,
+  type MoodboardBox,
+  type MoodboardElement,
+  type MoodboardItem,
+} from "@/lib/board";
 
-/** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and sit
- * in justified rows (see layoutMoodboard) — every row fills the full width,
- * so resizing never leaves holes ("es dürfen keine Lücken entstehen").
- * While the card is selected (and editable): hover an image's edge for the
- * resize indicator and drag it (the image's size factor changes, its row
- * reflows), drag an image onto another to change the order, × removes it,
- * "+" adds more. Positions animate, so the reflow is easy to follow. */
-
-const PAD = 10;
-const GAP = 6;
-const HEADER = 26; // header row (20) + its margin (6)
-const ADD_ID = "__add";
+/** 2026-10-08, Lino: moodboard card. Images keep their aspect ratio and fill
+ * the card without holes ("es dürfen keine Lücken entstehen").
+ * 2026-10-09 (Lino: "man zieht eines gross, aber dann wird nicht das Bild
+ * gross, welches man grosszieht, sondern das Bild daneben … smooth und
+ * logisch"): mosaic with size LEVELS (lib/board.ts layoutMosaic). While the
+ * card is selected (and editable): hover an image's edge and drag it — the
+ * image snaps to the level (normal, 2, 3, 4 rows tall) closest to the
+ * pointer, a dashed frame shows where you're pulling, only levels where the
+ * dragged image clearly grows the most are offered (nobody else "steals" the
+ * enlargement), and the card's height follows. Drag an image onto another
+ * to change the order, × removes it. Positions animate. */
 
 type Edge = "l" | "r" | "t" | "b";
 const EDGE_ZONE: Record<Edge, string> = {
@@ -26,15 +39,14 @@ const EDGE_ZONE: Record<Edge, string> = {
   b: "bottom-0 left-0 right-0 h-3 cursor-ns-resize items-end pb-1 justify-center",
 };
 const MOVE = "left .22s ease, top .22s ease, width .22s ease, height .22s ease";
+const area = (b: MoodboardBox) => b.w * b.h;
 
 export function MoodboardNode({
   el,
   active,
   emptyLabel,
-  addLabel,
   headerLabel,
   downloadLabel,
-  onMeasure,
   onChange,
   onAdd,
 }: {
@@ -45,46 +57,47 @@ export function MoodboardNode({
   addLabel: string;
   headerLabel: string;
   downloadLabel: string;
-  onMeasure: (h: number) => void;
+  onMeasure?: (h: number) => void;
   onChange?: (items: MoodboardItem[]) => void;
   onAdd?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const zoom = useContext(BoardZoomContext);
-  const [draft, setDraft] = useState<MoodboardItem[] | null>(null);
+  // while an image is dragged: the items as they'd be + the pointer's frame
+  const [draft, setDraft] = useState<{ items: MoodboardItem[]; ghost?: MoodboardBox } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [resizing, setResizing] = useState<{ id: string; edge: Edge } | null>(null);
   // aspect ratios learned from the loaded images (older items had none)
   const [seenAr, setSeenAr] = useState<Record<string, number>>({});
-  const items = useMemo(
-    () => (draft ?? moodboardItems(el)).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 })),
-    [draft, el, seenAr],
-  );
-  const inner = Math.max(60, el.w - PAD * 2 - 2); // minus the 1 px border on each side
-  // 2026-10-08, Lino: the card is sized with its corner handle and the
-  // images always fill it — wider or taller, the layout follows its shape
-  const innerH = Math.max(40, el.h - PAD * 2 - 2 - HEADER);
-  const showAdd = active && !!onAdd;
-  // the "+" tile rides along at the end as a smallish square
-  const withAdd = (list: MoodboardItem[]) => (showAdd ? [...list, { id: ADD_ID, asset_key: "", name: "", mime: "", w: 1, h: 1, ar: 1, s: 0.8 }] : list);
-  // the density (row height) is chosen by a full fit only when the card's
-  // size or the set/order of images changes; resizing one image keeps it,
-  // so what you see while dragging is exactly what stays
-  const fitKey = `${Math.round(inner)}x${Math.round(innerH)}|${items.map((it) => it.id).join(",")}|${showAdd}`;
-  const density = useMemo(
-    () => fitMoodboard(withAdd(moodboardItems(el).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 }))), inner, innerH, GAP).baseH,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fitKey],
-  );
+  const baseItems = useMemo(() => moodboardItems(el).map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1 })), [el, seenAr]);
+  const items = draft?.items ?? baseItems;
+  const inner = mbInnerW(el.w);
+  const innerH = mbInnerH(el.h);
+  // the row height is fixed per card (set when the card is resized at its
+  // corner); cards from before get one that fits their current size
+  const rowH = useMemo(() => el.row_h ?? fitMosaicRowH(baseItems, inner, innerH), [el.row_h, baseItems, inner, innerH]);
+  // while dragging, and for cards from before (no row height yet): the
+  // layout at its natural height — the card takes that height; otherwise
+  // fitted to the card (only differs while its corner is being dragged)
+  const natural = !!draft || !el.row_h;
   const layout = useMemo(
-    () => fitMoodboardAt(withAdd(items), inner, innerH, GAP, density),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, inner, innerH, showAdd, density],
+    () => (natural ? layoutMosaic(items, inner, rowH) : mosaicBoxes(items, inner, innerH, rowH)),
+    [natural, items, inner, innerH, rowH],
   );
   const boxOf = useMemo(() => new Map(layout.boxes.map((b) => [b.id, b])), [layout]);
+  const cardH = natural && items.length ? mbCardH(layout.height) : el.h;
+  // a card from before: once, it gets its row height (fitted to the size it
+  // had) and its content's height — stored together, so nothing drifts
+  const migrated = useRef(false);
+  useEffect(() => {
+    if (migrated.current || draft || el.row_h || !items.length || !onChange) return;
+    migrated.current = true;
+    onChange(finalize(baseItems));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [el.row_h, draft, items.length]);
 
-
-  const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1, s: it.s ?? 1 }));
+  // every image's level as a whole number (older cards stored free factors)
+  const finalize = (list: MoodboardItem[]) => list.map((it) => ({ ...it, ar: it.ar ?? seenAr[it.id] ?? 1, s: mbLevel(it) }));
 
   const boardScale = useContext(BoardScaleContext);
   const screenScale = () => boardScale.current;
@@ -108,44 +121,69 @@ export function MoodboardNode({
   function startResize(e: React.PointerEvent, it: MoodboardItem, edge: Edge) {
     e.stopPropagation();
     e.preventDefault();
-    const box = boxOf.get(it.id);
-    if (!box) return;
     const sx = e.clientX;
     const sy = e.clientY;
     const k = screenScale();
-    const start = items;
-    // the dragged edge should end up under the pointer: for every move, try
-    // a range of size factors and keep the one whose resulting width/height
-    // (after the rows reflow) comes closest — the image follows the pointer
-    // directly, even when its row splits or merges on the way
-    const candidates = Array.from({ length: 72 }, (_, i) => clampMoodboardScale(0.25 * Math.pow(16, i / 71)));
+    const start = baseItems;
+    const L0 = mbLevel(it);
+    const base = layoutMosaic(start, inner, rowH);
+    const b0 = base.boxes.find((b) => b.id === it.id);
+    if (!b0) return;
+    const baseOf = new Map(base.boxes.map((b) => [b.id, b]));
+    // every level once: what it does to this image and to the others. A
+    // bigger level counts only if THIS image clearly grows the most.
+    // the edge you pull moves, the opposite one stays: pulled at the right
+    // edge, a big image sits on the left (and vice versa); pulled up/down it
+    // stays on the half of the card it's on
+    const side: "l" | "r" = edge === "r" ? "l" : edge === "l" ? "r" : b0.x + b0.w / 2 < inner / 2 ? "l" : "r";
+    const options = [1, 2, 3, 4].map((L) => {
+      const list = L === L0 ? start : start.map((x) => (x.id === it.id ? { ...x, s: L, side } : x));
+      const lay = L === L0 ? base : layoutMosaic(list, inner, rowH);
+      const box = lay.boxes.find((b) => b.id === it.id)!;
+      const own = area(box) / area(b0);
+      let other = 0;
+      for (const b of lay.boxes) if (b.id !== it.id) other = Math.max(other, area(b) / area(baseOf.get(b.id) ?? b));
+      const ok = L === L0 || (L > L0 ? own > 1.3 && other <= Math.min(2.5, own / 1.2) : own < 0.87);
+      return { L, list, box, ok };
+    });
     const horizontal = edge === "l" || edge === "r";
-    let latest = start;
+    let chosen = options.find((o) => o.L === L0)!;
     setResizing({ id: it.id, edge });
+    setDraft({ items: start });
     track(
       (ev) => {
         const dx = (ev.clientX - sx) / k;
         const dy = (ev.clientY - sy) / k;
-        const want = edge === "r" ? box.w + dx : edge === "l" ? box.w - dx : edge === "b" ? box.h + dy : box.h - dy;
-        let best = it.s ?? 1;
+        const delta = edge === "r" ? dx : edge === "l" ? -dx : edge === "b" ? dy : -dy;
+        const want = (horizontal ? b0.w : b0.h) + delta;
+        // only levels in the direction of the pull; the one whose size is
+        // closest to where the pointer is wins (snaps half-way between)
+        let best = chosen;
         let bestErr = Infinity;
-        for (const s of candidates) {
-          const trial = start.map((x) => (x.id === it.id ? { ...x, s } : x));
-          const b = fitMoodboardAt(withAdd(trial), inner, innerH, GAP, density).boxes.find((x) => x.id === it.id);
-          if (!b) continue;
-          const err = Math.abs((horizontal ? b.w : b.h) - want);
-          if (err < bestErr - 0.01) {
+        for (const o of options) {
+          if (!o.ok || (delta > 0 ? o.L < L0 : o.L > L0)) continue;
+          const err = Math.abs((horizontal ? o.box.w : o.box.h) - want);
+          if (err < bestErr) {
             bestErr = err;
-            best = s;
+            best = o;
           }
         }
-        latest = start.map((x) => (x.id === it.id ? { ...x, s: best } : x));
-        setDraft(latest);
+        chosen = best;
+        // the frame hangs on the image as it is now: its pulled edge is
+        // where the pointer is
+        const b = best.box;
+        const size = Math.max(16, want);
+        const ghost: MoodboardBox =
+          edge === "r" ? { ...b, w: size }
+          : edge === "l" ? { ...b, x: b.x + b.w - size, w: size }
+          : edge === "b" ? { ...b, h: size }
+          : { ...b, y: b.y + b.h - size, h: size };
+        setDraft({ items: best.list, ghost });
       },
       () => {
         setResizing(null);
         setDraft(null);
-        if (latest !== start) onChange?.(finalize(latest));
+        if (chosen.L !== L0) onChange?.(finalize(chosen.list));
       },
     );
   }
@@ -156,7 +194,7 @@ export function MoodboardNode({
     e.preventDefault();
     const sx = e.clientX;
     const sy = e.clientY;
-    const start = items;
+    const start = baseItems;
     let latest = start;
     let moved = false;
     track(
@@ -180,7 +218,7 @@ export function MoodboardNode({
         const [moving] = next.splice(from, 1);
         next.splice(to, 0, moving);
         latest = next;
-        setDraft(next);
+        setDraft({ items: next });
       },
       () => {
         setDragId(null);
@@ -190,10 +228,8 @@ export function MoodboardNode({
     );
   }
 
-  const addBox = boxOf.get(ADD_ID);
-
   return (
-    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden" style={{ padding: PAD, height: el.h }}>
+    <div ref={ref} className="rounded-lg bg-[#232325] border border-white/10 shadow-[0_2px_10px_rgba(0,0,0,0.35)] overflow-hidden" style={{ padding: MB_PAD, height: cardH }}>
       {/* also the handle to move the card while its images are interactive */}
       <div className="flex items-center gap-1.5 h-5 mb-1.5 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-white/40">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
@@ -268,16 +304,12 @@ export function MoodboardNode({
               </div>
             );
           })}
-          {addBox && (
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={onAdd}
-              title={addLabel}
-              className="absolute rounded-md border border-dashed border-white/20 text-white/45 hover:text-white/80 hover:border-white/40 text-2xl flex items-center justify-center"
-              style={{ left: addBox.x, top: addBox.y, width: addBox.w, height: addBox.h, transition: MOVE }}
-            >
-              +
-            </button>
+          {draft?.ghost && (
+            // where the pointer is pulling the edge to
+            <div
+              className="absolute rounded-md border-2 border-dashed border-blue-400/90 pointer-events-none z-30"
+              style={{ left: draft.ghost.x, top: draft.ghost.y, width: draft.ghost.w, height: draft.ghost.h }}
+            />
           )}
         </div>
       )}

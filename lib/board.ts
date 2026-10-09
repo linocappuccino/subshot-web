@@ -209,8 +209,12 @@ export interface MoodboardItem {
   h: number;
   /** the image's width / height — its height follows from this */
   ar?: number;
-  /** layout 3: size factor (1 = normal) — bigger images make their row taller */
+  /** layout 3: size factor (1 = normal) — bigger images make their row taller;
+   * layout 4: the size level (1 = normal, 2–4 = that many rows tall) */
   s?: number;
+  /** layout 4: which side a big image sits on (the edge it was pulled from
+   * stays put: pulled at its right edge → it stays on the left) */
+  side?: "l" | "r";
   /** small display version, added on read */
   thumb_src?: string | null;
   srcset?: string | null;
@@ -221,8 +225,12 @@ export interface MoodboardElement extends BaseElement {
   /** how many images fit side by side by default ("Spalten") */
   cols: number;
   items: MoodboardItem[];
-  /** 2 = free sizes (2026-10-08, Lino: "keine festen Spaltenbreiten") */
+  /** 2 = free sizes (2026-10-08, Lino: "keine festen Spaltenbreiten");
+   * 4 = mosaic with size levels and a fixed row height (2026-10-09) */
   layout?: number;
+  /** layout 4: the normal row height — set when the card is resized at its
+   * corner, kept while single images are made bigger/smaller */
+  row_h?: number;
 }
 
 export const MOODBOARD_UNITS = 24;
@@ -230,7 +238,7 @@ export const MOODBOARD_UNITS = 24;
 /** items in the current format (justified rows, size factor `s`) — older
  * cards stored a column/row span or a width in 24ths */
 export function moodboardItems(el: MoodboardElement): MoodboardItem[] {
-  if (el.layout === 3) return el.items;
+  if (el.layout === 3 || el.layout === 4) return el.items;
   const cols = Math.max(1, el.cols || 3);
   if (el.layout === 2) return el.items.map((it) => ({ ...it, s: it.s ?? clampS((it.w * cols) / MOODBOARD_UNITS) }));
   return el.items.map((it) => ({ ...it, ar: it.ar ?? Math.min(it.w, cols) / Math.max(1, it.h), s: it.s ?? clampS(Math.min(it.w, cols)) }));
@@ -981,4 +989,341 @@ export function imageSources(src: string | null | undefined, thumb: string | nul
   const tw = Math.round(ar >= 1 ? 1000 : 1000 * ar);
   const ww = Math.round(ar >= 1 ? 2400 : 2400 * ar);
   return { src: thumb, srcSet: `${thumb} ${tw}w, ${src} ${ww}w`, sizes: `${Math.max(40, Math.round(cssWidth))}px` };
+}
+
+
+// ── moodboard mosaic, layout 4 (2026-10-09) ─────────────────────────────
+// Lino: "man zieht eines gross, aber dann wird nicht das Bild gross, welches
+// man grosszieht, sondern das Bild daneben … muss zu 100 % funktionieren,
+// smooth und logisch". The previous layout re-fitted every row to the card's
+// height on every change, so a tiny size change reshuffled everything (a
+// simulation of his board: 91 of 96 drags enlarged the wrong image).
+//
+// Now every image has a size LEVEL: 1 = normal, 2/3/4 = it spans that many
+// rows. The row height `row_h` is fixed per card (chosen only when the card
+// itself is resized at its corner). Normal images sit in justified rows
+// (optimal breaks, every row close to row_h); an image of level L sits on one
+// side of a block and the following images stack in exactly L rows beside it
+// (exact block height, see `solve`). Changing one image's level therefore
+// only changes that image's block; nobody else gets bigger, and the card's
+// height simply follows the content. No holes, no distortion.
+
+export const MB_PAD = 10;
+export const MB_GAP = 6;
+export const MB_HEADER = 26; // header row (20) + its margin (6)
+export const MB_MAX_LEVEL = 4;
+/** content box of a moodboard card of the given size (1 px border each side) */
+export const mbInnerW = (w: number) => Math.max(60, w - MB_PAD * 2 - 2);
+export const mbInnerH = (h: number) => Math.max(40, h - MB_PAD * 2 - 2 - MB_HEADER);
+export const mbCardH = (contentH: number) => Math.round(contentH + MB_PAD * 2 + 2 + MB_HEADER);
+
+/** an image's size level (older cards stored a free size factor) */
+export function mbLevel(it: MoodboardItem): number {
+  const s = it.s ?? 1;
+  return s >= 1.5 ? Math.min(MB_MAX_LEVEL, Math.round(s)) : 1;
+}
+
+export function layoutMosaic(items: MoodboardItem[], width: number, rowH: number, gap = MB_GAP): { boxes: MoodboardBox[]; height: number; dev: number } {
+  const W = Math.max(40, width);
+  const G = gap;
+  const R = Math.max(8, rowH);
+  const ar = (it: MoodboardItem) => Math.max(0.1, Math.min(10, it.ar || 1));
+  const MAX_PER_ROW = 14;
+  const MAX_BORROW = 12;
+  const MAX_SIDE = 30;
+
+  /** row helpers on a list with prefix sums of the aspect ratios */
+  const prep = (list: MoodboardItem[]) => {
+    const P = [0];
+    for (const it of list) P.push(P[P.length - 1] + ar(it));
+    const h = (i: number, j: number, w: number) => (w - G * (j - i - 1)) / (P[j] - P[i]);
+    const cost = (i: number, j: number, w: number) => {
+      const hh = h(i, j, w);
+      return hh <= 0 ? Infinity : (j - i) * Math.log(hh / R) ** 2;
+    };
+    return { P, h, cost };
+  };
+
+  /** optimal row breaks (any number of rows), every row as close to R as possible */
+  const rowsFree = (list: MoodboardItem[], w: number): { rows: MoodboardItem[][]; cost: number } => {
+    const n = list.length;
+    if (!n) return { rows: [], cost: 0 };
+    const { cost } = prep(list);
+    const best = new Array<number>(n + 1).fill(Infinity);
+    const from = new Array<number>(n + 1).fill(0);
+    best[0] = 0;
+    for (let j = 1; j <= n; j++)
+      for (let i = j - 1; i >= 0 && j - i <= MAX_PER_ROW; i--) {
+        const c = best[i] + cost(i, j, w);
+        if (c < best[j]) {
+          best[j] = c;
+          from[j] = i;
+        }
+      }
+    const rows: MoodboardItem[][] = [];
+    for (let j = n; j > 0; j = from[j]) rows.unshift(list.slice(from[j], j));
+    return { rows, cost: best[n] };
+  };
+
+  /** exactly k rows (contiguous) with the smallest deviation, or null */
+  const rowsExact = (list: MoodboardItem[], w: number, k: number): { rows: MoodboardItem[][]; cost: number } | null => {
+    const n = list.length;
+    if (n < k) return null;
+    const { cost } = prep(list);
+    const best = Array.from({ length: k + 1 }, () => new Array<number>(n + 1).fill(Infinity));
+    const from = Array.from({ length: k + 1 }, () => new Array<number>(n + 1).fill(0));
+    best[0][0] = 0;
+    for (let r = 1; r <= k; r++)
+      for (let j = r; j <= n; j++)
+        for (let i = j - 1; i >= r - 1 && j - i <= MAX_PER_ROW; i--) {
+          if (best[r - 1][i] === Infinity) continue;
+          const c = best[r - 1][i] + cost(i, j, w);
+          if (c < best[r][j]) {
+            best[r][j] = c;
+            from[r][j] = i;
+          }
+        }
+    if (best[k][n] === Infinity) return null;
+    const rows: MoodboardItem[][] = [];
+    for (let r = k, j = n; r > 0; r--) {
+      const i = from[r][j];
+      rows.unshift(list.slice(i, j));
+      j = i;
+    }
+    return { rows, cost: best[k][n] };
+  };
+
+  const sumAr = (row: MoodboardItem[]) => row.reduce((t, it) => t + ar(it), 0);
+  const rowHeight = (row: MoodboardItem[], w: number) => (w - G * (row.length - 1)) / sumAr(row);
+
+  /** features Fs (one, or a pair left + right) beside `rows`: one exact
+   *  height H for all (side rows at width ws are a·ws + c tall; the features
+   *  are ΣarF·H wide) */
+  const solve = (Fs: MoodboardItem[], rows: MoodboardItem[][]) => {
+    const arF = Fs.reduce((t, f) => t + ar(f), 0);
+    const room = W - G * Fs.length;
+    const a = rows.reduce((t, r) => t + 1 / sumAr(r), 0);
+    const c = G * (rows.length - 1) - G * rows.reduce((t, r) => t + (r.length - 1) / sumAr(r), 0);
+    const H = (a * room + c) / (1 + a * arF);
+    return { H, wf: arF * H, ws: room - arF * H };
+  };
+
+  /** Fs at level L beside `list` (all of it, in rows close to R), or null */
+  const side = (Fs: MoodboardItem[], L: number, list: MoodboardItem[]) => {
+    const T = L * R + (L - 1) * G;
+    const ws0 = W - G * Fs.length - Fs.reduce((t, f) => t + ar(f), 0) * T;
+    if (ws0 < W * 0.15) return null; // F alone would be (almost) as wide as the card
+    let ex = rowsFree(list, ws0);
+    let sol = solve(Fs, ex.rows);
+    if (sol.ws > 0) {
+      const again = rowsFree(list, sol.ws);
+      const sol2 = solve(Fs, again.rows);
+      if (sol2.ws > 0) {
+        ex = again;
+        sol = sol2;
+      }
+    }
+    // a big image must visibly span several rows
+    if (ex.rows.length < 2) return null;
+    if (sol.H <= 0 || sol.ws < W * 0.15 || sol.wf < W * 0.15 * Fs.length) return null;
+    for (const r of ex.rows) {
+      const h = rowHeight(r, sol.ws);
+      if (h < R * 0.5 || h > R * 1.8) return null;
+    }
+    const err = Math.log(sol.H / T);
+    if (Math.abs(err) > Math.log(1.6)) return null;
+    // the side rows' own deviation + how far the feature is from its size
+    return { rows: ex.rows, ...sol, cost: ex.cost + (list.length + 1) * err * err * 3 };
+  };
+
+  type Block = { kind: "rows"; rows: MoodboardItem[][] } | { kind: "feature"; Fs: MoodboardItem[]; rows: MoodboardItem[][]; H: number; ws: number; left: boolean; T: number };
+  const index = new Map(items.map((it, i) => [it.id, i]));
+  // a big image that finds no room at all is treated as a normal one, and
+  // the layout is built again so its neighbours take it into their rows
+  const demoted = new Set<string>();
+  const levelOf = (it: MoodboardItem) => (demoted.has(it.id) ? 1 : mbLevel(it));
+  const build = (): Block[] | string => {
+  const blocks: Block[] = [];
+  let run: MoodboardItem[] = [];
+  const flush = () => {
+    if (run.length) blocks.push({ kind: "rows", rows: rowsFree(run, W).rows });
+    run = [];
+  };
+  let i = 0;
+  while (i < items.length) {
+    const it = items[i];
+    const level = levelOf(it);
+    if (level === 1) {
+      run.push(it);
+      i++;
+      continue;
+    }
+    // choose how many images go beside it — a few from just before it may
+    // join (b), the rest come after it (k) — so that the whole stretch looks
+    // best: the feature close to its size AND the rows left before and after
+    // it close to the normal row height (no lonely leftover image that would
+    // get a whole row to itself)
+    type Choice = { L: number; b: number; k: number; s: NonNullable<ReturnType<typeof side>>; total: number };
+    const choose = (Fs: MoodboardItem[], wantL: number): Choice | null => {
+      const pool: MoodboardItem[] = [];
+      for (let j = i + Fs.length; j < items.length && levelOf(items[j]) === 1 && pool.length < 40; j++) pool.push(items[j]);
+      let best = null as Choice | null;
+      const headCost = new Map<number, number>();
+      for (let L = wantL; L >= 2; L--) {
+        for (let b = 0; b <= Math.min(run.length, MAX_BORROW); b++) {
+          if (!headCost.has(b)) headCost.set(b, rowsFree(run.slice(0, run.length - b), W).cost);
+          if (b === 0) {
+            // too wide to have images beside it: alone across the full width
+            const T = L * R + (L - 1) * G;
+            const H = (W - G * (Fs.length - 1)) / Fs.reduce((t, f) => t + ar(f), 0);
+            const err = Math.log(H / T);
+            if (W - G * Fs.length - Fs.reduce((t, f) => t + ar(f), 0) * T < W * 0.15 && Math.abs(err) < Math.log(1.6) && H > R * 1.3) {
+              const total = headCost.get(0)! + 3 * err * err + rowsFree(pool, W).cost + (wantL - L) * 4;
+              if (!best || total < best.total) best = { L, b: 0, k: 0, s: { rows: [], H, wf: W, ws: 0, cost: 3 * err * err }, total };
+            }
+          }
+          for (let k = 0; k + b <= MAX_SIDE && k <= pool.length; k++) {
+            if (k + b < L) continue;
+            const sd = side(Fs, L, [...run.slice(run.length - b), ...pool.slice(0, k)]);
+            if (!sd) continue;
+            const total = headCost.get(b)! + sd.cost + rowsFree(pool.slice(k), W).cost + (wantL - L) * 4;
+            if (!best || total < best.total) best = { L, b, k, s: sd, total };
+          }
+        }
+        if (best) break; // the wanted level works: don't settle for less
+      }
+      return best;
+    };
+    // two big images in a row: a pair, left and right, the images after them
+    // stack in the middle (each alone would fight over the same images)
+    let Fs = [it];
+    let best: Choice | null = null;
+    if (i + 1 < items.length && levelOf(items[i + 1]) > 1) {
+      Fs = [it, items[i + 1]];
+      best = choose(Fs, Math.max(level, levelOf(items[i + 1])));
+      if (!best) Fs = [it];
+    }
+    if (!best) best = choose(Fs, level);
+    if (!best) return it.id;
+    run.splice(run.length - best.b, best.b);
+    flush();
+    blocks.push({ kind: "feature", Fs, rows: best.s.rows, H: best.s.H, ws: best.s.ws, left: it.side ? it.side === "l" : (index.get(it.id) ?? 0) % 2 === 0, T: best.L * R + (best.L - 1) * G });
+    i += Fs.length + best.k;
+  }
+  flush();
+  return blocks;
+  };
+  let blocks: Block[] = [];
+  for (let pass = 0; pass <= items.length; pass++) {
+    const r = build();
+    if (typeof r !== "string") {
+      blocks = r;
+      break;
+    }
+    demoted.add(r);
+  }
+
+  const boxes: MoodboardBox[] = [];
+  let y = 0;
+  // how far the images are from their intended size (for fitting a card)
+  let devSum = 0;
+  const placeRows = (rows: MoodboardItem[][], x0: number, w: number, y0: number) => {
+    let yy = y0;
+    rows.forEach((row, ri) => {
+      const h = rowHeight(row, w);
+      devSum += row.length * Math.log(h / R) ** 2;
+      let x = x0;
+      for (const it of row) {
+        const bw = ar(it) * h;
+        boxes.push({ id: it.id, x, y: yy, w: bw, h });
+        x += bw + G;
+      }
+      yy += h + (ri < rows.length - 1 ? G : 0);
+    });
+    return yy;
+  };
+  blocks.forEach((blk, bi) => {
+    if (bi > 0) y += G;
+    if (blk.kind === "rows") {
+      y = placeRows(blk.rows, 0, W, y);
+      return;
+    }
+    devSum += blk.Fs.length * Math.log(blk.H / blk.T) ** 2;
+    if (!blk.rows.length) {
+      // alone across the full width (a pair: side by side)
+      let x = 0;
+      for (const F of blk.Fs) {
+        const w = ar(F) * blk.H;
+        boxes.push({ id: F.id, x, y, w, h: blk.H });
+        x += w + G;
+      }
+    } else if (blk.Fs.length === 2) {
+      // pair: first on the left, second on the right, the rows in between
+      const [A, B] = blk.Fs;
+      const wa = ar(A) * blk.H;
+      const wb = ar(B) * blk.H;
+      boxes.push({ id: A.id, x: 0, y, w: wa, h: blk.H });
+      boxes.push({ id: B.id, x: W - wb, y, w: wb, h: blk.H });
+      placeRows(blk.rows, wa + G, blk.ws, y);
+    } else {
+      const F = blk.Fs[0];
+      const wf = ar(F) * blk.H;
+      boxes.push({ id: F.id, x: blk.left ? 0 : W - wf, y, w: wf, h: blk.H });
+      placeRows(blk.rows, blk.left ? wf + G : 0, blk.ws, y);
+    }
+    y += blk.H;
+  });
+  return { boxes, height: y, dev: items.length ? devSum / items.length : 0 };
+}
+
+/** the row height at which the mosaic fills a card of this content size best */
+export function fitMosaicRowH(items: MoodboardItem[], width: number, height: number, gap = MB_GAP): number {
+  const W = Math.max(40, width);
+  const H = Math.max(40, height);
+  if (!items.length) return W / 3;
+  // close to the card's height, but only with sensible rows (14 tiny images
+  // in a row and 2 huge ones below would match a height too); the card then
+  // snaps to the exact content height
+  const err = (R: number) => {
+    const l = layoutMosaic(items, W, R, gap);
+    return 3 * Math.log(l.height / H) ** 2 + l.dev;
+  };
+  const lo = Math.log(Math.max(12, W / 24));
+  const hi = Math.log(Math.max(W, H) * 1.2);
+  let bestR = Math.exp(lo);
+  let bestE = Infinity;
+  const N = 80;
+  for (let k = 0; k <= N; k++) {
+    const R = Math.exp(lo + ((hi - lo) * k) / N);
+    const e = err(R);
+    if (e < bestE) {
+      bestE = e;
+      bestR = R;
+    }
+  }
+  const step = (hi - lo) / N;
+  for (let k = -10; k <= 10; k++) {
+    const R = bestR * Math.exp((step * k) / 10);
+    const e = err(R);
+    if (e < bestE) {
+      bestE = e;
+      bestR = R;
+    }
+  }
+  return bestR;
+}
+
+/** boxes for display: the mosaic at the card's row height, stretched to the
+ * card's height (normally 1:1 — the card follows its content) */
+export function mosaicBoxes(items: MoodboardItem[], width: number, height: number, rowH: number, gap = MB_GAP): { boxes: MoodboardBox[]; height: number; natural: number } {
+  const layout = layoutMosaic(items, width, rowH, gap);
+  const k = layout.height > 0 ? Math.max(40, height) / layout.height : 1;
+  return { boxes: layout.boxes.map((b) => ({ ...b, y: b.y * k, h: b.h * k })), height: Math.max(40, height), natural: layout.height };
+}
+
+/** a moodboard card with new items: same row height, height follows content */
+export function moodboardWith(el: MoodboardElement, items: MoodboardItem[]): MoodboardElement {
+  const rowH = el.row_h ?? fitMosaicRowH(moodboardItems(el), mbInnerW(el.w), mbInnerH(el.h));
+  const natural = items.length ? layoutMosaic(items, mbInnerW(el.w), rowH).height : mbInnerH(el.h);
+  return { ...el, items, layout: 4, row_h: Math.round(rowH * 100) / 100, h: items.length ? mbCardH(natural) : el.h };
 }

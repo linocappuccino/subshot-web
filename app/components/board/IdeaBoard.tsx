@@ -41,6 +41,12 @@ import {
   type MoodboardElement,
   type MoodboardItem,
   moodboardItems,
+  moodboardWith,
+  fitMosaicRowH,
+  mbInnerW,
+  mbInnerH,
+  mbCardH,
+  layoutMosaic,
   tagColor,
   type ColorElement,
   STICKY_COLORS,
@@ -781,7 +787,7 @@ export function IdeaBoard({
     const w = 528;
     const h = 420;
     const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
-    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [], layout: 3 };
+    const el: MoodboardElement = { id: newId(), type: "moodboard", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "", cols: 3, items: [], layout: 4 };
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
@@ -804,7 +810,7 @@ export function IdeaBoard({
     commit((d) => ({
       ...d,
       elements: d.elements.map((el) =>
-        el.id === id && el.type === "moodboard" ? { ...el, layout: 3, items: [...moodboardItems(el), ...add].slice(0, 60) } : el,
+        el.id === id && el.type === "moodboard" ? moodboardWith(el, [...moodboardItems(el), ...add].slice(0, 60)) : el,
       ),
     }));
   }
@@ -831,7 +837,11 @@ export function IdeaBoard({
   }
 
   function setMoodboardItems(id: string, items: MoodboardItem[]) {
-    updateElement(id, { items, layout: 3 } as Partial<MoodboardElement>, { history: true });
+    const el = dataRef.current.elements.find((x) => x.id === id);
+    if (el?.type !== "moodboard") return;
+    // same row height; the card's height follows the content (2026-10-09)
+    const next = moodboardWith(el, items);
+    updateElement(id, { items: next.items, layout: 4, row_h: next.row_h, h: next.h } as Partial<MoodboardElement>, { history: true });
   }
 
 
@@ -1941,7 +1951,7 @@ export function IdeaBoard({
                 ...dataRef.current,
                 elements: els
                   .filter((x) => !ids.has(x.id))
-                  .map((x) => (x.id === mb.id && x.type === "moodboard" ? { ...x, layout: 3, items: [...moodboardItems(x), ...add].slice(0, 60) } : x))
+                  .map((x) => (x.id === mb.id && x.type === "moodboard" ? moodboardWith(x, [...moodboardItems(x), ...add].slice(0, 60)) : x))
                   .map((x) => (x.type === "group" ? { ...x, children: x.children.filter((c) => !ids.has(c)) } : x)),
                 connectors: dataRef.current.connectors.filter((c) => !ids.has(c.from) && !ids.has(c.to)),
               },
@@ -1970,9 +1980,23 @@ export function IdeaBoard({
         }
         return;
       }
-      case "resize":
+      case "resize": {
+        // a moodboard card resized at its corner: a new row height so the
+        // images fill its new shape (while dragging they're just stretched)
+        const el = dataRef.current.elements.find((x) => x.id === op.id);
+        if (el?.type === "moodboard" && moodboardItems(el).length) {
+          // the height then snaps to the content (rows come in steps; nothing cropped)
+          const rowH = Math.round(fitMosaicRowH(moodboardItems(el), mbInnerW(el.w), mbInnerH(el.h)) * 100) / 100;
+          const h = mbCardH(layoutMosaic(moodboardItems(el), mbInnerW(el.w), rowH).height);
+          apply(
+            { ...dataRef.current, elements: dataRef.current.elements.map((x) => (x.id === el.id ? { ...el, layout: 4, row_h: rowH, h } : x)) },
+            { history: op.snapshot },
+          );
+          return;
+        }
         apply(dataRef.current, { history: op.snapshot });
         return;
+      }
       case "connect": {
         setConnectPreview(null);
         const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-el-id]");
