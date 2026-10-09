@@ -663,7 +663,30 @@ export function layoutMoodboardBase(items: MoodboardItem[], width: number, rowH:
   return { boxes, height: y };
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement;
+/** 2026-10-09, Lino (board templates): an empty node where a template had
+ * content — "Templates können nur mit leeren Nodes geöffnet werden". `slot`
+ * says what was there; dropping / picking a file, link or color fills it
+ * (the node keeps its id, so arrows and groups stay attached). */
+export type PlaceholderSlot = "image" | "video" | "audio" | "pdf" | "file" | "link" | "color";
+export interface PlaceholderElement extends BaseElement {
+  type: "placeholder";
+  slot: PlaceholderSlot;
+  title: string;
+}
+export const MEDIA_SLOTS: PlaceholderSlot[] = ["image", "video", "audio", "pdf", "file"];
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement;
+
+/** a saved board template (GET /board-templates): the layout and texts of a
+ * board, content replaced by placeholders (server: idea_board.make_template);
+ * to-do nodes carry their item texts in `items` instead of a real list */
+export interface BoardTemplate {
+  id: string;
+  name: string;
+  data: BoardData;
+  created_at: string | null;
+  updated_at: string | null;
+}
 
 /** HEX / RGB / HSL / CMYK of a "#rrggbb" color (color swatch card). */
 export function colorCodes(hex: string): { hex: string; rgb: string; hsl: string; cmyk: string } {

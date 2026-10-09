@@ -24,6 +24,8 @@ import {
   type StickyElement,
   type ColorElement,
   type MoodboardItem,
+  type PlaceholderElement,
+  type PlaceholderSlot,
   STICKY_STYLES,
   colorCodes,
   googleMapsLink,
@@ -82,6 +84,9 @@ export interface ElementViewLabels extends TodoLabels {
   groupItems: string;
   collapse: string;
   expand: string;
+  /** template placeholders: what was there + how to fill it */
+  placeholder: Record<PlaceholderSlot, string>;
+  placeholderHint: { file: string; link: string; color: string };
 }
 
 export function BoardElementView({
@@ -168,6 +173,8 @@ export function BoardElementView({
       );
     case "location":
       return <LocationNode el={el} labels={labels} onMeasure={onMeasure} />;
+    case "placeholder":
+      return <PlaceholderNode el={el} editable={editable} labels={labels} />;
     case "group":
       return (
         <GroupNode
@@ -631,6 +638,21 @@ function LocationNode({ el, labels, onMeasure }: { el: LocationElement; labels: 
           {labels.openInMaps} ↗
         </a>
       </div>
+    </div>
+  );
+}
+
+// 2026-10-09 (board templates): an empty slot — dashed frame, what belongs
+// here, and how to fill it (drop a file / double-click)
+const PLACEHOLDER_ICONS: Record<PlaceholderSlot, string> = { image: "🖼", video: "🎬", audio: "🎵", pdf: "📄", file: "📎", link: "🔗", color: "🎨" };
+function PlaceholderNode({ el, editable, labels }: { el: PlaceholderElement; editable: boolean; labels: ElementViewLabels }) {
+  const hint = el.slot === "link" ? labels.placeholderHint.link : el.slot === "color" ? labels.placeholderHint.color : labels.placeholderHint.file;
+  const small = el.h < 110 || el.w < 160;
+  return (
+    <div className="w-full h-full rounded-lg border-2 border-dashed border-white/20 bg-white/[0.03] flex flex-col items-center justify-center text-center px-3 gap-1 overflow-hidden">
+      <div className={small ? "text-lg leading-none" : "text-3xl leading-none"}>{PLACEHOLDER_ICONS[el.slot] ?? "📎"}</div>
+      <div className="text-sm font-semibold text-white/70 truncate max-w-full">{el.title || labels.placeholder[el.slot] || labels.placeholder.file}</div>
+      {editable && !small && <div className="text-[11px] text-white/40 leading-snug">{hint}</div>}
     </div>
   );
 }

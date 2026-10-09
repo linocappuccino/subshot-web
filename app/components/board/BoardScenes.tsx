@@ -44,7 +44,7 @@ function Thumb({ view, elements }: { view: BoardView; elements: BoardElement[] }
   );
 }
 
-function ThumbEl({ el }: { el: BoardElement }) {
+export function ThumbEl({ el }: { el: BoardElement }) {
   const r = Math.min(10, el.w / 10);
   const card = <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={r} fill="#232325" />;
   switch (el.type) {
@@ -117,6 +117,8 @@ function ThumbEl({ el }: { el: BoardElement }) {
           ))}
         </g>
       );
+    case "placeholder":
+      return <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={r} fill="#ffffff08" stroke="#ffffff40" strokeWidth={Math.max(2, el.w / 80)} strokeDasharray={`${Math.max(6, el.w / 20)} ${Math.max(4, el.w / 30)}`} />;
     case "group":
       return el.collapsed ? card : <rect x={el.x} y={el.y} width={el.w} height={el.h} rx={r} fill="#ffffff08" stroke="#ffffff30" strokeWidth={2} />;
     default:

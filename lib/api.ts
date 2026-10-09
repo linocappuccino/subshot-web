@@ -45,7 +45,7 @@ import type {
   VideoVersion,
 } from "./types";
 
-import type { BoardData, BoardResponse, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
+import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
@@ -884,6 +884,18 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     toggleBoardVote: (ideaId: string, groupId: string, elementId: string) =>
       request<{ votes: BoardVote[]; me: string }>(`ideas/${ideaId}/board/votes`, { method: "POST", body: JSON.stringify({ group_id: groupId, element_id: elementId }) }),
     // board location card: static map stored as a board file (2026-10-08)
+    // board templates (2026-10-09, Lino) — personal, content stripped server-side
+    boardTemplates: () => {
+      invalidateGetCache("board-templates");
+      return request<{ templates: BoardTemplate[] }>("board-templates");
+    },
+    createBoardTemplate: (ideaId: string, name: string, data: BoardData) =>
+      request<BoardTemplate>("board-templates", { method: "POST", body: JSON.stringify({ idea_id: ideaId, name, data }) }),
+    renameBoardTemplate: (id: string, name: string) =>
+      request<BoardTemplate>(`board-templates/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+    deleteBoardTemplate: (id: string) => request<{ ok: boolean }>(`board-templates/${id}`, { method: "DELETE" }),
+    useBoardTemplate: (ideaId: string, templateId: string) =>
+      request<{ data: BoardData }>(`ideas/${ideaId}/board/templates/${templateId}/use`, { method: "POST" }),
     boardPaste: (ideaId: string, body: { source_idea_id: string; keys: string[]; todo_lists: string[] }) =>
       request<{ keys: Record<string, { key: string; src: string }>; todo_lists: Record<string, string> }>(`ideas/${ideaId}/board/paste`, { method: "POST", body: JSON.stringify(body) }),
     boardLocationMap: (ideaId: string, lat: number, lng: number, style: "satellite" | "map" = "satellite") =>

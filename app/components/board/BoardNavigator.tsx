@@ -49,6 +49,9 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
     case "moodboard":
       parts.push(el.title, ...el.items.map((it) => it.name));
       break;
+    case "placeholder":
+      parts.push(el.title);
+      break;
   }
   if (withTags) parts.push(...(el.tags ?? []));
   return parts.filter(Boolean).join(" \n ");
@@ -56,7 +59,7 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
 
 const TYPE_ICON: Record<BoardElement["type"], string> = {
   text: "📝", sticky: "🗒️", scene: "🎬", link: "🔗", image: "🖼️", video: "🎞️", audio: "🎵", pdf: "📄", file: "📎",
-  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️",
+  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚",
 };
 
 export function elementLabel(el: BoardElement, t: (k: never) => string): string {
@@ -83,6 +86,8 @@ export function elementLabel(el: BoardElement, t: (k: never) => string): string 
       return tt("ideaBoard.search.typeDrawing");
     case "moodboard":
       return el.title || `${tt("ideaBoard.moodboard.label")} (${el.items.length})`;
+    case "placeholder":
+      return el.title || tt(`ideaBoard.placeholder.${el.slot}`);
     default:
       return el.name;
   }

@@ -649,6 +649,16 @@ function IdeaBoardScreen({
                 .catch((e) => toast.showError(e instanceof ApiError ? e.message : t("common.failed")))
             }
             onError={(msg) => toast.showError(msg)}
+            onNotice={(msg) => toast.showSuccess(msg)}
+            templates={{
+              list: async () => (await api.boardTemplates()).templates,
+              save: (name, data) => api.createBoardTemplate(idea.id, name, data),
+              rename: (id, name) => api.renameBoardTemplate(id, name),
+              remove: async (id) => {
+                await api.deleteBoardTemplate(id);
+              },
+              use: async (id) => (await api.useBoardTemplate(idea.id, id)).data,
+            }}
             onEscape={onClose}
             uploadFile={async (picked, mime, onProgress) => {
               // GIFs always loop on the board (see lib/gifLoop.ts)

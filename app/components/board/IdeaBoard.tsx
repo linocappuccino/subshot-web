@@ -53,6 +53,9 @@ import {
   STICKY_COLORS,
   STICKY_STYLES,
   type TodoElement,
+  type PlaceholderElement,
+  type BoardTemplate,
+  MEDIA_SLOTS,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
 import { BoardTodoContext } from "./BoardTodo";
@@ -63,6 +66,7 @@ import { BoardQuickAdd, type QuickAddItem } from "./BoardQuickAdd";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
+import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
 import { BoardDownloadContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
@@ -111,7 +115,7 @@ const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
 
 type Op =
-  | { kind: "pan"; pointerId: number; sx: number; sy: number; view: View; moved: boolean; onElement: string | null; rightClick?: boolean }
+  | { kind: "pan"; pointerId: number; sx: number; sy: number; view: View; moved: boolean; onElement: string | null; rightClick?: boolean; middle?: boolean }
   | {
       kind: "move";
       pointerId: number;
@@ -320,6 +324,7 @@ export function IdeaBoard({
   onVote,
   gifMaker,
   clipboard,
+  templates,
   allowPresentation = true,
   externalData,
   historyApi,
@@ -327,6 +332,7 @@ export function IdeaBoard({
   onPresence,
   downloadFile,
   onError,
+  onNotice,
   onEscape,
   className = "",
 }: {
@@ -366,6 +372,9 @@ export function IdeaBoard({
     ideaId: string;
     importFrom: (sourceIdeaId: string, keys: string[], todoLists: string[]) => Promise<{ keys: Record<string, { key: string; src: string }>; todo_lists: Record<string, string> }>;
   };
+  /** 2026-10-09, Lino: board templates — save the board / selection, load a
+   * saved one (`use` creates its to-do lists and returns the document) */
+  templates?: BoardTemplateApi & { use: (templateId: string) => Promise<BoardData> };
   /** live collaboration: the board as changed by someone else (or by a
    * live undo) — taken over as is, without notifying onChange */
   externalData?: { data: BoardData; nonce: number } | null;
@@ -378,6 +387,8 @@ export function IdeaBoard({
   /** download the ORIGINAL of a board file (key + original file name) */
   downloadFile?: (key: string, name: string) => void;
   onError?: (message: string) => void;
+  /** a short success message (toast) */
+  onNotice?: (message: string) => void;
   /** Escape pressed with nothing left to cancel on the board itself */
   onEscape?: () => void;
   className?: string;
@@ -1392,6 +1403,166 @@ export function IdeaBoard({
     if (editingRef.current === id) setEditingId(null);
   }
 
+  // ── board templates (2026-10-09, Lino) ─────────────────────────────────
+  // "Templates, die man immer wieder für neue Projekte laden kann — nur mit
+  // leeren Nodes". Saving sends the board (or the selection); the server
+  // keeps layout + texts and turns content into placeholders. Loading puts
+  // the template on this board with new ids — on an empty board where it
+  // was, otherwise to the right of what's there — and flies to it.
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  function templateSource(selectionOnly: boolean): BoardData | null {
+    const d = dataRef.current;
+    if (!selectionOnly) return { elements: d.elements, connectors: d.connectors, views: d.views };
+    const ids = new Set(selectionRef.current);
+    for (const el of d.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
+    const elements = d.elements
+      .filter((el) => ids.has(el.id))
+      .map((el) => (el.type === "group" ? { ...el, children: el.children.filter((c) => ids.has(c)) } : el));
+    return { elements, connectors: d.connectors.filter((c) => ids.has(c.from) && ids.has(c.to)) };
+  }
+  async function loadTemplate(tpl: BoardTemplate) {
+    if (!templates) return;
+    setTemplatesOpen(false);
+    let doc: BoardData;
+    try {
+      doc = await templates.use(tpl.id);
+    } catch {
+      onError?.(t("ideaBoard.templates.failed"));
+      return;
+    }
+    const els = doc.elements ?? [];
+    const box = boundsOf(els);
+    if (!box) return;
+    const current = dataRef.current;
+    const existing = boundsOf(current.elements.filter((el) => !hiddenElementIds(current.elements).has(el.id)));
+    const dx = existing ? snap(existing.x + existing.w + 240 - box.x) : 0;
+    const dy = existing ? snap(existing.y - box.y) : 0;
+    const mapping = new Map<string, string>();
+    let z = maxZ(current.elements);
+    const copies = els
+      .slice()
+      .sort((a, b) => a.z - b.z)
+      .map((el) => {
+        const id = newId();
+        mapping.set(el.id, id);
+        return { ...el, id, x: Math.round(el.x + dx), y: Math.round(el.y + dy), z: ++z } as BoardElement;
+      })
+      .map((el) => (el.type === "group" ? { ...el, children: el.children.map((c) => mapping.get(c)).filter((c): c is string => !!c) } : el));
+    const connectors: Connector[] = (doc.connectors ?? [])
+      .filter((c) => mapping.has(c.from) && mapping.has(c.to))
+      .map((c) => ({ ...c, id: newId(), from: mapping.get(c.from)!, to: mapping.get(c.to)! }));
+    const views: BoardView[] = (doc.views ?? []).map((v) => ({ ...v, id: newId(), x: v.x + dx, y: v.y + dy }));
+    commit((d) => ({
+      ...d,
+      elements: [...d.elements, ...copies],
+      connectors: [...d.connectors, ...connectors],
+      ...(views.length ? { views: [...(d.views ?? []), ...views].slice(0, 50) } : {}),
+    }));
+    setSelection(new Set());
+    zoomToRect({ x: box.x + dx, y: box.y + dy, w: box.w, h: box.h }, { animate: true });
+  }
+
+  // template placeholders: filled in place — the node keeps its id (arrows,
+  // groups) and its spot; its height follows the new content
+  function fillPlaceholder(id: string, make: (ph: PlaceholderElement) => BoardElement, history: BoardData | null = null) {
+    const ph = dataRef.current.elements.find((x): x is PlaceholderElement => x.id === id && x.type === "placeholder");
+    if (!ph) return;
+    const next = { ...make(ph), id: ph.id, z: ph.z, ...(ph.tags?.length ? { tags: ph.tags } : {}) } as BoardElement;
+    if (history) apply({ ...dataRef.current, elements: dataRef.current.elements.map((x) => (x.id === id ? next : x)) }, { history });
+    else commit((d) => ({ ...d, elements: d.elements.map((x) => (x.id === id ? next : x)) }));
+    setSelection(new Set([id]));
+  }
+  async function fillPlaceholderWithFile(id: string, picked: File) {
+    const ph = dataRef.current.elements.find((x): x is PlaceholderElement => x.id === id && x.type === "placeholder");
+    if (!ph || !uploadFile) return;
+    const mime = guessMime(picked);
+    const kind = elementKindForMime(mime);
+    if (!kind) {
+      onError?.(t("ideaBoard.unsupportedType", { name: picked.name }));
+      return;
+    }
+    const natural = await mediaSize(picked, kind);
+    const w = ph.w;
+    const h =
+      kind === "image" && natural
+        ? Math.round((w * natural.h) / natural.w)
+        : kind === "video"
+          ? VIDEO_HEADER + Math.round((w * (natural?.h ?? 9)) / (natural?.w ?? 16))
+          : kind === "audio"
+            ? 120
+            : ph.h;
+    const pid = newId();
+    setPending((p) => [...p, { id: pid, label: picked.name, progress: 0, x: ph.x, y: ph.y, w: ph.w, h: ph.h }]);
+    try {
+      const { key, src } = await uploadFile(picked, mime, (fr) => setPending((p) => p.map((pi) => (pi.id === pid ? { ...pi, progress: fr } : pi))));
+      fillPlaceholder(id, (cur) => ({
+        id: cur.id,
+        type: kind,
+        x: cur.x,
+        y: cur.y,
+        w,
+        h,
+        z: cur.z,
+        asset_key: key,
+        src,
+        name: picked.name,
+        mime,
+        ...(kind === "pdf" ? { size: picked.size } : {}),
+      }) as MediaElement);
+    } catch {
+      onError?.(t("ideaBoard.uploadFailed", { name: picked.name }));
+    } finally {
+      setPending((p) => p.filter((pi) => pi.id !== pid));
+    }
+  }
+  async function fillPlaceholderWithLink(id: string, rawUrl: string) {
+    const ph = dataRef.current.elements.find((x): x is PlaceholderElement => x.id === id && x.type === "placeholder");
+    if (!ph) return;
+    const url = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
+    let preview: LinkPreview | null = null;
+    try {
+      preview = fetchLinkPreview ? await fetchLinkPreview(url) : null;
+    } catch {
+      onError?.(t("ideaBoard.linkFailed"));
+    }
+    fillPlaceholder(id, (cur) => ({
+      id: cur.id,
+      type: "link",
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: preview?.image_src ? Math.max(cur.h, 288) : 120,
+      z: cur.z,
+      url: preview?.url ?? url,
+      title: preview?.title ?? "",
+      description: preview?.description ?? "",
+      site_name: preview?.site_name ?? "",
+      ...(preview?.image_key ? { image_key: preview.image_key, image_src: preview.image_src } : {}),
+    }) as LinkElement);
+  }
+  const placeholderFileRef = useRef<HTMLInputElement>(null);
+  const placeholderTarget = useRef<string | null>(null);
+  /** the placeholder under a point that takes this kind of thing */
+  function placeholderAt(w: Point, exclude: Set<string>, accepts: (ph: PlaceholderElement) => boolean): PlaceholderElement | null {
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    let best: PlaceholderElement | null = null;
+    for (const x of dataRef.current.elements) {
+      if (x.type !== "placeholder" || exclude.has(x.id) || hiddenNow.has(x.id) || !accepts(x)) continue;
+      if (w.x < x.x || w.x > x.x + x.w || w.y < x.y || w.y > x.y + x.h) continue;
+      if (!best || x.z > best.z) best = x;
+    }
+    return best;
+  }
+  const takesFiles = (ph: PlaceholderElement) => MEDIA_SLOTS.includes(ph.slot);
+  /** a board node that can go into a placeholder: any file into a file slot,
+   * a link into a link slot, a color card into a color slot */
+  function placeholderTakes(ph: PlaceholderElement, node: BoardElement): boolean {
+    if (MEDIA_SLOTS.includes(node.type as PlaceholderElement["slot"])) return takesFiles(ph);
+    if (node.type === "link") return ph.slot === "link";
+    if (node.type === "color") return ph.slot === "color";
+    return false;
+  }
+
   // ── to-do lists ───────────────────────────────────────────────────────
   const todoCtx = useContext(BoardTodoContext);
   async function addTodo(at: Point, avoidOverlap = true) {
@@ -1417,6 +1588,10 @@ export function IdeaBoard({
     const ed = cardEditor;
     setCardEditor(null);
     if (!ed) return;
+    if (ed.id && dataRef.current.elements.some((x) => x.id === ed.id && x.type === "placeholder")) {
+      fillPlaceholder(ed.id, (ph) => ({ id: ph.id, type: "color", x: ph.x, y: ph.y, w: ph.w, h: ph.h, z: ph.z, hex, name: name || ph.title }) as ColorElement);
+      return;
+    }
     if (ed.id) {
       updateElement(ed.id, { hex, name } as Partial<ColorElement>, { history: true });
       return;
@@ -1725,7 +1900,7 @@ export function IdeaBoard({
   }
 
   // ── right-click / long-press menu ─────────────────────────────────────
-  const [menu, setMenu] = useState<{ x: number; y: number; world: Point; targetId: string | null; linkInput: boolean } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; world: Point; targetId: string | null; linkInput: boolean; fillId?: string } | null>(null);
   const uploadAtRef = useRef<Point | null>(null);
 
   function openContextMenu(clientX: number, clientY: number, targetId: string | null) {
@@ -1759,6 +1934,7 @@ export function IdeaBoard({
     ...(todoCtx?.api ? [{ id: "todo", icon: "☑️", label: t("ideaBoard.menu.todo"), keywords: "todo to-do aufgaben liste checkliste tasks checklist" }] : []),
     ...(gifMaker ? [{ id: "gif", icon: "🎞", label: t("ideaBoard.menu.gif"), keywords: "gif animation loop clip video ausschnitt" }] : []),
     { id: "draw", icon: "✏️", label: t("ideaBoard.menu.draw"), hint: "P", keywords: "zeichnen malen stift skizze draw pen sketch" },
+    ...(templates ? [{ id: "template", icon: "▤", label: t("ideaBoard.templates.quickAdd"), keywords: "template vorlage layout struktur laden speichern preset" }] : []),
   ];
   function quickAddPick(id: string) {
     const q = quickAdd;
@@ -1776,6 +1952,7 @@ export function IdeaBoard({
       case "palette": return setCardEditor({ kind: "palette", id: null, at });
       case "location": return setCardEditor({ kind: "location", id: null, at });
       case "draw": return setTool("draw");
+      case "template": return setTemplatesOpen(true);
       case "upload":
         uploadAtRef.current = at;
         fileInputRef.current?.click();
@@ -1797,6 +1974,19 @@ export function IdeaBoard({
     }
     if (el.type === "moodboard" && editable) {
       setSelection(new Set([el.id]));
+      return;
+    }
+    if (el.type === "placeholder" && editable) {
+      setSelection(new Set([el.id]));
+      if (el.slot === "color") setCardEditor({ kind: "color", id: el.id, at: { x: el.x, y: el.y } });
+      else if (el.slot === "link") {
+        const rect = viewportRef.current?.getBoundingClientRect();
+        const v = viewRef.current;
+        if (rect) setMenu({ x: el.x * v.scale + v.x, y: (el.y + el.h / 2) * v.scale + v.y, world: { x: el.x, y: el.y }, targetId: null, linkInput: true, fillId: el.id });
+      } else {
+        placeholderTarget.current = el.id;
+        placeholderFileRef.current?.click();
+      }
       return;
     }
     if ((el.type === "palette" || el.type === "location" || el.type === "color") && editable) {
@@ -1831,6 +2021,18 @@ export function IdeaBoard({
       }
     }
     if (menu) setMenu(null);
+    // 2026-10-09, Lino: press and hold the middle mouse button (wheel) = move
+    // the view like the hand tool — anywhere, also over text, links, videos;
+    // preventDefault stops the browser's own middle-click auto-scroll
+    if (e.pointerType === "mouse" && e.button === 1) {
+      e.preventDefault();
+      if (editingRef.current) finishEditing();
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      viewportRef.current?.setPointerCapture(e.pointerId);
+      opRef.current = { kind: "pan", pointerId: e.pointerId, sx: e.clientX, sy: e.clientY, view: viewRef.current, moved: false, onElement: null, middle: true };
+      setPanning(true);
+      return;
+    }
     if (target.closest("[contenteditable='true'], input, textarea")) return;
     // the empty inside of an open group's (blurred) frame acts like the empty board
     const elNode = target.closest("[data-group-body]") && !target.closest("[data-group-header]") ? null : target.closest<HTMLElement>("[data-el-id]");
@@ -2079,7 +2281,9 @@ export function IdeaBoard({
         {
           const moving = dataRef.current.elements.filter((x) => op.origin.has(x.id));
           const images = moving.length > 0 && moving.every((x) => x.type === "image");
-          const target = images ? imageTargetAt(toWorld(e.clientX, e.clientY), new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null;
+          const wp = toWorld(e.clientX, e.clientY);
+          const ph = moving.length === 1 ? placeholderAt(wp, new Set(op.origin.keys()), (p) => placeholderTakes(p, moving[0])) : null;
+          const target = ph ?? (images ? imageTargetAt(wp, new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null);
           if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
         }
         const next: BoardData = {
@@ -2171,7 +2375,7 @@ export function IdeaBoard({
 
     switch (op.kind) {
       case "pan": {
-        if (op.moved) return;
+        if (op.moved || op.middle) return;
         if (op.rightClick) {
           if (editable) openContextMenu(e.clientX, e.clientY, op.onElement);
           return;
@@ -2200,6 +2404,29 @@ export function IdeaBoard({
           const w = toWorld(e.clientX, e.clientY);
           const els = dataRef.current.elements;
           const moving = els.filter((x) => op.origin.has(x.id));
+          // a node dropped onto a template placeholder of its kind takes its
+          // place (2026-10-09): placeholder id/spot kept, the node's content moves in
+          const phTarget = moving.length === 1 ? placeholderAt(w, new Set(op.origin.keys()), (p) => placeholderTakes(p, moving[0])) : null;
+          if (phTarget) {
+            const node = moving[0];
+            const nodeH = node.type === "image" || node.type === "video" ? Math.round((node.h * phTarget.w) / Math.max(1, node.w)) : node.type === "color" ? phTarget.h : node.h;
+            const filled = { ...node, id: phTarget.id, x: phTarget.x, y: phTarget.y, w: phTarget.w, h: nodeH, z: phTarget.z } as BoardElement;
+            apply(
+              {
+                ...dataRef.current,
+                elements: els
+                  .filter((x) => x.id !== node.id)
+                  .map((x) => (x.id === phTarget.id ? filled : x))
+                  .map((x) => (x.type === "group" ? { ...x, children: x.children.filter((c) => c !== node.id) } : x)),
+                connectors: dataRef.current.connectors
+                  .map((c) => ({ ...c, from: c.from === node.id ? phTarget.id : c.from, to: c.to === node.id ? phTarget.id : c.to }))
+                  .filter((c) => c.from !== c.to),
+              },
+              { history: op.snapshot },
+            );
+            setSelection(new Set([phTarget.id]));
+            return;
+          }
           // one image dropped onto a scene card becomes (replaces) its image
           // (2026-10-09, Lino) — the image card itself goes into the scene
           const sceneTarget = moving.length === 1 && moving[0].type === "image" ? imageTargetAt(w, new Set(op.origin.keys()), ["scene", "moodboard"]) : null;
@@ -2575,6 +2802,11 @@ export function IdeaBoard({
     e.preventDefault();
     const at = toWorld(e.clientX, e.clientY);
     const files = [...e.dataTransfer.files];
+    const phFile = files.length === 1 ? placeholderAt(at, new Set(), takesFiles) : null;
+    if (phFile) {
+      void fillPlaceholderWithFile(phFile.id, files[0]);
+      return;
+    }
     // the same card the drop hint showed (topmost scene / moodboard under the pointer)
     const sceneEl = imageTargetAt(at, new Set(), files.length === 1 ? ["scene", "moodboard"] : ["moodboard"]);
     if (sceneEl?.type === "moodboard" && files.some((f) => guessMime(f).startsWith("image/"))) {
@@ -2590,7 +2822,11 @@ export function IdeaBoard({
       return;
     }
     const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
-    if (uri && looksLikeUrl(uri.split("\n")[0])) void addLink(uri.split("\n")[0], at);
+    if (uri && looksLikeUrl(uri.split("\n")[0])) {
+      const phLink = placeholderAt(at, new Set(), (ph) => ph.slot === "link");
+      if (phLink) void fillPlaceholderWithLink(phLink.id, uri.split("\n")[0]);
+      else void addLink(uri.split("\n")[0], at);
+    }
   }
 
   // ── rendering helpers ─────────────────────────────────────────────────
@@ -2658,6 +2894,16 @@ export function IdeaBoard({
     groupItems: t("ideaBoard.groupItems"),
     collapse: t("ideaBoard.collapse"),
     expand: t("ideaBoard.expand"),
+    placeholder: {
+      image: t("ideaBoard.placeholder.image"),
+      video: t("ideaBoard.placeholder.video"),
+      audio: t("ideaBoard.placeholder.audio"),
+      pdf: t("ideaBoard.placeholder.pdf"),
+      file: t("ideaBoard.placeholder.file"),
+      link: t("ideaBoard.placeholder.link"),
+      color: t("ideaBoard.placeholder.color"),
+    },
+    placeholderHint: { file: t("ideaBoard.placeholder.hintFile"), link: t("ideaBoard.placeholder.hintLink"), color: t("ideaBoard.placeholder.hintColor") },
   };
 
   let gridSize = GRID * view.scale;
@@ -2728,13 +2974,21 @@ export function IdeaBoard({
         // a file from the Finder over a scene card / moodboard: show where it goes
         const files = e.dataTransfer.types.includes("Files");
         const one = e.dataTransfer.items.length <= 1;
-        const target = files ? imageTargetAt(toWorld(e.clientX, e.clientY), new Set(), one ? ["scene", "moodboard"] : ["moodboard"]) : null;
+        const wp = toWorld(e.clientX, e.clientY);
+        const target = files ? ((one ? placeholderAt(wp, new Set(), takesFiles) : null) ?? imageTargetAt(wp, new Set(), one ? ["scene", "moodboard"] : ["moodboard"])) : null;
         if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
       }}
       onDragLeave={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImageDropTarget(null);
       }}
       onDrop={onDrop}
+      // middle-click pans the view — no "open link in new tab" on release
+      onAuxClick={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault();
+      }}
       onContextMenu={(e) => {
         // read-only without downloads (client view): no browser menu either,
         // so no "save image / video as" (2026-10-09, Lino)
@@ -3114,7 +3368,9 @@ export function IdeaBoard({
           const tgt = imageDropTarget ? data.elements.find((x) => x.id === imageDropTarget) : null;
           if (!tgt) return null;
           const label =
-            tgt.type === "scene"
+            tgt.type === "placeholder"
+              ? t("ideaBoard.placeholder.drop")
+              : tgt.type === "scene"
               ? t((tgt.image_key ? "ideaBoard.dropReplaceSceneImage" : "ideaBoard.dropSetSceneImage") as never)
               : t("ideaBoard.dropIntoMoodboard" as never);
           return (
@@ -3164,8 +3420,17 @@ export function IdeaBoard({
       </div>
 
       {showEmptyHint && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 pointer-events-none">
           <div className="text-sm text-white/35 text-center px-6 max-w-md">{t("ideaBoard.emptyHint")}</div>
+          {templates && (
+            <button
+              data-board-ui
+              onClick={() => setTemplatesOpen(true)}
+              className="pointer-events-auto rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-lg"
+            >
+              {t("ideaBoard.templates.startWith")}
+            </button>
+          )}
         </div>
       )}
 
@@ -3432,7 +3697,7 @@ export function IdeaBoard({
                   onSubmit={(e) => {
                     e.preventDefault();
                     const value = (e.currentTarget.elements.namedItem("url") as HTMLInputElement).value;
-                    if (value.trim()) menuAction(() => void addLink(value, menu.world));
+                    if (value.trim()) menuAction(() => void (menu.fillId ? fillPlaceholderWithLink(menu.fillId, value) : addLink(value, menu.world)));
                   }}
                 >
                   <input
@@ -3523,8 +3788,10 @@ export function IdeaBoard({
         >
           {cardEditor.kind === "color" ? (
             (() => {
-              const cur = cardEditor.id ? (byId.get(cardEditor.id) as ColorElement | undefined) : undefined;
-              return <ColorEditor open initialHex={cur?.hex ?? ""} initialName={cur?.name ?? ""} onClose={() => setCardEditor(null)} onSave={saveColor} />;
+              const raw = cardEditor.id ? byId.get(cardEditor.id) : undefined;
+              const cur = raw?.type === "color" ? raw : undefined;
+              const phName = raw?.type === "placeholder" ? raw.title : "";
+              return <ColorEditor open initialHex={cur?.hex ?? ""} initialName={cur?.name ?? phName} onClose={() => setCardEditor(null)} onSave={saveColor} />;
             })()
           ) : cardEditor.kind === "palette" ? (
             (() => {
@@ -3690,6 +3957,11 @@ export function IdeaBoard({
               </div>
             )}
           </div>
+          {templates && (
+            <ToolButton active={templatesOpen} title={t("ideaBoard.templates.button")} onPress={() => setTemplatesOpen(true)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>
+            </ToolButton>
+          )}
           <div className="h-px bg-white/10 my-1" />
           <ToolButton title={t("ideaBoard.undo")} onPress={undo} disabled={historyApi ? !historyApi.canUndo : historySize.undo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
@@ -3718,6 +3990,18 @@ export function IdeaBoard({
               const file = e.target.files?.[0];
               e.target.value = "";
               if (file && sceneImageTarget.current) void setSceneImage(sceneImageTarget.current, file);
+            }}
+          />
+          <input
+            ref={placeholderFileRef}
+            type="file"
+            accept="image/*,video/*,audio/*,application/pdf,.m4a,.mp3,.wav,.aac,.mov,.heic,*/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file && placeholderTarget.current) void fillPlaceholderWithFile(placeholderTarget.current, file);
+              placeholderTarget.current = null;
             }}
           />
           <input
@@ -3861,6 +4145,19 @@ export function IdeaBoard({
               zoomToRect(target, { animate: true, maxScale: 1, pad: 120 });
             }
           }}
+        />
+      )}
+      {templatesOpen && templates && (
+        <BoardTemplatesPanel
+          api={templates}
+          canSave={editable}
+          selectionCount={selection.size}
+          hasContent={data.elements.length > 0}
+          onSave={templateSource}
+          onUse={(tpl) => void loadTemplate(tpl)}
+          onClose={() => setTemplatesOpen(false)}
+          onError={onError}
+          onSaved={(name) => onNotice?.(t("ideaBoard.templates.saved", { name }))}
         />
       )}
       {quickAdd && (
