@@ -23,6 +23,15 @@ export type BoardGifApi = {
 const MAX_LEN = 3;
 const MIN_LEN = 0.3;
 
+/** the video's format as people say it (9:16, 4:5, 16:9 …) */
+function aspectLabel(w: number, h: number): string {
+  if (!w || !h) return "";
+  const r = w / h;
+  const named: [number, number][] = [[16, 9], [9, 16], [4, 5], [5, 4], [1, 1], [4, 3], [3, 4], [3, 2], [2, 3], [21, 9], [2.39, 1]];
+  for (const [a, b] of named) if (Math.abs(r / (a / b) - 1) < 0.03) return `${a}:${b}`;
+  return `${w}×${h}`;
+}
+
 function fmt(s: number) {
   const m = Math.floor(s / 60);
   const r = s - m * 60;
@@ -48,6 +57,7 @@ export function BoardGifMaker({
   const [start, setStart] = useState(0);
   const [len, setLen] = useState(2);
   const [now, setNow] = useState(0);
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const sourceKey = useRef<string | null>(null);
   const uploadPromise = useRef<Promise<{ key: string; src: string }> | null>(null);
@@ -162,12 +172,22 @@ export function BoardGifMaker({
     if (v.currentTime >= start + len || v.currentTime < start - 0.25) v.currentTime = start;
   }
 
-  // drag the selection window (or its edges) along the timeline
+  // drag the selection window (or its edges) along the timeline.
+  // 2026-10-09 (Lino: "man kann den Ausschnitt nicht verschieben oder
+  // verkleinern"): the board wraps this dialog in an element that stops
+  // pointer moves from reaching the board, so listeners on `window` never
+  // got them. The dragged element now captures the pointer and listens itself.
   function dragOn(e: React.PointerEvent, mode: "move" | "start" | "end") {
     e.preventDefault();
     e.stopPropagation();
     const track = trackRef.current;
     if (!track || !duration) return;
+    const el = e.currentTarget as HTMLElement;
+    try {
+      el.setPointerCapture(e.pointerId);
+    } catch {
+      // no capture (unusual pointer) — moves are still caught while over it
+    }
     const r = track.getBoundingClientRect();
     const sx = e.clientX;
     const s0 = start;
@@ -184,11 +204,13 @@ export function BoardGifMaker({
       }
     };
     const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
     };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   }
 
   function clickTrack(e: React.PointerEvent) {
@@ -293,6 +315,7 @@ export function BoardGifMaker({
                 preload="auto"
                 className="max-h-[48vh] max-w-full"
                 onLoadedMetadata={(e) => {
+                  setDims({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight });
                   const d = e.currentTarget.duration;
                   if (isFinite(d) && d > 0) {
                     setDuration(d);
@@ -323,6 +346,12 @@ export function BoardGifMaker({
             <span className="tabular-nums">
               {fmt(start)} – {fmt(start + len)} · <b className="text-white">{len.toFixed(1)} s</b>
             </span>
+            {dims && dims.w > 0 && (
+              // 2026-10-09, Lino: the GIF keeps the video's own format
+              <span className="px-1.5 py-0.5 rounded-md bg-white/10 text-white/75" title={tt("ideaBoard.gif.formatHint")}>
+                {tt("ideaBoard.gif.format").replace("{format}", aspectLabel(dims.w, dims.h))}
+              </span>
+            )}
             <span className="flex-1" />
             {[1, 2, 3].map((s) => (
               <button
