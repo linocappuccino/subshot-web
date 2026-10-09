@@ -320,6 +320,7 @@ export function IdeaBoard({
   onVote,
   gifMaker,
   clipboard,
+  allowPresentation = true,
   externalData,
   historyApi,
   peers,
@@ -357,6 +358,8 @@ export function IdeaBoard({
   onVote?: (groupId: string, elementId: string) => void;
   /** GIF maker (video link/upload → ≤3 s GIF image on the board) */
   gifMaker?: BoardGifApi;
+  /** presentation mode button (2026-10-09, Lino: not on the client page) */
+  allowPresentation?: boolean;
   /** 2026-10-09, Lino: ⌘C / ⌘V of nodes between boards — this board's idea,
    * and the server copy of another board's files / to-do lists */
   clipboard?: {
@@ -3811,7 +3814,7 @@ export function IdeaBoard({
           />
         </div>
       )}
-      {storyScenes.length > 0 && (
+      {storyScenes.length > 0 && (allowPresentation || (editable && storyScenes.length > 1)) && (
         <div data-board-ui className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
           {editable && storyScenes.length > 1 && (
             <button title={t("ideaBoard.arrangeHint")} onClick={arrangeStoryboard} className="h-8 px-2.5 rounded-lg text-xs font-semibold hover:bg-white/10 flex items-center gap-1.5">
@@ -3819,6 +3822,7 @@ export function IdeaBoard({
               {t("ideaBoard.arrange")}
             </button>
           )}
+          {allowPresentation && (
           <button
             title={t("ideaBoard.present.hint")}
             onClick={() => {
@@ -3830,6 +3834,7 @@ export function IdeaBoard({
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
             {t("ideaBoard.present.button")}
           </button>
+          )}
         </div>
       )}
       {presenting !== null && (

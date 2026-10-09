@@ -114,6 +114,8 @@ export function PublicIdeaBoard({
         // 2026-10-09, Lino: clients can't download anything from the board —
         // no downloadFile here = no download buttons, no "open file" links,
         // no save-image / video-download menus (see BoardDownloadContext)
+        // 2026-10-09, Lino: no presentation mode on the client page
+        allowPresentation={false}
         votes={votes}
         myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
         onVote={vote}

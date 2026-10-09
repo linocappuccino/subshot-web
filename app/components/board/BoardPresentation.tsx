@@ -50,6 +50,15 @@ export function BoardPresentation({ scenes, startIndex = 0, onClose }: { scenes:
     <div
       data-board-presentation
       className="fixed inset-0 z-[95] bg-[#0b0b0c] text-white flex flex-col select-none"
+      // 2026-10-09 (Lino: "per X nicht schliessen"): this is portaled but still
+      // inside the board's React tree — its pointerdown reached the board,
+      // which captured the pointer, so the click never landed on ✕
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerMove={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       onTouchStart={(e) => (touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
       onTouchEnd={(e) => {
         const s = touch.current;
