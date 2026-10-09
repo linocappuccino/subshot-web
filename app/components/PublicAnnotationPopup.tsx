@@ -1,5 +1,6 @@
 "use client";
 
+import { CLIENT_COMMENT_MAX, CommentLimit } from "@/app/components/CommentLimit";
 import { useEffect, useRef, useState } from "react";
 import { useLanguage } from "@/lib/i18n";
 
@@ -78,6 +79,7 @@ export function PublicAnnotationPopup({
       />
       <textarea
         value={comment}
+        maxLength={CLIENT_COMMENT_MAX}
         onChange={(e) => setComment(e.target.value)}
         onKeyDown={(e) => {
           // 2026-07-26 (Todoist #329) — same Enter-to-save/Shift+Enter-for-
@@ -96,6 +98,7 @@ export function PublicAnnotationPopup({
         rows={4}
         className="w-full text-sm bg-white/5 border border-white/10 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/50"
       />
+      <CommentLimit value={comment} />
       <div className="flex justify-end gap-2">
         <button
           type="button"

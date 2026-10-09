@@ -1,5 +1,6 @@
 "use client";
 
+import { CLIENT_COMMENT_MAX, CommentLimit } from "@/app/components/CommentLimit";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import confetti from "canvas-confetti";
@@ -2374,6 +2375,7 @@ export function VideoReviewModal({
                         <textarea
                           ref={commentInputRef}
                           value={commentText}
+                          maxLength={publicMode ? CLIENT_COMMENT_MAX : undefined}
                           onChange={(e) => handleCommentTextChange(e.target.value, e.target.selectionStart)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey && mentionMatches.length === 0) {
@@ -2387,6 +2389,7 @@ export function VideoReviewModal({
                           className="flex-1 resize-none bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
                         />
                       </div>
+                      {publicMode && <CommentLimit value={commentText} className="-mt-1" />}
                       {/* 2026-07-26 (Todoist #329) — Enter now saves the comment
                           (see the textarea's onKeyDown above, unchanged), so the
                           separate "Kommentar speichern" button this used to pair

@@ -1,5 +1,6 @@
 "use client";
 
+import { CLIENT_COMMENT_MAX, CommentLimit } from "@/app/components/CommentLimit";
 import { useEffect, useRef, useState } from "react";
 import { PublicIdeaMedia } from "./PublicIdeaMedia";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
@@ -632,6 +633,7 @@ export function PublicIdeaLightbox({
                   />
                   <textarea
                     value={highlightComment}
+                    maxLength={CLIENT_COMMENT_MAX}
                     onChange={(e) => setHighlightComment(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -643,6 +645,7 @@ export function PublicIdeaLightbox({
                     rows={3}
                     className="w-full text-sm px-3 py-2.5 rounded-[10px] border border-white/[0.12] bg-white/[0.06] text-white placeholder:text-white/35 outline-none focus:ring-2 focus:ring-blue-500/50 resize-y"
                   />
+                  <CommentLimit value={highlightComment} />
                   <div className="flex justify-end">
                     <button
                       onClick={handleSaveHighlightComment}
@@ -713,6 +716,7 @@ export function PublicIdeaLightbox({
                   <textarea
                     ref={commentRef}
                     value={comment}
+                    maxLength={CLIENT_COMMENT_MAX}
                     onChange={(e) => setComment(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.shiftKey) {
@@ -724,6 +728,7 @@ export function PublicIdeaLightbox({
                     rows={3}
                     className="w-full text-sm px-3 py-2.5 rounded-[10px] border border-white/[0.12] bg-white/[0.06] text-white placeholder:text-white/35 outline-none focus:ring-2 focus:ring-blue-500/50 resize-y"
                   />
+                  <CommentLimit value={comment} />
                   <div className="flex justify-end">
                     <button
                       onClick={() => (authorName.trim() ? setConfirmingSend(true) : showNotice("error", t("publicIdeaLightbox.enterNameFirst")))}

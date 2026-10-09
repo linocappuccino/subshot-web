@@ -1,5 +1,6 @@
 "use client";
 
+import { CLIENT_COMMENT_MAX, CommentLimit } from "@/app/components/CommentLimit";
 import { useEffect, useRef, useState } from "react";
 import { authorColor } from "@/lib/authorColor";
 import { isSectionFeedbackLocked } from "@/lib/sectionFeedbackLock";
@@ -296,6 +297,7 @@ export function PublicSectionComments({
             />
             <textarea
               value={draft}
+              maxLength={CLIENT_COMMENT_MAX}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -307,6 +309,7 @@ export function PublicSectionComments({
               rows={2}
               className="w-full text-xs px-2.5 py-2 rounded-lg border border-white/[0.12] bg-white/[0.06] text-white placeholder:text-white/35 outline-none focus:ring-2 focus:ring-blue-500/50 resize-y"
             />
+            <CommentLimit value={draft} />
             <div className="flex justify-between items-center gap-2">
               <button
                 onClick={handleSave}
