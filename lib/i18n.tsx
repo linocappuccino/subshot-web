@@ -1164,6 +1164,9 @@ const translations = {
     "devlogPage.subtitle": "Was sich gerade bei Subshot tut.",
     "devlogPage.loadFailed": "Devlog konnte nicht geladen werden.",
     "devlogPage.noEntries": "Noch keine Einträge.",
+    "devlogPage.searchPlaceholder": "Funktion, Begriff oder Frage suchen …",
+    "devlogPage.results": "{count} Beiträge zu «{query}»",
+    "devlogPage.noResults": "Nichts gefunden zu «{query}». Versuch ein anderes Wort.",
 
     // invites/[token]/page.tsx + team-invites/[token]/page.tsx (2026-08-06)
     "invitePage.loading": "Einladung wird geladen…",
@@ -2303,6 +2306,9 @@ const translations = {
     "devlogPage.subtitle": "What's happening at Subshot right now.",
     "devlogPage.loadFailed": "Could not load devlog.",
     "devlogPage.noEntries": "No entries yet.",
+    "devlogPage.searchPlaceholder": "Search a feature, term or question …",
+    "devlogPage.results": "{count} posts about “{query}”",
+    "devlogPage.noResults": "Nothing found for “{query}”. Try another word.",
 
     // invites/[token]/page.tsx + team-invites/[token]/page.tsx (2026-08-06)
     "invitePage.loading": "Loading invite…",
