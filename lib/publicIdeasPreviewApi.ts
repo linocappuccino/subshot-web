@@ -44,13 +44,6 @@ export const publicIdeasPreviewApi = {
     handle<PublicBoardTodoList[]>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/todo-lists`, { headers: unlockHeaders(unlockToken) })
     ),
-  // download a board file's original (2026-10-08)
-  boardDownload: (token: string, unlockToken: string | null, ideaId: string, key: string, name: string) =>
-    handle<{ url: string }>(
-      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/download?key=${encodeURIComponent(key)}&name=${encodeURIComponent(name)}`, {
-        headers: unlockHeaders(unlockToken),
-      })
-    ),
   // live view of the board (2026-10-08) — read-only collab session + URLs for new files
   boardCollab: (token: string, unlockToken: string | null, ideaId: string) =>
     handle<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(

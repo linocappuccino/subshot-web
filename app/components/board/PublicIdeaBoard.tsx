@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
-import { startDownload, type BoardVote } from "@/lib/board";
+import { type BoardVote } from "@/lib/board";
 import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
@@ -111,9 +111,9 @@ export function PublicIdeaBoard({
         pendingPin={pendingPin}
         focusRequest={focusRequest}
         externalData={collab.remote}
-        downloadFile={(key, name) => {
-          publicIdeasPreviewApi.boardDownload(token, unlockToken, ideaId, key, name).then((r) => startDownload(r.url)).catch(() => {});
-        }}
+        // 2026-10-09, Lino: clients can't download anything from the board —
+        // no downloadFile here = no download buttons, no "open file" links,
+        // no save-image / video-download menus (see BoardDownloadContext)
         votes={votes}
         myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
         onVote={vote}

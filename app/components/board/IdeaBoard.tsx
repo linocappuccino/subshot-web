@@ -2723,7 +2723,12 @@ export function IdeaBoard({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImageDropTarget(null);
       }}
       onDrop={onDrop}
-      onContextMenu={(e) => editable && !(e.target as HTMLElement).closest("[contenteditable='true'],a,video,audio") && e.preventDefault()}
+      onContextMenu={(e) => {
+        // read-only without downloads (client view): no browser menu either,
+        // so no "save image / video as" (2026-10-09, Lino)
+        if (!editable && !downloadFile) return e.preventDefault();
+        if (editable && !(e.target as HTMLElement).closest("[contenteditable='true'],a,video,audio")) e.preventDefault();
+      }}
     >
       <div
         className="absolute left-0 top-0 origin-top-left"

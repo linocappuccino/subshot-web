@@ -1,6 +1,6 @@
 "use client";
 
-import { BoardZoomContext, SharpImg } from "./BoardDownload";
+import { BoardDownloadContext, BoardZoomContext, SharpImg } from "./BoardDownload";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LocationMap } from "./BoardMap";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
@@ -658,6 +658,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
 }
 
 function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
+  const canDownload = !!useContext(BoardDownloadContext);
   return (
     <div className="w-full h-full rounded-lg overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="shrink-0 flex items-center gap-2 px-3 text-xs text-white/60" style={{ height: VIDEO_HEADER }}>
@@ -668,6 +669,9 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
         <video
           src={el.src}
           controls
+          // no download in the player's menu where downloads are off (client view)
+          controlsList={canDownload ? undefined : "nodownload"}
+          disablePictureInPicture={!canDownload}
           playsInline
           // with a poster nothing of the video loads until it's played
           poster={el.thumb_src ?? undefined}
@@ -684,6 +688,7 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
 }
 
 function AudioNode({ el }: { el: MediaElement }) {
+  const canDownload = !!useContext(BoardDownloadContext);
   return (
     <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 p-3 flex flex-col justify-between gap-2 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="flex items-center gap-2.5 min-w-0">
@@ -692,13 +697,15 @@ function AudioNode({ el }: { el: MediaElement }) {
         </div>
         <span className="text-sm text-white/85 truncate">{el.name || "Audio"}</span>
       </div>
-      {el.src && <audio src={el.src} controls preload="metadata" data-no-drag className="w-full h-9" />}
+      {el.src && <audio src={el.src} controls controlsList={canDownload ? undefined : "nodownload"} preload="metadata" data-no-drag className="w-full h-9" />}
     </div>
   );
 }
 
 function FileNode({ el, labels }: { el: MediaElement; labels: ElementViewLabels }) {
   const isPdf = el.type === "pdf";
+  // the client view has no downloads: the file is only shown, not opened
+  const canDownload = !!useContext(BoardDownloadContext);
   return (
     <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 p-3 flex items-center gap-3 shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className={`w-11 h-14 shrink-0 rounded-md flex items-end justify-center pb-1.5 text-[10px] font-bold ${isPdf ? "bg-red-500/20 text-red-300" : "bg-white/10 text-white/60"}`}>
@@ -707,7 +714,7 @@ function FileNode({ el, labels }: { el: MediaElement; labels: ElementViewLabels 
       <div className="min-w-0 flex-1">
         <div className="text-sm text-white/90 font-medium line-clamp-2 break-words">{el.name || "Datei"}</div>
         <div className="text-xs text-white/40 mt-0.5">{formatBytes(el.size)}</div>
-        {el.src && (
+        {el.src && canDownload && (
           <a
             href={el.src}
             target="_blank"
