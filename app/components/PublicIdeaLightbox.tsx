@@ -118,6 +118,24 @@ export function PublicIdeaLightbox({
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 2026-10-08, Lino: Feedback-Pins — pin a comment to a spot on a board node
   const [pinPlacing, setPinPlacing] = useState(false);
+  // 2026-10-09, Lino: an idea with a board opens full screen, the comment
+  // sidebar sits at the right edge and can be shown/hidden (remembered)
+  const boardMode = !!idea.has_board;
+  const [sidebarOpen, setSidebarOpenState] = useState(() => {
+    try {
+      return localStorage.getItem("subshot-client-sidebar") !== "closed";
+    } catch {
+      return true;
+    }
+  });
+  const setSidebarOpen = (open: boolean) => {
+    setSidebarOpenState(open);
+    try {
+      localStorage.setItem("subshot-client-sidebar", open ? "open" : "closed");
+    } catch {
+      // private mode — just not remembered
+    }
+  };
   const [pendingPin, setPendingPin] = useState<BoardPinAnchor | null>(null);
   const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
@@ -145,6 +163,7 @@ export function PublicIdeaLightbox({
   }
 
   function onBoardPinClick(id: string) {
+    setSidebarOpen(true);
     setActivePinId(id);
     requestAnimationFrame(() => document.querySelector(`[data-feedback-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
   }
@@ -329,12 +348,12 @@ export function PublicIdeaLightbox({
     .sort((a, b) => a[0] - b[0]);
 
   return (
-    <div data-idea-id={idea.id} className="fixed inset-0 z-50 flex items-center justify-center gap-6 p-4">
+    <div data-idea-id={idea.id} className={`fixed inset-0 z-50 flex items-center justify-center ${boardMode ? "" : "gap-6 p-4"}`}>
       <div className="absolute inset-0 bg-black/75 backdrop-blur-xl cursor-pointer" onClick={onClose} />
       <button
         onClick={onClose}
         aria-label={t("modal.closeAria")}
-        className="absolute top-5 right-5 z-20 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        className={`absolute z-20 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors ${boardMode ? "top-3 right-3" : "top-5 right-5"}`}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
       </button>
@@ -343,22 +362,36 @@ export function PublicIdeaLightbox({
         <button
           onClick={onPrev}
           aria-label={t("ideaFocusView.previousIdea")}
-          className="relative z-10 shrink-0 w-12 h-12 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
+          className={`${boardMode ? "absolute left-4 top-1/2 -translate-y-1/2 z-30" : "relative z-10"} shrink-0 w-12 h-12 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors`}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
         </button>
       )}
 
       <div
-        className="relative z-10 w-full max-w-[1900px] h-[88vh] overflow-hidden rounded-[32px] shadow-2xl shadow-black/50 flex flex-col"
-        style={{ background: "rgba(255,255,255,0.08)", backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)", border: "1px solid rgba(255,255,255,0.18)" }}
+        className={`relative z-10 w-full overflow-hidden flex flex-col ${boardMode ? "h-full" : "max-w-[1900px] h-[88vh] rounded-[32px] shadow-2xl shadow-black/50"}`}
+        style={
+          boardMode
+            ? { background: "#161617" }
+            : { background: "rgba(255,255,255,0.08)", backdropFilter: "blur(40px) saturate(1.8)", WebkitBackdropFilter: "blur(40px) saturate(1.8)", border: "1px solid rgba(255,255,255,0.18)" }
+        }
       >
-        <div className="shrink-0 flex items-start justify-between gap-3 px-8 pt-8 pb-3">
-          <span className="text-[28px] font-bold tracking-tight" data-field="idea.title">
+        <div className={`shrink-0 flex items-start justify-between gap-3 ${boardMode ? "items-center px-5 pt-3 pb-3 pr-16 border-b border-white/10" : "px-8 pt-8 pb-3"}`}>
+          <span className={`${boardMode ? "text-lg truncate" : "text-[28px]"} font-bold tracking-tight`} data-field="idea.title">
             {wrapHighlights(idea.title, titleAnnotations, onMarkClick, onMarkHoverChange)}
           </span>
           {approved && <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5 shrink-0">{t("publicIdeaLightbox.approvedBadge")}</span>}
           {rejected && <span className="text-xs font-semibold text-red-400 bg-red-500/10 rounded-full px-3 py-1.5 shrink-0">{t("publicIdeaLightbox.rejectedBadge")}</span>}
+          {boardMode && (
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              title={sidebarOpen ? t("publicIdeaLightbox.hideComments") : t("publicIdeaLightbox.showComments")}
+              className={`ml-auto shrink-0 flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold transition-colors ${sidebarOpen ? "bg-white/10 text-white" : "bg-white/[0.06] text-white/70 hover:text-white hover:bg-white/10"}`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M15 3v18" /></svg>
+              {t("publicIdeaLightbox.comments")}
+            </button>
+          )}
         </div>
 
         {/* 2026-07-22 — slideshow-left/text-right split, matching
@@ -376,7 +409,7 @@ export function PublicIdeaLightbox({
             panes; `md:` and up restores the original two-pane row exactly. */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-y-auto md:overflow-hidden">
           {idea.has_board ? (
-            <div className="relative w-full md:flex-1 min-h-[60vh] md:min-h-0 mx-0 md:ml-8 mb-4 md:mb-8 rounded-2xl overflow-hidden border border-white/10">
+            <div className="relative w-full md:flex-1 min-h-[60vh] md:min-h-0">
               <PublicIdeaBoard
                 token={token}
                 unlockToken={unlockToken}
@@ -490,7 +523,7 @@ export function PublicIdeaLightbox({
           </div>
           )}
 
-          <div className={`${idea.has_board ? "md:w-[400px] md:flex-none" : "flex-1"} min-h-0 min-w-0 flex flex-col border-l-0 md:border-l border-white/10 overflow-visible md:overflow-y-auto px-8 pb-8`}>
+          <div className={`${idea.has_board ? `md:w-[400px] md:flex-none bg-[#1c1c1e] pt-5 ${sidebarOpen ? "" : "hidden"}` : "flex-1"} min-h-0 min-w-0 flex flex-col border-l-0 md:border-l border-white/10 overflow-visible md:overflow-y-auto px-8 pb-8`}>
             {/* 2026-07-22, Lino: "die kommentar box ist nun einfach vor dem
                 geschriebenen Text" — this column is a flex COLUMN now (used
                 to be plain block layout, see this component's own layout
@@ -749,7 +782,8 @@ export function PublicIdeaLightbox({
         <button
           onClick={onNext}
           aria-label={t("ideaFocusView.nextIdea")}
-          className="relative z-10 shrink-0 w-12 h-12 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors"
+          className={`${boardMode ? "absolute top-1/2 -translate-y-1/2 z-30" : "relative z-10"} shrink-0 w-12 h-12 rounded-full bg-white/10 border border-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors`}
+          style={boardMode ? { right: sidebarOpen ? "calc(min(400px, 100vw) + 16px)" : 16 } : undefined}
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
         </button>
