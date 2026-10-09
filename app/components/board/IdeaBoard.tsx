@@ -1534,6 +1534,15 @@ export function IdeaBoard({
       .sort((a, b) => a.number - b.number || a.y - b.y || a.x - b.x);
   }, [data.elements]);
 
+  /** the presentation shows EVERY scene of the board, lowest number first —
+   * also those folded away in a collapsed group (2026-10-09, Lino) */
+  const presentScenes = useMemo(
+    () => data.elements.filter((el): el is SceneElement => el.type === "scene").sort((a, b) => a.number - b.number || a.y - b.y || a.x - b.x),
+    [data.elements],
+  );
+  // the storyboard/presentation bar (bottom right)
+  const storyBar = presentScenes.length > 0 && (allowPresentation || (editable && storyScenes.length > 1));
+
   /** "Storyboard anordnen": the scene cards in number order as a grid
    * (4 per row), starting where the scenes currently begin; one undo step. */
   function arrangeStoryboard() {
@@ -3758,7 +3767,7 @@ export function IdeaBoard({
           view={view}
           size={{ w: viewportRef.current.clientWidth, h: viewportRef.current.clientHeight }}
           dimmed={matches}
-          bottom={storyScenes.length > 0 ? 104 : 58}
+          bottom={storyBar ? 104 : 58}
           onNavigate={(wx, wy) => {
             const r = viewportRef.current!;
             const next = { scale: view.scale, x: r.clientWidth / 2 - wx * view.scale, y: r.clientHeight / 2 - wy * view.scale };
@@ -3814,7 +3823,7 @@ export function IdeaBoard({
           />
         </div>
       )}
-      {storyScenes.length > 0 && (allowPresentation || (editable && storyScenes.length > 1)) && (
+      {storyBar && (
         <div data-board-ui className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
           {editable && storyScenes.length > 1 && (
             <button title={t("ideaBoard.arrangeHint")} onClick={arrangeStoryboard} className="h-8 px-2.5 rounded-lg text-xs font-semibold hover:bg-white/10 flex items-center gap-1.5">
@@ -3826,7 +3835,7 @@ export function IdeaBoard({
           <button
             title={t("ideaBoard.present.hint")}
             onClick={() => {
-              const sel = storyScenes.findIndex((s) => selectionRef.current.has(s.id));
+              const sel = presentScenes.findIndex((s) => selectionRef.current.has(s.id));
               setPresenting(Math.max(0, sel));
             }}
             className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5"
@@ -3839,14 +3848,17 @@ export function IdeaBoard({
       )}
       {presenting !== null && (
         <BoardPresentation
-          scenes={storyScenes}
+          scenes={presentScenes}
           startIndex={presenting}
           onClose={(i) => {
             setPresenting(null);
-            const sc = storyScenes[i];
+            const sc = presentScenes[i];
             if (sc) {
-              setSelection(new Set([sc.id]));
-              zoomToRect(sc, { animate: true, maxScale: 1, pad: 120 });
+              // a scene in a collapsed group: its group card is what's on the board
+              const groupId = hiddenElementIds(dataRef.current.elements).get(sc.id);
+              const target = (groupId && dataRef.current.elements.find((x) => x.id === groupId)) || sc;
+              setSelection(new Set([target.id]));
+              zoomToRect(target, { animate: true, maxScale: 1, pad: 120 });
             }
           }}
         />
