@@ -3897,7 +3897,7 @@ export function IdeaBoard({
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-5-5L5 21" /></svg>
           </ToolButton>
           <div className="relative">
-            <ToolButton active={linkOpen} title={t("ideaBoard.toolLink")} onPress={() => setLinkOpen((v) => !v)}>
+            <ToolButton active={linkOpen} popoverOpen={linkOpen} title={t("ideaBoard.toolLink")} onPress={() => setLinkOpen((v) => !v)}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
             </ToolButton>
             {linkOpen && (
@@ -3926,7 +3926,7 @@ export function IdeaBoard({
             )}
           </div>
           <div className="relative">
-            <ToolButton active={tool === "draw"} title={t("ideaBoard.toolDraw")} onPress={() => setTool(tool === "draw" ? "select" : "draw")}>
+            <ToolButton active={tool === "draw"} popoverOpen={tool === "draw"} title={t("ideaBoard.toolDraw")} onPress={() => setTool(tool === "draw" ? "select" : "draw")}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
             </ToolButton>
             {tool === "draw" && (
@@ -4341,16 +4341,24 @@ function Divider() {
   return <div className="w-px h-5 bg-white/10 mx-0.5" />;
 }
 
-function ToolButton({ title, onPress, active, disabled, children }: { title: string; onPress: () => void; active?: boolean; disabled?: boolean; children: React.ReactNode }) {
+// 2026-10-09, Lino: the tool name shows IMMEDIATELY on hover (the browser's
+// own title tooltip only appears after a delay) — only with a real mouse
+// (hover: hover), so a tap on the iPad doesn't leave a label hanging; hidden
+// while the tool's own popover (link field, pen colors) is open next to it
+function ToolButton({ title, onPress, active, disabled, popoverOpen, children }: { title: string; onPress: () => void; active?: boolean; disabled?: boolean; popoverOpen?: boolean; children: React.ReactNode }) {
   return (
     <button
-      title={title}
       aria-label={title}
       disabled={disabled}
       onClick={onPress}
-      className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"}`}
+      className={`group/tool relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"}`}
     >
       {children}
+      {!popoverOpen && (
+        <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 whitespace-nowrap rounded-lg bg-[#2c2c2e] border border-white/10 px-2.5 py-1 text-xs font-medium text-white shadow-lg opacity-0 [@media(hover:hover)]:group-hover/tool:opacity-100 z-50">
+          {title}
+        </span>
+      )}
     </button>
   );
 }
