@@ -319,6 +319,7 @@ export function IdeaBoard({
   myVoterKey,
   onVote,
   gifMaker,
+  clipboard,
   externalData,
   historyApi,
   peers,
@@ -356,6 +357,12 @@ export function IdeaBoard({
   onVote?: (groupId: string, elementId: string) => void;
   /** GIF maker (video link/upload → ≤3 s GIF image on the board) */
   gifMaker?: BoardGifApi;
+  /** 2026-10-09, Lino: ⌘C / ⌘V of nodes between boards — this board's idea,
+   * and the server copy of another board's files / to-do lists */
+  clipboard?: {
+    ideaId: string;
+    importFrom: (sourceIdeaId: string, keys: string[], todoLists: string[]) => Promise<{ keys: Record<string, { key: string; src: string }>; todo_lists: Record<string, string> }>;
+  };
   /** live collaboration: the board as changed by someone else (or by a
    * live undo) — taken over as is, without notifying onChange */
   externalData?: { data: BoardData; nonce: number } | null;
@@ -548,6 +555,14 @@ export function IdeaBoard({
     // placed inside it would end up blurred behind the glass
     const taken = dataRef.current.elements.filter((el) => !hiddenNow.has(el.id));
     return freeSpot(x, y, w, h, [...taken, ...extra], visibleWorldRect(), avoidOverlap);
+  }
+
+  /** where pasted things go: at the mouse pointer, else the screen centre */
+  function pointerOrCenterWorld(): Point {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const p = lastPointer.current;
+    if (rect && p && p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom) return toWorld(p.x, p.y);
+    return viewportCenterWorld();
   }
 
   function viewportCenterWorld(): Point {
@@ -809,15 +824,35 @@ export function IdeaBoard({
     setMenu(null);
     setQuickAdd({ world: toWorld(client.x, client.y), client });
   }
-  function addGif(gif: { key: string; src: string; w: number; h: number }) {
+  function addGif(gif: { key: string; src: string; w: number; h: number }, slot?: Rect) {
     const at = gifAt ?? viewportCenterWorld();
     setGifAt(null);
     const w = Math.min(360, gif.w);
     const h = Math.round((w * gif.h) / Math.max(1, gif.w));
-    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    // from a progress node: exactly where it was (top-left, its width)
+    const spot = slot ? { x: slot.x, y: slot.y } : place(at.x - w / 2, at.y - h / 2, w, h, true);
     const el: MediaElement = { id: newId(), type: "image", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, asset_key: gif.key, src: gif.src, name: "clip.gif", mime: "image/gif" };
     addElements([el]);
     setSelection(new Set([el.id]));
+  }
+
+  // "Make GIF" (2026-10-09, Lino): the maker closes, a progress node in the
+  // video's format holds the spot until the GIF is ready and replaces it.
+  // Local to this browser — nothing is saved until the GIF exists.
+  const [pendingGifs, setPendingGifs] = useState<{ id: string; x: number; y: number; w: number; h: number; started: number }[]>([]);
+  function startGif(render: () => Promise<{ key: string; src: string; w: number; h: number }>, aspect: number) {
+    const at = gifAt ?? viewportCenterWorld();
+    setGifAt(null);
+    const a = Math.max(0.3, Math.min(4, aspect || 16 / 9));
+    const w = a >= 1 ? 360 : Math.round(360 * a);
+    const h = Math.round(w / a);
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const slot = { id: newId(), x: spot.x, y: spot.y, w, h, started: Date.now() };
+    setPendingGifs((p) => [...p, slot]);
+    render()
+      .then((gif) => addGif(gif, slot))
+      .catch(() => onError?.(t("ideaBoard.gif.renderFailed" as never)))
+      .finally(() => setPendingGifs((p) => p.filter((x) => x.id !== slot.id)));
   }
 
   // ── moodboard cards (2026-10-08) ──────────────────────────────────────
@@ -1096,6 +1131,112 @@ export function IdeaBoard({
     const groupIds = copies.filter((c) => c.type === "group").map((c) => c.id);
     const inGroups = new Set(copies.flatMap((c) => (c.type === "group" ? c.children : [])));
     setSelection(new Set(groupIds.length ? [...groupIds, ...copies.filter((c) => c.type !== "group" && !inGroups.has(c.id)).map((c) => c.id)] : copies.map((c) => c.id)));
+  }
+
+  // ── copy & paste nodes, also into another board (2026-10-09, Lino) ─────
+  // ⌘C puts the selection on the clipboard as marked JSON (and in
+  // localStorage, for browsers that won't hand the clipboard over); ⌘V on any
+  // board recognises it. From another board, files and to-do lists are copied
+  // server side first, so the pasted nodes don't depend on the original.
+  function selectionPayload(): string | null {
+    const ids = new Set(selectionRef.current);
+    if (!ids.size) return null;
+    for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
+    const elements = dataRef.current.elements.filter((el) => ids.has(el.id));
+    if (!elements.length) return null;
+    const connectors = dataRef.current.connectors.filter((c) => ids.has(c.from) && ids.has(c.to));
+    return BOARD_CLIPBOARD_MARKER + JSON.stringify({ v: 1, ideaId: clipboard?.ideaId ?? null, elements, connectors });
+  }
+  function copySelection(e?: ClipboardEvent): boolean {
+    const text = selectionPayload();
+    if (!text) return false;
+    try {
+      localStorage.setItem(BOARD_CLIPBOARD_KEY, JSON.stringify({ at: Date.now(), text }));
+    } catch {
+      // storage unavailable — the system clipboard still has it
+    }
+    if (e?.clipboardData) {
+      e.clipboardData.setData("text/plain", text);
+      e.preventDefault();
+    } else {
+      void navigator.clipboard?.writeText?.(text).catch(() => {});
+    }
+    return true;
+  }
+
+  async function pasteNodes(text: string, at: Point) {
+    let payload: { ideaId: string | null; elements: BoardElement[]; connectors: Connector[] };
+    try {
+      payload = JSON.parse(text.slice(BOARD_CLIPBOARD_MARKER.length));
+    } catch {
+      return;
+    }
+    let elements = payload.elements ?? [];
+    if (!elements.length) return;
+    const fromElsewhere = !!payload.ideaId && !!clipboard && payload.ideaId !== clipboard.ideaId;
+    if (fromElsewhere && clipboard && payload.ideaId) {
+      const keys = new Set<string>();
+      const lists = new Set<string>();
+      for (const el of elements) {
+        if ("asset_key" in el && el.asset_key) keys.add(el.asset_key);
+        if ("image_key" in el && el.image_key) keys.add(el.image_key);
+        if (el.type === "moodboard") el.items.forEach((it) => it.asset_key && keys.add(it.asset_key));
+        if (el.type === "todo") lists.add(el.list_id);
+      }
+      let res: Awaited<ReturnType<typeof clipboard.importFrom>>;
+      try {
+        res = await clipboard.importFrom(payload.ideaId, [...keys], [...lists]);
+      } catch {
+        onError?.(t("ideaBoard.pasteFailed"));
+        return;
+      }
+      const k = res.keys;
+      elements = elements
+        .map((el): BoardElement | null => {
+          let out = el;
+          if ("asset_key" in out && out.asset_key) {
+            const m = k[out.asset_key];
+            if (!m) return null; // its file couldn't be copied
+            out = { ...out, asset_key: m.key, src: m.src, thumb_src: null, srcset: null } as BoardElement;
+          }
+          if ("image_key" in out && out.image_key) {
+            const m = k[out.image_key];
+            out = (m ? { ...out, image_key: m.key, image_src: m.src, image_thumb_src: null, image_srcset: null } : { ...out, image_key: undefined, image_src: null }) as BoardElement;
+          }
+          if (out.type === "moodboard") {
+            out = { ...out, items: out.items.filter((it) => k[it.asset_key]).map((it) => ({ ...it, asset_key: k[it.asset_key].key, src: k[it.asset_key].src, thumb_src: null, srcset: null })) };
+          }
+          if (out.type === "todo") {
+            const nl = res.todo_lists[out.list_id];
+            if (!nl) return null;
+            out = { ...out, list_id: nl };
+          }
+          return out;
+        })
+        .filter((el): el is BoardElement => !!el);
+      if (!elements.length) return;
+    }
+    // new ids, placed around the pointer, on top of everything
+    const mapping = new Map<string, string>();
+    const box = boundsOf(elements);
+    const dx = box ? at.x - (box.x + box.w / 2) : 0;
+    const dy = box ? at.y - (box.y + box.h / 2) : 0;
+    let z = maxZ(dataRef.current.elements);
+    const copies = elements
+      .slice()
+      .sort((a, b) => a.z - b.z)
+      .map((el) => {
+        const id = newId();
+        mapping.set(el.id, id);
+        return { ...el, id, x: Math.round(el.x + dx), y: Math.round(el.y + dy), z: ++z } as BoardElement;
+      })
+      .map((el) => (el.type === "group" ? { ...el, children: el.children.map((c) => mapping.get(c)).filter((c): c is string => !!c) } : el));
+    const connectorCopies: Connector[] = (payload.connectors ?? [])
+      .filter((c) => mapping.has(c.from) && mapping.has(c.to))
+      .map((c) => ({ ...c, id: newId(), from: mapping.get(c.from)!, to: mapping.get(c.to)! }));
+    commit((d) => ({ ...d, elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
+    const inGroups = new Set(copies.flatMap((c) => (c.type === "group" ? c.children : [])));
+    setSelection(new Set(copies.filter((c) => !inGroups.has(c.id)).map((c) => c.id)));
   }
 
   // ── groups ────────────────────────────────────────────────────────────
@@ -2188,7 +2329,12 @@ export function IdeaBoard({
         openQuickAdd();
         return;
       }
-      if (mod && e.key.toLowerCase() === "v") {
+      if (mod && e.key.toLowerCase() === "c" && selectionRef.current.size && !window.getSelection()?.toString()) {
+        // the copy event (if the browser fires one) fills the clipboard too
+        copySelection();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "v" && !gifAt) {
         // a real paste event normally follows; if it doesn't, read the clipboard
         const pressedAt = Date.now();
         window.setTimeout(() => {
@@ -2244,7 +2390,8 @@ export function IdeaBoard({
     }
     function onPaste(e: ClipboardEvent) {
       lastPasteAt.current = Date.now();
-      if (!editable || isTyping()) return;
+      // the GIF maker handles its own paste (a video for the GIF only)
+      if (!editable || isTyping() || gifAt) return;
       const files = [...(e.clipboardData?.files ?? [])];
       if (files.length) {
         e.preventDefault();
@@ -2256,15 +2403,25 @@ export function IdeaBoard({
       e.preventDefault();
       pasteText(text);
     }
+    function onCopy(e: ClipboardEvent) {
+      if (!editable || isTyping() || window.getSelection()?.toString()) return;
+      copySelection(e);
+    }
     window.addEventListener("keydown", onKey);
     window.addEventListener("paste", onPaste);
+    window.addEventListener("copy", onCopy);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("paste", onPaste);
+      window.removeEventListener("copy", onCopy);
     };
   });
 
-  function pasteText(text: string, at: Point = viewportCenterWorld()) {
+  function pasteText(text: string, at: Point = pointerOrCenterWorld()) {
+      if (text.startsWith(BOARD_CLIPBOARD_MARKER)) {
+        void pasteNodes(text, at);
+        return;
+      }
       if (looksLikeUrl(text)) {
         void addLink(text, at, true);
       } else {
@@ -2297,7 +2454,8 @@ export function IdeaBoard({
           return;
         }
       }
-      const text = (await navigator.clipboard?.readText?.())?.trim();
+      const read: string | undefined = (await navigator.clipboard?.readText?.())?.trim();
+      const text = read || recentBoardClipboard();
       if (text) pasteText(text, at);
     } catch {
       // permission denied / not supported — nothing to paste
@@ -2876,6 +3034,20 @@ export function IdeaBoard({
           </svg>
         )}
 
+        {pendingGifs.map((g) => (
+          // "GIF wird erstellt …" — holds the GIF's spot until it's ready
+          <div
+            key={g.id}
+            className="absolute rounded-lg border border-white/15 bg-[#232325] shadow-[0_2px_10px_rgba(0,0,0,0.35)] flex flex-col items-center justify-center gap-3 px-6 pointer-events-none"
+            style={{ left: g.x, top: g.y, width: g.w, height: g.h, zIndex: 100001 }}
+          >
+            <span className="text-2xl">🎞</span>
+            <span className="text-xs text-white/70">{t("ideaBoard.gif.making" as never)}</span>
+            <div className="w-full max-w-[220px] h-1.5 rounded-full bg-white/10 overflow-hidden">
+              <div className="h-full rounded-full bg-blue-500 gif-progress" />
+            </div>
+          </div>
+        ))}
         {marquee && (
           <div
             className="absolute border border-blue-400 bg-blue-500/10 pointer-events-none"
@@ -3515,8 +3687,17 @@ export function IdeaBoard({
           onKeyDown={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
+          // a video dropped onto the maker is only for the GIF (2026-10-09, Lino)
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
         >
-          <BoardGifMaker api={gifMaker} onClose={() => setGifAt(null)} onDone={addGif} />
+          <BoardGifMaker api={gifMaker} onClose={() => setGifAt(null)} onDone={(g) => addGif(g)} onStart={startGif} />
         </div>
       )}
       {editable && tagEditorOpen && (
@@ -3610,6 +3791,20 @@ export function IdeaBoard({
     </BoardZoomContext.Provider>
     </BoardDownloadContext.Provider>
   );
+}
+
+const BOARD_CLIPBOARD_MARKER = "subshot-board-nodes:";
+const BOARD_CLIPBOARD_KEY = "subshot-board-clipboard";
+/** the last copied nodes (≤ 1 h old) when the system clipboard can't be read */
+function recentBoardClipboard(): string | null {
+  try {
+    const raw = localStorage.getItem(BOARD_CLIPBOARD_KEY);
+    if (!raw) return null;
+    const { at, text } = JSON.parse(raw) as { at: number; text: string };
+    return Date.now() - at < 3600_000 ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 function ContextMenu({ x, y, onClose, children }: { x: number; y: number; onClose: () => void; children: React.ReactNode }) {

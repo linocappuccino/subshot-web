@@ -693,6 +693,10 @@ function IdeaBoardScreen({
                 await api.boardGifDiscard(idea.id, key);
               },
             }}
+            clipboard={{
+              ideaId: idea.id,
+              importFrom: (sourceIdeaId, keys, todoLists) => api.boardPaste(idea.id, { source_idea_id: sourceIdeaId, keys, todo_lists: todoLists }),
+            }}
             createLocationMap={async (lat, lng, style) => {
               const r = await api.boardLocationMap(idea.id, lat, lng, style);
               return { key: r.key, src: r.url, style: r.style };

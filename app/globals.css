@@ -306,3 +306,14 @@ html {
 .board-sticky .board-text,
 .board-sticky .board-text * { color: inherit; }
 .board-sticky [data-empty="true"]::before { color: rgba(43, 42, 38, 0.4); }
+
+/* 2026-10-09, Lino: progress node while a GIF is being made — eases towards
+   92 % (a GIF takes ~5–40 s); the finished GIF replaces the node */
+@keyframes subshot-gif-progress {
+  0% { width: 4%; }
+  30% { width: 55%; }
+  100% { width: 92%; }
+}
+.gif-progress {
+  animation: subshot-gif-progress 25s cubic-bezier(0.1, 0.6, 0.3, 1) forwards;
+}

@@ -42,10 +42,14 @@ export function BoardGifMaker({
   api,
   onClose,
   onDone,
+  onStart,
 }: {
   api: BoardGifApi;
   onClose: () => void;
   onDone: (gif: { key: string; src: string; w: number; h: number }) => void;
+  /** 2026-10-09, Lino: "Make GIF" closes the maker at once — the board shows
+   * a progress node (in the video's format) until `render` resolves */
+  onStart?: (render: () => Promise<{ key: string; src: string; w: number; h: number }>, aspect: number) => void;
 }) {
   const { t } = useLanguage();
   const tt = t as unknown as (k: string) => string;
@@ -222,6 +226,24 @@ export function BoardGifMaker({
 
   async function makeGif() {
     setError(null);
+    if (onStart) {
+      const s0 = Math.round(start * 100) / 100;
+      const l0 = Math.round(len * 100) / 100;
+      const pending = uploadPromise.current;
+      const known = sourceKey.current;
+      done.current = true; // the render job owns (and deletes) the source now
+      onStart(async () => {
+        const key = known ?? (await pending)?.key;
+        if (!key) throw new Error("no source");
+        try {
+          return await api.render(key, s0, l0);
+        } catch (e) {
+          void api.discard(key).catch(() => {});
+          throw e;
+        }
+      }, dims && dims.w && dims.h ? dims.w / dims.h : 16 / 9);
+      return;
+    }
     setStage("rendering");
     try {
       const key = sourceKey.current ?? (await uploadPromise.current)?.key;
