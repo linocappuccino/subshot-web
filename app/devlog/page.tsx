@@ -131,7 +131,9 @@ function DevlogPageInner() {
                   </svg>
                   <input
                     ref={inputRef}
-                    type="search"
+                    type="text"
+                    inputMode="search"
+                    enterKeyHint="search"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => e.key === "Escape" && setQuery("")}
