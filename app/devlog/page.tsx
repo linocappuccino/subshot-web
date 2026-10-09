@@ -77,9 +77,8 @@ function DevlogPageInner() {
             </Button>
             <h1 className="text-xl font-bold mb-1">{open.title}</h1>
             <p className="text-xs text-white/40 mb-6">{open.date}</p>
-            {open.cover && (
-              <img src={open.cover} alt="" className="w-full rounded-2xl mb-6 aspect-video object-cover" />
-            )}
+            {/* 2026-10-09, Lino: the feature image is only the thumbnail in the
+                grid, not shown in the post itself */}
             <div
               className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-a:text-blue-400"
               // 2026-09-16 (security audit, low/defense-in-depth) — Ghost
