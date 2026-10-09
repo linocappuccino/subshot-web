@@ -25,6 +25,11 @@ interface DevlogPost {
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
+/** the API serves Ghost's images under /devlog-content/ — those paths must
+ * point at the API, not at this app's own domain (2026-10-09) */
+const absMedia = (s: string) => s.replace(/(["'(\s])\/devlog-content\//g, `$1${BASE_URL}/devlog-content/`);
+const absCover = (c: string | null) => (c && c.startsWith("/devlog-content/") ? `${BASE_URL}${c}` : c);
+
 export default function DevlogPage() {
   return (
     <Suspense fallback={null}>
@@ -45,7 +50,7 @@ function DevlogPageInner() {
     fetch(`${BASE_URL}/devlog/posts`)
       .then((r) => r.json())
       .then((data) => {
-        const loaded: DevlogPost[] = data.posts ?? [];
+        const loaded: DevlogPost[] = (data.posts ?? []).map((p: DevlogPost) => ({ ...p, cover: absCover(p.cover), html: absMedia(` ${p.html ?? ""}`).slice(1) }));
         setPosts(loaded);
         // Direct-link support (2026-07-14) — the LinkedIn auto-post links
         // here with ?post=<ghost-id>, same convention as SUBLI's
@@ -64,7 +69,7 @@ function DevlogPageInner() {
 
   return (
     <AppShell>
-      <div className="max-w-2xl mx-auto w-full px-4 sm:px-6 py-8">
+      <div className={`${open ? "max-w-2xl" : "max-w-6xl"} mx-auto w-full px-4 sm:px-6 py-8`}>
         {open ? (
           <div>
             <Button variant="ghost" size="sm" onClick={() => setOpen(null)} className="mb-4">
@@ -113,20 +118,27 @@ function DevlogPageInner() {
             ) : posts.length === 0 ? (
               <p className="text-sm text-white/40">{t("devlogPage.noEntries")}</p>
             ) : (
-              <div className="space-y-3">
+              // 2026-10-09, Lino: the posts as a grid; each post's attached
+              // image is its preview
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {posts.map((p) => (
                   <button
                     key={p.id}
                     onClick={() => setOpen(p)}
-                    className="w-full text-left bg-white/[0.035] border border-white/8 hover:border-white/20 rounded-2xl p-4 flex gap-4 transition-colors"
+                    className="group text-left bg-white/[0.035] border border-white/8 hover:border-white/20 rounded-2xl overflow-hidden flex flex-col transition-colors"
                   >
-                    {p.cover && (
-                      <img src={p.cover} alt="" className="w-24 h-24 rounded-xl object-cover shrink-0" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-xs text-white/40 mb-1">{p.date}</p>
-                      <h2 className="font-semibold mb-1 truncate">{p.title}</h2>
-                      <p className="text-sm text-white/50 line-clamp-2">{p.preview}</p>
+                    <div className="aspect-[16/10] w-full bg-gradient-to-br from-white/[0.07] to-white/[0.02] overflow-hidden">
+                      {p.cover ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={p.cover} alt="" loading="lazy" className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center font-anton uppercase text-2xl tracking-wide text-white/15 select-none">SUBSHOT</div>
+                      )}
+                    </div>
+                    <div className="p-4 flex flex-col gap-1.5 min-w-0">
+                      <p className="text-xs text-white/40">{p.date}</p>
+                      <h2 className="font-semibold leading-snug line-clamp-2">{p.title}</h2>
+                      <p className="text-sm text-white/50 line-clamp-3">{p.preview}</p>
                     </div>
                   </button>
                 ))}
