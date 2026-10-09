@@ -59,6 +59,7 @@ import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardScenesBar } from "./BoardScenes";
+import { BoardQuickAdd, type QuickAddItem } from "./BoardQuickAdd";
 import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
@@ -793,6 +794,21 @@ export function IdeaBoard({
 
   // ── GIF maker (2026-10-08) ────────────────────────────────────────────
   const [gifAt, setGifAt] = useState<Point | null>(null);
+
+  // ── quick add: Shift + Space (2026-10-09, Lino) ───────────────────────
+  // a search field in the middle: type, ↑/↓, Enter → the node is placed
+  // where the mouse pointer is (the centre of the screen without one)
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const [quickAdd, setQuickAdd] = useState<{ world: Point; client: { x: number; y: number } } | null>(null);
+  function openQuickAdd() {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const p = lastPointer.current;
+    const inside = p && p.x >= rect.left && p.x <= rect.right && p.y >= rect.top && p.y <= rect.bottom;
+    const client = inside ? p : { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    setMenu(null);
+    setQuickAdd({ world: toWorld(client.x, client.y), client });
+  }
   function addGif(gif: { key: string; src: string; w: number; h: number }) {
     const at = gifAt ?? viewportCenterWorld();
     setGifAt(null);
@@ -1560,6 +1576,50 @@ export function IdeaBoard({
     setMenu(null);
     fn();
   }
+  // what the quick add (Shift + Space) can place — the words cover German,
+  // English and the usual synonyms
+  const quickAddItems: QuickAddItem[] = [
+    { id: "text", icon: "T", label: t("ideaBoard.menu.text"), hint: "T", keywords: "text textbox schrift titel überschrift notiz text box heading" },
+    { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
+    { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
+    { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
+    { id: "upload", icon: "🖼", label: t("ideaBoard.menu.upload"), keywords: "bild foto video audio pdf datei hochladen upload image photo file" },
+    { id: "link", icon: "🔗", label: t("ideaBoard.menu.link"), keywords: "link url webseite website youtube vimeo instagram" },
+    { id: "color", icon: "🎨", label: t("ideaBoard.menu.color"), keywords: "farbe hex farbcode swatch color colour" },
+    { id: "palette", icon: "🌈", label: t("ideaBoard.menu.palette"), keywords: "farbpalette palette farben colors colours" },
+    ...(createLocationMap ? [{ id: "location", icon: "📍", label: t("ideaBoard.menu.location"), keywords: "location ort adresse karte drehort map address satellit" }] : []),
+    ...(todoCtx?.api ? [{ id: "todo", icon: "☑️", label: t("ideaBoard.menu.todo"), keywords: "todo to-do aufgaben liste checkliste tasks checklist" }] : []),
+    ...(gifMaker ? [{ id: "gif", icon: "🎞", label: t("ideaBoard.menu.gif"), keywords: "gif animation loop clip video ausschnitt" }] : []),
+    { id: "draw", icon: "✏️", label: t("ideaBoard.menu.draw"), hint: "P", keywords: "zeichnen malen stift skizze draw pen sketch" },
+  ];
+  function quickAddPick(id: string) {
+    const q = quickAdd;
+    setQuickAdd(null);
+    if (!q) return;
+    const at = q.world;
+    switch (id) {
+      case "text": return addText(at);
+      case "sticky": return addSticky(at);
+      case "scene": return addScene(at, true);
+      case "moodboard": return addMoodboard(at);
+      case "todo": return void addTodo(at);
+      case "gif": return setGifAt(at);
+      case "color": return setCardEditor({ kind: "color", id: null, at });
+      case "palette": return setCardEditor({ kind: "palette", id: null, at });
+      case "location": return setCardEditor({ kind: "location", id: null, at });
+      case "draw": return setTool("draw");
+      case "upload":
+        uploadAtRef.current = at;
+        fileInputRef.current?.click();
+        return;
+      case "link": {
+        const rect = viewportRef.current?.getBoundingClientRect();
+        if (rect) setMenu({ x: q.client.x - rect.left, y: q.client.y - rect.top, world: at, targetId: null, linkInput: true });
+        return;
+      }
+    }
+  }
+
 
   function activate(el: BoardElement) {
     if (el.type === "group" && editable) {
@@ -1796,6 +1856,7 @@ export function IdeaBoard({
   }
 
   function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType !== "touch") lastPointer.current = { x: e.clientX, y: e.clientY };
     if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (onPresenceRef.current && e.pointerType !== "touch") onPresenceRef.current({ cursor: toWorld(e.clientX, e.clientY) });
     const op = opRef.current;
@@ -2122,6 +2183,11 @@ export function IdeaBoard({
         return;
       }
       if (isTyping() || !editable) return;
+      if (e.code === "Space" && e.shiftKey && !mod) {
+        e.preventDefault();
+        openQuickAdd();
+        return;
+      }
       if (mod && e.key.toLowerCase() === "v") {
         // a real paste event normally follows; if it doesn't, read the clipboard
         const pressedAt = Date.now();
@@ -2264,7 +2330,8 @@ export function IdeaBoard({
       return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable;
     }
     function down(e: KeyboardEvent) {
-      if (e.code !== "Space" || typing()) return;
+      // Shift + Space opens the quick add instead of panning
+      if (e.code !== "Space" || e.shiftKey || typing()) return;
       e.preventDefault();
       if (!spaceHeld.current) {
         spaceHeld.current = true;
@@ -2433,7 +2500,10 @@ export function IdeaBoard({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      onPointerLeave={() => onPresenceRef.current?.({ cursor: null })}
+      onPointerLeave={() => {
+        lastPointer.current = null;
+        onPresenceRef.current?.({ cursor: null });
+      }}
       onDragOver={(e) => editable && e.preventDefault()}
       onDrop={onDrop}
       onContextMenu={(e) => editable && !(e.target as HTMLElement).closest("[contenteditable='true'],a,video,audio") && e.preventDefault()}
@@ -3507,6 +3577,9 @@ export function IdeaBoard({
             }
           }}
         />
+      )}
+      {quickAdd && (
+        <BoardQuickAdd items={quickAddItems} placeholder={t("ideaBoard.quickAdd.placeholder")} emptyLabel={t("ideaBoard.quickAdd.empty")} onPick={quickAddPick} onClose={() => setQuickAdd(null)} />
       )}
       <BoardScenesBar
         views={data.views ?? []}
