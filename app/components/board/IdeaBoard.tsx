@@ -133,6 +133,9 @@ type Op =
       /** smart guides: the moving set's bounds at the start + what it can align to */
       box: Rect;
       others: Rect[];
+      /** Alt-drag (2026-10-11, Lino): copies were made at pointer-down and are what moves;
+       *  without a real drag they are removed again and the original selection comes back */
+      duplicated?: { selection: Set<string>; clickedId: string };
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string; target: string | null }
@@ -504,7 +507,8 @@ export function IdeaBoard({
     // a drag in progress keeps its own nodes where the pointer has them
     if (op && op.kind === "move" && op.moved) {
       const mine = new Map(dataRef.current.elements.filter((el) => op.origin.has(el.id)).map((el) => [el.id, el]));
-      next = { ...next, elements: next.elements.map((el) => mine.get(el.id) ?? el) };
+      const known = new Set(next.elements.map((el) => el.id));
+      next = { ...next, elements: [...next.elements.map((el) => mine.get(el.id) ?? el), ...[...mine.values()].filter((el) => !known.has(el.id))] };
     }
     apply(next, { notify: false });
     const ids = new Set(next.elements.map((el) => el.id));
@@ -1138,9 +1142,10 @@ export function IdeaBoard({
     setSelectedConnector(null);
   }
 
-  function duplicateSelection() {
-    const ids = new Set(selectionRef.current);
-    if (ids.size === 0) return;
+  /** copies of the given nodes (groups with their members, connectors between them) on top,
+   *  offset by d; returns the copies, the id mapping and what to select afterwards */
+  function cloneNodes(selected: Set<string>, d: number) {
+    const ids = new Set(selected);
     for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
     const mapping = new Map<string, string>();
     let z = maxZ(dataRef.current.elements);
@@ -1150,16 +1155,23 @@ export function IdeaBoard({
       .map((el) => {
         const id = newId();
         mapping.set(el.id, id);
-        return { ...el, id, x: el.x + GRID, y: el.y + GRID, z: ++z } as BoardElement;
+        return { ...el, id, x: el.x + d, y: el.y + d, z: ++z } as BoardElement;
       })
       .map((el) => (el.type === "group" ? { ...el, children: el.children.map((c) => mapping.get(c) ?? c) } : el));
     const connectorCopies: Connector[] = dataRef.current.connectors
       .filter((c) => mapping.has(c.from) && mapping.has(c.to))
       .map((c) => ({ ...c, id: newId(), from: mapping.get(c.from)!, to: mapping.get(c.to)! }));
-    commit((d) => ({ ...d, elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
     const groupIds = copies.filter((c) => c.type === "group").map((c) => c.id);
     const inGroups = new Set(copies.flatMap((c) => (c.type === "group" ? c.children : [])));
-    setSelection(new Set(groupIds.length ? [...groupIds, ...copies.filter((c) => c.type !== "group" && !inGroups.has(c.id)).map((c) => c.id)] : copies.map((c) => c.id)));
+    const select = new Set(groupIds.length ? [...groupIds, ...copies.filter((c) => c.type !== "group" && !inGroups.has(c.id)).map((c) => c.id)] : copies.map((c) => c.id));
+    return { copies, connectorCopies, mapping, select };
+  }
+
+  function duplicateSelection() {
+    if (selectionRef.current.size === 0) return;
+    const { copies, connectorCopies, select } = cloneNodes(selectionRef.current, GRID);
+    commit((d) => ({ ...d, elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
+    setSelection(select);
   }
 
   // ── copy & paste nodes, also into another board (2026-10-09, Lino) ─────
@@ -2133,7 +2145,7 @@ export function IdeaBoard({
     }
 
     if (elNode && editable) {
-      const id = elNode.dataset.elId!;
+      let id = elNode.dataset.elId!;
       setSelectedConnector(null);
       let ids = selectionRef.current;
       if (e.shiftKey || e.metaKey || e.ctrlKey) {
@@ -2145,6 +2157,20 @@ export function IdeaBoard({
       } else if (!ids.has(id)) {
         ids = new Set([id]);
         setSelection(ids);
+      }
+      // Alt + drag duplicates (2026-10-11, Lino — like Figma/Milanote): the copies are made
+      // right here, exactly on top of the originals, and the drag moves the copies
+      const snapshot = dataRef.current;
+      let duplicated: { selection: Set<string>; clickedId: string } | undefined;
+      if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+        const { copies, connectorCopies, mapping, select } = cloneNodes(ids, 0);
+        if (copies.length) {
+          duplicated = { selection: new Set(ids), clickedId: id };
+          apply({ ...snapshot, elements: [...snapshot.elements, ...copies], connectors: [...snapshot.connectors, ...connectorCopies] }, { notify: false });
+          ids = select;
+          id = mapping.get(id) ?? [...select][0];
+          setSelection(ids);
+        }
       }
       const moving = new Set(ids);
       for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => moving.add(c));
@@ -2163,10 +2189,11 @@ export function IdeaBoard({
           return el?.type === "group" ? el.children.find((c) => origin.has(c)) ?? id : id;
         })(),
         moved: false,
-        snapshot: dataRef.current,
+        snapshot,
         clickedId: id,
         onGroupTitle: !!target.closest("[data-group-title]"),
-        wasSelected: selectionRef.current.size === 1 && selectionRef.current.has(id),
+        wasSelected: !duplicated && selectionRef.current.size === 1 && selectionRef.current.has(id),
+        duplicated,
         ...(() => {
           const all = dataRef.current.elements;
           const hiddenNow = hiddenElementIds(all);
@@ -2477,6 +2504,12 @@ export function IdeaBoard({
           apply(dataRef.current, { history: op.snapshot });
           return;
         }
+        if (op.duplicated) {
+          // Alt-click without dragging: no copy
+          apply(op.snapshot, { notify: false });
+          setSelection(op.duplicated.selection);
+          op.clickedId = op.duplicated.clickedId;
+        }
         const now = Date.now();
         const last = lastClick.current;
         const isDouble = now - last.time < DOUBLE_CLICK_MS && last.id === op.clickedId;
@@ -2566,6 +2599,10 @@ export function IdeaBoard({
     pointers.current.delete(e.pointerId);
     const op = opRef.current;
     if (op && op.kind === "move" && op.moved) apply(dataRef.current, { history: op.snapshot });
+    else if (op && op.kind === "move" && op.duplicated) {
+      apply(op.snapshot, { notify: false });
+      setSelection(op.duplicated.selection);
+    }
     if (op && op.kind === "resize") apply(dataRef.current, { history: op.snapshot });
     opRef.current = null;
     setBusyOp(null);
