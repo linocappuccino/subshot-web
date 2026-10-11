@@ -667,6 +667,31 @@ export function layoutMoodboardBase(items: MoodboardItem[], width: number, rowH:
  * content — "Templates können nur mit leeren Nodes geöffnet werden". `slot`
  * says what was there; dropping / picking a file, link or color fills it
  * (the node keeps its id, so arrows and groups stay attached). */
+/** 2026-10-11, Lino: LUT preview — drop a LOG image and a .cube LUT: the browser renders the
+ * graded version once (lib/lut.ts) and stores it as a normal board image; a wipe slider switches
+ * between LOG and LUT. Two images instead: the two are compared with the slider.
+ * asset_key = LOG / first image, image_key = graded / second image, lut_key = the .cube file. */
+export interface LutPreviewElement extends BaseElement {
+  type: "lutpreview";
+  title: string;
+  mode: "lut" | "compare";
+  asset_key?: string;
+  src?: string | null;
+  thumb_src?: string | null;
+  srcset?: string | null;
+  image_key?: string;
+  image_src?: string | null;
+  image_thumb_src?: string | null;
+  image_srcset?: string | null;
+  lut_key?: string;
+  lut_src?: string | null;
+  lut_name?: string;
+  a_name?: string;
+  b_name?: string;
+  /** width / height of the images */
+  ar?: number;
+}
+
 export type PlaceholderSlot = "image" | "video" | "audio" | "pdf" | "file" | "link" | "color";
 export interface PlaceholderElement extends BaseElement {
   type: "placeholder";
@@ -675,7 +700,7 @@ export interface PlaceholderElement extends BaseElement {
 }
 export const MEDIA_SLOTS: PlaceholderSlot[] = ["image", "video", "audio", "pdf", "file"];
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);
@@ -878,8 +903,9 @@ export function forSave(data: BoardData): BoardData {
     views: data.views ?? [],
     elements: data.elements.map((el) => {
       if (el.type === "moodboard") return { ...el, items: el.items.map(({ src: _src, thumb_src: _t, srcset: _ss, ...it }) => it) } as BoardElement;
-      if (!("src" in el) && !("image_src" in el)) return el;
+      if (!("src" in el) && !("image_src" in el) && !("lut_src" in el)) return el;
       const copy: Record<string, unknown> = { ...el };
+      delete copy.lut_src;
       delete copy.src;
       delete copy.image_src;
       delete copy.thumb_src;

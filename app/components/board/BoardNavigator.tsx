@@ -49,6 +49,9 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
     case "moodboard":
       parts.push(el.title, ...el.items.map((it) => it.name));
       break;
+    case "lutpreview":
+      parts.push(el.title, el.lut_name ?? "", el.a_name ?? "", el.b_name ?? "", "LUT");
+      break;
     case "placeholder":
       parts.push(el.title);
       break;
@@ -59,7 +62,7 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
 
 const TYPE_ICON: Record<BoardElement["type"], string> = {
   text: "📝", sticky: "🗒️", scene: "🎬", link: "🔗", image: "🖼️", video: "🎞️", audio: "🎵", pdf: "📄", file: "📎",
-  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚",
+  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚", lutpreview: "◐",
 };
 
 export function elementLabel(el: BoardElement, t: (k: never) => string): string {
@@ -86,6 +89,8 @@ export function elementLabel(el: BoardElement, t: (k: never) => string): string 
       return tt("ideaBoard.search.typeDrawing");
     case "moodboard":
       return el.title || `${tt("ideaBoard.moodboard.label")} (${el.items.length})`;
+    case "lutpreview":
+      return el.title || (el.lut_name ? `${tt("ideaBoard.lut.label")} – ${el.lut_name}` : tt("ideaBoard.lut.label"));
     case "placeholder":
       return el.title || tt(`ideaBoard.placeholder.${el.slot}`);
     default:

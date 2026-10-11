@@ -55,6 +55,7 @@ import {
   type TodoElement,
   type PlaceholderElement,
   type BoardTemplate,
+  type LutPreviewElement,
   MEDIA_SLOTS,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
@@ -68,6 +69,8 @@ import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
 import { BoardDownloadContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
+import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
+import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
  * with text boxes, uploaded images/videos/audio/PDFs, link bookmarks,
@@ -858,7 +861,7 @@ export function IdeaBoard({
   // from the Finder) becomes its image — while hovering, the card shows that
   // its image will be set / replaced. Moodboards get the same hint.
   const [imageDropTarget, setImageDropTarget] = useState<string | null>(null);
-  function imageTargetAt(w: Point, exclude: Set<string>, kinds: ("scene" | "moodboard")[]): BoardElement | null {
+  function imageTargetAt(w: Point, exclude: Set<string>, kinds: ("scene" | "moodboard" | "lutpreview")[]): BoardElement | null {
     const hiddenNow = hiddenElementIds(dataRef.current.elements);
     let best: BoardElement | null = null;
     for (const x of dataRef.current.elements) {
@@ -886,6 +889,132 @@ export function IdeaBoard({
       .then((gif) => addGif(gif, slot))
       .catch(() => onError?.(t("ideaBoard.gif.renderFailed" as never)))
       .finally(() => setPendingGifs((p) => p.filter((x) => x.id !== slot.id)));
+  }
+
+  // ── LUT preview (2026-10-11, Lino) ──────────────────────────────────────
+  // a LOG image + a .cube LUT: the graded version is rendered once in this browser (lib/lut.ts, the
+  // LUT Previewer's pipeline: raw pixels, exact trilinear) and stored as a normal board image next
+  // to the LOG one; two images instead are compared as they are. The LUT file is kept, so a new
+  // image dropped later gets the same LUT.
+  const lutInputRef = useRef<HTMLInputElement>(null);
+  const lutTarget = useRef<string | null>(null);
+  const [lutBusy, setLutBusy] = useState<Record<string, string>>({});
+  const isCubeFile = (f: File) => /\.cube$/i.test(f.name);
+  const isStillImage = (f: File) => guessMime(f).startsWith("image/") && guessMime(f) !== "image/gif";
+
+  function lutHeight(w: number, ar: number) {
+    return Math.round(LUT_HEADER + (w - LUT_PAD * 2) / Math.max(0.2, ar) + LUT_PAD);
+  }
+
+  function addLutPreview(at: Point) {
+    const w = 480;
+    const h = lutHeight(w, 16 / 9);
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: LutPreviewElement = { id: newId(), type: "lutpreview", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "", mode: "lut" };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+    pickLutFiles(el.id);
+  }
+
+  function pickLutFiles(id: string) {
+    lutTarget.current = id;
+    lutInputRef.current?.click();
+  }
+
+  async function addLutFiles(id: string, files: File[]) {
+    if (!uploadFile) return;
+    const imgs = files.filter(isStillImage);
+    const cube = files.find(isCubeFile) ?? null;
+    if (!imgs.length && !cube) {
+      onError?.(t("ideaBoard.lut.unsupported" as never));
+      return;
+    }
+    const current = () => dataRef.current.elements.find((x): x is LutPreviewElement => x.id === id && x.type === "lutpreview") ?? null;
+    const el0 = current();
+    if (!el0) return;
+    const busy = (msg: string | null) =>
+      setLutBusy((b) => {
+        const n = { ...b };
+        if (msg) n[id] = msg;
+        else delete n[id];
+        return n;
+      });
+    const patch = (p: Partial<LutPreviewElement>) => {
+      const el = current();
+      if (!el) return;
+      const next = { ...p } as Partial<LutPreviewElement>;
+      if (p.ar) next.h = lutHeight(el.w, p.ar);
+      updateElement(id, next as Partial<BoardElement>, { history: true });
+    };
+    const put = (blob: Blob, name: string, mime: string) => uploadFile(new File([blob], name, { type: mime }), mime, () => {});
+    const base = (n: string) => n.replace(/\.[^.]+$/, "") || "bild";
+    const noB = { image_key: undefined, image_src: null, image_thumb_src: null, image_srcset: null, b_name: "" };
+    let decoded: DecodedImage | null = null;
+    busy(t("ideaBoard.lut.working" as never));
+    try {
+      // two images: compared as they are (the first two)
+      if (imgs.length >= 2) {
+        const [size, ua, ub] = await Promise.all([mediaSize(imgs[0], "image"), uploadFile(imgs[0], guessMime(imgs[0]), () => {}), uploadFile(imgs[1], guessMime(imgs[1]), () => {})]);
+        patch({
+          mode: "compare",
+          asset_key: ua.key, src: ua.src, thumb_src: null, srcset: null, a_name: imgs[0].name,
+          image_key: ub.key, image_src: ub.src, image_thumb_src: null, image_srcset: null, b_name: imgs[1].name,
+          ...(size ? { ar: size.w / size.h } : {}),
+        });
+        return;
+      }
+      // the LUT: the dropped one, or the one the node already has
+      let lutText: string | null = null;
+      let lutPatch: Partial<LutPreviewElement> = {};
+      if (cube) {
+        lutText = await cube.text();
+        parseCubeLut(lutText); // a broken file stops here, before anything is uploaded
+        const up = await uploadFile(new File([lutText], cube.name, { type: "text/plain" }), "text/plain", () => {});
+        lutPatch = { lut_key: up.key, lut_src: up.src, lut_name: lutNameFromFileName(cube.name) };
+      } else if (el0.mode === "lut" && el0.lut_src) {
+        lutText = await (await fetch(el0.lut_src)).text();
+      }
+      const img = imgs[0] ?? null;
+      // one image onto a node that shows one image without a LUT: the second image → compare
+      if (img && !lutText && el0.src && !el0.image_src) {
+        const ub = await uploadFile(img, guessMime(img), () => {});
+        patch({ mode: "compare", a_name: el0.a_name || "1", image_key: ub.key, image_src: ub.src, image_thumb_src: null, image_srcset: null, b_name: img.name });
+        return;
+      }
+      if (img) decoded = await decodeLogImage(img);
+      else if (el0.src) decoded = await decodeLogBlob(await (await fetch(el0.src)).blob());
+      if (!decoded) {
+        // only a LUT so far: kept until an image arrives
+        patch({ mode: "lut", ...lutPatch });
+        return;
+      }
+      const ar = decoded.width / decoded.height;
+      if (!lutText) {
+        // only the LOG image so far — through the same pipeline, so LOG and LUT match later
+        const ua = await put(await renderPlain(decoded), `${base(img!.name)}.jpg`, "image/jpeg");
+        patch({ mode: "lut", asset_key: ua.key, src: ua.src, thumb_src: null, srcset: null, a_name: img!.name, ...noB, ar });
+        return;
+      }
+      const lut = parseCubeLut(lutText);
+      const { log, graded } = await renderLogAndGraded(decoded, lut);
+      const name = lutPatch.lut_name ?? el0.lut_name ?? "LUT";
+      const stem = base(img?.name ?? el0.a_name ?? "bild");
+      const [ua, ub] = await Promise.all([img ? put(log, `${stem}.jpg`, "image/jpeg") : Promise.resolve(null), put(graded, `${stem} – ${name}.jpg`, "image/jpeg")]);
+      patch({
+        mode: "lut",
+        ...lutPatch,
+        ...(ua ? { asset_key: ua.key, src: ua.src, thumb_src: null, srcset: null, a_name: img!.name } : {}),
+        image_key: ub.key, image_src: ub.src, image_thumb_src: null, image_srcset: null, b_name: "",
+        ar,
+      });
+    } catch (err) {
+      console.error("[lut preview]", err);
+      onError?.(err instanceof Error && /LUT|cube|Datei/i.test(err.message) ? err.message : t("ideaBoard.lut.failed" as never));
+    } finally {
+      decoded?.bitmap.close();
+      busy(null);
+    }
   }
 
   // ── moodboard cards (2026-10-08) ──────────────────────────────────────
@@ -1222,6 +1351,7 @@ export function IdeaBoard({
         if ("asset_key" in el && el.asset_key) keys.add(el.asset_key);
         if ("image_key" in el && el.image_key) keys.add(el.image_key);
         if (el.type === "moodboard") el.items.forEach((it) => it.asset_key && keys.add(it.asset_key));
+        if (el.type === "lutpreview" && el.lut_key) keys.add(el.lut_key);
         if (el.type === "todo") lists.add(el.list_id);
       }
       let res: Awaited<ReturnType<typeof clipboard.importFrom>>;
@@ -1243,6 +1373,10 @@ export function IdeaBoard({
           if ("image_key" in out && out.image_key) {
             const m = k[out.image_key];
             out = (m ? { ...out, image_key: m.key, image_src: m.src, image_thumb_src: null, image_srcset: null } : { ...out, image_key: undefined, image_src: null }) as BoardElement;
+          }
+          if (out.type === "lutpreview" && out.lut_key) {
+            const m = k[out.lut_key];
+            out = (m ? { ...out, lut_key: m.key, lut_src: m.src } : { ...out, lut_key: undefined, lut_src: null }) as BoardElement;
           }
           if (out.type === "moodboard") {
             out = { ...out, items: out.items.filter((it) => k[it.asset_key]).map((it) => ({ ...it, asset_key: k[it.asset_key].key, src: k[it.asset_key].src, thumb_src: null, srcset: null })) };
@@ -1938,6 +2072,7 @@ export function IdeaBoard({
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
     { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
+    ...(uploadFile ? [{ id: "lutpreview", icon: "◐", label: t("ideaBoard.menu.lutpreview" as never), keywords: "lut preview cube log grading look farbe vergleich vorher nachher compare before after" }] : []),
     { id: "upload", icon: "🖼", label: t("ideaBoard.menu.upload"), keywords: "bild foto video audio pdf datei hochladen upload image photo file" },
     { id: "link", icon: "🔗", label: t("ideaBoard.menu.link"), keywords: "link url webseite website youtube vimeo instagram" },
     { id: "color", icon: "🎨", label: t("ideaBoard.menu.color"), keywords: "farbe hex farbcode swatch color colour" },
@@ -1958,6 +2093,7 @@ export function IdeaBoard({
       case "sticky": return addSticky(at);
       case "scene": return addScene(at, true);
       case "moodboard": return addMoodboard(at);
+      case "lutpreview": return addLutPreview(at);
       case "todo": return void addTodo(at);
       case "gif": return setGifAt(at);
       case "color": return setCardEditor({ kind: "color", id: null, at });
@@ -2844,6 +2980,12 @@ export function IdeaBoard({
       void fillPlaceholderWithFile(phFile.id, files[0]);
       return;
     }
+    // a LUT preview under the pointer takes images and .cube files (2026-10-11)
+    const lutEl = imageTargetAt(at, new Set(), ["lutpreview"]);
+    if (lutEl && files.some((f) => isStillImage(f) || isCubeFile(f))) {
+      void addLutFiles(lutEl.id, files);
+      return;
+    }
     // the same card the drop hint showed (topmost scene / moodboard under the pointer)
     const sceneEl = imageTargetAt(at, new Set(), files.length === 1 ? ["scene", "moodboard"] : ["moodboard"]);
     if (sceneEl?.type === "moodboard" && files.some((f) => guessMime(f).startsWith("image/"))) {
@@ -2905,6 +3047,14 @@ export function IdeaBoard({
     stickyPlaceholder: t("ideaBoard.sticky.placeholder"),
     moodboard: t("ideaBoard.moodboard.label"),
     moodboardEmpty: t("ideaBoard.moodboard.empty"),
+    lutPreview: {
+      header: t("ideaBoard.lut.label" as never),
+      empty: t("ideaBoard.lut.empty" as never),
+      pick: t("ideaBoard.lut.pick" as never),
+      needLut: t("ideaBoard.lut.needLut" as never),
+      log: "LOG",
+      lut: "LUT",
+    },
     moodboardAdd: t("ideaBoard.moodboard.add"),
     voteGroup: t("ideaBoard.vote.label"),
     location: t("ideaBoard.location.label"),
@@ -3012,7 +3162,7 @@ export function IdeaBoard({
         const files = e.dataTransfer.types.includes("Files");
         const one = e.dataTransfer.items.length <= 1;
         const wp = toWorld(e.clientX, e.clientY);
-        const target = files ? ((one ? placeholderAt(wp, new Set(), takesFiles) : null) ?? imageTargetAt(wp, new Set(), one ? ["scene", "moodboard"] : ["moodboard"])) : null;
+        const target = files ? (imageTargetAt(wp, new Set(), ["lutpreview"]) ?? (one ? placeholderAt(wp, new Set(), takesFiles) : null) ?? imageTargetAt(wp, new Set(), one ? ["scene", "moodboard"] : ["moodboard"])) : null;
         if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
       }}
       onDragLeave={(e) => {
@@ -3140,6 +3290,9 @@ export function IdeaBoard({
                 moodboardActive={el.type === "moodboard" && editable && selected && selection.size === 1 && !busyOp}
                 onMoodboardChange={(items) => setMoodboardItems(el.id, items)}
                 onMoodboardAdd={editable && uploadFile ? () => pickMoodboardImages(el.id) : undefined}
+                lutActive={el.type === "lutpreview" && selected && selection.size === 1 && !busyOp}
+                lutBusy={lutBusy[el.id] ?? null}
+                onLutPick={editable && uploadFile ? () => pickLutFiles(el.id) : undefined}
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
@@ -3755,6 +3908,7 @@ export function IdeaBoard({
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
                   <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
+                  {uploadFile && <MenuItem label={t("ideaBoard.menu.lutpreview" as never)} onPress={() => menuAction(() => addLutPreview(menu.world))} />}
                   {gifMaker && <MenuItem label={t("ideaBoard.menu.gif")} onPress={() => menuAction(() => setGifAt(menu.world))} />}
                   <MenuItem label={t("ideaBoard.menu.sticky")} hint="N" onPress={() => menuAction(() => addSticky(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.color")} onPress={() => menuAction(() => setCardEditor({ kind: "color", id: null, at: menu.world }))} />
@@ -4006,6 +4160,18 @@ export function IdeaBoard({
           <ToolButton title={t("ideaBoard.redo")} onPress={redo} disabled={historyApi ? !historyApi.canRedo : historySize.redo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
           </ToolButton>
+          <input
+            ref={lutInputRef}
+            type="file"
+            multiple
+            accept="image/*,.heic,.cube"
+            className="hidden"
+            onChange={(e) => {
+              const files = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (files.length && lutTarget.current) void addLutFiles(lutTarget.current, files);
+            }}
+          />
           <input
             ref={moodboardInputRef}
             type="file"

@@ -48,6 +48,7 @@ function plain(el: BoardElement): BoardElement {
   delete copy.image_thumb_src;
   delete copy.srcset;
   delete copy.image_srcset;
+  delete copy.lut_src;
   if (el.type === "moodboard") copy.items = el.items.map(({ src: _s, thumb_src: _t, srcset: _ss, ...it }) => it);
   return copy as unknown as BoardElement;
 }
@@ -57,6 +58,7 @@ function keysOf(el: BoardElement): string[] {
   const r = el as unknown as Record<string, unknown>;
   if (typeof r.asset_key === "string") out.push(r.asset_key);
   if (typeof r.image_key === "string") out.push(r.image_key);
+  if (typeof r.lut_key === "string") out.push(r.lut_key);
   if (el.type === "moodboard") for (const it of el.items) out.push(it.asset_key);
   return out;
 }
@@ -108,6 +110,7 @@ export function useBoardCollab({
       if (typeof r.image_key === "string" && typeof r.image_thumb_src === "string") thumbs.current.set(r.image_key, r.image_thumb_src);
       if (typeof r.asset_key === "string" && typeof r.srcset === "string") srcsets.current.set(r.asset_key, r.srcset);
       if (typeof r.image_key === "string" && typeof r.image_srcset === "string") srcsets.current.set(r.image_key, r.image_srcset);
+      if (typeof r.lut_key === "string" && typeof r.lut_src === "string") urls.current.set(r.lut_key, r.lut_src);
       if (el.type === "moodboard")
         for (const it of el.items) {
           if (it.src) urls.current.set(it.asset_key, it.src);
@@ -129,6 +132,7 @@ export function useBoardCollab({
       r.image_thumb_src = thumbs.current.get(r.image_key) ?? null;
       r.image_srcset = srcsets.current.get(r.image_key) ?? null;
     }
+    if (typeof r.lut_key === "string") r.lut_src = urls.current.get(r.lut_key) ?? null;
     if (el.type === "moodboard") r.items = el.items.map((it) => ({ ...it, src: urls.current.get(it.asset_key) ?? null, thumb_src: thumbs.current.get(it.asset_key) ?? null, srcset: srcsets.current.get(it.asset_key) ?? null }));
     return r as unknown as BoardElement;
   }, []);
@@ -180,7 +184,7 @@ export function useBoardCollab({
     for (const el of data.elements) {
       for (const k of keysOf(el)) {
         const r = el as unknown as Record<string, unknown>;
-        const src = (r.asset_key === k ? r.src : r.image_key === k ? r.image_src : undefined) as string | undefined;
+        const src = (r.asset_key === k ? r.src : r.image_key === k ? r.image_src : r.lut_key === k ? r.lut_src : undefined) as string | undefined;
         if (src) urls.current.set(k, src);
       }
       if (el.type === "moodboard") for (const it of el.items) if (it.src) urls.current.set(it.asset_key, it.src);

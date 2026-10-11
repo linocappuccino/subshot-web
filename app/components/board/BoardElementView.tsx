@@ -2,6 +2,7 @@
 
 import { BoardDownloadContext, BoardZoomContext, SharpImg } from "./BoardDownload";
 import { MoodboardNode } from "./BoardMoodboard";
+import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
@@ -65,6 +66,7 @@ export interface ElementViewLabels extends TodoLabels {
   stickyPlaceholder: string;
   moodboard: string;
   moodboardEmpty: string;
+  lutPreview: LutPreviewLabels;
   moodboardAdd: string;
   voteGroup: string;
   openInMaps: string;
@@ -109,6 +111,9 @@ export function BoardElementView({
   moodboardActive,
   onMoodboardChange,
   onMoodboardAdd,
+  lutActive,
+  lutBusy,
+  onLutPick,
 }: {
   el: BoardElement;
   editing: boolean;
@@ -132,8 +137,14 @@ export function BoardElementView({
   moodboardActive?: boolean;
   onMoodboardChange?: (items: MoodboardItem[]) => void;
   onMoodboardAdd?: () => void;
+  /** LUT preview selected alone: a press anywhere on the image moves the wipe */
+  lutActive?: boolean;
+  lutBusy?: string | null;
+  onLutPick?: () => void;
 }) {
   switch (el.type) {
+    case "lutpreview":
+      return <LutPreviewNode el={el} active={!!lutActive} busy={lutBusy} labels={labels.lutPreview} onPick={onLutPick} />;
     case "text":
       return <TextNode el={el} editing={editing} placeholder={labels.textPlaceholder} onCommit={onCommitText} onMeasure={onMeasure} />;
     case "image":
