@@ -351,9 +351,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<{ expires_at: string }>(`projects/${projectId}/deliver-link/extend`, { method: "POST", body: JSON.stringify({ days }) }),
     deliverDownloads: (projectId: string) => request<DeliverDownloadLog>(`projects/${projectId}/deliver-downloads?t=${Date.now()}`),
     // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
-    deliverableDefaults: (projectId: string) => request<{ labels: string[] }>(`projects/${projectId}/deliverable-defaults?t=${Date.now()}`),
-    putDeliverableDefaults: (projectId: string, labels: string[]) =>
-      request<{ labels: string[]; added: number; removed: number }>(`projects/${projectId}/deliverable-defaults`, { method: "PUT", body: JSON.stringify({ labels }) }),
+    ideaDeliverableDefaults: (ideaId: string) => request<{ labels: string[] }>(`ideas/${ideaId}/deliverable-defaults?t=${Date.now()}`),
+    putIdeaDeliverableDefaults: (ideaId: string, labels: string[]) =>
+      request<{ labels: string[] }>(`ideas/${ideaId}/deliverable-defaults`, { method: "PUT", body: JSON.stringify({ labels }) }),
     videoExtras: (projectId: string) => request<Record<string, VideoExtras>>(`projects/${projectId}/video-extras?t=${Date.now()}`),
     createDeliverable: (videoId: string, label: string) =>
       request<VideoDeliverable>(`videos/${videoId}/deliverables`, { method: "POST", body: JSON.stringify({ label }) }),

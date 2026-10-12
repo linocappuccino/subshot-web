@@ -1,5 +1,6 @@
 "use client";
 
+import { IdeaFassungenButton } from "./RequiredFassungen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
@@ -556,6 +557,11 @@ function IdeaBoardScreen({
         ) : (
           <span className={`hidden md:inline text-xs whitespace-nowrap ${saveState === "error" ? "text-red-400" : "text-white/40"}`}>{saveLabel}</span>
         )}
+
+        {/* 2026-10-12, Lino: "pro video / idee festlegen können welche fassungen benötigt werden" */}
+        <div className="hidden sm:block">
+          <IdeaFassungenButton ideaId={idea.id} editable={editable || approved} />
+        </div>
 
         {/* internal review (PL/Admin), unchanged rules from the old card */}
         {(idea.status === "open" || idea.internal_status) && (

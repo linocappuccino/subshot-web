@@ -26,7 +26,6 @@ import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
-import { RequiredFassungen } from "@/app/components/RequiredFassungen";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -882,10 +881,6 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             {data?.emoji && <span>{data.emoji}</span>} {data?.name ?? t("workflow.projectBack")}
           </h1>
-        </div>
-        {/* 2026-10-12, Lino: the project's required Fassungen (same list as in the project info) */}
-        <div className="mb-6 -mt-4">
-          <RequiredFassungen projectId={id} editable={canEditStatus} compact onSaved={() => setExtrasReload((n) => n + 1)} />
         </div>
 
         {loading ? (

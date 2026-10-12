@@ -9,24 +9,28 @@ import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
 // 2026-10-12, Lino: "man muss im vorhinein irgendwo definieren können welche fassungen benötigt werden"
-// → "Beides (gleiche Vorgabe)": the project's required Fassungen, editable in the project info AND on
-// the Postproduction page (same list, backend: /projects/{id}/deliverable-defaults). Every video gets
-// them as open chips automatically; removing one only drops it where nothing was uploaded yet.
+// then "es wird nicht immer von jedem video / idee die gleiche fassung verlangt" — the required
+// Fassungen of ONE idea (backend /ideas/{id}/deliverable-defaults): on "Abgenommen" they go to its
+// section, every video there gets them as open chips; removing one only drops it where nothing was
+// uploaded yet. Per video, more are added right on the Postproduction tile.
 
 const PRESETS = ["16:9", "9:16", "1:1", "4:5", "Cutdown 30s", "Cutdown 15s", "Cutdown 6s", "Ohne Untertitel", "Mit Untertitel"];
 
 export function RequiredFassungen({
-  projectId,
+  ideaId,
   editable,
   onSaved,
   compact,
+  onLabels,
 }: {
-  projectId: string;
+  ideaId: string;
   editable: boolean;
   /** after a change (the videos' chips changed on the server) */
   onSaved?: () => void;
-  /** a single row without the heading (Postproduction toolbar) */
+  /** a single row without the heading */
   compact?: boolean;
+  /** the saved list (e.g. for a summary next to the trigger) */
+  onLabels?: (labels: string[]) => void;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -37,23 +41,20 @@ export function RequiredFassungen({
   useEffect(() => {
     let alive = true;
     api
-      .deliverableDefaults(projectId)
+      .ideaDeliverableDefaults(ideaId)
       .then((r) => alive && setLabels(r.labels))
       .catch(() => alive && setLabels([]));
-    // the other place (project info ↔ Postproduction) may have changed it
-    const onMutated = () => api.deliverableDefaults(projectId).then((r) => alive && setLabels(r.labels)).catch(() => {});
-    window.addEventListener("subshot:mutated", onMutated);
     return () => {
       alive = false;
-      window.removeEventListener("subshot:mutated", onMutated);
     };
-  }, [api, projectId]);
+  }, [api, ideaId]);
 
   async function save(next: string[]) {
     const before = labels;
     setLabels(next);
     try {
-      const r = await api.putDeliverableDefaults(projectId, next);
+      const r = await api.putIdeaDeliverableDefaults(ideaId, next);
+      onLabels?.(r.labels);
       setLabels(r.labels);
       onSaved?.();
     } catch (e) {
@@ -149,6 +150,52 @@ export function RequiredFassungen({
           ))}
       </div>
       {!compact && editable && <p className="text-xs text-white/35">{t("requiredFassungen.hint")}</p>}
+    </div>
+  );
+}
+
+/** the idea window's header pill: "Fassungen · 16:9, 9:16" — click opens the editor in a popover */
+export function IdeaFassungenButton({ ideaId, editable }: { ideaId: string; editable: boolean }) {
+  const api = useApi();
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  const [labels, setLabels] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .ideaDeliverableDefaults(ideaId)
+      .then((r) => alive && setLabels(r.labels))
+      .catch(() => alive && setLabels([]));
+    return () => {
+      alive = false;
+    };
+  }, [api, ideaId]);
+
+  if (labels === null || (!editable && labels.length === 0)) return null;
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={labels.length ? labels.join(", ") : undefined}
+        className={cn(
+          "flex h-9 max-w-[240px] items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-xs font-semibold transition-colors",
+          open ? "bg-white/20 text-white" : "bg-white/10 text-white/80 hover:bg-white/15"
+        )}
+      >
+        <span aria-hidden>🎬</span>
+        {t("requiredFassungen.button")}
+        <span className={cn("truncate font-medium", labels.length ? "text-white/60" : "text-[#0a84ff]")}>· {labels.length ? labels.join(", ") : t("requiredFassungen.none")}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full z-50 mt-2 w-[320px] rounded-2xl bg-[#1c1c1e]/95 p-4 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8)] ring-1 ring-inset ring-white/10 backdrop-blur-xl">
+            <RequiredFassungen ideaId={ideaId} editable={editable} onLabels={setLabels} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
