@@ -14,6 +14,7 @@ import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { DeliverDownloadLog } from "@/app/components/DeliverDownloadLog";
 import { DeliverRecipientCard } from "@/app/components/DeliverRecipientCard";
+import { ProjectArchiveCard } from "@/app/components/ProjectArchiveCard";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
   { hours: 1, labelKey: "deliverAdmin.duration1h" },
@@ -383,6 +384,8 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
         <DeliverRecipientCard projectId={id} canEdit />
 
         {status.link && <DeliverDownloadLog projectId={id} />}
+
+        <ProjectArchiveCard projectId={id} highlight={linkExpired} />
 
         <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 mb-6">
           <FieldGroup>

@@ -336,6 +336,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<{ ok: boolean }>(`projects/${projectId}/round-default`, { method: "PUT", body: JSON.stringify({ round_limit: limit }) }),
     videoQc: (projectId: string, target: number) => request<Record<string, VideoQc>>(`projects/${projectId}/video-qc?target=${target}&t=${Date.now()}`),
     rerunVideoQc: (versionId: string) => request<{ status: string }>(`video-versions/${versionId}/qc`, { method: "POST" }),
+    /** 2026-10-12 — Projekt-Archiv: a signed 1-hour link to the whole project as one streamed ZIP */
+    projectArchiveLink: (projectId: string) =>
+      request<{ path: string; estimated_bytes: number; files: number }>(`projects/${projectId}/archive-link`, { method: "POST" }),
     deliverSettings: (projectId: string) => request<DeliverSettings>(`projects/${projectId}/deliver-settings?t=${Date.now()}`),
     putDeliverSettings: (projectId: string, body: { recipient_name?: string; recipient_email?: string; message?: string; reminder_days?: number }) =>
       request<DeliverSettings>(`projects/${projectId}/deliver-settings`, { method: "PUT", body: JSON.stringify(body) }),
