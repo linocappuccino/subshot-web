@@ -325,9 +325,6 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
             </svg>
             {t("workflow.postproduction")}
           </button>
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-            <div className="font-bebas text-xl uppercase tracking-wide text-white/40 whitespace-nowrap">{t("workflow.deliver")}</div>
-          </div>
         </div>
 
         <div className="mb-8">

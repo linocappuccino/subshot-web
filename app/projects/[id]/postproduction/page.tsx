@@ -788,32 +788,19 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             Button-Row hier eine ganze Zeile + mb-1 tiefer als auf Ideen/
             Szenen. Fix: gleiche Struktur wie dort — Link als erstes Kind der
             linken Spalte, mb-8 statt mb-6 (identischer Row-Abstand). */}
-        {/* 2026-07-30, Lino: "der pipeline titel soll jeweils horizontal
-            zentriert auf der gleichen höhe wie < projekt und den buttons
-            rechts sein" — the workflow-stage label ("Postproduction") used
-            to sit left-aligned directly under the back-link, its own row
-            further down than the buttons. Pulled it OUT of the left column
-            into an absolutely-centered layer of this same row (centered
-            against the row's full width AND height, not just the left
-            half), same technique on both this page and page.tsx (Ideen/
-            Szenen) so the header reads identically across every workflow
-            stage. client_name/h1 stay in their own row below, unaffected. */}
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 lg:grid lg:grid-cols-[1fr_auto_1fr]">
+        {/* 2026-10-12, Lino: the workflow title ("Postproduction") is gone — the PipelineTimeline above
+            already shows which step this is. */}
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
             onClick={goToProjects}
-            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1 justify-self-start"
+            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
             {t("workflow.backToProjects")}
           </button>
-          <div className="pointer-events-none order-first w-full text-center lg:order-none lg:w-auto">
-            <div className="font-bebas text-xl uppercase tracking-wide text-white/40 whitespace-nowrap">
-              {t("workflow.postproduction")}
-            </div>
-          </div>
           <div className="relative z-10 flex flex-wrap justify-end gap-2">
             {/* 2026-07-17, Lino: "Notion Import brauchen wir auch nicht (nur
                 den button ausblenden)" — showNotion-State + Modal bewusst

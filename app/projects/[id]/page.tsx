@@ -1845,16 +1845,6 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         // Ansicht bleibt unverändert bei max-w-6xl.
         style={{ maxWidth: activeView === "scenes" && viewMode === "table" ? "min(2000px, calc(100vw - 160px))" : "72rem" }}
       >
-        {/* 2026-07-30, Lino: "der pipeline titel soll jeweils horizontal
-            zentriert auf der gleichen höhe wie < projekt und den buttons
-            rechts sein" — the workflow-stage label ("Ideen"/"Script") used
-            to sit left-aligned directly under the back-link, its own row
-            further down than the buttons. Pulled it OUT of the left column
-            into an absolutely-centered layer of this same row (centered
-            against the row's full width AND height, not just the left
-            half), same technique on both this page and postproduction/
-            page.tsx so the header reads identically across every workflow
-            stage. client_name/h1 stay in their own row below, unaffected. */}
         {/* 2026-10-12, Lino: Pipeline-Zeitleiste über jeder Pipeline-Seite — Häkchen, sobald alle
             Punkte eines Schritts entschieden sind, Klick wechselt die Seite */}
         <div className="mb-5">
@@ -1870,12 +1860,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             }}
           />
         </div>
-        {/* 2026-10-12, Lino: "auf der shotlist sind die buttons pdf und comments über der concept /
-            shotlist title" — the title used to be absolutely centered over the row, so a longer
-            button row (Callsheet, Zeitplan …) ran underneath it. Now a real 3-column grid on lg+
-            (back | title | buttons, buttons wrap inside their column); below lg the title gets its
-            own centered row. */}
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 lg:grid lg:grid-cols-[1fr_auto_1fr]">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
           {/* 2026-07-21, Lino: "die animation von einer workflow seite
               zurück zur projektübersicht ist noch sehr hackelig" — THIS
               was the actual culprit, not the edge chevron button below
@@ -1889,33 +1874,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <button
             type="button"
             onClick={goToProjectsWithTransition}
-            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1 justify-self-start"
+            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
             {t("workflow.backToProjects")}
           </button>
-          {/* 2026-07-18, Lino: "irgendwo braucht es noch einen grossen
-                Titel der zeigt auf welcher Workflowseite man ist: Ideen/
-                Konzept, Script/Shotlist, Postproduction" — Postproduction
-                hat das schon (ihr eigenes h1 "Postproduction", siehe
-                postproduction/page.tsx), hier fehlte das Pendant für die
-                geteilte Ideen/Szenen-Route. */}
-            {/* 2026-07-18, Lino: "Workflow Titel bitte auch in einem coolen
-                font darstellen" — font-bebas statt reinem font-bold, wie h1
-                (siehe globals.css's h1-Regel). 2026-07-19: gewechselt von
-                font-anton auf font-bricolage zusammen mit der h1-Regel;
-                2026-08-06 zusammen mit der h1-Regel weiter auf Bebas Neue —
-                nur das Logo-Wortzeichen selbst bleibt Anton. */}
-            {/* 2026-07-21, Lino: "den Workflow titel NICHT blau machen... ändere
-                das auf eher was gräuliches" — war text-blue-400, jetzt neutral
-                grau wie das Postproduction-Pendant (postproduction/page.tsx). */}
-          <div className="pointer-events-none order-first w-full text-center lg:order-none lg:w-auto">
-            <div className="font-bebas text-xl uppercase tracking-wide text-white/40 whitespace-nowrap">
-              {activeView === "ideas" ? t("workflow.ideasConcept") : t("workflow.scriptShotlist")}
-            </div>
-          </div>
+          {/* 2026-10-12, Lino: "brauchen wir denn die titel \"Concept / shotlist\" noch auf den pipeline
+              seiten, dies wird ja jetzt oben in der timeline dargestellt" — workflow title removed, the
+              PipelineTimeline above already shows which step this is. */}
           <div className="relative z-10 flex flex-wrap justify-end gap-2">
             <Button
               variant={showAnnotations ? "primary" : "secondary"}
