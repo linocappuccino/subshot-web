@@ -318,9 +318,10 @@ function DeliverPageInner() {
 
   return (
     <div className="min-h-screen bg-[#161616] text-white">
+      <div className="fixed left-5 top-5 z-20 sm:left-8 sm:top-6 flex items-center gap-3">
       <a
         href="https://subshot.ch"
-        className="fixed left-5 top-5 z-20 sm:left-8 sm:top-6 inline-flex items-center"
+        className="inline-flex items-center"
       >
         {data.team_logo_url ? (
           // 2026-09-06, Lino: "muss grösser sein... und es soll keinen
@@ -336,6 +337,17 @@ function DeliverPageInner() {
           </span>
         )}
       </a>
+      {/* 2026-10-12, Lino: the client's logo next to ours */}
+      {data.client_logo_url && (
+        <>
+          <span className="text-lg font-light text-white/50" aria-hidden>
+            ×
+          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
+          <img src={data.client_logo_url} alt={data.client_name ?? "Logo"} className="h-14 w-auto max-w-[160px] object-contain sm:h-16" />
+        </>
+      )}
+      </div>
 
       {hasHero ? (
         <div className="relative h-[65vh] w-full sm:h-[82vh]">
@@ -356,7 +368,9 @@ function DeliverPageInner() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-col gap-1.5 px-5 pb-2 pt-10 text-left sm:px-10 sm:pt-16">
+        // 2026-10-12 — enough room under the fixed logo row (team logo + client logo, h-14/h-16),
+        // which used to overlap the title on pages without a cover
+        <div className="flex flex-col gap-1.5 px-5 pb-2 pt-28 text-left sm:px-10 sm:pt-32">
           <p className="text-sm uppercase tracking-widest text-white/50 sm:text-base">{data.client_name}</p>
           <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">{data.project_name}</h1>
           <p className="text-sm text-white/40 sm:text-base">
@@ -367,6 +381,12 @@ function DeliverPageInner() {
       )}
 
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-8 sm:py-16">
+        {/* 2026-10-12, Lino: "Persönliche Nachricht" — a greeting per link */}
+        {data.message && (
+          <div className="max-w-2xl whitespace-pre-line rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-[15px] leading-relaxed text-white/85">
+            {data.message}
+          </div>
+        )}
         <button
           type="button"
           disabled={zipping}

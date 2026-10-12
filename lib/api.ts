@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -329,6 +329,16 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     ) => request<Project>("projects", { method: "POST", body: JSON.stringify({ name, color, emoji, client_name: clientName || undefined, ...modules }) }),
     projectDetail: (id: string) => request<ProjectDetail>(`projects/${id}`),
     /** 2026-10-12 — the pipeline timeline above the project pages */
+    deliverSettings: (projectId: string) => request<DeliverSettings>(`projects/${projectId}/deliver-settings?t=${Date.now()}`),
+    putDeliverSettings: (projectId: string, body: { recipient_name?: string; recipient_email?: string; message?: string; reminder_days?: number }) =>
+      request<DeliverSettings>(`projects/${projectId}/deliver-settings`, { method: "PUT", body: JSON.stringify(body) }),
+    startDeliverLogoUpload: (projectId: string, filename: string, contentType: string) =>
+      request<{ key: string; upload_url: string }>(`projects/${projectId}/deliver-settings/logo`, { method: "POST", body: JSON.stringify({ filename, content_type: contentType }) }),
+    completeDeliverLogoUpload: (projectId: string, key: string) =>
+      request<DeliverSettings>(`projects/${projectId}/deliver-settings/logo/complete`, { method: "POST", body: JSON.stringify({ key }) }),
+    deleteDeliverLogo: (projectId: string) => request<DeliverSettings>(`projects/${projectId}/deliver-settings/logo`, { method: "DELETE" }),
+    extendDeliverLink: (projectId: string, days: number) =>
+      request<{ expires_at: string }>(`projects/${projectId}/deliver-link/extend`, { method: "POST", body: JSON.stringify({ days }) }),
     deliverDownloads: (projectId: string) => request<DeliverDownloadLog>(`projects/${projectId}/deliver-downloads?t=${Date.now()}`),
     // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
     videoExtras: (projectId: string) => request<Record<string, VideoExtras>>(`projects/${projectId}/video-extras?t=${Date.now()}`),

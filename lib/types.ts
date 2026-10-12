@@ -719,6 +719,16 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — Deliver: recipient + expiry reminder, personal message + client logo */
+export interface DeliverSettings {
+  recipient_name: string | null;
+  recipient_email: string | null;
+  message: string | null;
+  reminder_days: number;
+  reminder_sent_at: string | null;
+  client_logo_url: string | null;
+}
+
 /** 2026-10-12 — Download-Protokoll of a project's Deliver link */
 export interface DeliverDownloadLog {
   total: number;
@@ -795,6 +805,10 @@ export interface DeliverStatus {
 
 /** GET /share/{token}/deliver-preview — the public, no-login payload. */
 export interface DeliverPreviewData {
+  /** 2026-10-12, Lino: "Persönliche Nachricht und Logo" */
+  recipient_name?: string | null;
+  message?: string | null;
+  client_logo_url?: string | null;
   project_id: string;
   project_name: string;
   client_name: string | null;

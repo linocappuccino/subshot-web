@@ -13,6 +13,7 @@ import type { DeliverStatus, DeliverMiscGroup } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { DeliverDownloadLog } from "@/app/components/DeliverDownloadLog";
+import { DeliverRecipientCard } from "@/app/components/DeliverRecipientCard";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
   { hours: 1, labelKey: "deliverAdmin.duration1h" },
@@ -260,6 +261,21 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
     }
   }
 
+  // 2026-10-12, Lino: "Link mit einem Klick verlängern" (from now, if it already expired)
+  const [extending, setExtending] = useState(false);
+  async function extendLink(days = 7) {
+    setExtending(true);
+    try {
+      const { expires_at } = await api.extendDeliverLink(id, days);
+      setStatus((prev) => (prev && prev.link ? { ...prev, link: { ...prev.link, expires_at } } : prev));
+      toast.showSuccess(t("deliverAdmin.extended", { date: new Date(expires_at).toLocaleString() }));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
+    } finally {
+      setExtending(false);
+    }
+  }
+
   async function revokeLink() {
     if (!confirm(t("deliverAdmin.revokeConfirm"))) return;
     setRevoking(true);
@@ -339,6 +355,9 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
                 {status.link.has_password ? ` · ${t("deliverAdmin.passwordActive")}` : ""}
               </p>
               <div className="flex gap-4 mt-1">
+                <button type="button" onClick={() => extendLink(7)} disabled={extending} className="text-xs text-white/60 hover:text-white disabled:opacity-50">
+                  {extending ? t("common.saving") : t("deliverAdmin.extend", { n: 7 })}
+                </button>
                 {status.link.has_password && (
                   <button type="button" onClick={removePassword} disabled={saving} className="text-xs text-white/40 hover:text-white/70 disabled:opacity-50">
                     {t("deliverAdmin.removePassword")}
@@ -350,9 +369,18 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
           ) : (
-            <p className="text-sm text-white/40">{linkExpired ? t("deliverAdmin.linkExpiredNote") : t("deliverAdmin.noLinkYet")}</p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-sm text-white/40">{linkExpired ? t("deliverAdmin.linkExpiredNote") : t("deliverAdmin.noLinkYet")}</p>
+              {linkExpired && status.link && (
+                <Button variant="secondary" size="sm" onClick={() => extendLink(7)} disabled={extending}>
+                  {extending ? t("common.saving") : t("deliverAdmin.reactivate", { n: 7 })}
+                </Button>
+              )}
+            </div>
           )}
         </div>
+
+        <DeliverRecipientCard projectId={id} canEdit />
 
         {status.link && <DeliverDownloadLog projectId={id} />}
 
