@@ -22,9 +22,7 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
   const toast = useToast();
   const { t, language } = useLanguage();
   const [st, setSt] = useState<DeliverSettings | null>(null);
-  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
   const [days, setDays] = useState(3);
   const [saving, setSaving] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
@@ -37,9 +35,7 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
       .then((s) => {
         if (!alive) return;
         setSt(s);
-        setName(s.recipient_name ?? "");
         setEmail(s.recipient_email ?? "");
-        setMessage(s.message ?? "");
         setDays(s.reminder_days || 3);
       })
       .catch(() => {});
@@ -48,12 +44,12 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
     };
   }, [api, projectId]);
 
-  const dirty = st !== null && (name !== (st.recipient_name ?? "") || email !== (st.recipient_email ?? "") || message !== (st.message ?? "") || days !== st.reminder_days);
+  const dirty = st !== null && (email !== (st.recipient_email ?? "") || days !== st.reminder_days);
 
   async function save() {
     setSaving(true);
     try {
-      const s = await api.putDeliverSettings(projectId, { recipient_name: name, recipient_email: email, message, reminder_days: days });
+      const s = await api.putDeliverSettings(projectId, { recipient_email: email, reminder_days: days });
       setSt(s);
       toast.showSuccess(t("deliverRecipient.saved"));
     } catch (e) {
@@ -98,16 +94,13 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
     <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 mb-6">
       <h2 className="text-sm font-semibold text-white mb-1">{t("deliverRecipient.title")}</h2>
       <p className="text-xs text-white/40 mb-4">{t("deliverRecipient.hint")}</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-xs text-white/50">
-          {t("deliverRecipient.name")}
-          <input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEdit} placeholder="Sandra Muster" className={field} />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-white/50">
-          {t("deliverRecipient.email")}
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!canEdit} placeholder="sandra@kunde.ch" className={field} />
-        </label>
-      </div>
+      {/* 2026-10-12, Lino: "lassen wir das mit den begrüssungsnachrichten, das brauchen wir generell
+          nicht" — name + personal message removed (several people open the same link); the email
+          stays for the expiry reminder. */}
+      <label className="flex max-w-sm flex-col gap-1 text-xs text-white/50">
+        {t("deliverRecipient.email")}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!canEdit} placeholder="sandra@kunde.ch" className={field} />
+      </label>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/50">
         {t("deliverRecipient.reminder")}
         {REMINDER_DAYS.map((d) => (
@@ -123,18 +116,6 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
         ))}
         {sentAt && <span className="text-emerald-300/80">{t("deliverRecipient.sentAt", { when: sentAt })}</span>}
       </div>
-      <label className="mt-4 flex flex-col gap-1 text-xs text-white/50">
-        {t("deliverRecipient.message")}
-        <textarea
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          disabled={!canEdit}
-          rows={4}
-          maxLength={2000}
-          placeholder={t("deliverRecipient.messagePlaceholder")}
-          className={`${field} resize-y leading-relaxed`}
-        />
-      </label>
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <span className="text-xs text-white/50">{t("deliverRecipient.logo")}</span>
         {st.client_logo_url ? (

@@ -381,12 +381,6 @@ function DeliverPageInner() {
       )}
 
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-10 sm:px-8 sm:py-16">
-        {/* 2026-10-12, Lino: "Persönliche Nachricht" — a greeting per link */}
-        {data.message && (
-          <div className="max-w-2xl whitespace-pre-line rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-[15px] leading-relaxed text-white/85">
-            {data.message}
-          </div>
-        )}
         <button
           type="button"
           disabled={zipping}
