@@ -2332,7 +2332,13 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   return sec ? (
                     <SectionLocationButton
                       section={sec}
+                      scenes={scenesIn(sec.id)}
+                      numbers={sceneNumberIn(sec.id)}
                       onChange={(updated) => setData((prev) => (prev ? { ...prev, sections: prev.sections.map((x) => (x.id === updated.id ? updated : x)) } : prev))}
+                      onScenesChange={(updated) => {
+                        const byId = new Map(updated.map((u) => [u.id, u]));
+                        setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((x) => { const u = byId.get(x.id); return u ? { ...x, location_address: u.location_address, location_lat: u.location_lat, location_lng: u.location_lng } : x; }) } : prev));
+                      }}
                     />
                   ) : null;
                 })()}

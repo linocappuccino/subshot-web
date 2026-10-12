@@ -537,6 +537,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // own doc comment): whole scene blocks within one Section reordered for the
     // shooting-day schedule, separate from reorderScenes' narrative sort_order.
     // Supersedes the 2026-09-07 shot-level attempt (reorderShotsShootingOrder).
+    // ── Drehorte zuweisen (2026-10-12) ──
+    assignSceneLocation: (sectionId: string, sceneIds: string[], address: string | null, lat: number | null, lng: number | null) =>
+      request<Scene[]>(`sections/${sectionId}/scenes/assign-location`, {
+        method: "POST",
+        body: JSON.stringify({ scene_ids: sceneIds, location_address: address, location_lat: lat, location_lng: lng }),
+      }),
     // ── Drehreihenfolge optimieren (2026-10-12) ──
     suggestShootingOrder: (sectionId: string) =>
       request<ShootingOrderSuggestion>(`sections/${sectionId}/shooting-order/suggest?t=${Date.now()}`),
