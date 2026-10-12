@@ -2181,7 +2181,7 @@ export function IdeaBoard({
       setPanning(true);
       return;
     }
-    if (target.closest("[contenteditable='true'], input, textarea")) return;
+    if (target.closest("[contenteditable='true'], input, textarea, select")) return;
     // the empty inside of an open group's (blurred) frame acts like the empty board
     const elNode = target.closest("[data-group-body]") && !target.closest("[data-group-header]") ? null : target.closest<HTMLElement>("[data-el-id]");
     if (target.closest("[data-no-drag]")) {
@@ -2753,7 +2753,7 @@ export function IdeaBoard({
     function isTyping() {
       const a = document.activeElement as HTMLElement | null;
       if (!a || a === pasteCatcherRef.current) return false;
-      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable;
+      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable;
     }
     function onKey(e: KeyboardEvent) {
       const mod = e.metaKey || e.ctrlKey;
@@ -2928,7 +2928,7 @@ export function IdeaBoard({
     const catcher = pasteCatcherRef.current;
     if (!catcher || !editable) return;
     const a = document.activeElement as HTMLElement | null;
-    if (a && a !== catcher && a !== document.body && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable)) return;
+    if (a && a !== catcher && a !== document.body && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) return;
     catcher.focus({ preventScroll: true });
   }, [editable]);
 
@@ -2944,7 +2944,7 @@ export function IdeaBoard({
     function typing() {
       const a = document.activeElement as HTMLElement | null;
       if (!a || a === pasteCatcherRef.current) return false;
-      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.isContentEditable;
+      return a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable;
     }
     function down(e: KeyboardEvent) {
       // Shift + Space opens the quick add instead of panning
