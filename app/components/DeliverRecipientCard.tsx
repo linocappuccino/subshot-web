@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
 import { Button } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import type { DeliverSettings } from "@/lib/types";
+import { ClientLogoPicker } from "./ClientLogoPicker";
 
 // 2026-10-12, Lino (Deliver page):
 // - "Erinnerung vor dem Ablauf": the client (recipient e-mail) gets a friendly reminder N days
@@ -25,8 +26,6 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
   const [email, setEmail] = useState("");
   const [days, setDays] = useState(3);
   const [saving, setSaving] = useState(false);
-  const [logoBusy, setLogoBusy] = useState(false);
-  const logoInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
@@ -56,31 +55,6 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
       toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function uploadLogo(file: File) {
-    setLogoBusy(true);
-    try {
-      const type = file.type || "image/png";
-      const { key, upload_url } = await api.startDeliverLogoUpload(projectId, file.name, type);
-      await api.putFile(upload_url, file, type);
-      setSt(await api.completeDeliverLogoUpload(projectId, key));
-    } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
-    } finally {
-      setLogoBusy(false);
-    }
-  }
-
-  async function removeLogo() {
-    setLogoBusy(true);
-    try {
-      setSt(await api.deleteDeliverLogo(projectId));
-    } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : t("deliverAdmin.saveFailed"));
-    } finally {
-      setLogoBusy(false);
     }
   }
 
@@ -116,26 +90,9 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
         ))}
         {sentAt && <span className="text-emerald-300/80">{t("deliverRecipient.sentAt", { when: sentAt })}</span>}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <span className="text-xs text-white/50">{t("deliverRecipient.logo")}</span>
-        {st.client_logo_url ? (
-          // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
-          <img src={st.client_logo_url} alt="" className="h-10 w-auto max-w-[140px] object-contain rounded bg-white/5 p-1" />
-        ) : (
-          <span className="text-xs text-white/30">{t("deliverRecipient.noLogo")}</span>
-        )}
-        {canEdit && (
-          <>
-            <Button variant="secondary" size="sm" disabled={logoBusy} onClick={() => logoInput.current?.click()}>
-              {logoBusy ? t("common.saving") : st.client_logo_url ? t("deliverRecipient.replaceLogo") : t("deliverRecipient.uploadLogo")}
-            </Button>
-            {st.client_logo_url && (
-              <button type="button" disabled={logoBusy} onClick={removeLogo} className="text-xs text-white/40 hover:text-red-400">
-                {t("deliverRecipient.removeLogo")}
-              </button>
-            )}
-          </>
-        )}
+      {/* 2026-10-12, Lino: logos come from the reusable library (ClientLogoPicker) */}
+      <div className="mt-4">
+        <ClientLogoPicker projectId={projectId} canEdit={canEdit} />
       </div>
       {canEdit && (
         <div className="mt-5 flex justify-end">
@@ -144,17 +101,6 @@ export function DeliverRecipientCard({ projectId, canEdit }: { projectId: string
           </Button>
         </div>
       )}
-      <input
-        ref={logoInput}
-        type="file"
-        accept="image/png,image/jpeg,image/webp,image/svg+xml"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (f) void uploadLogo(f);
-        }}
-      />
     </div>
   );
 }

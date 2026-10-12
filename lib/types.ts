@@ -1260,3 +1260,11 @@ export interface ShootingOrderSuggestion {
   after: ShootingOrderStats;
   scenes: Record<string, { light: "morning" | "day" | "evening" | "night"; place: "" | "int" | "ext"; rig: string; lenses: string[]; location: string | null }>;
 }
+
+/** 2026-10-12 — the logo library (per team / owner) */
+export interface ClientLogo {
+  id: string;
+  name: string;
+  url: string;
+  updated_at: string | null;
+}

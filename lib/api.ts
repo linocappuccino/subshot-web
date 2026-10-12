@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule, ShootingOrderSuggestion
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule, ShootingOrderSuggestion, ClientLogo
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -351,6 +351,17 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<{ expires_at: string }>(`projects/${projectId}/deliver-link/extend`, { method: "POST", body: JSON.stringify({ days }) }),
     deliverDownloads: (projectId: string) => request<DeliverDownloadLog>(`projects/${projectId}/deliver-downloads?t=${Date.now()}`),
     // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
+    // ── Logo-Bibliothek (2026-10-12) ──
+    clientLogos: (projectId: string) => request<{ logos: ClientLogo[]; selected_id: string | null }>(`projects/${projectId}/client-logos?t=${Date.now()}`),
+    startClientLogoUpload: (projectId: string, contentType: string) =>
+      request<{ key: string; upload_url: string }>(`projects/${projectId}/client-logos/upload`, { method: "POST", body: JSON.stringify({ content_type: contentType }) }),
+    createClientLogo: (projectId: string, name: string, key: string) =>
+      request<ClientLogo>(`projects/${projectId}/client-logos`, { method: "POST", body: JSON.stringify({ name, key, select: true }) }),
+    updateClientLogo: (projectId: string, logoId: string, body: { name?: string; key?: string }) =>
+      request<ClientLogo>(`projects/${projectId}/client-logos/${logoId}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteClientLogo: (projectId: string, logoId: string) => request<void>(`projects/${projectId}/client-logos/${logoId}`, { method: "DELETE" }),
+    chooseDeliverLogo: (projectId: string, logoId: string | null) =>
+      request<{ selected_id: string | null }>(`projects/${projectId}/deliver-logo`, { method: "PUT", body: JSON.stringify({ logo_id: logoId }) }),
     ideaDeliverableDefaults: (ideaId: string) => request<{ labels: string[] }>(`ideas/${ideaId}/deliverable-defaults?t=${Date.now()}`),
     putIdeaDeliverableDefaults: (ideaId: string, labels: string[]) =>
       request<{ labels: string[] }>(`ideas/${ideaId}/deliverable-defaults`, { method: "PUT", body: JSON.stringify({ labels }) }),
