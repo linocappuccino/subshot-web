@@ -681,33 +681,36 @@ export function VideoTile({
             onChange={onChangeAssignee}
           />
         )}
-        {/* 2026-10-12, Lino: "die info 'working on' ... ragt halb über die kachel" — on a narrow
-            9:16 tile the deadline + stage didn't fit one line and the stage stuck out on the right;
-            the row wraps now, the stage then moves (right-aligned) onto its own line */}
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-white/60">
           {canEditDeadline ? (
             <>
               {/* Lino: "deadline setzen soll auch auf einer zeile bleiben" — never wraps; portrait tiles say just "Deadline" */}
-              <span className="max-w-full whitespace-nowrap">
+              <span className="relative max-w-full whitespace-nowrap">
                 <DateTimePicker value={deadline ? new Date(deadline) : null} onChange={onChangeDeadline} placeholder={aspectRatio < 1 ? t("videoTile.deadlineShort") : t("videoTile.setDeadline")} />
+                {/* the "remove" × sits on the field's corner instead of wrapping onto its own line */}
+                {deadline && (
+                  <button
+                    onClick={() => onChangeDeadline(null)}
+                    aria-label={t("videoTile.removeDeadline")}
+                    title={t("videoTile.removeDeadline")}
+                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#2c2c2e] text-[11px] leading-none text-white/60 ring-1 ring-white/15 hover:bg-red-500 hover:text-white"
+                  >
+                    ×
+                  </button>
+                )}
               </span>
-              {deadline && (
-                <button onClick={() => onChangeDeadline(null)} aria-label={t("videoTile.removeDeadline")} className="text-white/30 hover:text-red-400 px-1">
-                  ×
-                </button>
-              )}
             </>
           ) : showDeadlineLabel ? (
             <span>{t("videoTile.deadlineWithValue", { date: deadline ? new Date(deadline).toLocaleDateString("de-CH") : t("videoTile.noDeadlineValue") })}</span>
           ) : (
             <span>{deadline ? new Date(deadline).toLocaleDateString("de-CH") : "—"}</span>
           )}
-          {/* 2026-09-25, Lino: "in der Postproduction-Übersicht muss einfach der momentan
-              ausgewählte Stand rechts unten, wo auch die anderen Infos stehen, angezeigt
-              werden (auch auf der Preview-Seite)" — the newest ready version's stage, right-
-              aligned in this existing last row (no extra row, no layout growth). */}
-          <PostStageLabel stage={effectivePostStage(latest, video, status)} className="ml-auto max-w-full pl-2" />
         </div>
+        {/* 2026-09-25, Lino: "in der Postproduction-Übersicht muss einfach der momentan ausgewählte
+            Stand rechts unten ... angezeigt werden (auch auf der Preview-Seite)" — the newest ready
+            version's stage. 2026-10-12, Lino: "gib dem mehr platz" — its own line at the very bottom,
+            "WORKING ON" left, the stage right. */}
+        <PostStageLabel row stage={effectivePostStage(latest, video, status)} className="mt-0.5 border-t border-white/[0.07] pt-2" />
       </div>
     </div>
   );

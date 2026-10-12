@@ -89,11 +89,24 @@ export function PostStageTimeline({
   );
 }
 
-/** Compact read-only "current stage" text for the tile footer. */
-export function PostStageLabel({ stage, className }: { stage: PostStage | null; className?: string }) {
+/** Compact read-only "current stage" text for the tile footer. `row` (2026-10-12, Lino: "working on
+ * auf der postproduction kachel sieht immer noch doof aus, gib dem mehr platz"): its own full-width
+ * line — "WORKING ON" on the left, the stage on the right. */
+export function PostStageLabel({ stage, className, row }: { stage: PostStage | null; className?: string; row?: boolean }) {
   const labels = usePostStageLabels();
   if (!stage) return null;
   const approved = stage === "abgenommen";
+  if (row) {
+    return (
+      <div className={cn("flex items-center justify-between gap-2 whitespace-nowrap", className)}>
+        <span className={cn("text-[10px] uppercase tracking-[0.08em] text-white/40", approved && "invisible")}>Working on</span>
+        <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-xs font-medium", approved ? "text-emerald-400" : "text-white/85")}>
+          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", approved ? "bg-emerald-400" : "bg-white/80")} />
+          <span className="truncate">{labels[stage]}</span>
+        </span>
+      </div>
+    );
+  }
   return (
     <span className={cn("inline-flex flex-col items-end whitespace-nowrap", className)}>
       {/* Reserved (invisible) even when approved so every tile's footer has the same height. */}
