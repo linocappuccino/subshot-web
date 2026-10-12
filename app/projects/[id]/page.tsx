@@ -55,6 +55,7 @@ import { useToast } from "@/app/components/ui/Toast";
 import { Input } from "@/app/components/ui/Field";
 import { Collapsible } from "@/app/components/ui/Collapsible";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
+import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -1794,6 +1795,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             half), same technique on both this page and postproduction/
             page.tsx so the header reads identically across every workflow
             stage. client_name/h1 stay in their own row below, unaffected. */}
+        {/* 2026-10-12, Lino: Pipeline-Zeitleiste über jeder Pipeline-Seite — Häkchen, sobald alle
+            Punkte eines Schritts entschieden sind, Klick wechselt die Seite */}
+        <div className="mb-5">
+          <PipelineTimeline
+            projectId={id}
+            current={activeView === "ideas" ? "ideas" : "scenes"}
+            onSelect={(step) => {
+              if (step === "ideas") goToIdeas();
+              else if (step === "scenes") goToScenes();
+              else if (step === "postproduction") void goToPostproductionWithTransition();
+              else return false;
+              return true;
+            }}
+          />
+        </div>
         <div className="relative flex items-center justify-between mb-2 gap-3 flex-wrap">
           {/* 2026-07-21, Lino: "die animation von einer workflow seite
               zurück zur projektübersicht ist noch sehr hackelig" — THIS

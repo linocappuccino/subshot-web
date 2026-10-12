@@ -22,6 +22,7 @@ import { setNavCache, takeNavCache } from "@/lib/navCache";
 import { readVideoMetadata } from "@/lib/media";
 import { useToast } from "@/app/components/ui/Toast";
 import type { Member, ProjectDetail, Section, PostproductionStatus, Video } from "@/lib/types";
+import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -699,6 +700,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         />
       </Suspense>
       <div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28">
+        {/* 2026-10-12, Lino: Pipeline-Zeitleiste (siehe PipelineTimeline.tsx) */}
+        <div className="mb-5">
+          <PipelineTimeline projectId={id} current="postproduction" />
+        </div>
         {/* 2026-07-21, Lino: "die platzierung der buttons muss auf JEDER
             WORKFLOW seite gleich sein" — der Zurueck-Link war hier eine
             EIGENE Zeile ueber dem Header-Row (Link, dann erst der flex-Row

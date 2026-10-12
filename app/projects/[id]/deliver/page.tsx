@@ -11,6 +11,7 @@ import { useToast } from "@/app/components/ui/Toast";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { DeliverStatus, DeliverMiscGroup } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
+import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
   { hours: 1, labelKey: "deliverAdmin.duration1h" },
@@ -291,6 +292,10 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
   return (
     <AppShell>
       <div className="max-w-4xl mx-auto w-full px-4 sm:px-6 pt-8 pb-28">
+        {/* 2026-10-12, Lino: Pipeline-Zeitleiste (siehe PipelineTimeline.tsx) */}
+        <div className="mb-5">
+          <PipelineTimeline projectId={id} current="deliver" />
+        </div>
         <div className="relative flex items-center justify-between mb-2 gap-3 flex-wrap">
           <button
             type="button"

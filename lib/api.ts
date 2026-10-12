@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion,
+  VideoVersion, PipelineProgress
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -238,7 +238,14 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     const method = (init?.method ?? "GET").toUpperCase();
     if (method !== "GET") {
       const result = doRequest<T>(path, init);
-      result.then(() => invalidateListCachesFor(path)).catch(() => {});
+      result
+        .then(() => {
+          invalidateListCachesFor(path);
+          // 2026-10-12 — the pipeline timeline (and anything else showing derived state) re-reads
+          // after a change: approve / reject / "im Kasten" / postproduction status …
+          if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("subshot:mutated", { detail: { path, method } }));
+        })
+        .catch(() => {});
       return result;
     }
     const key = keyFor(userId, path);
@@ -321,6 +328,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       clientName?: string | null
     ) => request<Project>("projects", { method: "POST", body: JSON.stringify({ name, color, emoji, client_name: clientName || undefined, ...modules }) }),
     projectDetail: (id: string) => request<ProjectDetail>(`projects/${id}`),
+    /** 2026-10-12 — the pipeline timeline above the project pages */
+    // always fresh (no GET cache): it is re-read right after every change
+    pipelineProgress: (id: string) => request<PipelineProgress>(`projects/${id}/pipeline-progress?t=${Date.now()}`),
     patchProject: (
       id: string,
       body: Partial<{

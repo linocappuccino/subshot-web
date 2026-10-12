@@ -3,6 +3,14 @@
 // for what the wire format looks like, since both clients talk to the same
 // backend.
 
+/** 2026-10-12 — GET /projects/{id}/pipeline-progress: per pipeline step how many points are
+ * decided; `done` = every point decided (deliver: every step before it done). Steps of disabled
+ * modules are left out. */
+export type PipelineStepKey = "ideas" | "scenes" | "postproduction" | "deliver";
+export interface PipelineProgress {
+  steps: { key: PipelineStepKey; total: number; decided: number; done: boolean }[];
+}
+
 export type Priority = "must" | "should" | "optional";
 export type CameraSupport = "gimbal" | "handheld" | "tripod";
 export type ShotStatus = "open" | "done" | "deleted";
