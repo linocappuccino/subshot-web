@@ -1562,7 +1562,7 @@ export function VideoReviewModal({
         // sm everything stacks as before, timeline first.
         <div
           ref={headerRef}
-          className="flex flex-col gap-2 px-5 py-3 border-b border-white/10 shrink-0 sm:grid sm:items-center sm:gap-x-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:[grid-template-areas:'time_time'_'left_right'] lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:[grid-template-areas:'left_time_right']"
+          className="flex flex-col gap-2 px-5 py-3 border-b border-white/10 shrink-0 sm:grid sm:items-center sm:gap-x-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:[grid-template-areas:'time_time'_'left_right'] 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] 2xl:[grid-template-areas:'left_time_right']"
         >
           <div className="flex justify-center min-w-0 overflow-x-auto sm:[grid-area:time]">
             <PostStageTimeline
@@ -1693,7 +1693,11 @@ export function VideoReviewModal({
               </div>
             )}
           </div>
-          <div className="flex items-center flex-wrap gap-1.5 shrink-0 sm:[grid-area:right] sm:justify-self-end">
+          {/* 2026-10-12, Lino: "die menü buttons oben sind komisch aufgeteilt, können wir das schöner
+              machen?" — grouped with hairline dividers: Neue Version | watermark, download, frame,
+              subtitles, comments | present, delete | close; never wraps (the X used to drop onto its
+              own line at laptop width). */}
+          <div className="flex items-center gap-1 shrink-0 flex-nowrap sm:[grid-area:right] sm:justify-self-end">
             {canEdit && (
               <>
                 <input
@@ -1724,15 +1728,7 @@ export function VideoReviewModal({
                 </button>
               </>
             )}
-            {onDeleteVideo && (
-              <button
-                onClick={() => (onDeleteVersion && versions.length > 1 ? setShowDeleteChoice(true) : setConfirmDeleteVideo(true))}
-                aria-label={t("videoReviewModal.deleteVideo")}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-white/10 transition-colors"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" /></svg>
-              </button>
-            )}
+            {canEdit && <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-white/10" />}
             {/* 2026-07-21 — nur fuer eingeloggte Editoren, siehe
                 toggleWatermark's Doc-Kommentar. Wirkt nicht auf DIESE
                 Ansicht (die bleibt immer unwasserzeichnet), nur auf
@@ -1807,6 +1803,7 @@ export function VideoReviewModal({
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></svg>
             </button>
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-white/10" />
             {/* 2026-08-03, Lino: Präsentationsmodus fürs Video-Feedback —
                 gleiches "Präsentationstafel"-Symbol wie IdeaFloatingCard.tsx,
                 für Wiedererkennbarkeit. Nur hier (normale Ansicht) sichtbar,
@@ -1824,6 +1821,16 @@ export function VideoReviewModal({
                 <path d="M12 16v2" />
               </svg>
             </button>
+            {onDeleteVideo && (
+              <button
+                onClick={() => (onDeleteVersion && versions.length > 1 ? setShowDeleteChoice(true) : setConfirmDeleteVideo(true))}
+                aria-label={t("videoReviewModal.deleteVideo")}
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-white/10 transition-colors"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" /></svg>
+              </button>
+            )}
+            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-white/10" />
             <button
               onClick={onClose}
               aria-label={t("common.close")}
