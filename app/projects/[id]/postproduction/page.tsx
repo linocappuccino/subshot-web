@@ -824,14 +824,9 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 <ShareIcon /> {t("workflow.share")}
               </Button>
             )}
-            {/* 2026-09-06, Lino: "nach der Postproduction-Seite kommt die
-                Deliver-Page, jedes abgeschlossene Video wird dort dann zum
-                Download aufgeführt" — own dedicated page (not a modal like
-                Share above), since it needs a duration/password/cover-video
-                picker plus a live preview of what's actually eligible. */}
-            <Button variant="secondary" size="sm" onClick={() => router.push(`/projects/${id}/deliver`)}>
-              <DeliverIcon /> {t("workflow.deliver")}
-            </Button>
+            {/* 2026-10-12, Lino: "auf der postproduction seite braucht es den deliver button oben nicht
+                mehr, den haben wir ja oben in der timeline" — removed (Deliver = last step of the
+                PipelineTimeline above). */}
             {/* 2026-09-16, Lino: "ich kann die reihenfolge der videos...
                 ändern können, damit ich für die person auf der preview
                 seite die reihenfolge vorgeben kann" — separate mode
@@ -1249,13 +1244,6 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   );
 }
 
-function DeliverIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 19h14" />
-    </svg>
-  );
-}
 function ShareIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
