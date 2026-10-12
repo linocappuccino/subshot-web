@@ -719,6 +719,14 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — Download-Protokoll of a project's Deliver link */
+export interface DeliverDownloadLog {
+  total: number;
+  first_at: string | null;
+  visitors: number;
+  events: { id: string; kind: "version" | "deliverable" | "license" | "misc" | "video_zip" | "all_zip"; label: string | null; visitor: string | null; user_agent: string | null; created_at: string | null }[];
+}
+
 /** 2026-10-12 — a Fassung (deliverable) or licence file of a delivered video */
 export interface DeliverFile {
   id: string;

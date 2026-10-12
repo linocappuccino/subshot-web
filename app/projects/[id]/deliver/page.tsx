@@ -12,6 +12,7 @@ import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { DeliverStatus, DeliverMiscGroup } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
+import { DeliverDownloadLog } from "@/app/components/DeliverDownloadLog";
 
 const DURATION_OPTIONS: { hours: number; labelKey: TranslationKey }[] = [
   { hours: 1, labelKey: "deliverAdmin.duration1h" },
@@ -352,6 +353,8 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
             <p className="text-sm text-white/40">{linkExpired ? t("deliverAdmin.linkExpiredNote") : t("deliverAdmin.noLinkYet")}</p>
           )}
         </div>
+
+        {status.link && <DeliverDownloadLog projectId={id} />}
 
         <div className="bg-white/[0.03] border border-white/8 rounded-2xl p-5 mb-6">
           <FieldGroup>

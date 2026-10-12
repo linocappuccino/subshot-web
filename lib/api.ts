@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -329,6 +329,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     ) => request<Project>("projects", { method: "POST", body: JSON.stringify({ name, color, emoji, client_name: clientName || undefined, ...modules }) }),
     projectDetail: (id: string) => request<ProjectDetail>(`projects/${id}`),
     /** 2026-10-12 — the pipeline timeline above the project pages */
+    deliverDownloads: (projectId: string) => request<DeliverDownloadLog>(`projects/${projectId}/deliver-downloads?t=${Date.now()}`),
     // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
     videoExtras: (projectId: string) => request<Record<string, VideoExtras>>(`projects/${projectId}/video-extras?t=${Date.now()}`),
     createDeliverable: (videoId: string, label: string) =>
