@@ -147,6 +147,8 @@ export function VideoFassungenChips({
         </span>
       )}
       {deliverables.map((d) => {
+        // the main version itself already is this format (e.g. required "16:9" on a 16:9 video)
+        if (d.status === "missing" && mainFormat && d.label.trim().toLowerCase() === mainFormat.toLowerCase()) return null;
         const p = progress[d.id];
         if (p !== undefined || d.status === "uploading") {
           return (

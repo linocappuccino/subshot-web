@@ -26,6 +26,7 @@ import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
+import { RequiredFassungen } from "@/app/components/RequiredFassungen";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -124,6 +125,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-10-12, Lino: Fassungen-Checkliste + Musiklizenzen pro Video (VideoExtrasModal)
   const [extras, setExtras] = useState<Record<string, VideoExtras>>({});
   const [extrasFor, setExtrasFor] = useState<Video | null>(null);
+  const [extrasReload, setExtrasReload] = useState(0);
   useEffect(() => {
     let alive = true;
     api
@@ -135,7 +137,21 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     return () => {
       alive = false;
     };
-  }, [api, id]);
+  }, [api, id, extrasReload]);
+  // 2026-10-12 — a new video gets the project's required Fassungen on the server: re-read after
+  // anything changed (debounced; cheap single GET)
+  useEffect(() => {
+    let timer: number | undefined;
+    const onMutated = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setExtrasReload((n) => n + 1), 500);
+    };
+    window.addEventListener("subshot:mutated", onMutated);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("subshot:mutated", onMutated);
+    };
+  }, []);
   const extrasOf = (videoId: string): VideoExtras => extras[videoId] ?? { deliverables: [], licenses: [] };
 
   // 2026-10-12, Lino: "Technischer Check beim Upload" (QC report per version, internal only).
@@ -866,6 +882,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             {data?.emoji && <span>{data.emoji}</span>} {data?.name ?? t("workflow.projectBack")}
           </h1>
+        </div>
+        {/* 2026-10-12, Lino: the project's required Fassungen (same list as in the project info) */}
+        <div className="mb-6 -mt-4">
+          <RequiredFassungen projectId={id} editable={canEditStatus} compact onSaved={() => setExtrasReload((n) => n + 1)} />
         </div>
 
         {loading ? (

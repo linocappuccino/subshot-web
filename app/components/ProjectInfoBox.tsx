@@ -1,5 +1,6 @@
 "use client";
 
+import { RequiredFassungen } from "./RequiredFassungen";
 import { useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
@@ -172,6 +173,9 @@ export function ProjectInfoBox({
               autoResize
             />
           </div>
+
+          {/* 2026-10-12, Lino: required Fassungen already at the briefing (same list as on Postproduction) */}
+          <RequiredFassungen projectId={project.id} editable />
 
           <div>
             <div className="text-xs font-semibold text-white/40 uppercase tracking-wide mb-1.5">{t("projectInfoBox.team")}</div>
