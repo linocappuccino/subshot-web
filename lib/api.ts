@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule, ShootingOrderSuggestion
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -537,6 +537,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // own doc comment): whole scene blocks within one Section reordered for the
     // shooting-day schedule, separate from reorderScenes' narrative sort_order.
     // Supersedes the 2026-09-07 shot-level attempt (reorderShotsShootingOrder).
+    // ── Drehreihenfolge optimieren (2026-10-12) ──
+    suggestShootingOrder: (sectionId: string) =>
+      request<ShootingOrderSuggestion>(`sections/${sectionId}/shooting-order/suggest?t=${Date.now()}`),
     reorderScenesShootingOrder: (sectionId: string, orderedSceneIds: string[]) =>
       request<Scene[]>(`sections/${sectionId}/scenes/reorder-shooting-order`, {
         method: "POST",

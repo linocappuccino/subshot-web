@@ -1243,3 +1243,20 @@ export interface Me {
 export type MePatch = Partial<
   Pick<Me, "language" | "email_notify_idea_feedback" | "email_notify_video_feedback" | "email_notify_postproduction_status">
 >;
+
+/** 2026-10-12 — Drehreihenfolge optimieren */
+export interface ShootingOrderStats {
+  location_changes: number;
+  km: number;
+  rig_changes: number;
+  lens_changes: number;
+}
+export interface ShootingOrderSuggestion {
+  current: string[];
+  order: string[];
+  changed: boolean;
+  reasons: Record<string, string[]>;
+  before: ShootingOrderStats;
+  after: ShootingOrderStats;
+  scenes: Record<string, { light: "morning" | "day" | "evening" | "night"; place: "" | "int" | "ext"; rig: string; lenses: string[]; location: string | null }>;
+}

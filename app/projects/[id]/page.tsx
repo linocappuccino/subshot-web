@@ -59,6 +59,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { CallsheetModal } from "@/app/components/CallsheetModal";
 import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
+import { ShootingOrderModal } from "@/app/components/ShootingOrderModal";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -364,6 +365,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // 2026-10-12, Lino: Zeitplan mit Live-Verzug — the badge in the header only shows on a shooting
   // day while the day runs; the modal holds the details and "Tagesplan erstellen"
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [liveDelay, setLiveDelay] = useState<{ min: number; state: string } | null>(null);
   useEffect(() => {
     let alive = true;
@@ -2336,15 +2338,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 from sort_order, switching views just changes which one
                 drives the display. */}
             {openSectionId !== "__unsectioned__" && (
-              <div className="mb-4 max-w-xs">
-                <SegmentedControl
-                  value={shotOrderMode ? "shots" : "scenes"}
-                  onChange={(v) => setShotOrderMode(v === "shots")}
-                  options={[
-                    { value: "scenes", label: t("scriptOverview.sceneOrderTab") },
-                    { value: "shots", label: t("scriptOverview.shotOrderTab") },
-                  ]}
-                />
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <div className="w-full max-w-xs">
+                  <SegmentedControl
+                    value={shotOrderMode ? "shots" : "scenes"}
+                    onChange={(v) => setShotOrderMode(v === "shots")}
+                    options={[
+                      { value: "scenes", label: t("scriptOverview.sceneOrderTab") },
+                      { value: "shots", label: t("scriptOverview.shotOrderTab") },
+                    ]}
+                  />
+                </div>
+                {/* 2026-10-12, Lino: Drehreihenfolge optimieren (no AI, see ShootingOrderModal) */}
+                <Button variant="secondary" size="sm" onClick={() => setOptimizeOpen(true)}>
+                  ✨ {t("optimize.button")}
+                </Button>
               </div>
             )}
 
@@ -2821,6 +2829,30 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         canDelete={canDeleteComments}
       />
     </AppShell>
+    <ShootingOrderModal
+      open={optimizeOpen}
+      onClose={() => setOptimizeOpen(false)}
+      sectionId={openSectionId && openSectionId !== "__unsectioned__" ? openSectionId : null}
+      scenes={data.scenes}
+      onApply={async (orderedSceneIds) => {
+        const sectionId = openSectionId;
+        if (!sectionId || sectionId === "__unsectioned__") return;
+        try {
+          await api.reorderScenesShootingOrder(sectionId, orderedSceneIds);
+          updateScenesShots((d) => ({
+            ...d,
+            scenes: d.scenes.map((s) => {
+              const idx2 = orderedSceneIds.indexOf(s.id);
+              return idx2 === -1 ? s : { ...s, shooting_order: idx2 };
+            }),
+          }));
+          setShotOrderMode(true);
+          toast.showSuccess(t("optimize.applied"));
+        } catch (e) {
+          toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+        }
+      }}
+    />
     <CallsheetModal open={callsheetOpen} onClose={() => setCallsheetOpen(false)} projectId={id} />
     <LiveScheduleModal
       open={scheduleOpen}
