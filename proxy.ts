@@ -41,7 +41,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // client handoff, alongside — not instead of — /preview's own "video"
 // feedback link), plain fetch via lib/publicDeliverApi.ts.
 const isPublicRoute = createRouteMatcher([
-  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/icon",
+  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/embed/auth(.*)", "/icon",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
