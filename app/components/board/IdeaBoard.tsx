@@ -61,6 +61,9 @@ import {
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
+import { PlacePill } from "../PlacePill";
+import { LocationPicker } from "../ui/LocationPicker";
+import { PLACE_PALETTE } from "@/lib/shotlistPlaces";
 import { ColorEditor, LocationEditor, PaletteEditor } from "./BoardCardEditors";
 import { BoardScenesBar } from "./BoardScenes";
 import { BoardQuickAdd, type QuickAddItem } from "./BoardQuickAdd";
@@ -1513,6 +1516,22 @@ export function IdeaBoard({
     }));
   }
 
+  function setSceneLocation(place: { address: string; lat: number | null; lng: number | null } | null) {
+    const ids = selectionRef.current;
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((el) => {
+        if (!ids.has(el.id) || el.type !== "scene") return el;
+        if (!place) {
+          const { location_address: _a, location_lat: _b, location_lng: _c, ...rest } = el;
+          void _a; void _b; void _c;
+          return rest as SceneElement;
+        }
+        return { ...el, location_address: place.address, location_lat: place.lat, location_lng: place.lng };
+      }),
+    }));
+  }
+
   function setTextColor(color: TextColor) {
     const ids = selectionRef.current;
     commit((d) => ({
@@ -1861,6 +1880,29 @@ export function IdeaBoard({
     () => data.elements.filter((el): el is SceneElement => el.type === "scene").sort((a, b) => a.number - b.number || a.y - b.y || a.x - b.x),
     [data.elements],
   );
+  // 2026-10-12, Lino: "man muss den szenen locations hinzufügen können die dann in der shotlist
+  // übernommen werden" — the board's Drehorte = the places set on its scene cards (location cards
+  // stay pure info), one colour each in scene-number order, same palette as the shot list
+  const boardPlaces = useMemo(() => {
+    const list: { address: string; lat: number | null; lng: number | null; color: string }[] = [];
+    for (const el of presentScenes) {
+      if (el.location_address && !list.some((p) => p.address === el.location_address)) {
+        list.push({ address: el.location_address, lat: el.location_lat ?? null, lng: el.location_lng ?? null, color: PLACE_PALETTE[list.length % PLACE_PALETTE.length] });
+      }
+    }
+    return list;
+  }, [presentScenes]);
+  const placeColorOf = (address?: string) => (address ? boardPlaces.find((p) => p.address === address)?.color ?? null : null);
+  // the place menu belongs to the selection it was opened for (another selection → closed)
+  const [placeMenuFor, setPlaceMenuFor] = useState<string | null>(null);
+  const selectionKey = [...selection].sort().join(",");
+  const placeMenuOpen = placeMenuFor === selectionKey;
+  const setPlaceMenuOpen = (v: boolean | ((open: boolean) => boolean)) => {
+    const next = typeof v === "function" ? v(placeMenuOpen) : v;
+    setPlaceMenuFor(next ? selectionKey : null);
+  };
+  const [placeSearch, setPlaceSearch] = useState(false);
+
   // the storyboard/presentation bar (bottom right)
   const storyBar = presentScenes.length > 0 && (allowPresentation || (editable && storyScenes.length > 1));
 
@@ -3298,6 +3340,7 @@ export function IdeaBoard({
                 onCommitScene={(patch) => commitScene(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
+                scenePlaceColor={el.type === "scene" ? placeColorOf(el.location_address) : null}
                 onRequestDialogue={() => {
                   dialogueOnEdit.current = el.id;
                   setSelection(new Set([el.id]));
@@ -3803,6 +3846,78 @@ export function IdeaBoard({
                   />
                 );
               })}
+              <Divider />
+              {/* 2026-10-12, Lino: Drehort for the selected scene cards */}
+              <span className="relative">
+                <BarButton
+                  title={t("ideaBoard.scenePlace")}
+                  active={placeMenuOpen}
+                  onPress={() => {
+                    setPlaceMenuOpen((v) => !v);
+                    setPlaceSearch(boardPlaces.length === 0);
+                  }}
+                >
+                  <span className="text-xs font-semibold px-1 whitespace-nowrap">📍 {t("ideaBoard.scenePlaceShort")}</span>
+                </BarButton>
+                {placeMenuOpen && (
+                  <div
+                    data-board-ui
+                    className="absolute left-1/2 top-full z-30 mt-2 w-[300px] -translate-x-1/2 space-y-2 rounded-2xl bg-[#1c1c1e]/95 p-2.5 shadow-[0_18px_40px_-12px_rgba(0,0,0,0.8)] ring-1 ring-inset ring-white/10 backdrop-blur-xl [font-family:-apple-system,BlinkMacSystemFont,'SF_Pro_Text',system-ui,sans-serif]"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    {boardPlaces.length > 0 && (
+                      <div className="flex flex-col items-start gap-1.5">
+                        {boardPlaces.map((p) => {
+                          const current = selectedEls.every((el) => (el as SceneElement).location_address === p.address);
+                          return (
+                            <button
+                              key={p.address}
+                              type="button"
+                              title={p.address}
+                              onClick={() => {
+                                setSceneLocation(p);
+                                setPlaceMenuOpen(false);
+                              }}
+                              className="flex w-full items-center justify-between gap-2 rounded-xl px-1 py-0.5 hover:bg-white/[0.06]"
+                            >
+                              <PlacePill address={p.address} color={p.color} size="sm" />
+                              {current && <span className="pr-1 text-[#0a84ff]">✓</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {placeSearch ? (
+                      <LocationPicker
+                        address=""
+                        lat={null}
+                        lng={null}
+                        onChange={(address, lat, lng) => {
+                          if (!address || lat === null) return; // only a picked suggestion
+                          setSceneLocation({ address, lat, lng });
+                          setPlaceMenuOpen(false);
+                        }}
+                      />
+                    ) : (
+                      <button type="button" onClick={() => setPlaceSearch(true)} className="w-full rounded-xl px-2 py-1.5 text-left text-[13px] text-[#0a84ff] hover:bg-white/[0.06]">
+                        + {t("ideaBoard.scenePlaceNew")}
+                      </button>
+                    )}
+                    {selectedEls.some((el) => (el as SceneElement).location_address) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSceneLocation(null);
+                          setPlaceMenuOpen(false);
+                        }}
+                        className="w-full rounded-xl px-2 py-1.5 text-left text-[13px] text-red-300 hover:bg-red-500/10"
+                      >
+                        {t("ideaBoard.scenePlaceRemove")}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </span>
               <Divider />
             </>
           )}

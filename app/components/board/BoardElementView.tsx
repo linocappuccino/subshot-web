@@ -1,6 +1,7 @@
 "use client";
 
 import { BoardDownloadContext, BoardZoomContext, SharpImg } from "./BoardDownload";
+import { PlacePill } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
@@ -102,6 +103,7 @@ export function BoardElementView({
   addDialogueOnEdit,
   onGenerateSceneImage,
   sceneGenerating,
+  scenePlaceColor,
   onPickSceneImage,
   groupMembers,
   onToggleGroup,
@@ -125,6 +127,8 @@ export function BoardElementView({
   addDialogueOnEdit?: boolean;
   onGenerateSceneImage?: () => void;
   sceneGenerating?: boolean;
+  /** colour of the scene's Drehort (one colour per place on this board) */
+  scenePlaceColor?: string | null;
   onPickSceneImage?: () => void;
   groupMembers?: BoardElement[];
   onToggleGroup?: () => void;
@@ -210,6 +214,7 @@ export function BoardElementView({
           addDialogueOnEdit={!!addDialogueOnEdit}
           onGenerate={onGenerateSceneImage}
           generating={!!sceneGenerating}
+          placeColor={scenePlaceColor ?? null}
           onImageSize={onNaturalSize}
           onMeasure={onMeasure}
         />
@@ -228,6 +233,7 @@ function SceneNode({
   addDialogueOnEdit,
   onGenerate,
   generating,
+  placeColor,
   onImageSize,
   onMeasure,
 }: {
@@ -241,6 +247,7 @@ function SceneNode({
   addDialogueOnEdit: boolean;
   onGenerate?: () => void;
   generating: boolean;
+  placeColor: string | null;
   onImageSize: (w: number, h: number) => void;
   onMeasure: (h: number) => void;
 }) {
@@ -333,6 +340,11 @@ function SceneNode({
           )}
         </div>
       </div>
+      {el.location_address && (
+        <div className="px-3 pb-2" title={el.location_address}>
+          <PlacePill address={el.location_address} color={placeColor} size="xs" />
+        </div>
+      )}
       <div className="px-3">
         {generating ? (
           <div className="w-full aspect-video rounded-md bg-gradient-to-br from-violet-500/25 via-blue-500/15 to-transparent animate-pulse flex flex-col items-center justify-center gap-1.5 text-xs text-white/70">

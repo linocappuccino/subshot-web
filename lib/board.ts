@@ -97,6 +97,10 @@ export interface SceneElement extends BaseElement {
   priority?: Priority | null;
   /** spoken lines — each becomes its own dialogue entry of the shot-list scene */
   dialogues?: string[];
+  /** 2026-10-12, Lino: the scene's Drehort — carried over to the shot-list scene on "Abgenommen" */
+  location_address?: string;
+  location_lat?: number | null;
+  location_lng?: number | null;
 }
 
 /** 2026-10-08, Lino: a group — a frame drawn around its member elements
