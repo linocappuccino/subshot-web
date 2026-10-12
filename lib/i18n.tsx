@@ -124,7 +124,6 @@ const translations = {
     "videoQc.targetSocial": "Social / Web",
     "videoQc.targetPodcast": "Podcast",
     "videoQc.targetTv": "TV (EBU)",
-    "videoQc.targetUs": "TV (USA)",
     "videoQc.pending": "Wird geprüft …",
     "videoQc.none": "Diese Version wurde noch nicht geprüft.",
     "videoQc.error": "Die Prüfung ist fehlgeschlagen – bitte nochmals starten.",
@@ -426,6 +425,7 @@ const translations = {
     // VideoTile.tsx
     "videoTile.uploadNewVersion": "Neue Version hochladen",
     "videoTile.noVideoUploaded": "Noch kein Video hochgeladen",
+    "videoTile.deadlineShort": "Deadline",
     "videoTile.uploading": "Lädt hoch…",
     "videoTile.processing": "In Verarbeitung…",
     "videoTile.renameVideo": "Video umbenennen",
@@ -1522,7 +1522,6 @@ const translations = {
     "videoQc.targetSocial": "Social / web",
     "videoQc.targetPodcast": "Podcast",
     "videoQc.targetTv": "TV (EBU)",
-    "videoQc.targetUs": "TV (US)",
     "videoQc.pending": "Checking …",
     "videoQc.none": "This version hasn't been checked yet.",
     "videoQc.error": "The check failed – please run it again.",
@@ -1812,6 +1811,7 @@ const translations = {
 
     "videoTile.uploadNewVersion": "Upload new version",
     "videoTile.noVideoUploaded": "No video uploaded yet",
+    "videoTile.deadlineShort": "Deadline",
     "videoTile.uploading": "Uploading…",
     "videoTile.processing": "Processing…",
     "videoTile.renameVideo": "Rename video",

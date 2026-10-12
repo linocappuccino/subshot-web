@@ -25,7 +25,7 @@ import type { Member, ProjectDetail, Section, PostproductionStatus, Video, Video
 import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
-import { VideoQcModal } from "@/app/components/VideoQcModal";
+import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -146,7 +146,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   const [qcTarget, setQcTarget] = useState<number>(() => {
     try {
       const v = typeof window !== "undefined" ? Number(localStorage.getItem(`subshot:qcTarget:${id}`)) : 0;
-      return v && v < 0 ? v : -14;
+      // only a target that still exists (2026-10-12: "TV US" -24 removed, Lino: "das machen wir nie")
+      return LOUDNESS_TARGETS.some((o) => o.value === v) ? v : -14;
     } catch {
       return -14; // no storage
     }

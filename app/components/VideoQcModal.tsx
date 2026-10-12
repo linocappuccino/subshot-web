@@ -15,7 +15,6 @@ export const LOUDNESS_TARGETS: { value: number; key: string }[] = [
   { value: -14, key: "videoQc.targetSocial" },
   { value: -16, key: "videoQc.targetPodcast" },
   { value: -23, key: "videoQc.targetTv" },
-  { value: -24, key: "videoQc.targetUs" },
 ];
 
 export function VideoQcModal({
