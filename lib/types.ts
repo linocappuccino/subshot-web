@@ -719,6 +719,12 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — feedback rounds per video (internal only) */
+export interface FeedbackRounds {
+  default_limit: number | null;
+  videos: Record<string, { used: number; versions: number[]; limit: number | null; own_limit: number | null }>;
+}
+
 /** 2026-10-12 — technical check of a video version (QC report), verdict per point */
 export interface VideoQc {
   status: "none" | "pending" | "done" | "error";

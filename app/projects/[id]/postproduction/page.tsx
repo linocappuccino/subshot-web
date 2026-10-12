@@ -21,11 +21,12 @@ import { ApiError, invalidateGetCache } from "@/lib/api";
 import { setNavCache, takeNavCache } from "@/lib/navCache";
 import { readVideoMetadata } from "@/lib/media";
 import { useToast } from "@/app/components/ui/Toast";
-import type { Member, ProjectDetail, Section, PostproductionStatus, Video, VideoExtras, VideoQc, VideoVersion } from "@/lib/types";
+import type { Member, ProjectDetail, Section, PostproductionStatus, Video, VideoExtras, VideoQc, VideoVersion, FeedbackRounds } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal } from "@/app/components/VideoQcModal";
+import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -169,6 +170,26 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       window.removeEventListener("subshot:mutated", onMutated);
     };
   }, [api, id, qcTarget, qcPending]);
+  // 2026-10-12, Lino: Feedback-Runden (nur intern) — re-read after every change on this page
+  const [rounds, setRounds] = useState<FeedbackRounds | null>(null);
+  const [roundsFor, setRoundsFor] = useState<Video | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .feedbackRounds(id)
+        .then((r) => alive && setRounds(r))
+        .catch(() => {});
+    load();
+    const onMutated = () => window.setTimeout(load, 500);
+    window.addEventListener("subshot:mutated", onMutated);
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener("subshot:mutated", onMutated);
+      window.removeEventListener("focus", load);
+    };
+  }, [api, id]);
   const newestVersion = (video: Video): VideoVersion | undefined =>
     video.versions.filter((v) => v.status === "ready").slice().sort((a, b) => a.version_number - b.version_number).pop();
   // 2026-07-18, Lino: "klickt man auf eine Notification soll man direkt zu
@@ -969,6 +990,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                     return v ? (qc[v.id] ?? null) : null;
                   })()}
                   onOpenQc={canEditStatus && newestVersion(video) ? () => setQcFor(video) : undefined}
+                  roundsBadge={rounds?.videos[video.id] ? { used: rounds.videos[video.id].used, limit: rounds.videos[video.id].limit } : null}
+                  onOpenRounds={canEditStatus ? () => setRoundsFor(video) : undefined}
                 />
               ));
               if (videos.length === 0 && canEditStatus) {
@@ -1077,6 +1100,25 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             onImported={() => api.projectDetail(data.id).then(setData)}
           />
         </>
+      )}
+      {roundsFor && (
+        <FeedbackRoundsModal
+          open
+          onClose={() => setRoundsFor(null)}
+          title={roundsFor.title}
+          used={rounds?.videos[roundsFor.id]?.used ?? 0}
+          versions={rounds?.videos[roundsFor.id]?.versions ?? []}
+          ownLimit={rounds?.videos[roundsFor.id]?.own_limit ?? null}
+          defaultLimit={rounds?.default_limit ?? null}
+          onSave={async (limit, scope) => {
+            if (scope === "project") {
+              await api.putProjectRoundDefault(id, limit);
+              // the project default applies to this video too → drop its own value
+              if (rounds?.videos[roundsFor.id]?.own_limit !== null) await api.putVideoRoundLimit(roundsFor.id, null);
+            } else await api.putVideoRoundLimit(roundsFor.id, limit);
+            setRounds(await api.feedbackRounds(id));
+          }}
+        />
       )}
       {qcFor &&
         (() => {

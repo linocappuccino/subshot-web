@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -329,6 +329,11 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     ) => request<Project>("projects", { method: "POST", body: JSON.stringify({ name, color, emoji, client_name: clientName || undefined, ...modules }) }),
     projectDetail: (id: string) => request<ProjectDetail>(`projects/${id}`),
     /** 2026-10-12 — the pipeline timeline above the project pages */
+    feedbackRounds: (projectId: string) => request<FeedbackRounds>(`projects/${projectId}/feedback-rounds?t=${Date.now()}`),
+    putVideoRoundLimit: (videoId: string, limit: number | null) =>
+      request<{ ok: boolean }>(`videos/${videoId}/round-limit`, { method: "PUT", body: JSON.stringify({ round_limit: limit }) }),
+    putProjectRoundDefault: (projectId: string, limit: number | null) =>
+      request<{ ok: boolean }>(`projects/${projectId}/round-default`, { method: "PUT", body: JSON.stringify({ round_limit: limit }) }),
     videoQc: (projectId: string, target: number) => request<Record<string, VideoQc>>(`projects/${projectId}/video-qc?target=${target}&t=${Date.now()}`),
     rerunVideoQc: (versionId: string) => request<{ status: string }>(`video-versions/${versionId}/qc`, { method: "POST" }),
     deliverSettings: (projectId: string) => request<DeliverSettings>(`projects/${projectId}/deliver-settings?t=${Date.now()}`),

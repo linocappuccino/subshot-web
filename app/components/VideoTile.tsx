@@ -83,7 +83,7 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * Nummer als kleines Badge oben rechts im Thumbnail. */
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, qcBadge, onOpenQc,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
 }: {
   video: Video;
   status: PostproductionStatus | null;
@@ -111,6 +111,9 @@ export function VideoTile({
   /** 2026-10-12 — technical check of the newest version (internal only) */
   qcBadge?: { status: "none" | "pending" | "done" | "error"; failed: number } | null;
   onOpenQc?: () => void;
+  /** 2026-10-12 — feedback rounds "Runde 2/3" (internal pages ONLY — never pass this on client pages) */
+  roundsBadge?: { used: number; limit: number | null } | null;
+  onOpenRounds?: () => void;
   /** Undefined = kein Stift-Icon zum Umbenennen (nur canEditStatus-Nutzer). */
   onRename?: (title: string) => void;
   /** 2026-07-20, Lino (öffentliche Preview-Seite): "Deadline: ..." / bei
@@ -396,6 +399,27 @@ export function VideoTile({
               💬 {commentCount}
             </span>
           )}
+          {roundsBadge && (roundsBadge.used > 0 || roundsBadge.limit !== null) && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenRounds?.();
+              }}
+              title={t("rounds.menu")}
+              className={`text-[11px] rounded-full px-2 py-0.5 tabular-nums transition-colors ${
+                roundsBadge.limit !== null && roundsBadge.used > roundsBadge.limit
+                  ? "bg-red-600/90 text-white hover:bg-red-500"
+                  : roundsBadge.limit !== null && roundsBadge.used === roundsBadge.limit
+                    ? "bg-amber-400/90 text-[#241a00] hover:bg-amber-300"
+                    : "bg-black/50 text-white/85 hover:bg-black/70"
+              }`}
+            >
+              {roundsBadge.limit !== null
+                ? t("rounds.badge", { used: roundsBadge.used, limit: roundsBadge.limit })
+                : t("rounds.badgeNoLimit", { used: roundsBadge.used })}
+            </button>
+          )}
           {qcBadge && qcBadge.status !== "none" && (
             <button
               type="button"
@@ -515,6 +539,16 @@ export function VideoTile({
                       }}
                     >
                       {t("videoQc.menu")}
+                    </MenuItem>
+                  )}
+                  {onOpenRounds && (
+                    <MenuItem
+                      onClick={() => {
+                        onOpenRounds();
+                        close();
+                      }}
+                    >
+                      {t("rounds.menu")}
                     </MenuItem>
                   )}
                 </>
