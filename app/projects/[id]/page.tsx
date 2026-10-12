@@ -60,6 +60,7 @@ import { CallsheetModal } from "@/app/components/CallsheetModal";
 import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
 import { ShootingOrderModal } from "@/app/components/ShootingOrderModal";
+import { SectionLocationButton } from "@/app/components/SectionLocationButton";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -2326,6 +2327,15 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <Button variant="secondary" size="sm" onClick={() => setOptimizeOpen(true)}>
                   ✨ {t("optimize.button")}
                 </Button>
+                {(() => {
+                  const sec = data.sections.find((x) => x.id === openSectionId);
+                  return sec ? (
+                    <SectionLocationButton
+                      section={sec}
+                      onChange={(updated) => setData((prev) => (prev ? { ...prev, sections: prev.sections.map((x) => (x.id === updated.id ? updated : x)) } : prev))}
+                    />
+                  ) : null;
+                })()}
               </div>
             )}
 
