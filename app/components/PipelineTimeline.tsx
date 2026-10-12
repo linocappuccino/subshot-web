@@ -68,7 +68,7 @@ export function PipelineTimeline({
     };
   }, [load]);
 
-  if (!progress) return <div className="h-11" aria-hidden />;
+  if (!progress) return <div className="h-[46px]" aria-hidden />;
 
   const labels: Record<PipelineStepKey, string> = {
     ideas: t("workflow.ideasConcept"),
@@ -93,19 +93,22 @@ export function PipelineTimeline({
   }
 
   const steps = progress.steps;
+  // 2026-10-12, Lino: "die pipeline timeline etwas schöner darstellen, das sieht noch nicht apple
+  // genug aus" — an iOS-style segmented capsule (frosted track, the current step a raised pill)
+  // with an Activity-style progress ring per step that fills up and turns into a green tick.
   return (
-    <nav aria-label={t("pipelineTimeline.label")} className="w-full overflow-x-auto [scrollbar-width:none]">
-      <ol className="flex items-start justify-center min-w-max px-2 py-1">
+    <nav aria-label={t("pipelineTimeline.label")} className="flex w-full justify-center overflow-x-auto px-2 py-1 [scrollbar-width:none]">
+      <ol className="flex min-w-max items-center gap-0.5 rounded-full bg-white/[0.06] p-1 ring-1 ring-inset ring-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_8px_24px_-12px_rgba(0,0,0,0.6)] backdrop-blur-xl">
         {steps.map((s, i) => {
           const isCurrent = s.key === current;
           const sub = counter(s.key, s.decided, s.total);
+          const ratio = s.done ? 1 : s.total ? s.decided / s.total : 0;
           return (
-            <li key={s.key} className="flex items-start">
+            <li key={s.key} className="flex items-center">
               {i > 0 && (
-                <span
-                  aria-hidden
-                  className={cn("mt-[15px] h-px w-6 sm:w-14 shrink-0", steps[i - 1].done ? "bg-emerald-400/60" : "bg-white/15")}
-                />
+                <svg aria-hidden width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mx-0.5 shrink-0 text-white/20">
+                  <path d="m9 6 6 6-6 6" />
+                </svg>
               )}
               <button
                 type="button"
@@ -113,41 +116,59 @@ export function PipelineTimeline({
                 aria-current={isCurrent ? "step" : undefined}
                 title={sub ? `${labels[s.key]} – ${sub}` : labels[s.key]}
                 className={cn(
-                  "group flex flex-col items-center gap-1 rounded-xl px-2 sm:px-3 py-1 transition-colors",
-                  isCurrent ? "bg-white/[0.07]" : "hover:bg-white/5 cursor-pointer"
+                  "group flex items-center gap-2 rounded-full py-1.5 pl-2 text-[13px] tracking-[-0.01em] transition-all duration-300 ease-out [font-family:-apple-system,BlinkMacSystemFont,'SF_Pro_Text',system-ui,sans-serif]",
+                  isCurrent ? "pr-3.5" : "pr-2 sm:pr-3.5",
+                  isCurrent
+                    ? "bg-white/[0.14] text-white shadow-[0_1px_2px_rgba(0,0,0,0.35),0_4px_14px_-4px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.12)]"
+                    : "cursor-pointer text-white/55 hover:bg-white/[0.06] hover:text-white/85 active:scale-[0.97]"
                 )}
               >
-                <span className="flex items-center gap-2">
-                  {/* the checkbox: green with a tick once every point of the step is decided */}
-                  <span
-                    className={cn(
-                      "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-                      s.done ? "border-emerald-400 bg-emerald-400 text-[#161616]" : isCurrent ? "border-white/70" : "border-white/30"
-                    )}
-                  >
-                    {s.done && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                        <path d="M5 12.5l4.5 4.5L19 7.5" />
-                      </svg>
-                    )}
+                <ProgressRing ratio={ratio} done={s.done} active={isCurrent} />
+                <span className={cn("whitespace-nowrap font-medium", !isCurrent && "hidden sm:inline")}>{labels[s.key]}</span>
+                {sub && (
+                  <span className={cn("hidden whitespace-nowrap text-[11px] tabular-nums md:inline", s.done ? "text-[#30d158]/80" : isCurrent ? "text-white/45" : "text-white/30")}>
+                    {s.total && s.key !== "deliver" ? `${s.decided}/${s.total}` : sub}
                   </span>
-                  <span
-                    className={cn(
-                      "whitespace-nowrap text-xs sm:text-sm",
-                      isCurrent ? "text-white font-semibold" : s.done ? "text-emerald-300/90 group-hover:text-emerald-200" : "text-white/55 group-hover:text-white/80",
-                      // phones: only the current step keeps its name, the others are their checkbox
-                      !isCurrent && "hidden sm:inline"
-                    )}
-                  >
-                    {labels[s.key]}
-                  </span>
-                </span>
-                {sub && <span className={cn("text-[10px] tabular-nums whitespace-nowrap", s.done ? "text-emerald-400/70" : "text-white/35", !isCurrent && "hidden sm:inline")}>{sub}</span>}
+                )}
               </button>
             </li>
           );
         })}
       </ol>
     </nav>
+  );
+}
+
+/** Apple-Activity-style ring: track + green arc for the decided share, a filled green disc with a
+ *  tick once the step is done. */
+function ProgressRing({ ratio, done, active }: { ratio: number; done: boolean; active: boolean }) {
+  const r = 7.25;
+  const c = 2 * Math.PI * r;
+  if (done) {
+    return (
+      <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[#30d158] text-black shadow-[0_0_10px_-2px_rgba(48,209,88,0.7)]">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M5 12.5l4.5 4.5L19 7.5" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" className="shrink-0 -rotate-90" aria-hidden>
+      <circle cx="9" cy="9" r={r} fill="none" strokeWidth="2.25" className={active ? "stroke-white/25" : "stroke-white/15"} />
+      {ratio > 0 && (
+        <circle
+          cx="9"
+          cy="9"
+          r={r}
+          fill="none"
+          strokeWidth="2.25"
+          strokeLinecap="round"
+          stroke="#30d158"
+          strokeDasharray={`${c * ratio} ${c}`}
+          className="transition-[stroke-dasharray] duration-700 ease-out"
+        />
+      )}
+    </svg>
   );
 }
