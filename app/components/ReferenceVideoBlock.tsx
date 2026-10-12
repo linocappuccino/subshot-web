@@ -231,6 +231,21 @@ export function ReferenceVideoBlock({
         className="hidden"
         onChange={handlePick}
       />
+      {/* 2026-10-12, Lino: "kann das feld 'add scribble video' kleiner sein? weil wenn man keines
+          hat, muss das nicht so präsent sein, ein kleiner button würde reichen" — no videos yet → just
+          a small button; the big dashed tile only shows once there's a grid of videos to extend. */}
+      {videos.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-white/15 px-2.5 py-1.5 text-xs font-medium text-white/45 transition-colors hover:border-white/30 hover:bg-white/[0.05] hover:text-white/80"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          {t("referenceVideo.upload")}
+        </button>
+      ) : (
       <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={videos.map((v) => v.id)} strategy={rectSortingStrategy}>
           {/* 2026-09-11, Lino: "es sollen 3 videos pro zeile sein, passe die
@@ -271,6 +286,7 @@ export function ReferenceVideoBlock({
           </div>
         </SortableContext>
       </DndContext>
+      )}
       <ConfirmDialog
         open={deleteTargetId !== null}
         title={t("referenceVideo.deleteTitle")}
