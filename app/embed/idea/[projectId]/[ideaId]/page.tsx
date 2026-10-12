@@ -28,6 +28,9 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
         setIdeas(list);
         setIndex(Math.max(0, list.findIndex((i) => i.id === ideaId)));
         setMyRole(members.find((m) => m.user_id === me.id)?.role ?? null);
+        // the app hides its loading spinner now (the auth page got here by a client-side redirect,
+        // so the web view never saw a page load finish on this URL)
+        tellApp({ type: "ready" });
       })
       .catch(() => alive && setFailed(true));
     return () => {
