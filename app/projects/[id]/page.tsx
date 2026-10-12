@@ -61,6 +61,7 @@ import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
 import { ShootingOrderModal } from "@/app/components/ShootingOrderModal";
 import { SectionLocationButton } from "@/app/components/SectionLocationButton";
+import { ShotlistProgress } from "@/app/components/ShotlistProgress";
 import { ShotlistPlacesContext, buildPlaces, type ShotlistPlaces } from "@/lib/shotlistPlaces";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
@@ -2141,9 +2142,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       </div>
                     )}
                     <div className="font-semibold truncate pr-6">{section.name}</div>
-                    <div className="text-sm text-white/50 mt-1">
-                      {scenesIn(section.id).length} {t("scriptOverview.sceneCount")}
-                    </div>
+                    <ShotlistProgress scenes={scenesIn(section.id)} />
                   </button>
                   {/* 2026-09-07 fix, Lino: "man muss hier auch ganze
                       shotlisten löschen können (in der Übersicht)" —
@@ -2239,9 +2238,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   title={t("scriptOverview.unsectionedHint")}
                 >
                   <div className="font-semibold truncate pr-6">{t("scriptOverview.unsectionedTitle")}</div>
-                  <div className="text-sm text-white/50 mt-1">
-                    {unsectioned.length} {t("scriptOverview.sceneCount")}
-                  </div>
+                  <ShotlistProgress scenes={unsectioned} />
                 </button>
                 {/* 2026-09-07, Lino: "ich kann 'ohne abschnitte' nicht
                     löschen, das muss man auch löschen können!" — see

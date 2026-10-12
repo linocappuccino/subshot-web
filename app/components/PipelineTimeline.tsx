@@ -141,7 +141,7 @@ export function PipelineTimeline({
 
 /** Apple-Activity-style ring: track + green arc for the decided share, a filled green disc with a
  *  tick once the step is done. */
-function ProgressRing({ ratio, done, active }: { ratio: number; done: boolean; active: boolean }) {
+export function ProgressRing({ ratio, done, active }: { ratio: number; done: boolean; active: boolean }) {
   const r = 7.25;
   const c = 2 * Math.PI * r;
   if (done) {
