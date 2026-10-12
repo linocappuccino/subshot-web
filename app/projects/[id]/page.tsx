@@ -1870,7 +1870,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             }}
           />
         </div>
-        <div className="relative flex items-center justify-between mb-2 gap-3 flex-wrap">
+        {/* 2026-10-12, Lino: "auf der shotlist sind die buttons pdf und comments über der concept /
+            shotlist title" — the title used to be absolutely centered over the row, so a longer
+            button row (Callsheet, Zeitplan …) ran underneath it. Now a real 3-column grid on lg+
+            (back | title | buttons, buttons wrap inside their column); below lg the title gets its
+            own centered row. */}
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-3 lg:grid lg:grid-cols-[1fr_auto_1fr]">
           {/* 2026-07-21, Lino: "die animation von einer workflow seite
               zurück zur projektübersicht ist noch sehr hackelig" — THIS
               was the actual culprit, not the edge chevron button below
@@ -1884,7 +1889,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           <button
             type="button"
             onClick={goToProjectsWithTransition}
-            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1"
+            className="text-sm text-white/40 hover:text-white/70 transition-colors flex items-center gap-1 justify-self-start"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="m15 18-6-6 6-6" />
@@ -1906,12 +1911,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             {/* 2026-07-21, Lino: "den Workflow titel NICHT blau machen... ändere
                 das auf eher was gräuliches" — war text-blue-400, jetzt neutral
                 grau wie das Postproduction-Pendant (postproduction/page.tsx). */}
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+          <div className="pointer-events-none order-first w-full text-center lg:order-none lg:w-auto">
             <div className="font-bebas text-xl uppercase tracking-wide text-white/40 whitespace-nowrap">
               {activeView === "ideas" ? t("workflow.ideasConcept") : t("workflow.scriptShotlist")}
             </div>
           </div>
-          <div className="relative z-10 flex gap-2 flex-wrap">
+          <div className="relative z-10 flex flex-wrap justify-end gap-2">
             <Button
               variant={showAnnotations ? "primary" : "secondary"}
               size="sm"
