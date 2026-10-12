@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -431,6 +431,18 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     deleteProject: (id: string) => request<void>(`projects/${id}`, { method: "DELETE" }),
     moveProject: (id: string, beforeProjectId: string | null) =>
       request<Project>(`projects/${id}/move`, { method: "POST", body: JSON.stringify({ before_project_id: beforeProjectId }) }),
+    // ── Callsheet + Wetter in der Shotlist (2026-10-12) ──
+    sceneWeather: (projectId: string) =>
+      request<Record<string, { emoji: string; temp: number; rain_prob: number | null; wind: number | null; text: string }>>(`projects/${projectId}/scene-weather?t=${Date.now()}`),
+    callsheetDays: (projectId: string) => request<{ days: CallsheetDay[] }>(`projects/${projectId}/callsheet/days?t=${Date.now()}`),
+    callsheet: (projectId: string, date: string) => request<Callsheet>(`projects/${projectId}/callsheet?date=${date}&t=${Date.now()}`),
+    callsheetPdfUrl: async (projectId: string, date: string) => {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      const res = await fetch(`${BASE_URL}/projects/${projectId}/callsheet.pdf?date=${date}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+      return URL.createObjectURL(await res.blob());
+    },
     projectPdfUrl: async (id: string, view: "cards" | "table" | "ideas" = "cards") => {
       // Downloaded (not just linked) because the endpoint needs the same
       // Bearer auth as everything else — a plain <a href> can't attach one.

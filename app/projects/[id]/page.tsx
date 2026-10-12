@@ -56,6 +56,8 @@ import { Input } from "@/app/components/ui/Field";
 import { Collapsible } from "@/app/components/ui/Collapsible";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
+import { CallsheetModal } from "@/app/components/CallsheetModal";
+import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -355,6 +357,35 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
   const initialReturnView = returnViewRef.current;
   const [activeView, setActiveView] = useState<"ideas" | "scenes">(initialReturnView === "scenes" ? "scenes" : "ideas");
+  // 2026-10-12, Lino: "das Wetter in der Shotlist per Emoji" — weather at each scene's start and
+  // place (forecast ≤ 16 days), re-read shortly after anything on the page changes (time / place)
+  const [callsheetOpen, setCallsheetOpen] = useState(false);
+  const [sceneWeather, setSceneWeather] = useState<Record<string, SceneWeather>>({});
+  useEffect(() => {
+    let alive = true;
+    let timer: number | undefined;
+    const load = () =>
+      api
+        .sceneWeather(id)
+        .then((w) => alive && setSceneWeather(w))
+        .catch(() => {});
+    load();
+    const onMutated = (e: Event) => {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path ?? "";
+      if (!/scenes|projects/.test(path)) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(load, 1500);
+    };
+    window.addEventListener("subshot:mutated", onMutated);
+    const hourly = window.setInterval(load, 60 * 60 * 1000);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      window.clearInterval(hourly);
+      window.removeEventListener("subshot:mutated", onMutated);
+    };
+  }, [api, id]);
+
   // 2026-08-30 — Skript-Auswahlübersicht (Lino: die Skript-Seite soll die
   // abgenommenen Ideen erst als klickbare Kachel-Übersicht zeigen, Klick
   // öffnet dann die eigentliche Shot-Planung NUR für diesen einen
@@ -1747,6 +1778,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
 
   return (
+    <SceneWeatherContext.Provider value={sceneWeather}>
     <AppShell>
       <Suspense fallback={null}>
         <NotificationParamsWatcher
@@ -1907,6 +1939,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             {activeView === "scenes" && (
               <Button variant="secondary" size="sm" onClick={exportGoodTakes}>
                 <GoodTakeIcon /> {t("workflow.goodTakes")}
+              </Button>
+            )}
+            {/* 2026-10-12, Lino: Callsheet / Dispo pro Drehtag (Wetter + Sonnenstand) */}
+            {activeView === "scenes" && (
+              <Button variant="secondary" size="sm" onClick={() => setCallsheetOpen(true)}>
+                📋 {t("callsheet.button")}
               </Button>
             )}
             {/* 2026-07-17, Lino: "der teilen button soll immer die seite
@@ -2742,6 +2780,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         canDelete={canDeleteComments}
       />
     </AppShell>
+    <CallsheetModal open={callsheetOpen} onClose={() => setCallsheetOpen(false)} projectId={id} />
+    </SceneWeatherContext.Provider>
   );
 }
 

@@ -16,6 +16,7 @@ import { Menu, MenuItem } from "./ui/Menu";
 import { IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { ShotEditModal } from "./ShotEditModal";
+import { useSceneWeather, weatherLabel, weatherTitle } from "@/lib/sceneWeather";
 
 /** True from `scheduled_at` until `scheduled_at + duration_minutes` — the
  * card pulses for exactly this window (Lino: "bei der kachel wo der timer
@@ -520,6 +521,7 @@ export function SceneCard({
   const assignees = members.filter((m) => (scene.assignee_ids ?? []).includes(m.user_id));
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   const isTimerRunning = useSceneTimerRunning(scene);
+  const sceneWeather = useSceneWeather(scene.id);
 
   return (
     <div className="relative">
@@ -693,6 +695,12 @@ export function SceneCard({
                   Start: {new Date(scene.scheduled_at).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   {scene.duration_minutes ? ` · ${scene.duration_minutes} Min.` : ""}
                 </Pill>
+              )}
+              {/* 2026-10-12, Lino: weather at the scene's start and place */}
+              {sceneWeather && (
+                <span title={weatherTitle(sceneWeather, t("weather.rain"), t("weather.wind"))}>
+                  <Pill className="rounded-lg tabular-nums">{weatherLabel(sceneWeather)}</Pill>
+                </span>
               )}
               {scene.location_address && (
                 <a

@@ -14,6 +14,7 @@ import { usePinnedUrl } from "./ReferenceVideoBlock";
 import { useToast } from "./ui/Toast";
 import { Menu, MenuItem } from "./ui/Menu";
 import { IconButton } from "./ui/Button";
+import { useSceneWeather, weatherLabel, weatherTitle } from "@/lib/sceneWeather";
 
 /** Full-detail alternative to the card grid — every field the card shows
  * (image, description, dialogue lines, good-take, location, ...) still
@@ -251,6 +252,8 @@ function SceneRow({
                 {t("sceneTable.minutesShort", { count: scene.duration_minutes })}
               </>
             ) : null}
+            {/* 2026-10-12 — weather at the scene's start and place */}
+            <SceneWeatherLine sceneId={scene.id} />
           </>
         ) : (
           <span className="text-white/25">—</span>
@@ -416,5 +419,20 @@ function SceneRow({
         </Menu>
       </td>
     </tr>
+  );
+}
+
+
+function SceneWeatherLine({ sceneId }: { sceneId: string }) {
+  const { t } = useLanguage();
+  const w = useSceneWeather(sceneId);
+  if (!w) return null;
+  return (
+    <>
+      <br />
+      <span className="tabular-nums text-white/60" title={weatherTitle(w, t("weather.rain"), t("weather.wind"))}>
+        {weatherLabel(w)}
+      </span>
+    </>
   );
 }

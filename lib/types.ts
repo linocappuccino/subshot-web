@@ -719,6 +719,22 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — Callsheet per shooting day */
+export interface CallsheetDay { date: string; scenes: number; start: string; end: string; locations: string[] }
+export interface CallsheetLocation {
+  no: number; address: string | null; lat: number | null; lng: number | null; maps: string | null;
+  weather?: { text: string; symbol: string; t_min: number; t_max: number; rain_prob: number | null; wind: number | null } | null;
+  sun?: { sunrise?: string; sunset?: string; golden_morning?: string; golden_evening?: string; blue_morning?: string; blue_evening?: string };
+}
+export interface Callsheet {
+  date: string; project: string; client: string | null; start: string | null; end: string | null;
+  rows: { start: string; end: string; minutes: number | null; number: number | null; letter: string | null; title: string; description: string; intermediate: boolean; location: number | null; assignees: string[]; shots: number; weather?: { temp: number; rain_prob: number | null; text: string; symbol: string } }[];
+  locations: CallsheetLocation[];
+  crew: { name: string; email: string; role: string }[];
+  team: { name: string; email: string; role: string }[];
+  forecast_from: string | null;
+}
+
 /** 2026-10-12 — feedback rounds per video (internal only) */
 export interface FeedbackRounds {
   default_limit: number | null;
