@@ -17,6 +17,8 @@ import { IconButton } from "./ui/Button";
 import { useToast } from "./ui/Toast";
 import { ShotEditModal } from "./ShotEditModal";
 import { useSceneWeather, weatherLabel, weatherTitle } from "@/lib/sceneWeather";
+import { useShotlistPlaces } from "@/lib/shotlistPlaces";
+import { PlacePill, PinGlyph } from "./PlacePill";
 
 /** True from `scheduled_at` until `scheduled_at + duration_minutes` — the
  * card pulses for exactly this window (Lino: "bei der kachel wo der timer
@@ -522,6 +524,13 @@ export function SceneCard({
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   const isTimerRunning = useSceneTimerRunning(scene);
   const sceneWeather = useSceneWeather(scene.id);
+  // 2026-10-12, Lino: the scene's Drehort right on the card, written out in its colour, pick another
+  // place by name (the shotlist's places, see lib/shotlistPlaces.tsx)
+  const shotlistPlaces = useShotlistPlaces();
+  const places = shotlistPlaces && !scene.is_intermediate_step && !scene.is_project_info ? shotlistPlaces.placesFor(scene.section_id ?? null) : [];
+  const defaultPlace = places.find((p) => p.isDefault) ?? null;
+  const placeAddress = scene.location_address ?? defaultPlace?.address ?? null;
+  const placeColor = places.find((p) => p.address === placeAddress)?.color ?? null;
 
   return (
     <div className="relative">
@@ -671,6 +680,61 @@ export function SceneCard({
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
             {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
+            {shotlistPlaces && (placeAddress || places.length > 0) && !scene.is_intermediate_step && !scene.is_project_info && (
+              <span onClick={(e) => e.stopPropagation()} className="min-w-0">
+                <Menu
+                  align="start"
+                  trigger={
+                    <button type="button" title={placeAddress ?? undefined} className="cursor-pointer transition-[filter] hover:brightness-125">
+                      <PlacePill address={placeAddress} color={placeColor} emptyLabel={t("sectionLocation.button")} muted={!scene.location_address} size="xs" />
+                    </button>
+                  }
+                >
+                  {(close) => (
+                    <>
+                      {places.map((p) => (
+                        <MenuItem
+                          key={p.address}
+                          onClick={() => {
+                            close();
+                            if (p.address !== placeAddress) shotlistPlaces.assign(scene, p);
+                          }}
+                        >
+                          <span className="flex items-center gap-2 whitespace-nowrap">
+                            <PinGlyph color={p.color} />
+                            {p.address.split(",")[0]}
+                            {p.isDefault && <span className="text-white/40">· {t("sectionLocation.default")}</span>}
+                            {p.address === placeAddress && <span className="ml-auto pl-3 text-[#0a84ff]">✓</span>}
+                          </span>
+                        </MenuItem>
+                      ))}
+                      {placeAddress && (scene.location_lat != null || defaultPlace?.lat != null) && (
+                        <MenuItem
+                          onClick={() => {
+                            close();
+                            const lat = scene.location_address ? scene.location_lat : defaultPlace?.lat;
+                            const lng = scene.location_address ? scene.location_lng : defaultPlace?.lng;
+                            window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, "_blank", "noopener");
+                          }}
+                        >
+                          <span className="text-white/60">↗ Google Maps</span>
+                        </MenuItem>
+                      )}
+                      {scene.section_id && (
+                        <MenuItem
+                          onClick={() => {
+                            close();
+                            shotlistPlaces.manage(scene.section_id ?? null);
+                          }}
+                        >
+                          <span className="text-[#0a84ff]">{t("sectionLocation.manage")}</span>
+                        </MenuItem>
+                      )}
+                    </>
+                  )}
+                </Menu>
+              </span>
+            )}
             {scene.not_shot ? (
               <Pill tone="danger" icon={<XIcon size={9} />}>
                 NICHT GESCHOSSEN
@@ -688,7 +752,7 @@ export function SceneCard({
               ? renderHighlightedText(scene.name, "name", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)
               : t("scene.unnamed")}
           </h3>
-          {(scene.scheduled_at || scene.location_address) && (
+          {(scene.scheduled_at || sceneWeather || (scene.location_address && !shotlistPlaces)) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               {scene.scheduled_at && (
                 <Pill icon={<CalendarIcon />} className="rounded-lg">
@@ -702,7 +766,7 @@ export function SceneCard({
                   <Pill className="rounded-lg tabular-nums">{weatherLabel(sceneWeather)}</Pill>
                 </span>
               )}
-              {scene.location_address && (
+              {scene.location_address && !shotlistPlaces && (
                 <a
                   href={googleMapsUrl(scene)}
                   target="_blank"

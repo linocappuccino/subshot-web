@@ -61,6 +61,7 @@ import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
 import { ShootingOrderModal } from "@/app/components/ShootingOrderModal";
 import { SectionLocationButton } from "@/app/components/SectionLocationButton";
+import { ShotlistPlacesContext, buildPlaces, type ShotlistPlaces } from "@/lib/shotlistPlaces";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -367,6 +368,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // day while the day runs; the modal holds the details and "Tagesplan erstellen"
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [placesOpen, setPlacesOpen] = useState(false);
   const [liveDelay, setLiveDelay] = useState<{ min: number; state: string } | null>(null);
   useEffect(() => {
     let alive = true;
@@ -1643,6 +1645,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return map;
   }, [data?.scenes]);
   const scenesIn = (sectionId: string | null) => scenesBySectionId.get(sectionId) ?? [];
+  // 2026-10-12, Lino: Drehorte on the board — each scene card shows its place (written out, own colour)
+  // and picks another one by name; same places/colours as the Drehorte window (lib/shotlistPlaces.tsx)
+  const placesSections = data?.sections;
+  const shotlistPlaces = useMemo<ShotlistPlaces>(
+    () => ({
+      placesFor: (sectionId) => {
+        if (!sectionId) return [];
+        const sec = placesSections?.find((x) => x.id === sectionId) ?? null;
+        return buildPlaces(sec, scenesBySectionId.get(sectionId) ?? []);
+      },
+      assign: (scene, place) => {
+        if (!scene.section_id) return;
+        const sec = placesSections?.find((x) => x.id === scene.section_id);
+        const own = sec && place.address === sec.location_address ? null : place;
+        const patch = { location_address: own?.address ?? null, location_lat: own?.lat ?? null, location_lng: own?.lng ?? null };
+        setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((x) => (x.id === scene.id ? { ...x, ...patch } : x)) } : prev));
+        api.assignSceneLocation(scene.section_id, [scene.id], patch.location_address, patch.location_lat, patch.location_lng).catch((e) => {
+          toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+          setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((x) => (x.id === scene.id ? { ...x, location_address: scene.location_address, location_lat: scene.location_lat, location_lng: scene.location_lng } : x)) } : prev));
+        });
+      },
+      manage: () => setPlacesOpen(true),
+    }),
+    [placesSections, scenesBySectionId, api, toast, t]
+  );
   // 2026-09-09, Lino: "es braucht doch auch genau dieselbe indikator und
   // drag animation etc. wie bei der szenen übersicht GENAU 1:1 gleich!!
   // das EINZIGE was anders ist, ist die reihenfolge" — a prior attempt
@@ -1808,6 +1835,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <SceneWeatherContext.Provider value={sceneWeather}>
+    <ShotlistPlacesContext.Provider value={shotlistPlaces}>
     <AppShell>
       <Suspense fallback={null}>
         <NotificationParamsWatcher
@@ -2331,6 +2359,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   const sec = data.sections.find((x) => x.id === openSectionId);
                   return sec ? (
                     <SectionLocationButton
+                      open={placesOpen}
+                      onOpenChange={setPlacesOpen}
                       section={sec}
                       scenes={scenesIn(sec.id)}
                       numbers={sceneNumberIn(sec.id)}
@@ -2856,6 +2886,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       }
       planLabel={openSectionId ? `: ${data?.sections.find((s) => s.id === openSectionId)?.name ?? ""}` : ""}
     />
+    </ShotlistPlacesContext.Provider>
     </SceneWeatherContext.Provider>
   );
 }
