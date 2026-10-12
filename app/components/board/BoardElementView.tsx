@@ -1,7 +1,7 @@
 "use client";
 
 import { BoardDownloadContext, BoardZoomContext, SharpImg } from "./BoardDownload";
-import { PlacePill } from "../PlacePill";
+import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
@@ -72,6 +72,7 @@ export interface ElementViewLabels extends TodoLabels {
   voteGroup: string;
   openInMaps: string;
   sceneTitlePlaceholder: string;
+  changePlace?: string;
   sceneTextPlaceholder: string;
   addImage: string;
   addDialogue: string;
@@ -104,6 +105,7 @@ export function BoardElementView({
   onGenerateSceneImage,
   sceneGenerating,
   scenePlaceColor,
+  onEditScenePlace,
   onPickSceneImage,
   groupMembers,
   onToggleGroup,
@@ -129,6 +131,8 @@ export function BoardElementView({
   sceneGenerating?: boolean;
   /** colour of the scene's Drehort (one colour per place on this board) */
   scenePlaceColor?: string | null;
+  /** the "change place" chevron on the scene card's place pill */
+  onEditScenePlace?: () => void;
   onPickSceneImage?: () => void;
   groupMembers?: BoardElement[];
   onToggleGroup?: () => void;
@@ -215,6 +219,7 @@ export function BoardElementView({
           onGenerate={onGenerateSceneImage}
           generating={!!sceneGenerating}
           placeColor={scenePlaceColor ?? null}
+          onEditPlace={editable ? onEditScenePlace : undefined}
           onImageSize={onNaturalSize}
           onMeasure={onMeasure}
         />
@@ -234,6 +239,7 @@ function SceneNode({
   onGenerate,
   generating,
   placeColor,
+  onEditPlace,
   onImageSize,
   onMeasure,
 }: {
@@ -248,6 +254,7 @@ function SceneNode({
   onGenerate?: () => void;
   generating: boolean;
   placeColor: string | null;
+  onEditPlace?: () => void;
   onImageSize: (w: number, h: number) => void;
   onMeasure: (h: number) => void;
 }) {
@@ -341,8 +348,27 @@ function SceneNode({
         </div>
       </div>
       {el.location_address && (
-        <div className="px-3 pb-2" title={el.location_address}>
-          <PlacePill address={el.location_address} color={placeColor} size="xs" />
+        <div className="px-3 pb-2">
+          <PlacePill
+            address={el.location_address}
+            color={placeColor}
+            size="xs"
+            full
+            href={mapsUrlForAddress(el.location_address)}
+            trailing={
+              onEditPlace ? (
+                <button
+                  type="button"
+                  title={labels.changePlace}
+                  aria-label={labels.changePlace}
+                  onClick={onEditPlace}
+                  className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white"
+                >
+                  <PlaceChangeIcon />
+                </button>
+              ) : undefined
+            }
+          />
         </div>
       )}
       <div className="px-3">

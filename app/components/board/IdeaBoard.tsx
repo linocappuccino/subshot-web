@@ -3102,6 +3102,7 @@ export function IdeaBoard({
     location: t("ideaBoard.location.label"),
     openInMaps: t("ideaBoard.location.openInMaps"),
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
+    changePlace: t("sectionLocation.change"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
     addImage: t("ideaBoard.addImage"),
     uploadImage: t("ideaBoard.uploadImage"),
@@ -3341,6 +3342,12 @@ export function IdeaBoard({
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
                 scenePlaceColor={el.type === "scene" ? placeColorOf(el.location_address) : null}
+                onEditScenePlace={() => {
+                  // select just this card and open its place menu (same one as the toolbar's "📍 Ort")
+                  setSelection(new Set([el.id]));
+                  setPlaceMenuFor(el.id);
+                  setPlaceSearch(false);
+                }}
                 onRequestDialogue={() => {
                   dialogueOnEdit.current = el.id;
                   setSelection(new Set([el.id]));

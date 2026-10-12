@@ -18,7 +18,7 @@ import { useToast } from "./ui/Toast";
 import { ShotEditModal } from "./ShotEditModal";
 import { useSceneWeather, weatherLabel, weatherTitle } from "@/lib/sceneWeather";
 import { useShotlistPlaces } from "@/lib/shotlistPlaces";
-import { PlacePill, PinGlyph } from "./PlacePill";
+import { PlacePill, PinGlyph, PlaceChangeIcon, mapsUrlForAddress } from "./PlacePill";
 
 /** True from `scheduled_at` until `scheduled_at + duration_minutes` — the
  * card pulses for exactly this window (Lino: "bei der kachel wo der timer
@@ -681,12 +681,22 @@ export function SceneCard({
             <ColorBadge label={displayNumber != null ? String(displayNumber) : `${scene.number}${scene.letter ?? ""}`} color={color} />
             {scene.priority && <ColorBadge label={t(`priority.${scene.priority}` as const)} color={color} />}
             {shotlistPlaces && (placeAddress || places.length > 0) && !scene.is_intermediate_step && !scene.is_project_info && (
-              <span onClick={(e) => e.stopPropagation()} className="min-w-0">
+              <span onClick={(e) => e.stopPropagation()} className="min-w-0 max-w-full">
+                <PlacePill
+                  address={placeAddress}
+                  color={placeColor}
+                  emptyLabel={t("sectionLocation.button")}
+                  muted={!scene.location_address}
+                  size="xs"
+                  full
+                  href={placeAddress ? mapsUrlForAddress(placeAddress) : undefined}
+                  trailing={
                 <Menu
                   align="start"
+                  portal
                   trigger={
-                    <button type="button" title={placeAddress ?? undefined} className="cursor-pointer transition-[filter] hover:brightness-125">
-                      <PlacePill address={placeAddress} color={placeColor} emptyLabel={t("sectionLocation.button")} muted={!scene.location_address} size="xs" />
+                    <button type="button" title={t("sectionLocation.change")} aria-label={t("sectionLocation.change")} className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/15 hover:text-white">
+                      <PlaceChangeIcon />
                     </button>
                   }
                 >
@@ -708,18 +718,6 @@ export function SceneCard({
                           </span>
                         </MenuItem>
                       ))}
-                      {placeAddress && (scene.location_lat != null || defaultPlace?.lat != null) && (
-                        <MenuItem
-                          onClick={() => {
-                            close();
-                            const lat = scene.location_address ? scene.location_lat : defaultPlace?.lat;
-                            const lng = scene.location_address ? scene.location_lng : defaultPlace?.lng;
-                            window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, "_blank", "noopener");
-                          }}
-                        >
-                          <span className="text-white/60">↗ Google Maps</span>
-                        </MenuItem>
-                      )}
                       {scene.section_id && (
                         <MenuItem
                           onClick={() => {
@@ -733,6 +731,8 @@ export function SceneCard({
                     </>
                   )}
                 </Menu>
+                  }
+                />
               </span>
             )}
             {scene.not_shot ? (
