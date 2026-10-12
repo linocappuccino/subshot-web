@@ -61,8 +61,6 @@ export function DeliverVideoCard({
   const current = formats.find((f) => f.id === sel) ?? formats[0];
   const licenses = video.licenses ?? [];
   const extra = formats.length > 1 || licenses.length > 0;
-  // the preview frame: as large as fits a square box, in the chosen format
-  const frame = current.ratio >= 1 ? { width: "100%", aspectRatio: String(current.ratio) } : { height: "100%", aspectRatio: String(current.ratio) };
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.04] p-3 ring-1 ring-inset ring-white/[0.06] [font-family:-apple-system,BlinkMacSystemFont,'SF_Pro_Text',system-ui,sans-serif]">
@@ -83,27 +81,30 @@ export function DeliverVideoCard({
         </div>
       )}
 
-      <div className="group relative flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-black/30">
-        <div className="relative max-h-full max-w-full overflow-hidden rounded-lg bg-white/5 transition-all duration-300" style={frame}>
-          {v?.thumbnail_url ? (
-            // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
-            <img src={v.thumbnail_url} alt={video.title} className="h-full w-full object-cover" />
-          ) : null}
-          {current.id === "main" && (
-            <button
-              type="button"
-              onClick={onPlay}
-              aria-label={t("deliverPage.play")}
-              className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors hover:bg-black/30"
-            >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition-transform group-hover:scale-110">
-                <svg viewBox="0 0 24 24" fill="currentColor" className="ml-0.5 h-5 w-5">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-              </span>
-            </button>
-          )}
-        </div>
+      {/* 2026-10-12, Lino: "das thumbnail muss immer ausgefüllt sein" — the image always fills the
+          tile (no side bars for 9:16); the chosen format is a small badge in the corner instead */}
+      <div className="group relative aspect-square overflow-hidden rounded-xl bg-white/5">
+        {v?.thumbnail_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
+          <img src={v.thumbnail_url} alt={video.title} className="h-full w-full object-cover" />
+        ) : null}
+        {formats.length > 1 && (
+          <span className="pointer-events-none absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur-md">{current.label}</span>
+        )}
+        {current.id === "main" && (
+          <button
+            type="button"
+            onClick={onPlay}
+            aria-label={t("deliverPage.play")}
+            className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors hover:bg-black/30"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition-transform group-hover:scale-110">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="ml-0.5 h-5 w-5">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
+          </button>
+        )}
       </div>
 
       <div className="min-w-0 px-0.5">
