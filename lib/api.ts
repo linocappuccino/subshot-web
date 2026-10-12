@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -431,6 +431,11 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     deleteProject: (id: string) => request<void>(`projects/${id}`, { method: "DELETE" }),
     moveProject: (id: string, beforeProjectId: string | null) =>
       request<Project>(`projects/${id}/move`, { method: "POST", body: JSON.stringify({ before_project_id: beforeProjectId }) }),
+    // ── Zeitplan mit Live-Verzug (2026-10-12) ──
+    liveSchedule: (projectId: string, date?: string) =>
+      request<LiveSchedule>(`projects/${projectId}/live-schedule?${date ? `date=${date}&` : ""}t=${Date.now()}`),
+    autoSchedule: (projectId: string, date: string, start: string, sceneIds: string[]) =>
+      request<{ updated: number; end: string | null }>(`projects/${projectId}/schedule/auto`, { method: "POST", body: JSON.stringify({ date, start, scene_ids: sceneIds }) }),
     // ── Callsheet + Wetter in der Shotlist (2026-10-12) ──
     sceneWeather: (projectId: string) =>
       request<Record<string, { emoji: string; temp: number; rain_prob: number | null; wind: number | null; text: string }>>(`projects/${projectId}/scene-weather?t=${Date.now()}`),

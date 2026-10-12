@@ -58,6 +58,7 @@ import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { CallsheetModal } from "@/app/components/CallsheetModal";
 import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
+import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
 
 // pointerWithin requires the cursor to be exactly inside a droppable's
 // rect — cards have gap-4 between them, so hovering in that gap (very easy
@@ -360,6 +361,31 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // 2026-10-12, Lino: "das Wetter in der Shotlist per Emoji" — weather at each scene's start and
   // place (forecast ≤ 16 days), re-read shortly after anything on the page changes (time / place)
   const [callsheetOpen, setCallsheetOpen] = useState(false);
+  // 2026-10-12, Lino: Zeitplan mit Live-Verzug — the badge in the header only shows on a shooting
+  // day while the day runs; the modal holds the details and "Tagesplan erstellen"
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [liveDelay, setLiveDelay] = useState<{ min: number; state: string } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .liveSchedule(id)
+        .then((d) => {
+          if (!alive) return;
+          const today = new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Zurich" });
+          setLiveDelay(d.date === today && d.state === "running" ? { min: d.delay_min, state: d.state } : null);
+        })
+        .catch(() => {});
+    load();
+    const timer = window.setInterval(load, 60_000);
+    const onMutated = () => window.setTimeout(load, 800);
+    window.addEventListener("subshot:mutated", onMutated);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      window.removeEventListener("subshot:mutated", onMutated);
+    };
+  }, [api, id]);
   const [sceneWeather, setSceneWeather] = useState<Record<string, SceneWeather>>({});
   useEffect(() => {
     let alive = true;
@@ -1941,6 +1967,21 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 <GoodTakeIcon /> {t("workflow.goodTakes")}
               </Button>
             )}
+            {/* 2026-10-12, Lino: Zeitplan mit Live-Verzug (badge only while a shooting day runs) */}
+            {activeView === "scenes" && (
+              <Button variant="secondary" size="sm" onClick={() => setScheduleOpen(true)}>
+                ⏱ {t("schedule.button")}
+                {liveDelay && (
+                  <span
+                    className={`ml-1 rounded-full px-1.5 py-0.5 text-[11px] tabular-nums ${
+                      liveDelay.min >= 1 ? "bg-red-500/80 text-white" : liveDelay.min <= -1 ? "bg-emerald-500/80 text-[#0f1f17]" : "bg-white/15 text-white"
+                    }`}
+                  >
+                    {liveDelay.min >= 1 ? `+${liveDelay.min}` : liveDelay.min <= -1 ? `${liveDelay.min}` : "±0"} Min.
+                  </span>
+                )}
+              </Button>
+            )}
             {/* 2026-10-12, Lino: Callsheet / Dispo pro Drehtag (Wetter + Sonnenstand) */}
             {activeView === "scenes" && (
               <Button variant="secondary" size="sm" onClick={() => setCallsheetOpen(true)}>
@@ -2781,6 +2822,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       />
     </AppShell>
     <CallsheetModal open={callsheetOpen} onClose={() => setCallsheetOpen(false)} projectId={id} />
+    <LiveScheduleModal
+      open={scheduleOpen}
+      onClose={() => setScheduleOpen(false)}
+      projectId={id}
+      planScenes={
+        openSectionId && openSectionId !== "__unsectioned__"
+          ? scenesInShootingOrder(openSectionId)
+              .filter((s) => !s.is_project_info)
+              .map((s) => ({ id: s.id, title: s.name ?? "", minutes: s.duration_minutes ?? null }))
+          : []
+      }
+      planLabel={openSectionId ? `: ${data?.sections.find((s) => s.id === openSectionId)?.name ?? ""}` : ""}
+    />
     </SceneWeatherContext.Provider>
   );
 }

@@ -719,6 +719,23 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — Zeitplan mit Live-Verzug */
+export interface LiveSchedule {
+  date: string;
+  days?: string[];
+  now?: string;
+  state: "empty" | "not_started" | "running" | "wrapped";
+  delay_min: number;
+  planned_end?: string;
+  projected_end?: string;
+  current?: string | null;
+  done?: number;
+  total?: number;
+  rows: { scene_id: string; number: number | null; letter: string | null; title: string; intermediate: boolean; priority: string | null; minutes: number | null; planned_start: string; planned_end: string; status: "done" | "not_shot" | "current" | "upcoming"; done_at: string | null; new_start: string | null }[];
+  suggestions?: { scene_id: string; title: string; number: number | null; minutes: number | null; priority: string | null }[];
+  shorten?: { scenes: number; minutes_each: number } | null;
+}
+
 /** 2026-10-12 — Callsheet per shooting day */
 export interface CallsheetDay { date: string; scenes: number; start: string; end: string; locations: string[] }
 export interface CallsheetLocation {
