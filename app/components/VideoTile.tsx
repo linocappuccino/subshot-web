@@ -83,7 +83,7 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * Nummer als kleines Badge oben rechts im Thumbnail. */
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, qcBadge, onOpenQc,
 }: {
   video: Video;
   status: PostproductionStatus | null;
@@ -108,6 +108,9 @@ export function VideoTile({
   extrasBadge?: { done: number; total: number; licenses: number } | null;
   /** opens the "Fassungen & Lizenzen" window */
   onOpenExtras?: () => void;
+  /** 2026-10-12 — technical check of the newest version (internal only) */
+  qcBadge?: { status: "none" | "pending" | "done" | "error"; failed: number } | null;
+  onOpenQc?: () => void;
   /** Undefined = kein Stift-Icon zum Umbenennen (nur canEditStatus-Nutzer). */
   onRename?: (title: string) => void;
   /** 2026-07-20, Lino (öffentliche Preview-Seite): "Deadline: ..." / bei
@@ -393,6 +396,31 @@ export function VideoTile({
               💬 {commentCount}
             </span>
           )}
+          {qcBadge && qcBadge.status !== "none" && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenQc?.();
+              }}
+              title={t("videoQc.menu")}
+              className={`text-[11px] rounded-full px-2 py-0.5 tabular-nums transition-colors ${
+                qcBadge.status === "done" && !qcBadge.failed
+                  ? "bg-emerald-500/85 text-[#0f1f17] hover:bg-emerald-400"
+                  : qcBadge.status === "done" || qcBadge.status === "error"
+                    ? "bg-red-600/90 text-white hover:bg-red-500"
+                    : "bg-black/50 text-white/70 animate-pulse"
+              }`}
+            >
+              {qcBadge.status === "done"
+                ? qcBadge.failed
+                  ? t("videoQc.badgeFail", { n: qcBadge.failed })
+                  : t("videoQc.badgeOk")
+                : qcBadge.status === "error"
+                  ? t("videoQc.badgeFail", { n: "!" })
+                  : t("videoQc.badgePending")}
+            </button>
+          )}
           {extrasBadge && extrasBadge.total > 0 && (
             <button
               type="button"
@@ -477,6 +505,16 @@ export function VideoTile({
                       }}
                     >
                       {t("videoExtras.menu")}
+                    </MenuItem>
+                  )}
+                  {onOpenQc && (
+                    <MenuItem
+                      onClick={() => {
+                        onOpenQc();
+                        close();
+                      }}
+                    >
+                      {t("videoQc.menu")}
                     </MenuItem>
                   )}
                 </>

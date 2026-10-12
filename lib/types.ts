@@ -719,6 +719,15 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — technical check of a video version (QC report), verdict per point */
+export interface VideoQc {
+  status: "none" | "pending" | "done" | "error";
+  checks: { key: string; label: string; value: string; ok: boolean }[];
+  failed: number;
+  error?: string | null;
+  measured_at?: string | null;
+}
+
 /** 2026-10-12 — Deliver: recipient + expiry reminder, personal message + client logo */
 export interface DeliverSettings {
   recipient_name: string | null;

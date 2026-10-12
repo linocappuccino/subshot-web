@@ -21,9 +21,11 @@ import { ApiError, invalidateGetCache } from "@/lib/api";
 import { setNavCache, takeNavCache } from "@/lib/navCache";
 import { readVideoMetadata } from "@/lib/media";
 import { useToast } from "@/app/components/ui/Toast";
-import type { Member, ProjectDetail, Section, PostproductionStatus, Video, VideoExtras } from "@/lib/types";
+import type { Member, ProjectDetail, Section, PostproductionStatus, Video, VideoExtras, VideoQc, VideoVersion } from "@/lib/types";
+import { formatVersionLabel } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
+import { VideoQcModal } from "@/app/components/VideoQcModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -134,6 +136,41 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     };
   }, [api, id]);
   const extrasOf = (videoId: string): VideoExtras => extras[videoId] ?? { deliverables: [], licenses: [] };
+
+  // 2026-10-12, Lino: "Technischer Check beim Upload" (QC report per version, internal only).
+  // The loudness target is remembered per project in this browser.
+  const [qc, setQc] = useState<Record<string, VideoQc>>({});
+  const [qcFor, setQcFor] = useState<Video | null>(null);
+  const [qcRerunning, setQcRerunning] = useState(false);
+  const [qcTarget, setQcTarget] = useState<number>(() => {
+    try {
+      const v = typeof window !== "undefined" ? Number(localStorage.getItem(`subshot:qcTarget:${id}`)) : 0;
+      return v && v < 0 ? v : -14;
+    } catch {
+      return -14; // no storage
+    }
+  });
+  const qcPending = Object.values(qc).some((q) => q.status === "pending");
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      api
+        .videoQc(id, qcTarget)
+        .then((x) => alive && setQc(x))
+        .catch(() => {});
+    load();
+    // new uploads are measured in the background — re-read while something is pending
+    const timer = window.setInterval(() => qcPending && load(), 5000);
+    const onMutated = () => window.setTimeout(load, 1500);
+    window.addEventListener("subshot:mutated", onMutated);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      window.removeEventListener("subshot:mutated", onMutated);
+    };
+  }, [api, id, qcTarget, qcPending]);
+  const newestVersion = (video: Video): VideoVersion | undefined =>
+    video.versions.filter((v) => v.status === "ready").slice().sort((a, b) => a.version_number - b.version_number).pop();
   // 2026-07-18, Lino: "klickt man auf eine Notification soll man direkt zu
   // dieser Seite und Kachel kommen" — fed by NotificationParamsWatcher
   // below (see its own doc comment for why this replaced a mount-only
@@ -927,6 +964,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                     return { done: x.deliverables.filter((d) => d.status === "ready").length, total: x.deliverables.length, licenses: x.licenses.length };
                   })()}
                   onOpenExtras={() => setExtrasFor(video)}
+                  qcBadge={(() => {
+                    const v = newestVersion(video);
+                    return v ? (qc[v.id] ?? null) : null;
+                  })()}
+                  onOpenQc={canEditStatus && newestVersion(video) ? () => setQcFor(video) : undefined}
                 />
               ));
               if (videos.length === 0 && canEditStatus) {
@@ -1036,6 +1078,43 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           />
         </>
       )}
+      {qcFor &&
+        (() => {
+          const v = newestVersion(qcFor);
+          if (!v) return null;
+          return (
+            <VideoQcModal
+              open
+              onClose={() => setQcFor(null)}
+              title={qcFor.title}
+              versionLabel={formatVersionLabel(v)}
+              qc={qc[v.id] ?? null}
+              target={qcTarget}
+              onTarget={(t) => {
+                setQcTarget(t);
+                try {
+                  localStorage.setItem(`subshot:qcTarget:${id}`, String(t));
+                } catch {
+                  // ignored
+                }
+              }}
+              rerunning={qcRerunning}
+              onRerun={
+                canEditStatus
+                  ? async () => {
+                      setQcRerunning(true);
+                      try {
+                        await api.rerunVideoQc(v.id);
+                        setQc((x) => ({ ...x, [v.id]: { status: "pending", checks: [], failed: 0 } }));
+                      } finally {
+                        setQcRerunning(false);
+                      }
+                    }
+                  : undefined
+              }
+            />
+          );
+        })()}
       {extrasFor && (
         <VideoExtrasModal
           open
