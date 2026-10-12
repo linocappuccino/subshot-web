@@ -8,6 +8,7 @@ import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import type { DeliverPreviewData, DeliverVideo, DeliverMiscGroup } from "@/lib/types";
+import { DeliverVideoCard } from "@/app/components/DeliverVideoCard";
 
 // 2026-09-06, Lino: "genau dieses Deliver-System möchte ich für Subshot nun
 // auch haben... nach der Postproduction-Seite kommt die Deliver-Page, jedes
@@ -390,86 +391,22 @@ function DeliverPageInner() {
           {zipping ? `${t("deliverPage.zipping")} ${zipProgress}%` : `⬇ ${t("deliverPage.downloadAll")}`}
         </button>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        {/* 2026-10-12, Lino: "das mit den versch. fassungen ist so viel zu kompliziert und versteckt ...
+            auch für den kunden muss das viel einfacher ersichtlich und übersichtlicher sein" — one card
+            per video: an Apple-style format switch (16:9 | 9:16 | …), the preview in that format, one
+            big download button for it, "Alle Fassungen (ZIP)" + licences underneath. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {data.videos.map((video) => (
-            <div key={video.id} className="flex flex-col gap-2">
-            <div className="group relative aspect-square overflow-hidden rounded-xl bg-white/5">
-              {video.latest_version?.thumbnail_url ? (
-                // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
-                <img src={video.latest_version.thumbnail_url} alt={video.title} className="h-full w-full object-cover" />
-              ) : null}
-              <button
-                type="button"
-                onClick={() => setPlayingVideo(video)}
-                aria-label={t("deliverPage.play")}
-                className="absolute inset-0 flex items-center justify-center bg-black/10 transition-colors hover:bg-black/30"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white/90 text-black shadow-lg transition-transform group-hover:scale-110">
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="ml-0.5 h-5 w-5">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  downloadOne(video);
-                }}
-                className="absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-[11px] font-medium text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100"
-              >
-                ⬇
-              </button>
-              <p className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 text-[11px] text-white/80">
-                {video.title}
-              </p>
-            </div>
-            {/* 2026-10-12, Lino: "Fassungen pro Video gruppiert — ein Format, ein Video oder alles" */}
-            {((video.deliverables?.length ?? 0) > 0 || (video.licenses?.length ?? 0) > 0) && (
-              <div className="flex flex-col gap-1.5">
-                <div className="flex flex-wrap gap-1">
-                  <button
-                    type="button"
-                    onClick={() => downloadOne(video)}
-                    className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/20"
-                    title={t("deliverPage.downloadFormat")}
-                  >
-                    ⬇ {t("deliverPage.mainVersion")}
-                  </button>
-                  {video.deliverables?.map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      onClick={() => downloadExtra("deliverable", d.id)}
-                      className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/20"
-                      title={t("deliverPage.downloadFormat")}
-                    >
-                      ⬇ {d.label}
-                    </button>
-                  ))}
-                  {video.licenses?.map((l) => (
-                    <button
-                      key={l.id}
-                      type="button"
-                      onClick={() => downloadExtra("license", l.id)}
-                      className="max-w-full truncate rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-white/65 hover:text-white hover:border-white/40"
-                      title={l.filename}
-                    >
-                      📄 {l.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  disabled={videoZip !== null}
-                  onClick={() => downloadVideoZip(video)}
-                  className="self-start text-[11px] font-medium text-white/60 underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
-                >
-                  {videoZip?.id === video.id ? `${t("deliverPage.zipping")} ${videoZip.pct}%` : `⬇ ${t("deliverPage.videoZip")}`}
-                </button>
-              </div>
-            )}
-            </div>
+            <DeliverVideoCard
+              key={video.id}
+              video={video}
+              zipPct={videoZip?.id === video.id ? videoZip.pct : null}
+              zipBusy={videoZip !== null}
+              onPlay={() => setPlayingVideo(video)}
+              onDownloadMain={() => downloadOne(video)}
+              onDownloadFile={(kind, id) => downloadExtra(kind, id)}
+              onDownloadZip={() => downloadVideoZip(video)}
+            />
           ))}
         </div>
 
@@ -537,3 +474,4 @@ function DeliverPageInner() {
     </div>
   );
 }
+

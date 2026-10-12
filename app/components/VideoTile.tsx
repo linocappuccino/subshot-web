@@ -6,9 +6,10 @@ import { Pill } from "./ui/Badge";
 import { Menu, MenuItem } from "./ui/Menu";
 import { Avatar } from "./ui/Avatar";
 import { DateTimePicker } from "./ui/DateTimePicker";
-import type { Member, PostproductionStatus, Video, VideoVersion } from "@/lib/types";
+import type { Member, PostproductionStatus, Video, VideoExtras, VideoVersion } from "@/lib/types";
 import { effectivePostStage, formatVersionLabel } from "@/lib/types";
 import { PostStageLabel } from "./PostStageTimeline";
+import { VideoFassungenChips, formatOfRatio } from "./VideoFassungenChips";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 
@@ -83,7 +84,7 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * Nummer als kleines Badge oben rechts im Thumbnail. */
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
 }: {
   video: Video;
   status: PostproductionStatus | null;
@@ -108,6 +109,8 @@ export function VideoTile({
   extrasBadge?: { done: number; total: number; licenses: number } | null;
   /** opens the "Fassungen & Lizenzen" window */
   onOpenExtras?: () => void;
+  /** 2026-10-12 — the Fassungen as chips right on the tile (internal pages only) */
+  fassungen?: { extras: VideoExtras; onChange: (update: (x: VideoExtras) => VideoExtras) => void };
   /** 2026-10-12 — technical check of the newest version (internal only) */
   qcBadge?: { status: "none" | "pending" | "done" | "error"; failed: number } | null;
   onOpenQc?: () => void;
@@ -445,7 +448,7 @@ export function VideoTile({
                   : t("videoQc.badgePending")}
             </button>
           )}
-          {extrasBadge && extrasBadge.total > 0 && (
+          {!fassungen && extrasBadge && extrasBadge.total > 0 && (
             <button
               type="button"
               onClick={(e) => {
@@ -656,6 +659,15 @@ export function VideoTile({
             </div>
           )}
         </div>
+        {fassungen && (
+          <VideoFassungenChips
+            videoId={video.id}
+            mainFormat={versionWithKnownAspect ? formatOfRatio(aspectRatio) : null}
+            extras={fassungen.extras}
+            onChange={fassungen.onChange}
+            onOpenMore={onOpenExtras}
+          />
+        )}
         <Pill tone={STATUS_TONE[status ?? "wartend"]} className="self-start max-w-full min-w-0">
           {canEditStatus ? (
             <select

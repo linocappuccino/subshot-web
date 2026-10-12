@@ -968,6 +968,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                     return { done: x.deliverables.filter((d) => d.status === "ready").length, total: x.deliverables.length, licenses: x.licenses.length };
                   })()}
                   onOpenExtras={() => setExtrasFor(video)}
+                  fassungen={{
+                    extras: extrasOf(video.id),
+                    onChange: (update) => setExtras((x) => ({ ...x, [video.id]: update(x[video.id] ?? { deliverables: [], licenses: [] }) })),
+                  }}
                   qcBadge={(() => {
                     const v = newestVersion(video);
                     return v ? (qc[v.id] ?? null) : null;
