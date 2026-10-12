@@ -3,6 +3,29 @@
 // for what the wire format looks like, since both clients talk to the same
 // backend.
 
+/** 2026-10-12, Lino: Fassungen (Deliverables-Checkliste) + Musiklizenzen pro Video */
+export interface VideoDeliverable {
+  id: string;
+  video_id: string;
+  label: string;
+  sort_order: number;
+  status: "missing" | "uploading" | "ready";
+  original_filename: string | null;
+  content_type: string | null;
+  file_size_bytes: number | null;
+  uploaded_at: string | null;
+}
+export interface VideoLicenseFile {
+  id: string;
+  video_id: string;
+  original_filename: string;
+  content_type: string | null;
+  file_size_bytes: number | null;
+  status: "uploading" | "ready";
+  created_at: string | null;
+}
+export type VideoExtras = { deliverables: VideoDeliverable[]; licenses: VideoLicenseFile[] };
+
 /** 2026-10-12 — GET /projects/{id}/pipeline-progress: per pipeline step how many points are
  * decided; `done` = every point decided (deliver: every step before it done). Steps of disabled
  * modules are left out. */
@@ -696,12 +719,24 @@ export interface ScenesPreviewData {
 // — alongside (not replacing) the existing per-video "video" feedback link.
 // See app/schemas.py's own header comment on this feature for the full story.
 
+/** 2026-10-12 — a Fassung (deliverable) or licence file of a delivered video */
+export interface DeliverFile {
+  id: string;
+  label: string;
+  filename: string;
+  file_size_bytes: number | null;
+  content_type: string | null;
+}
+
 export interface DeliverVideo {
   id: string;
   title: string;
   section_id: string;
   section_name: string;
   latest_version: VideoVersion | null;
+  /** 2026-10-12, Lino: "Fassungen pro Video gruppiert" (only uploaded ones) */
+  deliverables?: DeliverFile[];
+  licenses?: DeliverFile[];
 }
 
 export interface DeliverLink {

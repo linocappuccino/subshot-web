@@ -49,6 +49,7 @@ function DeliverPageInner() {
   const [playingVideo, setPlayingVideo] = useState<DeliverVideo | null>(null);
   const [downloadingGroupId, setDownloadingGroupId] = useState<string | null>(null);
   const [zipping, setZipping] = useState(false);
+  const [videoZip, setVideoZip] = useState<{ id: string; pct: number } | null>(null);
   const [zipProgress, setZipProgress] = useState(0);
   const [countdown, setCountdown] = useState("");
 
@@ -183,6 +184,44 @@ function DeliverPageInner() {
     setZipProgress(0);
     try {
       const { files } = await publicDeliverApi.getDownloadAllUrls(token, unlockToken);
+      await zipFiles(files, `${data?.project_name || "download"}.zip`, setZipProgress);
+    } catch {
+      alert(t("deliverPage.zipFailed"));
+    } finally {
+      setZipping(false);
+    }
+  }
+
+  // 2026-10-12 — one video's own ZIP (main version + Fassungen + licences)
+  async function downloadVideoZip(video: DeliverVideo) {
+    setVideoZip({ id: video.id, pct: 0 });
+    try {
+      const { files, title } = await publicDeliverApi.getVideoDownloadUrls(token, unlockToken, video.id);
+      await zipFiles(files, `${title || video.title}.zip`, (pct) => setVideoZip({ id: video.id, pct }));
+    } catch {
+      alert(t("deliverPage.zipFailed"));
+    } finally {
+      setVideoZip(null);
+    }
+  }
+
+  async function downloadExtra(kind: "deliverable" | "license", fileId: string) {
+    try {
+      const { url } = await publicDeliverApi.getFileDownloadUrl(token, unlockToken, kind, fileId);
+      const a = document.createElement("a");
+      a.href = url;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch {
+      alert(t("deliverPage.downloadFailed"));
+    }
+  }
+
+  /** fetch every file (headers first, for the real total size), zip client-side while counting the
+   * bytes client-zip actually reads, then save — shared by "Alles herunterladen" and one video */
+  async function zipFiles(files: { filename: string; url: string }[], zipName: string, onPct: (pct: number) => void) {
+    {
       const responses = await Promise.all(files.map((f) => fetch(f.url)));
       const totalBytes = responses.reduce((sum, r) => sum + Number(r.headers.get("content-length") || 0), 0);
       let downloadedBytes = 0;
@@ -202,7 +241,7 @@ function DeliverPageInner() {
               const pct = Math.min(99, Math.round((downloadedBytes / totalBytes) * 100));
               if (pct !== lastReportedPct) {
                 lastReportedPct = pct;
-                setZipProgress(pct);
+                onPct(pct);
               }
             }
             controller.enqueue(value);
@@ -212,19 +251,15 @@ function DeliverPageInner() {
       });
       const zipResponse = downloadZip(entries);
       const blob = await zipResponse.blob();
-      setZipProgress(100);
+      onPct(100);
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = `${data?.project_name || "download"}.zip`;
+      a.download = zipName;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(blobUrl);
-    } catch {
-      alert(t("deliverPage.zipFailed"));
-    } finally {
-      setZipping(false);
     }
   }
 
@@ -343,7 +378,8 @@ function DeliverPageInner() {
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {data.videos.map((video) => (
-            <div key={video.id} className="group relative aspect-square overflow-hidden rounded-xl bg-white/5">
+            <div key={video.id} className="flex flex-col gap-2">
+            <div className="group relative aspect-square overflow-hidden rounded-xl bg-white/5">
               {video.latest_version?.thumbnail_url ? (
                 // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
                 <img src={video.latest_version.thumbnail_url} alt={video.title} className="h-full w-full object-cover" />
@@ -373,6 +409,52 @@ function DeliverPageInner() {
               <p className="pointer-events-none absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5 text-[11px] text-white/80">
                 {video.title}
               </p>
+            </div>
+            {/* 2026-10-12, Lino: "Fassungen pro Video gruppiert — ein Format, ein Video oder alles" */}
+            {((video.deliverables?.length ?? 0) > 0 || (video.licenses?.length ?? 0) > 0) && (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    onClick={() => downloadOne(video)}
+                    className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/20"
+                    title={t("deliverPage.downloadFormat")}
+                  >
+                    ⬇ {t("deliverPage.mainVersion")}
+                  </button>
+                  {video.deliverables?.map((d) => (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => downloadExtra("deliverable", d.id)}
+                      className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-white/85 hover:bg-white/20"
+                      title={t("deliverPage.downloadFormat")}
+                    >
+                      ⬇ {d.label}
+                    </button>
+                  ))}
+                  {video.licenses?.map((l) => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => downloadExtra("license", l.id)}
+                      className="max-w-full truncate rounded-full border border-white/15 px-2.5 py-1 text-[11px] text-white/65 hover:text-white hover:border-white/40"
+                      title={l.filename}
+                    >
+                      📄 {l.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  disabled={videoZip !== null}
+                  onClick={() => downloadVideoZip(video)}
+                  className="self-start text-[11px] font-medium text-white/60 underline-offset-2 hover:text-white hover:underline disabled:opacity-50"
+                >
+                  {videoZip?.id === video.id ? `${t("deliverPage.zipping")} ${videoZip.pct}%` : `⬇ ${t("deliverPage.videoZip")}`}
+                </button>
+              </div>
+            )}
             </div>
           ))}
         </div>

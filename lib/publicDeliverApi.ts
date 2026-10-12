@@ -46,6 +46,18 @@ export const publicDeliverApi = {
       fetch(`${BASE_URL}/share/${token}/deliver/misc-group/${groupId}/download-urls`, { headers: unlockHeaders(unlockToken) })
     ),
 
+  // 2026-10-12 — one Fassung (kind "deliverable") or licence file (kind "license") of a video
+  getFileDownloadUrl: (token: string, unlockToken: string | null, kind: "deliverable" | "license", fileId: string) =>
+    handle<{ url: string }>(
+      fetch(`${BASE_URL}/share/${token}/deliver/file/${kind}/${fileId}/download-url`, { headers: unlockHeaders(unlockToken) })
+    ),
+
+  // 2026-10-12 — everything of ONE video (main version + Fassungen + licences) for its own ZIP
+  getVideoDownloadUrls: (token: string, unlockToken: string | null, videoId: string) =>
+    handle<{ files: { filename: string; url: string }[]; title: string }>(
+      fetch(`${BASE_URL}/share/${token}/deliver/video/${videoId}/download-urls`, { headers: unlockHeaders(unlockToken) })
+    ),
+
   // Used by the "Alles herunterladen (ZIP)" button — one presigned URL per
   // eligible video in a single round trip, so the client can fetch+zip
   // (client-zip) without ever routing the video bytes through this API.

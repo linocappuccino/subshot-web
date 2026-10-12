@@ -83,7 +83,7 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * Nummer als kleines Badge oben rechts im Thumbnail. */
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras,
 }: {
   video: Video;
   status: PostproductionStatus | null;
@@ -104,6 +104,10 @@ export function VideoTile({
   onChangeAssignee?: (userId: string | null) => void;
   /** Undefined = kein 3-Punkte-Menü (nur canEditStatus-Nutzer). */
   onUploadVersion?: (file: File) => void;
+  /** 2026-10-12 — Fassungen-Checkliste: "{done}/{total}" badge on the tile (internal pages only) */
+  extrasBadge?: { done: number; total: number; licenses: number } | null;
+  /** opens the "Fassungen & Lizenzen" window */
+  onOpenExtras?: () => void;
   /** Undefined = kein Stift-Icon zum Umbenennen (nur canEditStatus-Nutzer). */
   onRename?: (title: string) => void;
   /** 2026-07-20, Lino (öffentliche Preview-Seite): "Deadline: ..." / bei
@@ -389,6 +393,21 @@ export function VideoTile({
               💬 {commentCount}
             </span>
           )}
+          {extrasBadge && extrasBadge.total > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenExtras?.();
+              }}
+              title={t("videoExtras.menu")}
+              className={`text-[11px] rounded-full px-2 py-0.5 tabular-nums transition-colors ${
+                extrasBadge.done === extrasBadge.total ? "bg-emerald-500/85 text-[#0f1f17] hover:bg-emerald-400" : "bg-black/50 text-white/85 hover:bg-black/70"
+              }`}
+            >
+              {t("videoExtras.tileBadge", { done: extrasBadge.done, total: extrasBadge.total })}
+            </button>
+          )}
         </div>
 
         {/* Drag handle for the postproduction page's manual-order mode —
@@ -441,14 +460,26 @@ export function VideoTile({
               }
             >
               {(close) => (
-                <MenuItem
-                  onClick={() => {
-                    fileInputRef.current?.click();
-                    close();
-                  }}
-                >
-                  {t("videoTile.uploadNewVersion")}
-                </MenuItem>
+                <>
+                  <MenuItem
+                    onClick={() => {
+                      fileInputRef.current?.click();
+                      close();
+                    }}
+                  >
+                    {t("videoTile.uploadNewVersion")}
+                  </MenuItem>
+                  {onOpenExtras && (
+                    <MenuItem
+                      onClick={() => {
+                        onOpenExtras();
+                        close();
+                      }}
+                    >
+                      {t("videoExtras.menu")}
+                    </MenuItem>
+                  )}
+                </>
               )}
             </Menu>
           </div>

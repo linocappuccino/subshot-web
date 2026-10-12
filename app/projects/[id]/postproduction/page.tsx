@@ -21,8 +21,9 @@ import { ApiError, invalidateGetCache } from "@/lib/api";
 import { setNavCache, takeNavCache } from "@/lib/navCache";
 import { readVideoMetadata } from "@/lib/media";
 import { useToast } from "@/app/components/ui/Toast";
-import type { Member, ProjectDetail, Section, PostproductionStatus, Video } from "@/lib/types";
+import type { Member, ProjectDetail, Section, PostproductionStatus, Video, VideoExtras } from "@/lib/types";
 import { PipelineTimeline } from "@/app/components/PipelineTimeline";
+import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -117,6 +118,22 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // uploadVersionFromTile below to drive VideoTile's uploadFraction prop.
   const [versionUploadProgress, setVersionUploadProgress] = useState<Record<string, number>>({});
   const [reviewingVideo, setReviewingVideo] = useState<Video | null>(null);
+  // 2026-10-12, Lino: Fassungen-Checkliste + Musiklizenzen pro Video (VideoExtrasModal)
+  const [extras, setExtras] = useState<Record<string, VideoExtras>>({});
+  const [extrasFor, setExtrasFor] = useState<Video | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .videoExtras(id)
+      .then((x) => alive && setExtras(x))
+      .catch(() => {
+        // the checklist is extra information — the page works without it
+      });
+    return () => {
+      alive = false;
+    };
+  }, [api, id]);
+  const extrasOf = (videoId: string): VideoExtras => extras[videoId] ?? { deliverables: [], licenses: [] };
   // 2026-07-18, Lino: "klickt man auf eine Notification soll man direkt zu
   // dieser Seite und Kachel kommen" — fed by NotificationParamsWatcher
   // below (see its own doc comment for why this replaced a mount-only
@@ -905,6 +922,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   uploadFraction={versionUploadProgress[video.id]}
                   members={members}
                   onChangeAssignee={(userId) => updateVideoAssignee(section.id, video, userId)}
+                  extrasBadge={(() => {
+                    const x = extrasOf(video.id);
+                    return { done: x.deliverables.filter((d) => d.status === "ready").length, total: x.deliverables.length, licenses: x.licenses.length };
+                  })()}
+                  onOpenExtras={() => setExtrasFor(video)}
                 />
               ));
               if (videos.length === 0 && canEditStatus) {
@@ -1013,6 +1035,17 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             onImported={() => api.projectDetail(data.id).then(setData)}
           />
         </>
+      )}
+      {extrasFor && (
+        <VideoExtrasModal
+          open
+          onClose={() => setExtrasFor(null)}
+          videoId={extrasFor.id}
+          videoTitle={extrasFor.title}
+          extras={extrasOf(extrasFor.id)}
+          canEdit={canEditStatus}
+          onChange={(next) => setExtras((x) => ({ ...x, [extrasFor.id]: next }))}
+        />
       )}
       {reviewingVideo && (
         <VideoReviewModal

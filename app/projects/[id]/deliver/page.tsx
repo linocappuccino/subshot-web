@@ -446,6 +446,17 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
                   <p className="text-[11px] text-white/30">
                     {v.section_name} · {v.latest_version ? formatVersionLabel(v.latest_version) : "–"} · {formatBytes(v.latest_version?.file_size_bytes ?? null)}
                   </p>
+                  {/* 2026-10-12 — Fassungen + licences delivered with this video */}
+                  {((v.deliverables?.length ?? 0) > 0 || (v.licenses?.length ?? 0) > 0) && (
+                    <p className="text-[11px] text-emerald-300/70">
+                      {[
+                        v.deliverables?.length ? t("deliverAdmin.withVersions", { count: v.deliverables.length, labels: v.deliverables.map((d) => d.label).join(", ") }) : null,
+                        v.licenses?.length ? t("deliverAdmin.withLicenses", { count: v.licenses.length }) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

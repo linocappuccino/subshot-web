@@ -42,7 +42,7 @@ import type {
   TodoSidebarData,
   Video,
   VideoComment,
-  VideoVersion, PipelineProgress
+  VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
@@ -329,6 +329,42 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     ) => request<Project>("projects", { method: "POST", body: JSON.stringify({ name, color, emoji, client_name: clientName || undefined, ...modules }) }),
     projectDetail: (id: string) => request<ProjectDetail>(`projects/${id}`),
     /** 2026-10-12 — the pipeline timeline above the project pages */
+    // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
+    videoExtras: (projectId: string) => request<Record<string, VideoExtras>>(`projects/${projectId}/video-extras?t=${Date.now()}`),
+    createDeliverable: (videoId: string, label: string) =>
+      request<VideoDeliverable>(`videos/${videoId}/deliverables`, { method: "POST", body: JSON.stringify({ label }) }),
+    patchDeliverable: (id: string, body: { label?: string; sort_order?: number }) =>
+      request<VideoDeliverable>(`video-deliverables/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteDeliverable: (id: string) => request<void>(`video-deliverables/${id}`, { method: "DELETE" }),
+    startDeliverableUpload: (id: string, file: File, contentType: string) =>
+      request<{ id: string; upload_url: string }>(`video-deliverables/${id}/upload`, {
+        method: "POST",
+        body: JSON.stringify({ filename: file.name, content_type: contentType, file_size_bytes: file.size }),
+      }),
+    completeDeliverableUpload: (id: string) => request<VideoDeliverable>(`video-deliverables/${id}/complete`, { method: "POST" }),
+    deleteDeliverableFile: (id: string) => request<void>(`video-deliverables/${id}/file`, { method: "DELETE" }),
+    deliverableDownloadUrl: (id: string) => request<{ url: string }>(`video-deliverables/${id}/download-url?t=${Date.now()}`),
+    startLicenseUpload: (videoId: string, file: File, contentType: string) =>
+      request<{ id: string; upload_url: string }>(`videos/${videoId}/licenses`, {
+        method: "POST",
+        body: JSON.stringify({ filename: file.name, content_type: contentType, file_size_bytes: file.size }),
+      }),
+    completeLicenseUpload: (id: string) => request<VideoLicenseFile>(`video-licenses/${id}/complete`, { method: "POST" }),
+    deleteLicense: (id: string) => request<void>(`video-licenses/${id}`, { method: "DELETE" }),
+    licenseDownloadUrl: (id: string) => request<{ url: string }>(`video-licenses/${id}/download-url?t=${Date.now()}`),
+    /** PUT a file to a presigned R2 URL with progress — the content type must be the one the URL was signed for */
+    putFile: (presignedPutUrl: string, file: Blob, contentType: string, onProgress?: (fraction: number) => void) =>
+      new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", presignedPutUrl);
+        xhr.setRequestHeader("Content-Type", contentType);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+        };
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, "Upload fehlgeschlagen.")));
+        xhr.onerror = () => reject(new ApiError(0, "Upload fehlgeschlagen."));
+        xhr.send(file);
+      }),
     // always fresh (no GET cache): it is re-read right after every change
     pipelineProgress: (id: string) => request<PipelineProgress>(`projects/${id}/pipeline-progress?t=${Date.now()}`),
     patchProject: (
