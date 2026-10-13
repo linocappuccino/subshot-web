@@ -316,6 +316,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // ── Projects ─────────────────────────────────────────────────────────
     projects: (folderId?: string) =>
       request<Project[]>(`projects${folderId ? `?folder_id=${folderId}` : ""}`),
+    // ── Projektübersicht (2026-10-13) ──
+    allProjects: (archived = false) => request<Project[]>(`projects?${archived ? "archived=true" : "all_folders=true"}&t=${Date.now()}`),
+    projectsOverviewMeta: () => request<Record<string, import("./projectMeta").ProjectMeta>>(`projects/overview-meta?t=${Date.now()}`),
+    setProjectArchived: (projectId: string, archived: boolean | null) =>
+      request<{ archived: boolean }>(`projects/${projectId}/archive`, { method: "PUT", body: JSON.stringify({ archived }) }),
+    calendar: (from: string, to: string) => request<{ events: import("./projectMeta").CalendarEvent[] }>(`me/calendar?from=${from}&to=${to}&t=${Date.now()}`),
     createProject: (
       name: string,
       color?: string,

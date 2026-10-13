@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -21,6 +21,10 @@ import {
 } from "@dnd-kit/core";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
+import { ProjectMetaContext, useProjectMeta, type ProjectMeta } from "@/lib/projectMeta";
+import { ProjectOverviewBar, type StepFilter, type OverviewMode } from "@/app/components/ProjectOverviewBar";
+import { ProjectCalendar } from "@/app/components/ProjectCalendar";
+import { PipelineRingsBadge, ClientLogoBadge, ProjectTileFooter } from "@/app/components/ProjectTileMeta";
 import { subscribeToProjectListChanges } from "@/lib/realtime";
 import { setNavCache } from "@/lib/navCache";
 import type { Annotation, Member, Project, ProjectFolder } from "@/lib/types";
@@ -113,6 +117,14 @@ function ProjectsPageContent() {
   // reordering only ever made sense as a spatial grid interaction) — rows
   // are plain links, same click/edit/delete behavior, no reordering.
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  // 2026-10-13, Lino: Projektübersicht — search, step filter, archive, calendar; per-project meta
+  const [meta, setMeta] = useState<Record<string, ProjectMeta>>({});
+  const [query, setQuery] = useState("");
+  const [stepFilter, setStepFilter] = useState<StepFilter>("all");
+  const [showArchive, setShowArchive] = useState(false);
+  const [overviewMode, setOverviewMode] = useState<OverviewMode>("tiles");
+  const [flatProjects, setFlatProjects] = useState<Project[] | null>(null);
+  const flatActive = overviewMode === "tiles" && (query.trim() !== "" || stepFilter !== "all" || showArchive);
   useEffect(() => {
     const stored = localStorage.getItem("subshot:projectsViewMode");
     if (stored === "grid" || stored === "list") setViewMode(stored);
@@ -211,6 +223,67 @@ function ProjectsPageContent() {
       loadProjects({ silent: true }).catch(() => {});
     });
   }, [myUserId, myTeamId, loadProjects]);
+
+  // 2026-10-13 — overview meta (rings, next date, logo, archive, storage) + the flat list for search /
+  // filter / archive; both re-read after any change made here (subshot:mutated) or elsewhere (realtime)
+  const loadMeta = useCallback(() => {
+    api.projectsOverviewMeta().then(setMeta).catch(() => {});
+  }, [api]);
+  useEffect(() => {
+    loadMeta();
+  }, [loadMeta]);
+  useEffect(() => {
+    if (!flatActive) return;
+    let alive = true;
+    api
+      .allProjects(showArchive)
+      .then((list) => alive && setFlatProjects(list))
+      .catch(() => alive && setFlatProjects([]));
+    return () => {
+      alive = false;
+    };
+  }, [api, flatActive, showArchive]);
+  useEffect(() => {
+    let timer: number | undefined;
+    const onMutated = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        loadMeta();
+        loadProjects({ silent: true }).catch(() => {});
+        if (flatActive) api.allProjects(showArchive).then(setFlatProjects).catch(() => {});
+      }, 400);
+    };
+    window.addEventListener("subshot:mutated", onMutated);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("subshot:mutated", onMutated);
+    };
+  }, [api, loadMeta, loadProjects, flatActive, showArchive]);
+  useEffect(() => {
+    if (!myUserId) return;
+    return subscribeToProjectListChanges(myUserId, myTeamId, () => loadMeta());
+  }, [myUserId, myTeamId, loadMeta]);
+
+  const stepCounts = useMemo(() => {
+    const c: Partial<Record<StepFilter, number>> = { all: 0 };
+    for (const m of Object.values(meta)) {
+      if (m.archived) continue;
+      c.all = (c.all ?? 0) + 1;
+      c[m.current_step] = (c[m.current_step] ?? 0) + 1;
+    }
+    return c;
+  }, [meta]);
+
+  const flatShown = useMemo(() => {
+    if (!flatProjects) return null;
+    const q = query.trim().toLowerCase();
+    return flatProjects.filter((p) => {
+      const m = meta[p.id];
+      if (!showArchive && stepFilter !== "all" && m?.current_step !== stepFilter) return false;
+      if (q && !`${p.name} ${p.client_name ?? ""}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [flatProjects, meta, query, stepFilter, showArchive]);
 
   async function createOrEditProject(
     name: string,
@@ -378,6 +451,7 @@ function ProjectsPageContent() {
     <>
       <div className="flex-1 max-w-[92rem] mx-auto w-full px-4 sm:px-6 py-8 flex gap-6 items-start">
       <div className="flex-1 min-w-0 max-w-6xl">
+      <ProjectMetaContext.Provider value={meta}>
         <div className="flex items-center justify-between mb-8 gap-3 flex-wrap">
           <div>
             {folderId ? (
@@ -438,7 +512,41 @@ function ProjectsPageContent() {
           </div>
         </div>
 
-        {loading && !hasLoadedOnceRef.current ? (
+        <ProjectOverviewBar
+          query={query}
+          onQuery={setQuery}
+          step={stepFilter}
+          onStep={setStepFilter}
+          archive={showArchive}
+          onArchive={setShowArchive}
+          mode={overviewMode}
+          onMode={setOverviewMode}
+          counts={stepCounts}
+        />
+
+        {overviewMode === "calendar" ? (
+          <ProjectCalendar showArchived={showArchive} />
+        ) : flatActive ? (
+          <div>
+            {showArchive && <p className="mb-4 text-sm text-white/40">{t("overview.archiveHint")}</p>}
+            {flatShown === null ? (
+              <GridSkeleton />
+            ) : flatShown.length === 0 ? (
+              <p className="py-16 text-center text-white/40">{showArchive && !query ? t("overview.archiveEmpty") : t("overview.noResults")}</p>
+            ) : (
+              <TileGrid key={`flat-${showArchive ? "archive" : stepFilter}`}>
+                {flatShown.map((project) => (
+                  <ProjectTile
+                    key={project.id}
+                    project={project}
+                    onEdit={() => setEditingProject(project)}
+                    onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                  />
+                ))}
+              </TileGrid>
+            )}
+          </div>
+        ) : loading && !hasLoadedOnceRef.current ? (
           <GridSkeleton />
         ) : viewMode === "list" ? (
           <div className={`transition-opacity duration-150 ${loading ? "opacity-50 pointer-events-none" : "opacity-100"}`}>
@@ -606,6 +714,7 @@ function ProjectsPageContent() {
           </DndContext>
           </div>
         )}
+      </ProjectMetaContext.Provider>
       </div>
       <TodoSidebar />
       </div>
@@ -758,6 +867,8 @@ function TileShell({
   badge,
   label,
   subtitle,
+  cornerBadge,
+  footer,
   onBeforeNavigate,
 }: {
   href: string;
@@ -789,6 +900,10 @@ function TileShell({
   badge?: React.ReactNode;
   label: string;
   subtitle?: string;
+  /** 2026-10-13 — bottom-right of the image (client logo) */
+  cornerBadge?: React.ReactNode;
+  /** 2026-10-13 — under the title (next date + storage) */
+  footer?: React.ReactNode;
   /** 2026-07-17, Lino: "smoothe transition animation zur ersten kachel" —
    * nur ProjectTile setzt das (siehe dort); FolderTile navigiert innerhalb
    * derselben Seite (nur ein Query-Param-Wechsel), da braucht's keinen
@@ -878,6 +993,7 @@ function TileShell({
           )}
           <div className="absolute inset-0 bg-gradient-to-br from-white/15 to-transparent pointer-events-none" />
           {badge && <div className="absolute top-1.5 left-1.5">{badge}</div>}
+          {cornerBadge && <div className="absolute bottom-1.5 right-1.5">{cornerBadge}</div>}
         </div>
         {/* NO backdrop-blur on the photo itself, tried twice now (see also
             the pre-existing comment a few lines up on the ring-inset div) —
@@ -895,6 +1011,7 @@ function TileShell({
           {label}
         </div>
         {subtitle && <div className="text-xs text-white/40">{subtitle}</div>}
+        {footer}
       </Link>
       <div className="absolute top-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity">{menu}</div>
     </div>
@@ -911,7 +1028,19 @@ function ProjectTile({
   onDelete: () => void;
 }) {
   const api = useApi();
+  const toast = useToast();
   const { t } = useLanguage();
+  // 2026-10-13, Lino: Projektübersicht — rings, next date, client logo, storage, archive
+  const meta = useProjectMeta(project.id);
+
+  async function toggleArchived(m: ProjectMeta) {
+    try {
+      await api.setProjectArchived(project.id, !m.archived);
+      toast.showSuccess(t(m.archived ? "overview.restored" : "overview.archived"));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
+    }
+  }
 
   const pipelineLabel: Record<Project["pipeline_stage"], string> = {
     idea: t("pipeline.idea"),
@@ -1002,10 +1131,16 @@ function ProjectTile({
       label={project.name}
       onBeforeNavigate={beforeNavigate}
       badge={
-        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm shadow-black/30 ring-1 ring-black/10 ${stageStyle[project.pipeline_stage]}`}>
-          {pipelineLabel[project.pipeline_stage]}
-        </span>
+        meta ? (
+          <PipelineRingsBadge meta={meta} />
+        ) : (
+          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm shadow-black/30 ring-1 ring-black/10 ${stageStyle[project.pipeline_stage]}`}>
+            {pipelineLabel[project.pipeline_stage]}
+          </span>
+        )
       }
+      cornerBadge={meta?.client_logo_url ? <ClientLogoBadge url={meta.client_logo_url} /> : undefined}
+      footer={meta ? <ProjectTileFooter meta={meta} /> : undefined}
       menu={
         <Menu
           trigger={
@@ -1028,6 +1163,16 @@ function ProjectTile({
               >
                 Bearbeiten
               </MenuItem>
+              {meta && (
+                <MenuItem
+                  onClick={() => {
+                    close();
+                    void toggleArchived(meta);
+                  }}
+                >
+                  {meta.archived ? t("overview.restoreAction") : t("overview.archiveAction")}
+                </MenuItem>
+              )}
               <MenuItem
                 danger
                 onClick={() => {
