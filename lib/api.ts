@@ -263,6 +263,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
   }
 
   return {
+    // 2026-10-13 — connect the DaVinci Resolve tool (device code shown in Resolve)
+    resolveDeviceInfo: (code: string) => request<{ label: string | null; approved: boolean }>(`resolve/device/info?code=${encodeURIComponent(code)}`),
+    resolveDeviceApprove: (code: string) =>
+      request<{ ok: boolean }>("resolve/device/approve", { method: "POST", body: JSON.stringify({ user_code: code }) }),
     me: () => request<Me>("me"),
     patchMe: (body: MePatch) =>
       request<Me>("me", { method: "PATCH", body: JSON.stringify(body) }),
