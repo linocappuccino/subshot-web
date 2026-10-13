@@ -421,7 +421,14 @@ export function IdeaBoard({
   // blow text up inside a `zoom`ed layout (Lino: "warum skaliert jetzt die
   // Schrift mit?!") — and shrinking with a transform is sharp anyway.
   const [settledScale, setSettledScale] = useState(1);
-  const targetZoom = Math.max(1, view.scale);
+  // 2026-10-13, Lino (iPhone app): "1 min auf dem board herumgezoomed und jetzt wurde der bildschirm
+  // schwarz" — re-laying the whole board out at 4× (CSS zoom, images at full size) blew the phone's
+  // web-content memory limit and iOS killed the page. Phones re-render sharp up to 2× only; above
+  // that the transform keeps scaling (slightly softer, but safe). iPad/desktop keep 4×.
+  const [zoomCap] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse) and (max-width: 900px), (pointer: coarse) and (max-height: 500px)").matches ? 2 : MAX_SCALE,
+  );
+  const targetZoom = Math.min(zoomCap, Math.max(1, view.scale));
   useEffect(() => {
     if (targetZoom === settledScale) return;
     const t = window.setTimeout(() => setSettledScale(targetZoom), 150);
