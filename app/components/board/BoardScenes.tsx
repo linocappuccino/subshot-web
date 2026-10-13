@@ -207,7 +207,8 @@ export function BoardScenesBar({
               <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
               <circle cx="12" cy="13" r="3.5" />
             </svg>
-            {views.length ? t("ideaBoard.scenes.add") : t("ideaBoard.scenes.capture")}
+            {/* phones: just the camera icon, the label covered the zoom controls */}
+            <span className={views.length ? undefined : "max-sm:hidden"}>{views.length ? t("ideaBoard.scenes.add") : t("ideaBoard.scenes.capture")}</span>
           </button>
         )}
         {views.length > 0 && (

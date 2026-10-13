@@ -20,6 +20,29 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
   const [failed, setFailed] = useState(false);
 
+  // the page itself never scrolls — iOS scrolled the whole web view when a text field on the board
+  // got focus, which pushed the idea header out of sight
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = [html.style.overflow, body.style.overflow, body.style.position, body.style.inset, html.style.overscrollBehavior];
+    html.style.overflow = "hidden";
+    html.style.overscrollBehavior = "none";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.inset = "0";
+    const keepTop = () => {
+      if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
+    };
+    window.addEventListener("scroll", keepTop, { passive: true });
+    window.visualViewport?.addEventListener("resize", keepTop);
+    return () => {
+      [html.style.overflow, body.style.overflow, body.style.position, body.style.inset, html.style.overscrollBehavior] = prev;
+      window.removeEventListener("scroll", keepTop);
+      window.visualViewport?.removeEventListener("resize", keepTop);
+    };
+  }, []);
+
   useEffect(() => {
     let alive = true;
     Promise.all([api.listIdeas(projectId), api.members(projectId), api.me()])
@@ -45,7 +68,7 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
     return null;
   }
   return (
-    <div className="min-h-screen bg-[#161616]">
+    <div className="fixed inset-0 bg-[#161616]">
       <IdeaFocusView
         ideas={ideas}
         index={Math.min(index, ideas.length - 1)}

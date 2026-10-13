@@ -319,7 +319,7 @@ export function BoardMinimap({
 
   const vis = toMini(visible.x, visible.y);
   return (
-    <div data-board-ui className="absolute z-30 right-3 rounded-xl bg-[#1c1c1e]/90 border border-white/10 shadow-xl backdrop-blur p-1 hidden sm:block" style={{ bottom }}>
+    <div data-board-ui className="absolute z-30 right-3 rounded-xl bg-[#1c1c1e]/90 border border-white/10 shadow-xl backdrop-blur p-1 hidden sm:block [@media(max-height:640px)]:hidden" style={{ bottom }}>
       <svg
         width={W}
         height={H}

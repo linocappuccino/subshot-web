@@ -4166,7 +4166,7 @@ export function IdeaBoard({
 
       {/* tools */}
       {editable && (
-        <div data-board-ui className="absolute z-30 left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-2xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur">
+        <div data-board-ui className="absolute z-30 left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-2xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur max-sm:left-2 max-sm:gap-0.5 max-sm:p-1 [@media(max-height:640px)]:grid [@media(max-height:640px)]:grid-cols-2">
           <ToolButton active={tool === "select"} title={t("ideaBoard.toolSelect")} onPress={() => setTool("select")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l14 8-6 2-2 6z" /></svg>
           </ToolButton>
@@ -4275,7 +4275,7 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>
             </ToolButton>
           )}
-          <div className="h-px bg-white/10 my-1" />
+          <div className="h-px bg-white/10 my-1 col-span-2" />
           <ToolButton title={t("ideaBoard.undo")} onPress={undo} disabled={historyApi ? !historyApi.canUndo : historySize.undo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
           </ToolButton>
@@ -4603,7 +4603,7 @@ function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: numb
     <div
       ref={ref}
       data-board-ui
-      className="absolute z-20 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur -translate-x-1/2 -translate-y-full"
+      className="absolute z-40 flex flex-wrap justify-center items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur -translate-x-1/2 -translate-y-full max-w-[calc(100%-16px)] w-max"
       style={{ left: left + shift, top: Math.max(56, top) }}
     >
       {children}
@@ -4676,7 +4676,7 @@ function ToolButton({ title, onPress, active, disabled, popoverOpen, children }:
       aria-label={title}
       disabled={disabled}
       onClick={onPress}
-      className={`group/tool relative w-10 h-10 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"}`}
+      className={`group/tool relative w-10 h-10 max-sm:w-9 max-sm:h-9 [@media(max-height:640px)]:w-9 [@media(max-height:640px)]:h-9 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"}`}
     >
       {children}
       {!popoverOpen && (
