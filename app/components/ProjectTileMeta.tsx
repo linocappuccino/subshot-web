@@ -70,12 +70,12 @@ export function NextEventChip({ event }: { event: NextEvent }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex max-w-full items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium",
         event.overdue ? "bg-red-500/20 text-red-300" : days <= 1 ? "bg-amber-400/15 text-amber-200" : "bg-white/[0.07] text-white/70",
       )}
     >
       <span aria-hidden>{icon}</span>
-      <span className="truncate">{nextEventText(event, t, language)}</span>
+      <span>{nextEventText(event, t, language)}</span>
     </span>
   );
 }
@@ -95,7 +95,7 @@ export function ProjectTileFooter({ meta }: { meta: ProjectMeta }) {
   const storage = formatStorage(meta.storage_bytes);
   if (!meta.next_event && !storage) return null;
   return (
-    <div className="mt-1 flex min-w-0 items-center gap-2">
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       {meta.next_event && <NextEventChip event={meta.next_event} />}
       {storage && <span className="ml-auto shrink-0 text-[11px] tabular-nums text-white/35">{storage}</span>}
     </div>
