@@ -116,7 +116,9 @@ type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 /** What the overview tile needs from a board, computed the same way the
  * backend does (app/idea_board.py: text_for_idea / cover_and_preview). */
-function boardSummary(data: BoardData) {
+type StickyCover = { id: string | null; key: string; src: string | null } | null;
+
+function boardSummary(data: BoardData, sticky: StickyCover = null) {
   const order = (a: { x: number; y: number }, b: { x: number; y: number }) =>
     Math.round(a.y / 48) - Math.round(b.y / 48) || a.x - b.x;
   const texts = data.elements.filter((el) => el.type === "text").sort(order);
@@ -128,20 +130,37 @@ function boardSummary(data: BoardData) {
   return {
     text: nonEmpty.map((el) => (el.type === "text" ? el.html : "")).join("<div><br></div>"),
     board_text_preview: first && first.type === "text" ? boardHtmlToPlain(first.html).slice(0, 400) : "",
-    board_cover_url: chosen ?? coverSrcOf(images[0]),
+    board_cover_url: chosen ?? sticky?.src ?? coverSrcOf(images[0]),
   };
 }
 
 /** R2 key of the tile cover — same pick as boardSummary / the backend's
  * cover_and_preview (2026-10-21, for the face focus). */
-function boardCoverKey(data: BoardData): string | null {
+function boardCoverKey(data: BoardData, sticky: StickyCover = null): string | null {
   const order = (a: { x: number; y: number }, b: { x: number; y: number }) =>
     Math.round(a.y / 48) - Math.round(b.y / 48) || a.x - b.x;
   const keyOf = (el: BoardData["elements"][number] | undefined): string | null =>
     !el ? null : el.type === "image" ? el.asset_key || null : el.type === "scene" ? el.image_key || null : null;
   const chosen = keyOf(data.elements.find((el) => el.id === data.cover));
   const images = data.elements.filter((el) => el.type === "image" || (el.type === "scene" && el.image_key)).sort(order);
-  return chosen ?? keyOf(images[0]);
+  return chosen ?? sticky?.key ?? keyOf(images[0]);
+}
+
+function coverElementKey(el: BoardData["elements"][number] | undefined): string | null {
+  return !el ? null : el.type === "image" ? el.asset_key || null : el.type === "scene" ? el.image_key || null : null;
+}
+
+/** 2026-10-21, Lino: a chosen thumbnail stays when its image is deleted from
+ * the board, until another one is chosen — mirrors the backend's
+ * carry_cover_key ("Nicht mehr als Thumbnail verwenden" on a still-existing
+ * element clears it). */
+function nextStickyCover(data: BoardData, sticky: StickyCover): StickyCover {
+  const el = data.cover ? data.elements.find((e) => e.id === data.cover) : undefined;
+  const key = coverElementKey(el);
+  if (el && key) return { id: el.id, key, src: coverSrcOf(el) };
+  if (!sticky) return null;
+  const prev = sticky.id ? data.elements.find((e) => e.id === sticky.id) : undefined;
+  return prev && coverElementKey(prev) === sticky.key ? null : sticky;
 }
 
 function IdeaBoardScreen({
@@ -242,6 +261,7 @@ function IdeaBoardScreen({
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explicitlyDeleted = useRef(false);
   const coverKeyRef = useRef<string | null | undefined>(undefined);
+  const stickyCoverRef = useRef<StickyCover>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   const approved = idea.status === "approved";
@@ -270,7 +290,8 @@ function IdeaBoardScreen({
       .then((res) => {
         versionRef.current = res.version;
         latestRef.current = res.data;
-        coverKeyRef.current = boardCoverKey(res.data);
+        stickyCoverRef.current = res.data.cover_key ? { id: res.data.cover ?? null, key: res.data.cover_key, src: res.data.cover_src ?? null } : null;
+        coverKeyRef.current = boardCoverKey(res.data, stickyCoverRef.current);
         setBoard({ data: res.data, editable: !!res.editable });
         setBoardKey((k) => k + 1);
       })
@@ -365,12 +386,13 @@ function IdeaBoardScreen({
   // 2026-10-21, Lino: the tile keeps the face centred for a newly picked
   // cover too — focus comes from the backend (app/cover_focus.py)
   const applySummary = useCallback((data: BoardData) => {
-    const key = boardCoverKey(data);
+    stickyCoverRef.current = nextStickyCover(data, stickyCoverRef.current);
+    const key = boardCoverKey(data, stickyCoverRef.current);
     const changed = key !== coverKeyRef.current;
     coverKeyRef.current = key;
     onUpdated({
       ...ideaRef.current,
-      ...boardSummary(data),
+      ...boardSummary(data, stickyCoverRef.current),
       has_board: true,
       ...(changed ? { board_cover_focus_x: null, board_cover_focus_y: null } : {}),
     });

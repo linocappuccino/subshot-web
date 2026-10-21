@@ -844,6 +844,10 @@ export interface BoardData {
   /** 2026-10-08, Lino: id of the image (or scene card with an image) chosen
    * via "Als Thumbnail verwenden" as the idea tile's cover */
   cover?: string | null;
+  /** 2026-10-21 — set by the server only: file of the chosen thumbnail, kept
+   * after its element was deleted (app/idea_board.py carry_cover_key) */
+  cover_key?: string | null;
+  cover_src?: string | null;
   /** 2026-10-09, Lino: "Szenen" like Apple Freeform — saved views of the
    * board, shown at the bottom; a click flies back to exactly that spot */
   views?: BoardView[];
