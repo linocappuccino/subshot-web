@@ -17,6 +17,8 @@ export interface BoardTodoApi {
   addItem: (listId: string, text: string, assigneeId: string | null) => Promise<void>;
   patchItem: (item: TodoItem, patch: Partial<{ text: string; done: boolean; assignee_id: string | null }>) => Promise<void>;
   deleteItem: (item: TodoItem) => Promise<void>;
+  /** 2026-10-21 — new order of a list's items after a drag (all item ids) */
+  reorderItems: (listId: string, orderedIds: string[]) => Promise<void>;
 }
 
 export const BoardTodoContext = createContext<{ api?: BoardTodoApi; publicLists?: Record<string, PublicBoardTodoList> } | null>(null);
@@ -28,6 +30,7 @@ export interface TodoLabels {
   todoUnassign: string;
   todoDelete: string;
   todoNoMatch: string;
+  todoDragHandle: string;
 }
 
 function displayName(m: Member): string {
@@ -202,11 +205,47 @@ export function TodoNode({ el, editable, labels }: { el: TodoElement; editable: 
   const pub = ctx?.publicLists?.[el.list_id];
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
+  // 2026-10-21, Lino: reorder by drag & drop — grip on each row, the list
+  // reorders live while dragging and is saved on release. Pointer capture on
+  // the grip (board dialogs/overlays must not rely on window listeners).
+  const [drag, setDrag] = useState<{ id: string; order: string[] } | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
 
   const name = list?.name ?? pub?.name ?? el.title ?? labels.todoDefaultName;
-  const items = list
+  const sorted = list
     ? [...list.items].sort((a, b) => a.sort_order - b.sort_order || a.created_at.localeCompare(b.created_at))
     : null;
+  const items =
+    sorted && drag
+      ? (drag.order.map((id) => sorted.find((i) => i.id === id)).filter(Boolean) as TodoItem[]).concat(sorted.filter((i) => !drag.order.includes(i.id)))
+      : sorted;
+
+  function onGripDown(e: React.PointerEvent<HTMLButtonElement>, id: string) {
+    if (!sorted || e.button > 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ id, order: sorted.map((i) => i.id) });
+  }
+  function onGripMove(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!drag) return;
+    e.stopPropagation();
+    const others = drag.order.filter((id) => id !== drag.id);
+    let index = 0;
+    for (const id of others) {
+      const r = rowRefs.current.get(id)?.getBoundingClientRect();
+      if (r && e.clientY > r.top + r.height / 2) index++;
+    }
+    const order = [...others.slice(0, index), drag.id, ...others.slice(index)];
+    if (order.join() !== drag.order.join()) setDrag({ ...drag, order });
+  }
+  function onGripUp(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!drag || !sorted) return;
+    e.stopPropagation();
+    const order = drag.order;
+    setDrag(null);
+    if (order.join() !== sorted.map((i) => i.id).join()) void api!.reorderItems(el.list_id, order);
+  }
   const total = items?.length ?? pub?.items.length ?? 0;
   const done = items ? items.filter((i) => i.done).length : pub?.items.filter((i) => i.done).length ?? 0;
   const canEdit = editable && !!api && !!list;
@@ -252,7 +291,32 @@ export function TodoNode({ el, editable, labels }: { el: TodoElement; editable: 
             ? items.map((item) => {
                 const member = api!.members.find((m) => m.user_id === item.assignee_id);
                 return (
-                  <div key={item.id} className="group/todo flex items-start gap-2 rounded-lg px-1.5 py-1.5 hover:bg-white/[0.04]">
+                  <div
+                    key={item.id}
+                    ref={(node) => {
+                      if (node) rowRefs.current.set(item.id, node);
+                      else rowRefs.current.delete(item.id);
+                    }}
+                    className={`group/todo flex items-start gap-2 rounded-lg py-1.5 ${canEdit ? "pl-0 pr-1.5" : "px-1.5"} ${
+                      drag?.id === item.id ? "bg-white/[0.09] shadow-lg ring-1 ring-white/15" : "hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {canEdit && (
+                      <button
+                        data-no-drag
+                        title={labels.todoDragHandle}
+                        aria-label={labels.todoDragHandle}
+                        onPointerDown={(e) => onGripDown(e, item.id)}
+                        onPointerMove={onGripMove}
+                        onPointerUp={onGripUp}
+                        onPointerCancel={onGripUp}
+                        className={`mt-0.5 w-3.5 h-[18px] shrink-0 flex items-center justify-center touch-none ${
+                          drag?.id === item.id ? "cursor-grabbing text-white/70" : "cursor-grab text-white/20 hover:text-white/60"
+                        }`}
+                      >
+                        <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor"><circle cx="2" cy="2" r="1.3" /><circle cx="6" cy="2" r="1.3" /><circle cx="2" cy="7" r="1.3" /><circle cx="6" cy="7" r="1.3" /><circle cx="2" cy="12" r="1.3" /><circle cx="6" cy="12" r="1.3" /></svg>
+                      </button>
+                    )}
                     <button
                       data-no-drag
                       disabled={!canEdit}

@@ -360,6 +360,19 @@ function IdeaBoardScreen({
         setList(item.todo_list_id, (l) => ({ ...l, items: l.items.filter((i) => i.id !== item.id) }));
         await api.deleteTodoItem(item.id).catch(fail);
       },
+      // 2026-10-21, Lino: drag & drop order — sort_order = position
+      reorderItems: async (listId, orderedIds) => {
+        const list = todoLists[listId];
+        if (!list) return;
+        const pos = new Map(orderedIds.map((id, i) => [id, i]));
+        const changed = list.items.filter((i) => pos.has(i.id) && i.sort_order !== pos.get(i.id));
+        setList(listId, (l) => ({ ...l, items: l.items.map((i) => (pos.has(i.id) ? { ...i, sort_order: pos.get(i.id)! } : i)) }));
+        try {
+          await Promise.all(changed.map((i) => api.patchTodoItem(i.id, { sort_order: pos.get(i.id)! })));
+        } catch (e) {
+          fail(e);
+        }
+      },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [todoLists, members, idea.id]);

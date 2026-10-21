@@ -3121,6 +3121,7 @@ export function IdeaBoard({
     todoUnassign: t("ideaBoard.todoUnassign"),
     todoDelete: t("ideaBoard.todoDelete"),
     todoNoMatch: t("ideaBoard.todoNoMatch"),
+    todoDragHandle: t("ideaBoard.todoDragHandle"),
     addDialogue: t("ideaBoard.addDialogue"),
     dialoguePlaceholder: t("ideaBoard.dialoguePlaceholder"),
     removeDialogue: t("ideaBoard.removeDialogue"),
