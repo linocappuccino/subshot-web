@@ -99,7 +99,17 @@ export function IdeaTile({
       )}
       <div className="aspect-video bg-white/5 flex items-center justify-center overflow-hidden">
         {boardCover ? (
-          <AuthImage path={boardCover} alt="" className="w-full h-full object-cover" />
+          <AuthImage
+            path={boardCover}
+            alt=""
+            className="w-full h-full object-cover"
+            // 2026-10-21, Lino: the face stays centred for board covers too
+            objectPosition={
+              idea.board_cover_focus_x != null && idea.board_cover_focus_y != null
+                ? `${(idea.board_cover_focus_x * 100).toFixed(1)}% ${(idea.board_cover_focus_y * 100).toFixed(1)}%`
+                : undefined
+            }
+          />
         ) : cover ? (
           isVideoUrl(cover.image_url ?? "") ? (
             <AuthVideo path={cover.image_url ?? ""} className="w-full h-full object-cover" />

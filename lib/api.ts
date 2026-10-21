@@ -993,6 +993,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     },
     boardGifDiscard: (ideaId: string, key: string) =>
       request<{ ok: boolean }>(`ideas/${ideaId}/board/gif/discard`, { method: "POST", body: JSON.stringify({ key }) }),
+    // face focus of a board image picked as the tile cover (2026-10-21)
+    boardCoverFocus: (ideaId: string, key: string) =>
+      request<{ focus_x: number | null; focus_y: number | null }>(`ideas/${ideaId}/board/cover-focus?key=${encodeURIComponent(key)}`),
     // board variant votes (2026-10-08) — toggle: same variant again removes it
     boardVotes: (ideaId: string) => {
       invalidateGetCache(`ideas/${ideaId}/board/votes`);

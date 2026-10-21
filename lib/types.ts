@@ -553,6 +553,9 @@ export interface Idea {
    * plus its top-left image (presigned) and first text box for the tile. */
   has_board?: boolean;
   board_cover_url?: string | null;
+  /** 2026-10-21 — face focus of the cover (0..1), null = none found */
+  board_cover_focus_x?: number | null;
+  board_cover_focus_y?: number | null;
   board_text_preview?: string | null;
   scene_id: string | null;
   created_at: string;
@@ -640,6 +643,9 @@ export interface IdeaPreview {
   /** 2026-10-08 — true once the idea has a board; the preview then shows it read-only. */
   has_board?: boolean;
   board_cover_url?: string | null;
+  /** 2026-10-21 — face focus of the cover (0..1), null = none found */
+  board_cover_focus_x?: number | null;
+  board_cover_focus_y?: number | null;
   board_text_preview?: string | null;
 }
 

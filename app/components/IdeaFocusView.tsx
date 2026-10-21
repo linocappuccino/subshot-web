@@ -132,6 +132,18 @@ function boardSummary(data: BoardData) {
   };
 }
 
+/** R2 key of the tile cover — same pick as boardSummary / the backend's
+ * cover_and_preview (2026-10-21, for the face focus). */
+function boardCoverKey(data: BoardData): string | null {
+  const order = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.round(a.y / 48) - Math.round(b.y / 48) || a.x - b.x;
+  const keyOf = (el: BoardData["elements"][number] | undefined): string | null =>
+    !el ? null : el.type === "image" ? el.asset_key || null : el.type === "scene" ? el.image_key || null : null;
+  const chosen = keyOf(data.elements.find((el) => el.id === data.cover));
+  const images = data.elements.filter((el) => el.type === "image" || (el.type === "scene" && el.image_key)).sort(order);
+  return chosen ?? keyOf(images[0]);
+}
+
 function IdeaBoardScreen({
   idea,
   isNew,
@@ -229,6 +241,7 @@ function IdeaBoardScreen({
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const explicitlyDeleted = useRef(false);
+  const coverKeyRef = useRef<string | null | undefined>(undefined);
   const titleRef = useRef<HTMLInputElement>(null);
 
   const approved = idea.status === "approved";
@@ -243,6 +256,8 @@ function IdeaBoardScreen({
       ...updated,
       has_board: ideaRef.current.has_board,
       board_cover_url: ideaRef.current.board_cover_url,
+      board_cover_focus_x: ideaRef.current.board_cover_focus_x,
+      board_cover_focus_y: ideaRef.current.board_cover_focus_y,
       board_text_preview: ideaRef.current.board_text_preview,
     }),
     [],
@@ -255,6 +270,7 @@ function IdeaBoardScreen({
       .then((res) => {
         versionRef.current = res.version;
         latestRef.current = res.data;
+        coverKeyRef.current = boardCoverKey(res.data);
         setBoard({ data: res.data, editable: !!res.editable });
         setBoardKey((k) => k + 1);
       })
@@ -346,10 +362,32 @@ function IdeaBoardScreen({
     presign: (keys) => api.boardPresign(idea.id, keys),
   });
   const collabLive = collab.status === "live" || collab.status === "offline";
+  // 2026-10-21, Lino: the tile keeps the face centred for a newly picked
+  // cover too — focus comes from the backend (app/cover_focus.py)
+  const applySummary = useCallback((data: BoardData) => {
+    const key = boardCoverKey(data);
+    const changed = key !== coverKeyRef.current;
+    coverKeyRef.current = key;
+    onUpdated({
+      ...ideaRef.current,
+      ...boardSummary(data),
+      has_board: true,
+      ...(changed ? { board_cover_focus_x: null, board_cover_focus_y: null } : {}),
+    });
+    if (changed && key) {
+      api
+        .boardCoverFocus(ideaRef.current.id, key)
+        .then((f) => {
+          if (coverKeyRef.current === key) onUpdated({ ...ideaRef.current, board_cover_focus_x: f.focus_x, board_cover_focus_y: f.focus_y });
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const summaryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const updateSummarySoon = useCallback((data: BoardData) => {
     if (summaryTimer.current) clearTimeout(summaryTimer.current);
-    summaryTimer.current = setTimeout(() => onUpdated({ ...ideaRef.current, ...boardSummary(data), has_board: true }), 1200);
+    summaryTimer.current = setTimeout(() => applySummary(data), 1200);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
@@ -380,8 +418,7 @@ function IdeaBoardScreen({
     try {
       const res = await api.saveIdeaBoard(idea.id, versionRef.current, forSave(data));
       versionRef.current = res.version;
-      const summary = boardSummary(data);
-      onUpdated({ ...ideaRef.current, ...summary, has_board: true });
+      applySummary(data);
       setSaveState(pendingRef.current ? "dirty" : "saved");
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {

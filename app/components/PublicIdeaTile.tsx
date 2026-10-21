@@ -20,7 +20,7 @@ export function PublicIdeaTile({
   // 2026-10-08 — ideas with a board show its top-left image (see IdeaTile.tsx).
   const cover = idea.has_board
     ? idea.board_cover_url
-      ? { image_url: idea.board_cover_url, focus_x: null, focus_y: null }
+      ? { image_url: idea.board_cover_url, focus_x: idea.board_cover_focus_x ?? null, focus_y: idea.board_cover_focus_y ?? null }
       : undefined
     : idea.images.find((img) => img.status === "ready" && img.image_url);
   const approved = idea.status === "approved";
