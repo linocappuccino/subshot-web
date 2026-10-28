@@ -47,6 +47,24 @@ import type {
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
 
+export type OAuthConsentRequest = {
+  client_name: string;
+  client_uri: string | null;
+  redirect_host: string;
+  verified: boolean;
+  scopes: string[];
+  decided: boolean;
+  user: { name: string | null; email: string };
+};
+export type OAuthConnection = {
+  id: string;
+  client_name: string;
+  redirect_host: string;
+  scopes: string[];
+  created_at: string | null;
+  last_used_at: string | null;
+};
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export class ApiError extends Error {
@@ -263,6 +281,12 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
   }
 
   return {
+    // 2026-10-28 — Subshot MCP connector: consent page + connected AI apps (app/mcp/oauth.py)
+    oauthRequest: (id: string) => request<OAuthConsentRequest>(`oauth/requests/${encodeURIComponent(id)}`),
+    oauthDecision: (id: string, allow: boolean, scopes?: string[]) =>
+      request<{ redirect_to: string }>(`oauth/requests/${encodeURIComponent(id)}/decision`, { method: "POST", body: JSON.stringify({ allow, scopes }) }),
+    oauthConnections: () => request<OAuthConnection[]>("oauth/connections"),
+    revokeOauthConnection: (id: string) => request<void>(`oauth/connections/${encodeURIComponent(id)}`, { method: "DELETE" }),
     // 2026-10-13 — connect the DaVinci Resolve tool (device code shown in Resolve)
     resolveDeviceInfo: (code: string) => request<{ label: string | null; approved: boolean }>(`resolve/device/info?code=${encodeURIComponent(code)}`),
     resolveDeviceApprove: (code: string) =>

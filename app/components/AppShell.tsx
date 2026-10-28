@@ -262,6 +262,16 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
                     </svg>
                   }
                 />
+                {/* 2026-10-28 — AI apps connected through the Subshot MCP connector */}
+                <UserButton.Link
+                  label={t("avatar.aiApps")}
+                  href="/oauth/connections"
+                  labelIcon={
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" /><path d="M19 17l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z" />
+                    </svg>
+                  }
+                />
                 {/* 2026-07-22 (pre-public-launch checklist) — legal pages live on the
                     backend (subshot.ch/impressum, cross-links to /datenschutz and
                     /agb from there), not duplicated into this Next.js app. */}
