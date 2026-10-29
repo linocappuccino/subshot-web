@@ -11,6 +11,7 @@ import {
   htmlToPlain,
   normalizeTime,
   parseDuration,
+  parseTimeInput,
   sceneTimes,
   timetableColumns,
   timetableRows,
@@ -157,6 +158,7 @@ test("group column joins the default set when cards sit in named groups", () => 
 test("parsing and formatting", () => {
   assert.equal(normalizeTime("9:5"), "09:05");
   assert.equal(normalizeTime("25:00"), "");
+  assert.deepEqual(["8", "08", "800", "0830", "8:30", "8.30", "8h30", "17 Uhr", "2400", "x", ""].map(parseTimeInput), ["08:00", "08:00", "08:00", "08:30", "08:30", "08:30", "08:30", "17:00", "", "", ""]);
   assert.equal(parseDuration("45"), 45);
   assert.equal(parseDuration("45 min"), 45);
   assert.equal(parseDuration("1:30"), 90);

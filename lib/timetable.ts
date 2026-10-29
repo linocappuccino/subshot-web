@@ -68,6 +68,18 @@ export function toMin(v: unknown): number | null {
   return h < 24 && mi < 60 ? h * 60 + mi : null;
 }
 
+/** what people type into a time field: "8" / "08" / "800" / "0830" / "8:30" / "8.30" / "8h30" → "08:30", else "" */
+export function parseTimeInput(v: string): string {
+  const s = v.trim().toLowerCase().replace(/\s*uhr$/, "");
+  let m = /^(\d{1,2})[:.h](\d{2})$/.exec(s);
+  if (m) return normalizeTime(`${m[1]}:${m[2]}`);
+  m = /^(\d{1,2})$/.exec(s);
+  if (m) return normalizeTime(`${m[1]}:00`);
+  m = /^(\d{1,2})(\d{2})$/.exec(s);
+  if (m) return normalizeTime(`${m[1]}:${m[2]}`);
+  return "";
+}
+
 /** minutes → "HH:MM" (wraps around midnight) */
 export function fromMin(m: number): string {
   const x = ((Math.round(m) % DAY) + DAY) % DAY;

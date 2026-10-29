@@ -6,7 +6,7 @@ import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
 import { TimetableNode } from "./BoardTimetable";
-import { formatDuration, normalizeTime, parseDuration, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
+import { formatDuration, parseDuration, parseTimeInput, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -568,17 +568,24 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
       return n;
     });
     if (v === undefined || v === shown[f]) return;
-    onCommit({ timeEdit: { field: f, value: f === "duration" ? parseDuration(v) : normalizeTime(v) } });
+    onCommit({ timeEdit: { field: f, value: f === "duration" ? parseDuration(v) : parseTimeInput(v) } });
   };
-  const input = "rounded-md bg-white/[0.07] border border-white/10 px-1.5 py-0.5 text-[12px] tabular-nums text-white/90 outline-none focus:border-blue-400/60 [color-scheme:dark] select-text";
+  const input = "w-full min-w-0 rounded-md bg-white/[0.07] border border-white/10 px-1.5 py-1 text-[12px] tabular-nums text-white/90 outline-none focus:border-blue-400/60 [color-scheme:dark] select-text";
+  const head = "flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-white/45";
   return (
-    <div className="px-3 pb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-white/50">
-      <ClockGlyph />
+    <div className="px-3 pb-2 flex items-end gap-1.5">
       {(["time", "time_end"] as const).map((f) => (
-        <label key={f} className="flex items-center gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider">{f === "time" ? labels.sceneTimeFrom : labels.sceneTimeTo}</span>
+        <label key={f} className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className={head}>
+            {f === "time" && <ClockGlyph />}
+            {f === "time" ? labels.sceneTimeFrom : labels.sceneTimeTo}
+          </span>
+          {/* plain text, always 24 h (a type="time" field shows AM/PM in English browsers and is
+              too wide for the card); 8 / 800 / 8:30 / 8.30 are understood */}
           <input
-            type="time"
+            type="text"
+            inputMode="numeric"
+            placeholder="--:--"
             value={value(f)}
             onChange={(e) => setDraft((d) => ({ ...d, [f]: e.target.value }))}
             onBlur={() => commit(f)}
@@ -587,8 +594,8 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
           />
         </label>
       ))}
-      <label className="flex items-center gap-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider">{labels.sceneDuration}</span>
+      <label className="flex w-[68px] shrink-0 flex-col gap-1">
+        <span className={head}>{labels.sceneDuration}</span>
         <input
           type="text"
           inputMode="numeric"
@@ -597,7 +604,7 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
           onChange={(e) => setDraft((d) => ({ ...d, duration: e.target.value }))}
           onBlur={() => commit("duration")}
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          className={`${input} w-[68px]`}
+          className={input}
         />
       </label>
       <button
@@ -608,7 +615,7 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
         title={el.time_fixed ? labels.sceneUnfix : labels.sceneFix}
         aria-label={el.time_fixed ? labels.sceneUnfix : labels.sceneFix}
         aria-pressed={!!el.time_fixed}
-        className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${el.time_fixed ? "bg-amber-400/20 text-amber-300" : "text-white/40 hover:bg-white/10 hover:text-white/80"}`}
+        className={`mb-[1px] flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md border transition-colors ${el.time_fixed ? "border-amber-400/40 bg-amber-400/20 text-amber-300" : "border-white/10 text-white/40 hover:bg-white/10 hover:text-white/80"}`}
       >
         <LockGlyph locked={!!el.time_fixed} />
       </button>
