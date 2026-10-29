@@ -1,0 +1,46 @@
+{
+  "_comment": "2026-10-29 — shared cases for the Timetable logic. The SAME file lives in subshot-web/tests/fixtures/ and subshot/tests/fixtures/; both test suites (lib/timetable.ts and app/idea_board.py) must pass every case. Keep both copies identical.",
+  "edit": [
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "time", "value": "09:30", "expect": {"time": "09:30", "time_end": "10:30", "duration": 60}},
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "duration", "value": 90, "expect": {"time": "09:00", "time_end": "10:30", "duration": 90}},
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "time_end", "value": "11:15", "expect": {"time": "09:00", "time_end": "11:15", "duration": 135}},
+    {"card": {"time_end": "12:00"}, "field": "duration", "value": 45, "expect": {"time": "11:15", "time_end": "12:00", "duration": 45}},
+    {"card": {}, "field": "time", "value": "08:00", "expect": {"time": "08:00", "time_end": null, "duration": null}},
+    {"card": {"time": "08:00"}, "field": "time_end", "value": "08:20", "expect": {"time": "08:00", "time_end": "08:20", "duration": 20}},
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "duration", "value": null, "expect": {"time": "09:00", "time_end": null, "duration": null}},
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "time_end", "value": "", "expect": {"time": "09:00", "time_end": null, "duration": null}},
+    {"card": {"time": "09:00", "time_end": "10:00", "duration": 60}, "field": "time", "value": "", "expect": {"time": null, "time_end": "10:00", "duration": 60}},
+    {"card": {"time": "23:30"}, "field": "duration", "value": 90, "expect": {"time": "23:30", "time_end": "01:00", "duration": 90}},
+    {"card": {"time_end": "00:30"}, "field": "duration", "value": 60, "expect": {"time": "23:30", "time_end": "00:30", "duration": 60}}
+  ],
+  "cascade": [
+    {"name": "first card +30, all following move, lock stops, untimed skipped",
+     "cards": [["a", 1, {"time": "08:00", "duration": 30}], ["b", 2, {"time": "09:00", "duration": 30}], ["x", 3, {}], ["c", 4, {"time": "10:00", "duration": 30, "time_fixed": true}], ["d", 5, {"time": "11:00", "duration": 30}]],
+     "id": "a", "field": "time", "value": "08:30", "sort": "number",
+     "expect": {"delta": 30, "blocked": null, "patches": {"b": {"time": "09:30", "time_end": "10:00", "duration": 30}}}},
+    {"name": "longer duration pushes by the difference",
+     "cards": [["a", 1, {"time": "08:00", "duration": 60}], ["b", 2, {"time": "09:15", "duration": 30}]],
+     "id": "a", "field": "duration", "value": 90, "sort": "time",
+     "expect": {"delta": 30, "blocked": null, "patches": {"b": {"time": "09:45", "time_end": "10:15", "duration": 30}}}},
+    {"name": "midnight stops the chain",
+     "cards": [["a", 1, {"time": "20:00", "duration": 60}], ["b", 2, {"time": "22:00", "duration": 60}], ["c", 3, {"time": "23:30", "duration": 20}]],
+     "id": "a", "field": "time", "value": "21:00", "sort": "time",
+     "expect": {"delta": 60, "blocked": 3, "patches": {"b": {"time": "23:00", "time_end": "00:00", "duration": 60}}}},
+    {"name": "earlier start moves the rest back",
+     "cards": [["a", 1, {"time": "08:00", "duration": 30}], ["b", 2, {"time": "08:45", "time_end": "09:00", "duration": 15}]],
+     "id": "a", "field": "time", "value": "07:30", "sort": "time",
+     "expect": {"delta": -30, "blocked": null, "patches": {"b": {"time": "08:15", "time_end": "08:30", "duration": 15}}}},
+    {"name": "a time where there was none moves nothing",
+     "cards": [["a", 1, {}], ["b", 2, {"time": "09:00"}]],
+     "id": "a", "field": "time", "value": "08:00", "sort": "time",
+     "expect": {"delta": 0, "blocked": null, "patches": {}}}
+  ],
+  "rows": [
+    {"cards": [["a", 1, {}], ["b", 2, {"time": "14:00"}], ["c", 3, {"time": "09:30", "duration": 45}], ["d", 4, {}], ["e", 5, {"time_end": "11:00"}], ["f", 9, {"time": "08:00"}], ["g", 8, {"time": "08:00"}]],
+     "sort": "time",
+     "expect": [["g", 8, "08:00", "", null], ["f", 9, "08:00", "", null], ["c", 3, "09:30", "10:15", 45], ["e", 5, "", "11:00", null], ["b", 2, "14:00", "", null], ["a", 1, "", "", null], ["d", 4, "", "", null]]},
+    {"cards": [["a", 12, {"time": "07:00"}], ["b", 4, {}], ["c", 7, {"time": "23:30", "duration": 90}]],
+     "sort": "number",
+     "expect": [["b", 4, "", "", null], ["c", 7, "23:30", "01:00", 90], ["a", 12, "07:00", "", null]]}
+  ]
+}

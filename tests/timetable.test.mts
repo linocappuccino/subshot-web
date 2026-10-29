@@ -170,3 +170,30 @@ test("parsing and formatting", () => {
   assert.equal(formatDuration(120), "2 h");
   assert.equal(formatDuration(45), "45 min");
 });
+
+// ── shared cases with the backend (tests/fixtures/timetable_cases.json, identical copy in /opt/subshot/tests/fixtures) ──
+import { readFileSync } from "node:fs";
+const CASES = JSON.parse(readFileSync(new URL("./fixtures/timetable_cases.json", import.meta.url), "utf8"));
+const cards = (spec: [string, number, Record<string, unknown>][]) => spec.map(([id, n, extra]) => scene(id, n, extra));
+const nullify = (p: Record<string, unknown>) => ({ time: p.time ?? null, time_end: p.time_end ?? null, duration: p.duration ?? null });
+
+test("shared cases: editSceneTime", () => {
+  for (const c of CASES.edit) assert.deepEqual(nullify(editSceneTime(c.card, c.field, c.value)), c.expect, JSON.stringify(c));
+});
+
+test("shared cases: cascadeTimes", () => {
+  for (const c of CASES.cascade) {
+    const els = cards(c.cards);
+    const before = els.find((e) => e.id === c.id) as SceneElement;
+    const after = { ...before, ...editSceneTime(before, c.field, c.value) };
+    const r = cascadeTimes(els, c.id, before, after, c.sort);
+    const patches = Object.fromEntries([...r.patches].map(([k, v]) => [k, nullify(v)]));
+    assert.deepEqual({ delta: r.delta, blocked: r.blocked, patches }, c.expect, c.name);
+  }
+});
+
+test("shared cases: timetableRows", () => {
+  for (const c of CASES.rows) {
+    assert.deepEqual(timetableRows(cards(c.cards), c.sort).map((r) => [r.id, r.number, r.start, r.end, r.duration]), c.expect);
+  }
+});
