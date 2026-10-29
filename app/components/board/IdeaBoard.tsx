@@ -56,9 +56,12 @@ import {
   type PlaceholderElement,
   type BoardTemplate,
   type LutPreviewElement,
+  type TimetableElement,
   MEDIA_SLOTS,
 } from "@/lib/board";
-import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath } from "./BoardElementView";
+import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
+import { BoardTimetableContext } from "./BoardTimetable";
+import { cascadeTimes, chainEnabled, chainSort, editSceneTime } from "@/lib/timetable";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
 import { PlacePill } from "../PlacePill";
@@ -836,6 +839,46 @@ export function IdeaBoard({
     setTool("select");
     editingStartHtml.current = "";
     setEditingId(el.id);
+  }
+
+  // 2026-10-29, Lino: Timetable — a Drehplan of all scene cards (rows derived live, lib/timetable.ts)
+  function addTimetable(at: Point) {
+    const w = 960;
+    const h = 320;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: TimetableElement = { id: newId(), type: "timetable", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "Timetable" };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+  }
+
+  /** sets / removes (undefined) fields of elements in one undoable step */
+  function patchElements(patches: Map<string, Record<string, unknown>>) {
+    if (!patches.size) return;
+    commit((d) => ({
+      ...d,
+      elements: d.elements.map((e) => {
+        const patch = patches.get(e.id);
+        if (!patch) return e;
+        const next: Record<string, unknown> = { ...e };
+        for (const [k, v] of Object.entries(patch)) {
+          if (v === undefined) delete next[k];
+          else next[k] = v;
+        }
+        return next as unknown as BoardElement;
+      }),
+    }));
+  }
+
+  function commitTimetable(id: string, patch: Partial<Pick<TimetableElement, "title" | "sort" | "columns" | "chain">>) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el || el.type !== "timetable") return;
+    const next: Record<string, unknown> = {};
+    if (patch.title !== undefined && patch.title !== el.title) next.title = patch.title;
+    if (patch.sort !== undefined && patch.sort !== (el.sort ?? "time")) next.sort = patch.sort === "time" ? undefined : patch.sort;
+    if (patch.chain !== undefined && patch.chain !== (el.chain ?? true)) next.chain = patch.chain ? undefined : false;
+    if ("columns" in patch) next.columns = patch.columns?.length ? patch.columns : undefined;
+    if (Object.keys(next).length) patchElements(new Map([[id, next]]));
   }
 
   // ── GIF maker (2026-10-08) ────────────────────────────────────────────
@@ -1900,6 +1943,18 @@ export function IdeaBoard({
     return list;
   }, [presentScenes]);
   const placeColorOf = (address?: string) => (address ? boardPlaces.find((p) => p.address === address)?.color ?? null : null);
+  // 2026-10-29: what the Timetable nodes derive their rows from (the live board)
+  const timetableCtx = useMemo(
+    () => ({
+      elements: data.elements,
+      placeColorOf: (address?: string) => (address ? boardPlaces.find((p) => p.address === address)?.color ?? null : null),
+      onGoTo: (id: string) => {
+        setSelection(new Set([id]));
+        setInnerFocus({ elementId: id, nonce: Date.now() });
+      },
+    }),
+    [data.elements, boardPlaces],
+  );
   // the place menu belongs to the selection it was opened for (another selection → closed)
   const [placeMenuFor, setPlaceMenuFor] = useState<string | null>(null);
   const selectionKey = [...selection].sort().join(",");
@@ -2008,7 +2063,7 @@ export function IdeaBoard({
     setEditingId(id);
   }
 
-  function commitScene(id: string, patch: { title?: string; html?: string; dialogues?: string[] }) {
+  function commitScene(id: string, patch: ScenePatch) {
     const el = dataRef.current.elements.find((e) => e.id === id);
     if (!el || el.type !== "scene") return;
     const next: Partial<SceneElement> = {};
@@ -2021,6 +2076,29 @@ export function IdeaBoard({
     if (patch.html !== undefined) {
       const html = boardHtmlToPlain(patch.html) ? sanitizeBoardHtml(patch.html) : "";
       if (html !== el.html) next.html = html;
+    }
+    // 🔒 on = true, off = the field is removed
+    const fields: Record<string, unknown> = { ...next };
+    if (patch.time_fixed !== undefined && patch.time_fixed !== !!el.time_fixed) fields.time_fixed = patch.time_fixed || undefined;
+    // 2026-10-29, Lino: Drehzeit — one field edited, the third derived; with "Zeiten verketten"
+    // the following cards move along (same minutes) — all in one undoable, atomic change
+    let blocked: number | null = null;
+    const patches = new Map<string, Record<string, unknown>>();
+    if (patch.timeEdit) {
+      const times = editSceneTime(el, patch.timeEdit.field, patch.timeEdit.value);
+      Object.assign(fields, times);
+      const all = dataRef.current.elements;
+      if (chainEnabled(all)) {
+        const chain = cascadeTimes(all, id, el, { ...el, ...times }, chainSort(all));
+        for (const [fid, p] of chain.patches) patches.set(fid, p);
+        blocked = chain.blocked;
+      }
+    }
+    if (patch.timeEdit || "time_fixed" in fields) {
+      patches.set(id, fields);
+      patchElements(patches);
+      if (blocked !== null) onNotice?.(t("ideaBoard.chainMidnight", { number: blocked }));
+      return;
     }
     if (Object.keys(next).length) updateElement(id, next, { history: true });
   }
@@ -2120,6 +2198,7 @@ export function IdeaBoard({
     { id: "text", icon: "T", label: t("ideaBoard.menu.text"), hint: "T", keywords: "text textbox schrift titel überschrift notiz text box heading" },
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
+    { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
     { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
     ...(uploadFile ? [{ id: "lutpreview", icon: "◐", label: t("ideaBoard.menu.lutpreview" as never), keywords: "lut preview cube log grading look farbe vergleich vorher nachher compare before after" }] : []),
     { id: "upload", icon: "🖼", label: t("ideaBoard.menu.upload"), keywords: "bild foto video audio pdf datei hochladen upload image photo file" },
@@ -2142,6 +2221,7 @@ export function IdeaBoard({
       case "sticky": return addSticky(at);
       case "scene": return addScene(at, true);
       case "moodboard": return addMoodboard(at);
+      case "timetable": return addTimetable(at);
       case "lutpreview": return addLutPreview(at);
       case "todo": return void addTodo(at);
       case "gif": return setGifAt(at);
@@ -2171,6 +2251,11 @@ export function IdeaBoard({
     }
     if (el.type === "moodboard" && editable) {
       setSelection(new Set([el.id]));
+      return;
+    }
+    if (el.type === "timetable" && editable) {
+      setSelection(new Set([el.id]));
+      setEditingId(el.id);
       return;
     }
     if (el.type === "placeholder" && editable) {
@@ -3111,6 +3196,13 @@ export function IdeaBoard({
     sceneTitlePlaceholder: t("ideaBoard.sceneTitlePlaceholder"),
     changePlace: t("sectionLocation.change"),
     sceneTextPlaceholder: t("ideaBoard.sceneTextPlaceholder"),
+    sceneTime: t("ideaBoard.sceneTime"),
+    sceneTimeFrom: t("ideaBoard.sceneTimeFrom"),
+    sceneTimeTo: t("ideaBoard.sceneTimeTo"),
+    sceneDuration: t("ideaBoard.sceneDuration"),
+    sceneDurationPlaceholder: t("ideaBoard.sceneDurationPlaceholder"),
+    sceneFix: t("ideaBoard.sceneFix"),
+    sceneUnfix: t("ideaBoard.sceneUnfix"),
     addImage: t("ideaBoard.addImage"),
     uploadImage: t("ideaBoard.uploadImage"),
     aiImage: t("ideaBoard.aiImage"),
@@ -3188,6 +3280,7 @@ export function IdeaBoard({
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
     <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
+    <BoardTimetableContext.Provider value={timetableCtx}>
     <BoardScaleContext.Provider value={viewScaleRef}>
     <div
       ref={viewportRef}
@@ -3316,7 +3409,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -3347,6 +3440,7 @@ export function IdeaBoard({
                 labels={labels}
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
+                onCommitTimetable={(patch) => commitTimetable(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
                 scenePlaceColor={el.type === "scene" ? placeColorOf(el.location_address) : null}
@@ -4037,6 +4131,7 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.scene")} hint="S" onPress={() => menuAction(() => addScene(menu.world, true))} />
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
+                  <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
                   <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
                   {uploadFile && <MenuItem label={t("ideaBoard.menu.lutpreview" as never)} onPress={() => menuAction(() => addLutPreview(menu.world))} />}
                   {gifMaker && <MenuItem label={t("ideaBoard.menu.gif")} onPress={() => menuAction(() => setGifAt(menu.world))} />}
@@ -4192,6 +4287,9 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
             </ToolButton>
           )}
+          <ToolButton title={t("ideaBoard.toolTimetable")} onPress={() => addTimetable(viewportCenterWorld())}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 4v17M16 2v4M8 2v4" /></svg>
+          </ToolButton>
           <ToolButton title={t("ideaBoard.toolMoodboard")} onPress={() => addMoodboard(viewportCenterWorld())}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>
           </ToolButton>
@@ -4522,6 +4620,7 @@ export function IdeaBoard({
       </div>
     </div>
     </BoardScaleContext.Provider>
+    </BoardTimetableContext.Provider>
     </BoardZoomContext.Provider>
     </BoardDownloadContext.Provider>
   );

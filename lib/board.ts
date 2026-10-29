@@ -101,7 +101,31 @@ export interface SceneElement extends BaseElement {
   location_address?: string;
   location_lat?: number | null;
   location_lng?: number | null;
+  /** 2026-10-29, Lino: Drehzeit — Beginn / Ende ("HH:MM", 24 h) and Dauer (minutes),
+   * all optional; two of them give the third (lib/timetable.ts sceneTimes / editSceneTime) */
+  time?: string;
+  time_end?: string;
+  duration?: number;
+  /** 🔒 the start stays put when "Zeiten verketten" moves the cards before it */
+  time_fixed?: boolean;
 }
+
+/** 2026-10-29, Lino: "Timetable" — a Drehplan for the day. It stores nothing
+ * but its title and sort: every row is derived live from the board's scene
+ * cards (lib/timetable.ts), so it always matches the cards' numbers. */
+export interface TimetableElement extends BaseElement {
+  type: "timetable";
+  title: string;
+  /** "time" (default): by Drehzeit, scenes without a time after, by number; "number": by scene number */
+  sort?: "time" | "number";
+  /** shown columns in this order; missing = the default set (lib/timetable.ts DEFAULT_TIMETABLE_COLUMNS) */
+  columns?: TimetableColumn[];
+  /** false = "Zeiten verketten" off for the board (default on) */
+  chain?: boolean;
+}
+
+export const TIMETABLE_COLUMNS = ["number", "title", "group", "start", "end", "duration", "location", "description", "dialogue", "priority", "tags", "image"] as const;
+export type TimetableColumn = (typeof TIMETABLE_COLUMNS)[number];
 
 /** 2026-10-08, Lino: a group — a frame drawn around its member elements
  * (expanded) or a compact card standing in for them (collapsed). While
@@ -704,7 +728,7 @@ export interface PlaceholderElement extends BaseElement {
 }
 export const MEDIA_SLOTS: PlaceholderSlot[] = ["image", "video", "audio", "pdf", "file"];
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);

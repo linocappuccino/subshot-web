@@ -5,6 +5,8 @@ import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
+import { TimetableNode } from "./BoardTimetable";
+import { formatDuration, normalizeTime, parseDuration, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -24,6 +26,7 @@ import {
   type PaletteElement,
   type LocationElement,
   type StickyElement,
+  type TimetableElement,
   type ColorElement,
   type MoodboardItem,
   type PlaceholderElement,
@@ -55,6 +58,15 @@ export function boardHtmlToPlain(html: string): string {
 
 export const VIDEO_HEADER = 32;
 
+export type ScenePatch = {
+  title?: string;
+  html?: string;
+  dialogues?: string[];
+  /** one time field edited — the board derives the rest (lib/timetable.ts editSceneTime) */
+  timeEdit?: { field: TimeField; value: string | number | null };
+  time_fixed?: boolean;
+};
+
 export interface ElementViewLabels extends TodoLabels {
   textPlaceholder: string;
   open: string;
@@ -74,6 +86,13 @@ export interface ElementViewLabels extends TodoLabels {
   sceneTitlePlaceholder: string;
   changePlace?: string;
   sceneTextPlaceholder: string;
+  sceneTime: string;
+  sceneTimeFrom: string;
+  sceneTimeTo: string;
+  sceneDuration: string;
+  sceneDurationPlaceholder: string;
+  sceneFix: string;
+  sceneUnfix: string;
   addImage: string;
   addDialogue: string;
   uploadImage: string;
@@ -100,6 +119,7 @@ export function BoardElementView({
   labels,
   onCommitText,
   onCommitScene,
+  onCommitTimetable,
   onRequestDialogue,
   addDialogueOnEdit,
   onGenerateSceneImage,
@@ -124,7 +144,9 @@ export function BoardElementView({
   editable: boolean;
   labels: ElementViewLabels;
   onCommitText: (html: string) => void;
-  onCommitScene?: (patch: { title?: string; html?: string; dialogues?: string[] }) => void;
+  onCommitScene?: (patch: ScenePatch) => void;
+  /** Timetable node: title / sort / column choice */
+  onCommitTimetable?: (patch: Partial<Pick<TimetableElement, "title" | "sort" | "columns" | "chain">>) => void;
   onRequestDialogue?: () => void;
   addDialogueOnEdit?: boolean;
   onGenerateSceneImage?: () => void;
@@ -205,6 +227,8 @@ export function BoardElementView({
           onCommitTitle={(title) => onCommitGroupTitle?.(title)}
         />
       );
+    case "timetable":
+      return <TimetableNode el={el} editing={editing} editable={editable} onCommit={(patch) => onCommitTimetable?.(patch)} onMeasure={onMeasure} />;
     case "scene":
       return (
         <SceneNode
@@ -247,7 +271,7 @@ function SceneNode({
   editing: boolean;
   editable: boolean;
   labels: ElementViewLabels;
-  onCommit: (patch: { title?: string; html?: string; dialogues?: string[] }) => void;
+  onCommit: (patch: ScenePatch) => void;
   onPickImage: () => void;
   onRequestDialogue: () => void;
   addDialogueOnEdit: boolean;
@@ -347,6 +371,12 @@ function SceneNode({
           )}
         </div>
       </div>
+      {editing ? (
+        // 2026-10-29, Lino: Drehzeit — Beginn / Ende / Dauer (two give the third) + 🔒
+        <SceneTimeFields el={el} labels={labels} onCommit={onCommit} />
+      ) : (
+        !!(el.time || el.time_end || el.duration) && <SceneTimePill el={el} />
+      )}
       {el.location_address && (
         <div className="px-3 pb-2">
           <PlacePill
@@ -501,6 +531,106 @@ function SceneNode({
         </div>
       )}
     </div>
+  );
+}
+
+function SceneTimePill({ el }: { el: SceneElement }) {
+  const t = sceneTimes(el);
+  const range = t.start !== null && t.end !== null ? `${fromMin(t.start)}–${fromMin(t.end)}${t.endNextDay ? " (+1)" : ""}` : t.start !== null ? fromMin(t.start) : t.end !== null ? `–${fromMin(t.end)}` : "";
+  return (
+    <div className="px-3 pb-2">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] border border-white/10 px-2 py-[3px] text-[11px] font-semibold tabular-nums text-white/80">
+        <ClockGlyph />
+        {range}
+        {t.duration !== null && <span className="font-medium text-white/50">{range ? "· " : ""}{formatDuration(t.duration)}</span>}
+        {el.time_fixed && <LockGlyph locked />}
+      </span>
+    </div>
+  );
+}
+
+/** Beginn / Ende / Dauer inputs in the scene card's edit mode; a field shows
+ * the card's (derived) value again as soon as it isn't being typed in */
+function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: ElementViewLabels; onCommit: (patch: ScenePatch) => void }) {
+  const t = sceneTimes(el);
+  const shown = {
+    time: t.start === null ? "" : fromMin(t.start),
+    time_end: t.end === null ? "" : fromMin(t.end),
+    duration: formatDuration(t.duration),
+  };
+  const [draft, setDraft] = useState<Partial<Record<TimeField, string>>>({});
+  const value = (f: TimeField) => draft[f] ?? shown[f];
+  const commit = (f: TimeField) => {
+    const v = draft[f];
+    setDraft((d) => {
+      const n = { ...d };
+      delete n[f];
+      return n;
+    });
+    if (v === undefined || v === shown[f]) return;
+    onCommit({ timeEdit: { field: f, value: f === "duration" ? parseDuration(v) : normalizeTime(v) } });
+  };
+  const input = "rounded-md bg-white/[0.07] border border-white/10 px-1.5 py-0.5 text-[12px] tabular-nums text-white/90 outline-none focus:border-blue-400/60 [color-scheme:dark] select-text";
+  return (
+    <div className="px-3 pb-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-white/50">
+      <ClockGlyph />
+      {(["time", "time_end"] as const).map((f) => (
+        <label key={f} className="flex items-center gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider">{f === "time" ? labels.sceneTimeFrom : labels.sceneTimeTo}</span>
+          <input
+            type="time"
+            value={value(f)}
+            onChange={(e) => setDraft((d) => ({ ...d, [f]: e.target.value }))}
+            onBlur={() => commit(f)}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+            className={input}
+          />
+        </label>
+      ))}
+      <label className="flex items-center gap-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wider">{labels.sceneDuration}</span>
+        <input
+          type="text"
+          inputMode="numeric"
+          value={value("duration")}
+          placeholder={labels.sceneDurationPlaceholder}
+          onChange={(e) => setDraft((d) => ({ ...d, duration: e.target.value }))}
+          onBlur={() => commit("duration")}
+          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          className={`${input} w-[68px]`}
+        />
+      </label>
+      <button
+        data-no-drag
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onCommit({ time_fixed: !el.time_fixed })}
+        title={el.time_fixed ? labels.sceneUnfix : labels.sceneFix}
+        aria-label={el.time_fixed ? labels.sceneUnfix : labels.sceneFix}
+        aria-pressed={!!el.time_fixed}
+        className={`flex h-6 w-6 items-center justify-center rounded-md transition-colors ${el.time_fixed ? "bg-amber-400/20 text-amber-300" : "text-white/40 hover:bg-white/10 hover:text-white/80"}`}
+      >
+        <LockGlyph locked={!!el.time_fixed} />
+      </button>
+    </div>
+  );
+}
+
+function LockGlyph({ locked }: { locked: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d={locked ? "M8 11V7a4 4 0 0 1 8 0v4" : "M8 11V7a4 4 0 0 1 7.5-2"} />
+    </svg>
+  );
+}
+
+function ClockGlyph() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
   );
 }
 
