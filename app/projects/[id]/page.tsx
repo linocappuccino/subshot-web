@@ -1589,14 +1589,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // full image gallery — and the toolbar below now only offers the
   // Kachelansicht/Tabellenansicht choice on the Scenes page, a single
   // one-click export on the Ideas page.
-  async function exportPdf(view: "cards" | "table" | "ideas") {
+  // 2026-10-29, Lino: "über den PDF button auf der Ideenübersicht soll einfach der gesamte
+  // Timetable über das gesamte Projekt ausgegeben werden" — "schedule" (backend:
+  // app/project_schedule.py) is the first entry there now, the ideas export stays as the second.
+  async function exportPdf(view: "cards" | "table" | "ideas" | "schedule") {
     if (!data) return;
     setExportingPdf(true);
     try {
       const url = await api.projectPdfUrl(data.id, view);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${data.name || (view === "ideas" ? "ideen" : "shotlist")}.pdf`;
+      a.download = view === "schedule" ? `${data.name || "Projekt"} – Drehplan.pdf` : `${data.name || (view === "ideas" ? "ideen" : "shotlist")}.pdf`;
       a.click();
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "PDF-Export fehlgeschlagen.");
@@ -1934,9 +1937,34 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 bewusst NICHT entfernt, bleibt fuer die Weiterarbeit
                 bestehen, nur aktuell von nirgendwo mehr erreichbar. */}
             {activeView === "ideas" ? (
-              <Button variant="secondary" size="sm" disabled={exportingPdf} onClick={() => exportPdf("ideas")}>
-                <DocIcon /> {exportingPdf ? t("workflow.pdfExporting") : t("workflow.pdf")}
-              </Button>
+              <Menu
+                trigger={
+                  <Button variant="secondary" size="sm" disabled={exportingPdf}>
+                    <DocIcon /> {exportingPdf ? t("workflow.pdfExporting") : t("workflow.pdf")}
+                  </Button>
+                }
+              >
+                {(close) => (
+                  <>
+                    <MenuItem
+                      onClick={() => {
+                        exportPdf("schedule");
+                        close();
+                      }}
+                    >
+                      {t("workflow.pdfSchedule")}
+                    </MenuItem>
+                    <MenuItem
+                      onClick={() => {
+                        exportPdf("ideas");
+                        close();
+                      }}
+                    >
+                      {t("workflow.pdfIdeas")}
+                    </MenuItem>
+                  </>
+                )}
+              </Menu>
             ) : (
               <Menu
                 trigger={

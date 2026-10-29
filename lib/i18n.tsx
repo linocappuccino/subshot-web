@@ -397,6 +397,8 @@ const translations = {
     "workflow.pdfExporting": "Exportiert…",
     "workflow.pdfCardView": "Kachelansicht",
     "workflow.pdfTableView": "Tabellenansicht",
+    "workflow.pdfSchedule": "Drehplan (ganzes Projekt)",
+    "workflow.pdfIdeas": "Ideen mit Bildern",
     "workflow.goodTakes": "Good Takes",
     "workflow.goodTakesEmpty": "Keine Szenen vorhanden.",
 
@@ -1917,6 +1919,8 @@ const translations = {
     "workflow.pdfExporting": "Exporting…",
     "workflow.pdfCardView": "Card view",
     "workflow.pdfTableView": "Table view",
+    "workflow.pdfSchedule": "Shooting schedule (whole project)",
+    "workflow.pdfIdeas": "Ideas with images",
     "workflow.goodTakes": "Good Takes",
     "workflow.goodTakesEmpty": "No scenes yet.",
 

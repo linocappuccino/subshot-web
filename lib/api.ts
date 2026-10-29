@@ -496,7 +496,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       return URL.createObjectURL(await res.blob());
     },
-    projectPdfUrl: async (id: string, view: "cards" | "table" | "ideas" = "cards") => {
+    projectPdfUrl: async (id: string, view: "cards" | "table" | "ideas" | "schedule" = "cards") => {
       // Downloaded (not just linked) because the endpoint needs the same
       // Bearer auth as everything else — a plain <a href> can't attach one.
       const token = await getToken();
