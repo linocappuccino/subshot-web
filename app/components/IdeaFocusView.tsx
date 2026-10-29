@@ -248,7 +248,7 @@ function IdeaBoardScreen({
       title: `${f.author_name}: ${f.comment}`,
     }));
   const [allFeedbackResolved, setAllFeedbackResolved] = useState(true);
-  const [busy, setBusy] = useState<null | "approve" | "reject" | "internalApprove" | "internalReject" | "delete">(null);
+  const [busy, setBusy] = useState<null | "approve" | "unapprove" | "reject" | "internalApprove" | "internalReject" | "delete">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const ideaRef = useRef(idea);
@@ -539,7 +539,7 @@ function IdeaBoardScreen({
       const updated = await fn();
       onUpdated(withBoardSummary(updated));
       if (successKey) toast.showSuccess(t(successKey));
-      if (kind === "approve" || kind === "reject") loadBoard();
+      if (kind === "approve" || kind === "unapprove" || kind === "reject") loadBoard();
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t(failKey));
     } finally {
@@ -662,7 +662,21 @@ function IdeaBoardScreen({
         )}
 
         {approved ? (
-          <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5 whitespace-nowrap">✓ {t("ideaCard.approvedBadge")}</span>
+          // 2026-10-29, Lino: "Man muss das Approven wieder rückgängig machen können, indem man einfach
+          // nochmals drauf drückt" — nothing is deleted, the scenes stay (see unapprove_idea)
+          editable ? (
+            <button
+              type="button"
+              onClick={() => void run("unapprove", () => api.unapproveIdea(idea.id), "ideaCard.unapproveFailed", "ideaCard.unapprovedToast")}
+              disabled={!!busy}
+              title={t("ideaCard.unapproveTitle")}
+              className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-full px-3 py-1.5 whitespace-nowrap transition-colors disabled:opacity-60"
+            >
+              {t("ideaCard.approvedToggle")}
+            </button>
+          ) : (
+            <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5 whitespace-nowrap">✓ {t("ideaCard.approvedBadge")}</span>
+          )
         ) : rejected ? (
           <span className="text-xs font-semibold text-red-400 bg-red-500/10 rounded-full px-3 py-1.5 whitespace-nowrap">✗ {t("ideaCard.rejected")}</span>
         ) : (

@@ -944,6 +944,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     moveIdea: (id: string, beforeIdeaId: string | null) =>
       request<Idea>(`ideas/${id}/move`, { method: "POST", body: JSON.stringify({ before_idea_id: beforeIdeaId }) }),
     approveIdea: (id: string) => request<Idea>(`ideas/${id}/approve`, { method: "POST" }),
+    /** 2026-10-29, Lino: tap «Abgenommen» again to take it back — nothing is deleted, approving again reuses the scenes */
+    unapproveIdea: (id: string) => request<Idea>(`ideas/${id}/unapprove`, { method: "POST" }),
     rejectIdea: (id: string) => request<Idea>(`ideas/${id}/reject`, { method: "POST" }),
     internalApproveIdea: (id: string) => request<Idea>(`ideas/${id}/internal-approve`, { method: "POST" }),
     internalRejectIdea: (id: string) => request<Idea>(`ideas/${id}/internal-reject`, { method: "POST" }),

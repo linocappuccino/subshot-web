@@ -394,6 +394,19 @@ export function IdeaFloatingCard({
     }
   }
 
+  async function handleUnapprove() {
+    setApproving(true);
+    try {
+      const updated = await api.unapproveIdea(idea.id);
+      onUpdated(updated);
+      toast.showSuccess(t("ideaCard.unapprovedToast"));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("ideaCard.unapproveFailed"));
+    } finally {
+      setApproving(false);
+    }
+  }
+
   async function handleReject() {
     setRejecting(true);
     try {
@@ -839,7 +852,16 @@ export function IdeaFloatingCard({
           </button>
           {approved ? (
             <div className="flex flex-col items-end gap-1 mt-1">
-              <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5">✓ {t("ideaCard.approvedBadge")}</span>
+              {/* 2026-10-29, Lino: tap again to take the approval back (nothing is deleted) */}
+              <button
+                type="button"
+                onClick={() => void handleUnapprove()}
+                disabled={approving}
+                title={t("ideaCard.unapproveTitle")}
+                className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-full px-3 py-1.5 transition-colors disabled:opacity-60"
+              >
+                {t("ideaCard.approvedToggle")}
+              </button>
               {/* 2026-07-17, Lino: "es braucht ein Datum und Uhrzeit WANN das
                   Video abgenommen wurde" */}
               {idea.approved_at && (
