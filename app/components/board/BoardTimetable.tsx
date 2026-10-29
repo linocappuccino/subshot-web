@@ -23,20 +23,50 @@ export const BoardTimetableContext = createContext<{
   onGoTo?: (id: string) => void;
 }>({ elements: [] });
 
+// 2026-10-29, Lino: "kein Text über den Frame der Node hinaus" — the flexible columns may
+// shrink to 0 (minmax(0, …fr)), so the table always fits the node's width; long words wrap,
+// long texts are clamped (full text on hover / «+ N weitere»).
 const COL_WIDTH: Record<TimetableColumn, string> = {
-  number: "52px",
-  title: "minmax(120px, 1.3fr)",
-  group: "minmax(100px, 1fr)",
-  start: "64px",
-  end: "72px",
-  duration: "72px",
-  location: "minmax(130px, 1.3fr)",
-  description: "minmax(150px, 2fr)",
-  dialogue: "minmax(150px, 2fr)",
-  priority: "minmax(80px, 0.6fr)",
-  tags: "minmax(90px, 0.9fr)",
-  image: "92px",
+  number: "44px",
+  title: "minmax(0, 1.2fr)",
+  group: "minmax(0, 1fr)",
+  start: "60px",
+  end: "64px",
+  duration: "64px",
+  location: "minmax(0, 1.1fr)",
+  description: "minmax(0, 1.8fr)",
+  dialogue: "minmax(0, 2.3fr)",
+  priority: "minmax(0, 0.7fr)",
+  tags: "minmax(0, 0.9fr)",
+  image: "minmax(0, 1fr)",
 };
+
+/** below this width per column set the table becomes a list of compact cards (no squeezed columns) */
+const COL_MIN: Record<TimetableColumn, number> = {
+  number: 44, title: 120, group: 100, start: 60, end: 64, duration: 64, location: 110,
+  description: 140, dialogue: 170, priority: 70, tags: 80, image: 90,
+};
+
+/** dialogue lines shown before «+ N weitere» */
+const DIALOGUE_LINES = 3;
+
+/** "Oma: «Was schreisch so ume?»" → {speaker: "Oma", text: "Was schreisch so ume?"} */
+export function splitDialogue(line: string): { speaker: string | null; text: string } {
+  const m = /^\s*([^:«»"„“\n]{1,32}?)\s*:\s*([\s\S]+)$/.exec(line);
+  const speaker = m ? m[1].trim() : null;
+  let text = (m ? m[2] : line).trim();
+  const pairs: [string, string][] = [["«", "»"], ["„", "“"], ["\"", "\""], ["“", "”"], ["‹", "›"]];
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [a, b] of pairs) {
+      if (text.length > 1 && text.startsWith(a) && text.endsWith(b)) {
+        text = text.slice(a.length, -b.length).trim();
+        changed = true;
+      }
+    }
+  }
+  return { speaker, text };
+}
 
 export function TimetableNode({
   el,
@@ -56,6 +86,7 @@ export function TimetableNode({
   const rows = useMemo(() => timetableRows(elements, el.sort ?? "time"), [elements, el.sort]);
   const columns = timetableColumns(el, rows);
   const [columnsOpen, setColumnsOpen] = useState(false);
+  const [width, setWidth] = useState(el.w);
   const titleRef = useRef<HTMLInputElement>(null);
 
   // the card follows its content both ways (rows come and go)
@@ -72,6 +103,7 @@ export function TimetableNode({
     const check = () => {
       const h = node.offsetHeight;
       if (Math.abs(h - hRef.current) > 1) measure.current(h);
+      setWidth(node.offsetWidth);
     };
     check();
     const ro = new ResizeObserver(check);
@@ -89,6 +121,8 @@ export function TimetableNode({
   const colLabel = (c: TimetableColumn) => t(`ideaBoard.timetable.col.${c}` as TranslationKey);
   const sort = el.sort ?? "time";
   const grid = { gridTemplateColumns: columns.map((c) => COL_WIDTH[c]).join(" ") };
+  // too narrow for the chosen columns → compact cards instead of squeezed columns
+  const compact = width < columns.reduce((sum, c) => sum + COL_MIN[c] + 12, 32);
 
   function toggleColumn(c: TimetableColumn) {
     const next = columns.includes(c) ? columns.filter((x) => x !== c) : TIMETABLE_COLUMNS.filter((x) => x === c || columns.includes(x));
@@ -98,14 +132,14 @@ export function TimetableNode({
   return (
     <div ref={cardRef} className="rounded-xl bg-[#1d1d1f] border border-white/10 shadow-[0_2px_14px_rgba(0,0,0,0.4)] text-white">
       {/* header */}
-      <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-3 border-b border-white/10">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2 px-4 pt-3.5 pb-3 border-b border-white/10">
         <div className="shrink-0 h-8 w-8 rounded-lg bg-blue-500/15 text-blue-300 flex items-center justify-center">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="4" width="18" height="17" rx="2" />
             <path d="M3 9h18M8 4v17M16 2v4M8 2v4" />
           </svg>
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-[140px] flex-1">
           {editing ? (
             <input
               ref={titleRef}
@@ -128,7 +162,7 @@ export function TimetableNode({
           </div>
         </div>
         {editable && (
-          <div className="relative flex items-center gap-1.5 shrink-0">
+          <div className="relative flex flex-wrap items-center gap-1.5 ml-auto">
             <button
               data-no-drag
               type="button"
@@ -189,8 +223,23 @@ export function TimetableNode({
 
       {rows.length === 0 ? (
         <div className="px-5 py-8 text-center text-[13px] text-white/40">{t("ideaBoard.timetable.empty")}</div>
+      ) : compact ? (
+        <div className="px-2 pb-2 overflow-hidden">
+          {rows.map((r, i) => (
+            <CompactRow
+              key={r.id}
+              row={r}
+              columns={columns}
+              striped={i % 2 === 1}
+              placeColor={placeColorOf?.(r.location) ?? null}
+              onGoTo={onGoTo}
+              goToLabel={t("ideaBoard.timetable.goTo")}
+              priorityLabel={r.priority ? t(`priority.${r.priority}` as TranslationKey) : ""}
+            />
+          ))}
+        </div>
       ) : (
-        <div className="px-2 pb-2">
+        <div className="px-2 pb-2 overflow-hidden">
           {/* column heads */}
           <div className="grid gap-x-3 px-2 pt-2.5 pb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40" style={grid}>
             {columns.map((c) => (
@@ -249,9 +298,9 @@ function Cell({
         </div>
       );
     case "title":
-      return <div className={`${base} pt-1 font-semibold text-white/95`}>{row.title}</div>;
+      return <div title={row.title || undefined} className={`${base} pt-1 font-semibold text-white/95 line-clamp-4`}>{row.title}</div>;
     case "group":
-      return <div className={`${base} pt-1 text-white/70`}>{row.group}</div>;
+      return <div title={row.group || undefined} className={`${base} pt-1 text-white/70 line-clamp-4`}>{row.group}</div>;
     case "start":
       return (
         <div className={`${base} pt-1 font-semibold tabular-nums text-white/95 whitespace-nowrap flex items-center gap-1`}>
@@ -282,26 +331,23 @@ function Cell({
               href={mapsUrlForAddress(row.location)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-start gap-1.5 text-white/85 hover:text-white"
+              title={row.location}
+              className="inline-flex max-w-full items-start gap-1.5 text-white/85 hover:text-white"
             >
               <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full" style={{ background: placeColor ?? "rgba(255,255,255,0.4)" }} />
-              <span className="min-w-0">{row.location}</span>
+              <span className="min-w-0 line-clamp-3">{row.location}</span>
             </a>
           )}
         </div>
       );
     case "description":
-      return <div className={`${base} pt-1 text-white/65 whitespace-pre-line line-clamp-6`}>{row.description}</div>;
-    case "dialogue":
       return (
-        <div className={`${base} pt-1 flex flex-col gap-1`}>
-          {row.dialogue.map((d, i) => (
-            <div key={i} className="italic text-white/80">
-              „{d}“
-            </div>
-          ))}
+        <div title={row.description || undefined} className={`${base} pt-1 text-white/65 whitespace-pre-line line-clamp-6`}>
+          {row.description}
         </div>
       );
+    case "dialogue":
+      return <DialogueCell lines={row.dialogue} />;
     case "priority":
       return (
         <div className={`${base} pt-1 font-semibold`} style={{ color: row.priority ? PRIORITY_COLORS[row.priority] : undefined }}>
@@ -328,4 +374,96 @@ function Cell({
         </div>
       );
   }
+}
+
+/** 2026-10-29, Lino: "Dialoge übersichtlicher — man kann die einzelnen Dialoge gar nicht
+ * auseinanderhalten": one block per line, the speaker as a small label, the text upright,
+ * a thin line on the left; after DIALOGUE_LINES lines «+ N weitere». */
+function DialogueCell({ lines }: { lines: string[] }) {
+  const { t } = useLanguage();
+  const [open, setOpen] = useState(false);
+  if (!lines.length) return <div className="min-w-0" />;
+  const shown = open ? lines : lines.slice(0, DIALOGUE_LINES);
+  const rest = lines.length - shown.length;
+  return (
+    <div className="min-w-0 pt-0.5 flex flex-col gap-1.5">
+      {shown.map((line, i) => {
+        const { speaker, text } = splitDialogue(line);
+        return (
+          <div key={i} title={line} className="min-w-0 border-l-2 border-white/15 pl-2">
+            {speaker && (
+              <div className="truncate text-[10px] font-bold uppercase tracking-wider text-blue-300/90 leading-tight mb-0.5">{speaker}</div>
+            )}
+            <div className={`text-[13px] leading-snug text-white/85 break-words [overflow-wrap:anywhere] ${open ? "" : "line-clamp-4"}`}>{text}</div>
+          </div>
+        );
+      })}
+      {(rest > 0 || open) && lines.length > DIALOGUE_LINES && (
+        <button
+          data-no-drag
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="self-start rounded-md bg-white/[0.06] px-2 py-0.5 text-[11px] font-semibold text-white/60 hover:text-white"
+        >
+          {open ? t("ideaBoard.timetable.dialogueLess") : t("ideaBoard.timetable.dialogueMore", { count: rest })}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** narrow Timetable: one compact card per scene — number, title and time on top, then the
+ * other chosen columns underneath at full width (2026-10-29) */
+function CompactRow({
+  row,
+  columns,
+  striped,
+  placeColor,
+  onGoTo,
+  goToLabel,
+  priorityLabel,
+}: {
+  row: TimetableRow;
+  columns: TimetableColumn[];
+  striped: boolean;
+  placeColor: string | null;
+  onGoTo?: (id: string) => void;
+  goToLabel: string;
+  priorityLabel: string;
+}) {
+  const has = (c: TimetableColumn) => columns.includes(c);
+  const time = [has("start") && row.start, has("end") && row.end && `– ${row.end}${row.endNextDay ? " +1" : ""}`].filter(Boolean).join(" ");
+  const duration = has("duration") ? formatDuration(row.duration) : "";
+  return (
+    <div className={`flex gap-3 rounded-lg px-2 py-2.5 border-t border-white/[0.06] first:border-t-0 ${striped ? "bg-white/[0.025]" : ""}`}>
+      {has("number") && <Cell col="number" row={row} placeColor={placeColor} onGoTo={onGoTo} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+      <div className="min-w-0 flex-1 flex flex-col gap-1.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1">
+          {has("title") && row.title && <span className="min-w-0 text-[13px] font-semibold leading-snug text-white/95 break-words">{row.title}</span>}
+          {(time || duration) && (
+            <span className="text-[12px] tabular-nums text-white/60 whitespace-nowrap">
+              {time && <span className="font-semibold text-white/85">{time}</span>}
+              {time && duration && " · "}
+              {duration}
+            </span>
+          )}
+        </div>
+        {(has("group") || has("location") || has("priority") || has("tags")) && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-white/60">
+            {has("group") && row.group && <span className="min-w-0 break-words">{row.group}</span>}
+            {has("location") && row.location && <Cell col="location" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+            {has("priority") && row.priority && <Cell col="priority" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+            {has("tags") && row.tags.length > 0 && <Cell col="tags" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+          </div>
+        )}
+        {has("description") && row.description && <Cell col="description" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+        {has("dialogue") && row.dialogue.length > 0 && <DialogueCell lines={row.dialogue} />}
+        {has("image") && row.image && (
+          <div className="w-40 max-w-full">
+            <Cell col="image" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
