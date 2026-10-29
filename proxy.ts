@@ -40,8 +40,11 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // destination, this time for the new "deliver" ShareLink.kind (final
 // client handoff, alongside — not instead of — /preview's own "video"
 // feedback link), plain fetch via lib/publicDeliverApi.ts.
+// /oauth/consent is public too (2026-10-29, MCP connector) — Claude/ChatGPT send people here
+// who may not be signed in on app.subshot.ch yet; auth.protect() would 404 them (no sign-in
+// URL configured), so the page itself sends signed-out visitors to /sign-in and back.
 const isPublicRoute = createRouteMatcher([
-  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon",
+  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

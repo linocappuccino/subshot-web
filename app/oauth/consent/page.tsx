@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
@@ -24,8 +25,15 @@ function Consent() {
   const [allowWrite, setAllowWrite] = useState(true);
   const [message, setMessage] = useState<string | null>(requestId ? null : t("oauth.noRequest"));
 
+  const { isLoaded, isSignedIn } = useAuth();
+
+  // public route (proxy.ts): signed-out visitors log in first and come back here
   useEffect(() => {
-    if (!requestId) return;
+    if (isLoaded && !isSignedIn) window.location.replace(`/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`);
+  }, [isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    if (!requestId || !isSignedIn) return;
     api
       .oauthRequest(requestId)
       .then((r) => {
@@ -42,7 +50,7 @@ function Consent() {
         setMessage(e.message);
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, requestId]);
+  }, [api, requestId, isSignedIn]);
 
   async function decide(allow: boolean) {
     if (!info) return;
