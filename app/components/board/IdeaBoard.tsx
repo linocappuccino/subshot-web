@@ -3492,9 +3492,15 @@ export function IdeaBoard({
                 return f ? <DownloadButton fileKey={f.key} name={f.name} title={t("ideaBoard.download")} scale={1 / Math.max(view.scale, 0.5)} className="right-2 top-2" /> : null;
               })()}
               {data.cover === el.id && (
+                // 2026-10-29, Lino: on a scene card the badge sat on its number and title — there it goes
+                // just above the card's top-right corner (the #tags take the top-left)
                 <div
-                  className="absolute left-2 top-2 z-10 pointer-events-none flex items-center gap-1 rounded-full bg-black/65 backdrop-blur px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white"
-                  style={{ transform: `scale(${1 / Math.max(view.scale, 0.5)})`, transformOrigin: "top left" }}
+                  className={`absolute z-10 pointer-events-none flex items-center gap-1 rounded-full bg-black/65 backdrop-blur px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white ${el.type === "scene" ? "right-0" : "left-2 top-2"}`}
+                  style={
+                    el.type === "scene"
+                      ? { top: -4 / view.scale, transform: `translateY(-100%) scale(${1 / Math.max(view.scale, 0.5)})`, transformOrigin: "100% 100%" }
+                      : { transform: `scale(${1 / Math.max(view.scale, 0.5)})`, transformOrigin: "top left" }
+                  }
                 >
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.8 5.8 21l1.2-6.8-5-4.9 6.9-1z" /></svg>
                   {t("ideaBoard.thumbnailBadge")}

@@ -777,6 +777,9 @@ export function googleMapsLink(el: LocationElement): string {
 
 export const GROUP_PAD = 24;
 export const GROUP_HEADER = 40;
+/** 2026-10-29, Lino: extra header room when members carry tags — their #labels are drawn just above
+ * the member's top edge and would otherwise sit on the group's title row */
+export const GROUP_TAG_ROOM = 36;
 export const GROUP_CARD_W = 288;
 export const GROUP_CARD_H = 132;
 
@@ -830,10 +833,11 @@ export function normalizeGroups(data: BoardData): BoardData {
     const members = (el as GroupElement).children.map((id) => byId.get(id)).filter((m): m is BoardElement => !!m && m.type !== "group");
     const b = boundsOf(members);
     if (!b) return [el];
+    const header = GROUP_HEADER + (members.some((m) => m.tags?.length) ? GROUP_TAG_ROOM : 0);
     const x = b.x - GROUP_PAD;
-    const y = b.y - GROUP_PAD - GROUP_HEADER;
+    const y = b.y - GROUP_PAD - header;
     const w = b.w + GROUP_PAD * 2;
-    const h = b.h + GROUP_PAD * 2 + GROUP_HEADER;
+    const h = b.h + GROUP_PAD * 2 + header;
     if (x === el.x && y === el.y && w === el.w && h === el.h) return [el];
     changed = true;
     return [{ ...el, x, y, w, h }];
