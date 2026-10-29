@@ -7,7 +7,7 @@ import {
 import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { IdeaTile } from "./IdeaTile";
 import { IdeaFocusView } from "./IdeaFocusView";
-import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { IdeaDeleteDialog } from "./IdeaDeleteDialog";
 import { useApi } from "@/lib/useApi";
 import { useToast } from "./ui/Toast";
 import { ApiError } from "@/lib/api";
@@ -205,10 +205,10 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
     }
   }
 
-  async function confirmDelete() {
+  async function confirmDelete(keepScenes: boolean) {
     if (!deleteTarget) return;
     try {
-      await api.deleteIdea(deleteTarget.id);
+      await api.deleteIdea(deleteTarget.id, keepScenes);
       handleDeleted(deleteTarget.id);
       toast.showSuccess(t("ideaGrid.deleted"));
     } catch (e) {
@@ -300,11 +300,11 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
         />
       )}
 
-      <ConfirmDialog
+      <IdeaDeleteDialog
         open={deleteTarget !== null}
-        title={t("ideaGrid.deleteTitle")}
-        message={t("ideaGrid.deleteMessage", { title: deleteTarget?.title ?? "" })}
-        onConfirm={confirmDelete}
+        ideaId={deleteTarget?.id ?? null}
+        title={deleteTarget?.title ?? ""}
+        onConfirm={(keep) => void confirmDelete(keep)}
         onCancel={() => setDeleteTarget(null)}
       />
     </div>

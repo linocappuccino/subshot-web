@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthImage } from "./AuthImage";
 import { AuthVideo } from "./AuthVideo";
 import { IdeaFeedbackPanel } from "./IdeaFeedbackPanel";
+import { IdeaDeleteDialog } from "./IdeaDeleteDialog";
 import { IdeaImageReorderGrid } from "./IdeaImageReorderGrid";
 import { ImageGeneratePopup } from "./ImageGeneratePopup";
 import { IdeaLinkEmbed } from "./IdeaLinkEmbed";
@@ -443,11 +444,15 @@ export function IdeaFloatingCard({
     }
   }
 
-  async function handleDelete() {
+  // 2026-10-29, Lino: deleting asks first (scenes that go with it, or keep them)
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  async function handleDelete(keepScenes = false) {
+    setConfirmDelete(false);
     explicitlyDeletedRef.current = true;
     setDeleting(true);
     try {
-      await api.deleteIdea(idea.id);
+      await api.deleteIdea(idea.id, keepScenes);
       onDeleted(idea.id);
     } catch (e) {
       explicitlyDeletedRef.current = false;
@@ -879,7 +884,7 @@ export function IdeaFloatingCard({
             <span className="text-xs font-semibold text-red-400 bg-red-500/10 rounded-full px-3 py-1.5 mt-1">✗ {t("ideaCard.rejected")}</span>
           ) : (
             <button
-              onClick={handleDelete}
+              onClick={() => setConfirmDelete(true)}
               disabled={deleting}
               aria-label={t("ideaCard.deleteIdea")}
               className="mt-1.5 w-8 h-8 rounded-full flex items-center justify-center text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-colors"
@@ -1022,6 +1027,14 @@ export function IdeaFloatingCard({
           </button>
         </div>
       )}
+
+      <IdeaDeleteDialog
+        open={confirmDelete}
+        ideaId={idea.id}
+        title={idea.title}
+        onConfirm={(keep) => void handleDelete(keep)}
+        onCancel={() => setConfirmDelete(false)}
+      />
 
       <ImageGeneratePopup
         open={showGeneratePopup}

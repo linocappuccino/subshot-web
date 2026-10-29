@@ -939,7 +939,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       }),
     patchIdea: (id: string, body: Partial<{ title: string; text: string }>) =>
       request<Idea>(`ideas/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-    deleteIdea: (id: string) => request<void>(`ideas/${id}`, { method: "DELETE" }),
+    /** keepScenes (2026-10-29): the idea goes, its shot-list section with its scenes stays */
+    deleteIdea: (id: string, keepScenes = false) => request<void>(`ideas/${id}${keepScenes ? "?keep_scenes=true" : ""}`, { method: "DELETE" }),
+    ideaDeleteInfo: (id: string) => request<{ scenes: number; section_id: string | null }>(`ideas/${id}/delete-info`),
     duplicateIdea: (id: string) => request<Idea>(`ideas/${id}/duplicate`, { method: "POST" }),
     moveIdea: (id: string, beforeIdeaId: string | null) =>
       request<Idea>(`ideas/${id}/move`, { method: "POST", body: JSON.stringify({ before_idea_id: beforeIdeaId }) }),

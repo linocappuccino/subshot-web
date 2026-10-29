@@ -11,7 +11,7 @@ import { forceGifLoop } from "@/lib/gifLoop";
 import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
-import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { IdeaDeleteDialog } from "./IdeaDeleteDialog";
 import { useToast } from "./ui/Toast";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
@@ -547,13 +547,13 @@ function IdeaBoardScreen({
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(keepScenes = false) {
     setConfirmDelete(false);
     explicitlyDeleted.current = true;
     setBusy("delete");
     try {
       pendingRef.current = null;
-      await api.deleteIdea(idea.id);
+      await api.deleteIdea(idea.id, keepScenes);
       onDeleted(idea.id);
     } catch (e) {
       explicitlyDeleted.current = false;
@@ -862,11 +862,11 @@ function IdeaBoardScreen({
         </aside>
       </div>
 
-      <ConfirmDialog
+      <IdeaDeleteDialog
         open={confirmDelete}
-        title={t("ideaGrid.deleteTitle")}
-        message={t("ideaGrid.deleteMessage", { title: idea.title })}
-        onConfirm={handleDelete}
+        ideaId={idea.id}
+        title={idea.title}
+        onConfirm={(keep) => void handleDelete(keep)}
         onCancel={() => setConfirmDelete(false)}
       />
     </div>
