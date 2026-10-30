@@ -121,21 +121,51 @@ export function PublicIdeaLightbox({
   // 2026-10-09, Lino: an idea with a board opens full screen, the comment
   // sidebar sits at the right edge and can be shown/hidden (remembered)
   const boardMode = !!idea.has_board;
+  // 2026-10-30, Lino: the comment column starts HIDDEN for clients (new storage key, so it resets for
+  // everyone once); an explicit «open» is remembered. A small hint at the button points to it.
+  const [hintVisible, setHintVisible] = useState(false);
   const [sidebarOpen, setSidebarOpenState] = useState(() => {
     try {
-      return localStorage.getItem("subshot-client-sidebar") !== "closed";
+      return localStorage.getItem("subshot-client-sidebar-v2") === "open";
     } catch {
-      return true;
+      return false;
     }
   });
   const setSidebarOpen = (open: boolean) => {
     setSidebarOpenState(open);
+    if (open) setHintVisible(false);
     try {
-      localStorage.setItem("subshot-client-sidebar", open ? "open" : "closed");
+      localStorage.setItem("subshot-client-sidebar-v2", open ? "open" : "closed");
     } catch {
       // private mode — just not remembered
     }
   };
+  // the hint: ~0.8 s after the board opens, ~9 s or until closed / the column is opened; once per link
+  // and browser (without storage: on every opening)
+  const commentCount = idea.feedback.filter((f) => f.comment && f.comment.trim()).length;
+  useEffect(() => {
+    if (!boardMode || sidebarOpen) return;
+    const key = `subshot-comment-hint-${token}`;
+    try {
+      if (localStorage.getItem(key)) return;
+    } catch {
+      // storage blocked: show it anyway
+    }
+    const show = setTimeout(() => {
+      setHintVisible(true);
+      try {
+        localStorage.setItem(key, "1");
+      } catch {
+        // not remembered
+      }
+    }, 800);
+    const hide = setTimeout(() => setHintVisible(false), 800 + 9000);
+    return () => {
+      clearTimeout(show);
+      clearTimeout(hide);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per opened board idea
+  }, [boardMode, idea.id, token]);
   const [pendingPin, setPendingPin] = useState<BoardPinAnchor | null>(null);
   const [pinFocus, setPinFocus] = useState<{ elementId: string; nonce: number } | null>(null);
   const [activePinId, setActivePinId] = useState<string | null>(null);
@@ -383,14 +413,43 @@ export function PublicIdeaLightbox({
           {approved && <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5 shrink-0">{t("publicIdeaLightbox.approvedBadge")}</span>}
           {rejected && <span className="text-xs font-semibold text-red-400 bg-red-500/10 rounded-full px-3 py-1.5 shrink-0">{t("publicIdeaLightbox.rejectedBadge")}</span>}
           {boardMode && (
-            <button
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-              title={sidebarOpen ? t("publicIdeaLightbox.hideComments") : t("publicIdeaLightbox.showComments")}
-              className={`ml-auto shrink-0 flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold transition-colors ${sidebarOpen ? "bg-white/10 text-white" : "bg-white/[0.06] text-white/70 hover:text-white hover:bg-white/10"}`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M15 3v18" /></svg>
-              {t("publicIdeaLightbox.comments")}
-            </button>
+            <div className="relative ml-auto shrink-0">
+              <button
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+                title={sidebarOpen ? t("publicIdeaLightbox.hideComments") : t("publicIdeaLightbox.showComments")}
+                aria-expanded={sidebarOpen}
+                aria-describedby={hintVisible ? "comment-hint" : undefined}
+                className={`flex items-center gap-2 h-9 px-3 rounded-lg text-sm font-semibold transition-colors ${sidebarOpen ? "bg-white/10 text-white" : "bg-white/[0.06] text-white/80 hover:text-white hover:bg-white/10"}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+                {t("publicIdeaLightbox.comments")}
+                {commentCount > 0 && (
+                  <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center tabular-nums">{commentCount}</span>
+                )}
+              </button>
+              {hintVisible && !sidebarOpen && (
+                <div
+                  id="comment-hint"
+                  role="status"
+                  className="absolute right-0 top-full mt-2.5 z-40 w-[min(260px,calc(100vw-32px))] rounded-xl bg-blue-600 text-white shadow-xl shadow-black/40 px-3.5 py-2.5 pr-8 motion-safe:animate-[commentHintIn_220ms_ease-out]"
+                >
+                  <span aria-hidden className="absolute -top-1.5 right-6 h-3 w-3 rotate-45 bg-blue-600" />
+                  <p className="relative text-[13px] font-semibold leading-snug">
+                    {commentCount > 0 ? t("publicIdeaLightbox.commentHintCount", { count: commentCount }) : t("publicIdeaLightbox.commentHint")}
+                  </p>
+                  <p className="relative mt-0.5 text-[12px] leading-snug text-white/80">{t("publicIdeaLightbox.commentHintSub")}</p>
+                  <button
+                    type="button"
+                    onClick={() => setHintVisible(false)}
+                    aria-label={t("common.close")}
+                    className="absolute top-1 right-1 h-7 w-7 rounded-full text-white/80 hover:text-white hover:bg-white/15 flex items-center justify-center"
+                  >
+                    ×
+                  </button>
+                  <style>{`@keyframes commentHintIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }`}</style>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
