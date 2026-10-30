@@ -1032,7 +1032,9 @@ function TileShell({
             blurring that content. The gradients/rim-light/reflection
             streak above are the entire glass treatment here — genuinely
             sharp photo, glass read carried by light/reflection cues only. */}
-        <div className="mt-2 text-sm font-semibold truncate">
+        {/* 2026-10-30, Lino: «2 Zeilen für die Projektnamen, so dass man sie lesen kann» — wraps to two lines
+            (full name as tooltip), always two lines tall so the date / size row lines up across a row */}
+        <div title={label} className="mt-2 min-h-[2.75em] text-sm font-semibold leading-snug line-clamp-2 break-words [overflow-wrap:anywhere]">
           {titleEmoji && <span className="mr-1">{titleEmoji}</span>}
           {label}
         </div>
@@ -1220,9 +1222,11 @@ function ProjectTile({
           this low-res list-tile use. Falls back to the old AuthImage path
           only if that's missing (e.g. a corrupt source file) but
           thumbnail_url still resolved. */}
+      {/* 2026-10-30, Lino: «Warum ist das Thumbnail so unscharf?» — the 200-px inline JPEG was the ONLY image
+          shown, stretched over a ~400-px tile (×2 on retina). Now it is just the instant placeholder; the full
+          cover (presigned original, thumbnail_url) is laid over it and fades in once loaded. */}
       {project.thumbnail_data_uri ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={project.thumbnail_data_uri} alt={project.name} className="w-full h-full object-cover" />
+        <SharpCover placeholder={project.thumbnail_data_uri} src={project.thumbnail_url} alt={project.name} />
       ) : project.thumbnail_url ? (
         <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" />
       ) : (
@@ -1643,5 +1647,27 @@ function GridSkeleton() {
         <div key={i} className="aspect-[4/3] rounded-2xl bg-white/5 animate-pulse" />
       ))}
     </div>
+  );
+}
+
+/** the small inline placeholder at once, the full-resolution cover on top as soon as it has loaded */
+function SharpCover({ placeholder, src, alt }: { placeholder: string; src: string | null; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  return (
+    <span className="relative block w-full h-full">
+      {/* eslint-disable-next-line @next/next/no-img-element -- inline data URI placeholder */}
+      <img src={placeholder} alt={loaded ? "" : alt} aria-hidden={loaded} className="absolute inset-0 w-full h-full object-cover" />
+      {src && (
+        // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+        />
+      )}
+    </span>
   );
 }
