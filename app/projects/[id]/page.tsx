@@ -2908,6 +2908,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     {boardScheduleOpen && (
       <ProjectScheduleView
         load={() => api.boardSchedule(id)}
+        onPlan={async (op) => (await api.planBoardSchedule(id, op)).schedule}
         onClose={() => setBoardScheduleOpen(false)}
         onDownloadPdf={() => exportPdf("schedule")}
         projectName={data?.name ?? ""}

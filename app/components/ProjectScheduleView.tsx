@@ -16,9 +16,15 @@ import {
   SCHEDULE_COLUMNS,
   formatDuration,
   isLogistics,
+  moveInOrder,
+  parseDuration,
+  parseTimeInput,
+  scheduleKey,
   scheduleRow,
   type BoardSchedule,
+  type SchedulePlanOp,
   type ScheduleScene,
+  type TimeField,
   type TimetableRow,
 } from "@/lib/timetable";
 import { COL_MIN, COL_WIDTH, Cell, CompactRow } from "./board/BoardTimetable";
@@ -32,12 +38,16 @@ export function ProjectScheduleView({
   onClose,
   onDownloadPdf,
   projectName,
+  onPlan,
 }: {
   /** fetches the schedule (app: GET /projects/{id}/board-schedule, share page: /share/{token}/board-schedule) */
   load: () => Promise<BoardSchedule>;
   onClose: () => void;
   onDownloadPdf?: () => Promise<void> | void;
   projectName?: string;
+  /** 2026-10-30, Lino: «Shotreihenfolge planen» — editors only (never on the client share page): move
+   * scenes up / down, edit Beginn / Ende / Dauer, lock, story order, undo. Returns the new schedule. */
+  onPlan?: (op: SchedulePlanOp) => Promise<BoardSchedule>;
 }) {
   const { t, language } = useLanguage();
   const [data, setData] = useState<BoardSchedule | null>(null);
@@ -45,6 +55,9 @@ export function ProjectScheduleView({
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [width, setWidth] = useState(1200);
+  const [busy, setBusy] = useState(false);
+  const [planMsg, setPlanMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const editable = !!onPlan;
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(() => {
@@ -57,8 +70,16 @@ export function ProjectScheduleView({
   }, [load, t]);
 
   useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per opening (the view is mounted on open)
+    // first load (loading is already true) — once per opening, the view is mounted on open
+    let alive = true;
+    load()
+      .then((d) => alive && setData(d))
+      .catch((e: unknown) => alive && setError(e instanceof Error && e.message ? e.message : t("projectSchedule.loadError")))
+      .finally(() => alive && setLoading(false));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per opening
   }, []);
 
   useEffect(() => {
@@ -106,14 +127,49 @@ export function ProjectScheduleView({
   }, [data, t]);
 
   const columns = SCHEDULE_COLUMNS;
-  const grid = { gridTemplateColumns: columns.map((c) => COL_WIDTH[c]).join(" ") };
-  const compact = width < columns.reduce((sum, c) => sum + COL_MIN[c] + 12, 32);
+  const timeCols: TimetableColumn[] = ["start", "end", "duration"];
+  const editWidth: Partial<Record<TimetableColumn, string>> = { start: "92px", end: "72px", duration: "76px" };
+  const grid = {
+    gridTemplateColumns: (editable ? ["66px"] : []).concat(columns.map((c) => (editable && editWidth[c]) || COL_WIDTH[c])).join(" "),
+  };
+  const compact = width < columns.reduce((sum, c) => sum + COL_MIN[c] + 12, 32) + (editable ? 140 : 0);
   const colLabel = (c: TimetableColumn) => (c === "group" ? t("projectSchedule.colIdea") : t(`ideaBoard.timetable.col.${c}` as TranslationKey));
   const tot = data?.totals;
   const name = data?.project_name || projectName || "";
   const date = data?.shoot_date
     ? new Date(`${data.shoot_date}T12:00:00`).toLocaleDateString(language === "en" ? "en-GB" : "de-CH", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })
     : "";
+
+  const timedKeys = useMemo(() => (data?.items ?? []).flatMap((it) => (it.kind === "scene" ? [scheduleKey(it)] : [])), [data]);
+
+  async function plan(op: SchedulePlanOp, optimistic?: (d: BoardSchedule) => BoardSchedule) {
+    if (!onPlan || busy) return;
+    const prev = data;
+    if (prev && optimistic) setData(optimistic(prev));
+    setBusy(true);
+    setPlanMsg(null);
+    try {
+      setData(await onPlan(op));
+      setPlanMsg({ kind: "ok", text: t("projectSchedule.saved") });
+    } catch (e: unknown) {
+      setData(prev);
+      setPlanMsg({ kind: "error", text: e instanceof Error && e.message ? e.message : t("projectSchedule.saveError") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function move(key: string, dir: -1 | 1) {
+    const order = moveInOrder(timedKeys, key, dir);
+    if (!order) return;
+    // immediately visible: the two rows swap places, the server's new times follow
+    plan({ op: "order", order }, (d) => {
+      const scenes = d.items.filter((it): it is ScheduleScene => it.kind === "scene");
+      const byKey = new Map(scenes.map((sc) => [scheduleKey(sc), sc]));
+      let n = 0;
+      return { ...d, items: d.items.map((it) => (it.kind === "scene" ? byKey.get(order[n++])! : it)) };
+    });
+  }
 
   async function downloadPdf() {
     if (!onDownloadPdf || downloading) return;
@@ -134,18 +190,71 @@ export function ProjectScheduleView({
         ⚠ {t(flag === "overlap" ? "projectSchedule.badgeOverlap" : "projectSchedule.badgeNoEnd")}
       </span>
     );
+    const key = scheduleKey(scene);
+    const timedIndex = timedKeys.indexOf(key);
+    const arrows = editable && (
+      <MoveButtons
+        disabledUp={busy || timedIndex <= 0 || !!scene.fixed}
+        disabledDown={busy || timedIndex < 0 || timedIndex >= timedKeys.length - 1 || !!scene.fixed}
+        hidden={timedIndex < 0}
+        fixed={!!scene.fixed}
+        onUp={() => move(key, -1)}
+        onDown={() => move(key, 1)}
+      />
+    );
+    const timeEdit = (f: TimeField) => (
+      <TimeEdit
+        key={`${f}-${key}-${f === "duration" ? row.duration : f === "time" ? row.start : row.end}`}
+        field={f}
+        shown={f === "duration" ? formatDuration(row.duration) : f === "time" ? row.start : row.end}
+        disabled={busy}
+        onCommit={(value) =>
+          plan({ op: "time", key, field: f, value }, (d) => d)
+        }
+        label={t(f === "time" ? "ideaBoard.timetable.col.start" : f === "time_end" ? "ideaBoard.timetable.col.end" : "ideaBoard.timetable.col.duration")}
+      />
+    );
+    const lock = editable && (
+      <LockButton
+        fixed={!!scene.fixed}
+        disabled={busy}
+        title={t(scene.fixed ? "projectSchedule.unfix" : "projectSchedule.fix")}
+        onClick={() => plan({ op: "fixed", key, value: !scene.fixed })}
+      />
+    );
     if (compact) {
       return (
-        <div key={row.id} className={`rounded-lg ${tone} ${logistics ? "opacity-80" : ""}`}>
+        <div key={row.id} className={`rounded-lg ${tone} ${logistics ? "opacity-90" : ""}`}>
           {badge && <div className="px-2 pt-2">{badge}</div>}
-          <CompactRow row={row} columns={columns} striped={false} placeColor={null} goToLabel="" priorityLabel="" />
+          <CompactRow row={row} columns={editable ? columns.filter((c) => !timeCols.includes(c)) : columns} striped={false} placeColor={null} goToLabel="" priorityLabel="" />
+          {editable && (
+            <div className="flex flex-wrap items-end gap-2 px-2 pb-2.5 pl-[52px]">
+              {arrows}
+              <div className="flex items-end gap-1.5">
+                <div className="w-[64px]">{timeEdit("time")}</div>
+                <div className="w-[64px]">{timeEdit("time_end")}</div>
+                <div className="w-[70px]">{timeEdit("duration")}</div>
+                {lock}
+              </div>
+            </div>
+          )}
         </div>
       );
     }
     return (
       <div key={row.id} className={`grid gap-x-3 items-start rounded-lg px-2 py-2.5 border-t border-white/[0.06] ${tone}`} style={grid}>
+        {editable && <div className="pt-0.5">{arrows}</div>}
         {columns.map((c) =>
-          c === "group" && (logistics || badge) ? (
+          editable && c === "start" ? (
+            <div key={c} className="flex min-w-0 items-center gap-1">
+              {timeEdit("time")}
+              {lock}
+            </div>
+          ) : editable && c === "end" ? (
+            <div key={c} className="min-w-0">{timeEdit("time_end")}</div>
+          ) : editable && c === "duration" ? (
+            <div key={c} className="min-w-0">{timeEdit("duration")}</div>
+          ) : c === "group" && (logistics || badge) ? (
             <div key={c} className="min-w-0 flex flex-col items-start gap-1 pt-1">
               <span className={`text-[13px] leading-snug whitespace-pre-line break-words ${logistics ? "rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-semibold text-white/75" : "text-white/70"}`}>
                 {row.group}
@@ -259,6 +368,34 @@ export function ProjectScheduleView({
                 ))}
               </div>
 
+              {editable && (
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => plan({ op: "undo" })}
+                    disabled={busy || !data.can_undo}
+                    className="h-9 rounded-lg bg-white/[0.07] px-3 text-[12px] font-semibold text-white/80 hover:bg-white/[0.12] hover:text-white disabled:opacity-40"
+                  >
+                    ↶ {t("projectSchedule.undo")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => plan({ op: "story" })}
+                    disabled={busy || timedKeys.length < 2}
+                    title={t("projectSchedule.storyHint")}
+                    className="h-9 rounded-lg bg-white/[0.07] px-3 text-[12px] font-semibold text-white/80 hover:bg-white/[0.12] hover:text-white disabled:opacity-40"
+                  >
+                    {t("projectSchedule.story")}
+                  </button>
+                  <span className="text-[12px] text-white/45">{t("projectSchedule.editHint")}</span>
+                  {(busy || planMsg) && (
+                    <span className={`ml-auto text-[12px] font-semibold ${busy ? "text-white/55" : planMsg?.kind === "error" ? "text-red-300" : "text-emerald-300"}`}>
+                      {busy ? t("projectSchedule.saving") : planMsg?.text}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {warnings.length > 0 && (
                 <div className="mt-4 rounded-xl border border-red-400/25 bg-red-500/[0.07] px-4 py-3">
                   <div className="mb-1 text-[12px] font-bold uppercase tracking-wider text-red-300">⚠ {t("projectSchedule.check")}</div>
@@ -276,6 +413,7 @@ export function ProjectScheduleView({
                 <div className="mt-4 rounded-xl border border-white/10 bg-[#1d1d1f] p-2">
                   {!compact && lines.length > 0 && (
                     <div className="grid gap-x-3 px-2 pt-1.5 pb-2 text-[10px] font-semibold uppercase tracking-wider text-white/40" style={grid}>
+                      {editable && <div className="truncate">{t("projectSchedule.colOrder")}</div>}
                       {columns.map((c) => (
                         <div key={c} className="truncate">
                           {colLabel(c)}
@@ -300,5 +438,109 @@ export function ProjectScheduleView({
       </div>
     </div>,
     document.body
+  );
+}
+
+function MoveButtons({
+  disabledUp,
+  disabledDown,
+  hidden,
+  fixed,
+  onUp,
+  onDown,
+}: {
+  disabledUp: boolean;
+  disabledDown: boolean;
+  hidden: boolean;
+  fixed: boolean;
+  onUp: () => void;
+  onDown: () => void;
+}) {
+  const { t } = useLanguage();
+  if (hidden) return <div className="w-[62px]" />;
+  const cls =
+    "h-8 w-8 rounded-md border border-white/10 bg-white/[0.06] text-white/80 flex items-center justify-center hover:bg-white/[0.14] hover:text-white disabled:opacity-30 disabled:hover:bg-white/[0.06] touch-manipulation";
+  const title = fixed ? t("projectSchedule.fixedNoMove") : undefined;
+  return (
+    <div className="flex gap-1" title={title}>
+      <button type="button" aria-label={t("projectSchedule.moveUp")} title={title ?? t("projectSchedule.moveUp")} disabled={disabledUp} onClick={onUp} className={cls}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 15l6-6 6 6" /></svg>
+      </button>
+      <button type="button" aria-label={t("projectSchedule.moveDown")} title={title ?? t("projectSchedule.moveDown")} disabled={disabledDown} onClick={onDown} className={cls}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+      </button>
+    </div>
+  );
+}
+
+/** Beginn / Ende / Dauer as a text field like the scene card's time fields (8 / 800 / 8:30 / 8.30;
+ * Dauer 45 / 1:30 / 1h30); commits on Enter / leaving the field, "" clears */
+function TimeEdit({
+  field,
+  shown,
+  disabled,
+  label,
+  onCommit,
+}: {
+  field: TimeField;
+  shown: string;
+  disabled: boolean;
+  label: string;
+  onCommit: (value: string | number | null) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const [bad, setBad] = useState(false);
+  const commit = () => {
+    const v = draft;
+    setDraft(null);
+    if (v === null || v.trim() === shown) return;
+    if (!v.trim()) return onCommit(null);
+    const parsed = field === "duration" ? parseDuration(v) : parseTimeInput(v);
+    if (parsed === null || parsed === "") {
+      setBad(true);
+      setTimeout(() => setBad(false), 1500);
+      return;
+    }
+    onCommit(parsed);
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      aria-label={label}
+      placeholder={field === "duration" ? "min" : "--:--"}
+      value={draft ?? shown}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+      className={`h-8 w-full min-w-0 rounded-md border bg-white/[0.06] px-1.5 text-[13px] font-semibold tabular-nums text-white/90 outline-none focus:border-blue-400/60 disabled:opacity-60 [color-scheme:dark] ${bad ? "border-red-400/70" : "border-white/10"}`}
+    />
+  );
+}
+
+function LockButton({ fixed, disabled, title, onClick }: { fixed: boolean; disabled: boolean; title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      disabled={disabled}
+      title={title}
+      aria-label={title}
+      aria-pressed={fixed}
+      className={`h-8 w-8 shrink-0 rounded-md border flex items-center justify-center disabled:opacity-50 ${fixed ? "border-amber-400/40 bg-amber-400/20 text-amber-300" : "border-white/10 text-white/40 hover:bg-white/10 hover:text-white/80"}`}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="4" y="11" width="16" height="10" rx="2" />
+        <path d={fixed ? "M8 11V7a4 4 0 0 1 8 0v4" : "M8 11V7a4 4 0 0 1 7.5-2"} />
+      </svg>
+    </button>
   );
 }

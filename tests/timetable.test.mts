@@ -10,6 +10,7 @@ import {
   formatDuration,
   htmlToPlain,
   isLogistics,
+  moveInOrder,
   normalizeTime,
   parseDuration,
   parseTimeInput,
@@ -215,4 +216,12 @@ test("project Drehplan: scene → Timetable row, idea in the group column, logis
   assert.equal(isLogistics({ ...s, tags: [], logistics: undefined }), false);
   assert.equal(isLogistics({ ...s, tags: undefined, logistics: true }), true);
   assert.equal(scheduleRow({ ...s, id: undefined, group: "" }, 4).id, "row-4");
+});
+
+test("project Drehplan: move a scene up / down in the order", () => {
+  assert.deepEqual(moveInOrder(["a", "b", "c"], "b", -1), ["b", "a", "c"]);
+  assert.deepEqual(moveInOrder(["a", "b", "c"], "b", 1), ["a", "c", "b"]);
+  assert.equal(moveInOrder(["a", "b", "c"], "a", -1), null);
+  assert.equal(moveInOrder(["a", "b", "c"], "c", 1), null);
+  assert.equal(moveInOrder(["a"], "x", 1), null);
 });

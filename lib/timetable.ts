@@ -335,6 +335,31 @@ export interface BoardSchedule {
   totals: { scenes: number; first_start: string; last_end: string; span: number | null; shooting: number; pauses: number };
   project_name?: string;
   shoot_date?: string | null;
+  /** editors: a snapshot to go back to exists (app/schedule_plan.py) */
+  can_undo?: boolean;
+}
+
+/** 2026-10-30, Lino: «Shotreihenfolge planen» — the Drehplan's edit actions (POST …/board-schedule/plan) */
+export type SchedulePlanOp =
+  | { op: "order"; order: string[] }
+  | { op: "time"; key: string; field: TimeField; value: string | number | null }
+  | { op: "fixed"; key: string; value: boolean }
+  | { op: "story" }
+  | { op: "undo" };
+
+/** the key a Drehplan scene is addressed by: «idea id:card id» */
+export function scheduleKey(s: Pick<ScheduleScene, "idea_id" | "id">): string {
+  return `${s.idea_id ?? ""}:${s.id ?? ""}`;
+}
+
+/** the timed scenes' keys with scene `key` moved one place up (-1) or down (+1); null when it can't move */
+export function moveInOrder(keys: string[], key: string, dir: -1 | 1): string[] | null {
+  const i = keys.indexOf(key);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= keys.length) return null;
+  const out = [...keys];
+  [out[i], out[j]] = [out[j], out[i]];
+  return out;
 }
 
 export const LOGISTICS_TAG = "Logistik";
