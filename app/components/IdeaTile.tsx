@@ -134,8 +134,11 @@ export function IdeaTile({
         )}
       </div>
       <div className="p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-sm font-semibold truncate flex-1">{idea.title}</h3>
+        {/* 2026-10-30, Lino: «immer der ganze Titel … zweizeilig?» — the title wraps instead of being cut
+            with «…» (long titles like «… · V2-Skript · Vormittag (optional)» need 3–4 lines on a phone);
+            at least 2 lines tall so short titles line up, tiles of a row stretch to the same height */}
+        <div className="flex items-start gap-2 mb-1">
+          <h3 title={idea.title} className="text-[13px] sm:text-sm font-semibold leading-snug min-h-[2.75em] flex-1 min-w-0 break-words [overflow-wrap:anywhere]">{idea.title}</h3>
           {/* 2026-07-27, Todoist #356 — small "intern noch offen" dot while
               the idea is still open and hasn't gone through the internal
               PL/Admin review gate yet, same read-only-everywhere-clickable-
@@ -143,7 +146,7 @@ export function IdeaTile({
           {idea.status === "open" && !idea.internal_status && (
             <span
               title={t("ideaCard.internalReviewPending")}
-              className="w-2 h-2 rounded-full bg-amber-400/80 shrink-0"
+              className="w-2 h-2 mt-[5px] rounded-full bg-amber-400/80 shrink-0"
             />
           )}
           {approved && (

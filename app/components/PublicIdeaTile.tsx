@@ -68,8 +68,11 @@ export function PublicIdeaTile({
         )}
       </div>
       <div className="p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-sm font-semibold truncate flex-1">{idea.title}</h3>
+        {/* 2026-10-30, Lino: «immer der ganze Titel … zweizeilig?» — the title wraps instead of being cut
+            with «…» (long titles like «… · V2-Skript · Vormittag (optional)» need 3–4 lines on a phone);
+            at least 2 lines tall so short titles line up, tiles of a row stretch to the same height */}
+        <div className="flex items-start gap-2 mb-1">
+          <h3 title={idea.title} className="text-[13px] sm:text-sm font-semibold leading-snug min-h-[2.75em] flex-1 min-w-0 break-words [overflow-wrap:anywhere]">{idea.title}</h3>
           {approved && (
             <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-2 py-0.5 shrink-0">✓</span>
           )}
