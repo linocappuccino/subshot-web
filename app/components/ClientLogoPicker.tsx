@@ -151,7 +151,7 @@ export function ClientLogoPicker({ projectId, canEdit }: { projectId: string; ca
       <span className="text-xs text-white/50">{t("deliverRecipient.logo")}</span>
       {current ? (
         <span className="flex items-center gap-2">
-          <ClientLogoImage src={current.url} className="h-10 w-16" />
+          <ClientLogoImage src={current.url} className="w-10" />
           <span className="text-sm text-white/85">{current.name}</span>
         </span>
       ) : (
@@ -170,7 +170,7 @@ export function ClientLogoPicker({ projectId, canEdit }: { projectId: string; ca
             <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl bg-white/[0.05] ring-1 ring-inset ring-white/[0.06]">
               <li>
                 <button type="button" onClick={() => choose(null)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.04]">
-                  <span className={cn(thumbBox, "h-9 w-14 bg-white/10 text-xs text-white/40")}>–</span>
+                  <span className={cn(thumbBox, "h-9 w-9 rounded-xl bg-white/10 text-xs text-white/40")}>–</span>
                   <span className="flex-1 text-[15px] text-white/70">{t("clientLogo.none")}</span>
                   {!selected && <span className="text-[#0a84ff]">✓</span>}
                 </button>
@@ -178,7 +178,7 @@ export function ClientLogoPicker({ projectId, canEdit }: { projectId: string; ca
               {logos.map((l) => (
                 <li key={l.id} className={cn("flex items-center gap-3 px-3 py-2.5", busy === l.id && "opacity-60")}>
                   <button type="button" onClick={() => choose(l.id)} className="shrink-0 rounded-lg" title={t("clientLogo.use")}>
-                    <ClientLogoImage src={l.url} className="h-9 w-14" />
+                    <ClientLogoImage src={l.url} className="w-9" />
                   </button>
                   {editing === l.id ? (
                     <input

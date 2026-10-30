@@ -258,7 +258,7 @@ export function ProjectEditModal({
           <div className="flex flex-wrap items-center gap-2">
             {logoPick?.kind === "file" && logoPreview ? (
               <div className="flex items-center gap-2 rounded-lg border border-blue-400/60 bg-white/[0.04] p-1.5 pr-2">
-                <ClientLogoImage src={logoPreview} className="h-10 w-16 rounded-md" />
+                <ClientLogoImage src={logoPreview} className="w-10" />
                 <span className="max-w-[140px] truncate text-xs text-white/70">{logoPick.file.name}</span>
                 <button
                   type="button"
@@ -271,7 +271,7 @@ export function ProjectEditModal({
                 </button>
               </div>
             ) : (
-              <label className="flex h-[52px] cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/20 px-3 text-xs font-semibold text-white/70 hover:border-white/40 hover:text-white">
+              <label className="flex h-[72px] cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/20 px-3 text-xs font-semibold text-white/70 hover:border-white/40 hover:text-white">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
                 {t("projectEditModal.logoUpload")}
                 <input
@@ -294,9 +294,9 @@ export function ProjectEditModal({
                   title={l.name}
                   aria-pressed={active}
                   onClick={() => setLogoPick(active ? null : { kind: "library", id: l.id })}
-                  className={`flex h-[52px] w-20 flex-col items-center justify-center gap-0.5 rounded-lg border p-1 ${active ? "border-blue-400 bg-blue-500/15" : "border-white/10 bg-white/[0.04] hover:border-white/30"}`}
+                  className={`flex w-[68px] flex-col items-center justify-center gap-1 rounded-lg border p-1.5 ${active ? "border-blue-400 bg-blue-500/15" : "border-white/10 bg-white/[0.04] hover:border-white/30"}`}
                 >
-                  <ClientLogoImage src={l.url} className="h-7 w-full rounded" />
+                  <ClientLogoImage src={l.url} className="w-10" />
                   <span className="w-full truncate text-center text-[10px] text-white/60">{l.name}</span>
                 </button>
               );

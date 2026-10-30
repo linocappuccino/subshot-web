@@ -83,7 +83,7 @@ export function NextEventChip({ event }: { event: NextEvent }) {
 
 /** the client's logo, filling its badge field (bottom-right of the tile image; 2026-10-30 no white plate) */
 export function ClientLogoBadge({ url }: { url: string }) {
-  return <ClientLogoImage src={url} className="h-8 w-14 shadow-md shadow-black/40 ring-1 ring-white/20" />;
+  return <ClientLogoImage src={url} className="w-11 shadow-md shadow-black/40 ring-1 ring-white/20" />;
 }
 
 /** under the title: next date chip + storage */
