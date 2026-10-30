@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
@@ -8,7 +8,7 @@ import { Input, Label, FieldGroup } from "./ui/Field";
 import { ColorPicker } from "./ui/ColorPicker";
 import { Avatar } from "./ui/Avatar";
 import { useApi } from "@/lib/useApi";
-import type { InviteRole, Project, TeamMember } from "@/lib/types";
+import type { ClientLogo, InviteRole, Project, TeamMember } from "@/lib/types";
 import { PALETTE } from "@/lib/types";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 
@@ -18,6 +18,14 @@ import { useLanguage, type TranslationKey } from "@/lib/i18n";
 const EmojiField = dynamic(() => import("./ui/EmojiField").then((m) => m.EmojiField), { ssr: false });
 
 export type ProjectMemberPick = { email: string; role: InviteRole };
+
+/** 2026-10-30, Lino: «Kundenlogo schon beim Projekt-Erstellen» — a library logo or a new file (linked after
+ * the project was created, see projects/page.tsx createOrEditProject) */
+export type ProjectLogoPick = { kind: "library"; id: string } | { kind: "file"; file: File; name: string } | null;
+
+const LOGO_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml";
+const LOGO_TYPES = LOGO_ACCEPT.split(",");
+const LOGO_MAX_BYTES = 5 * 1024 * 1024;
 
 export type ProjectModules = {
   module_concept: boolean;
@@ -73,7 +81,8 @@ export function ProjectEditModal({
     emoji: string | null,
     modules: ProjectModules,
     members: ProjectMemberPick[],
-    clientName: string | null
+    clientName: string | null,
+    logo: ProjectLogoPick
   ) => Promise<void>;
 }) {
   const api = useApi();
@@ -98,6 +107,39 @@ export function ProjectEditModal({
       : DEFAULT_MODULES
   );
   const [saving, setSaving] = useState(false);
+  // client logo (new projects only): library pick or a new file with preview
+  const [logoLibrary, setLogoLibrary] = useState<ClientLogo[] | null>(null);
+  const [logoPick, setLogoPick] = useState<ProjectLogoPick>(null);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || existing) return;
+    let alive = true;
+    api
+      .clientLogoLibrary()
+      .then((r) => alive && setLogoLibrary(r.logos))
+      .catch(() => alive && setLogoLibrary([]));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, existing]);
+  const logoPreview = useMemo(() => (logoPick?.kind === "file" ? URL.createObjectURL(logoPick.file) : null), [logoPick]);
+  useEffect(() => () => {
+    if (logoPreview) URL.revokeObjectURL(logoPreview);
+  }, [logoPreview]);
+  function pickLogoFile(file: File | undefined) {
+    setLogoError(null);
+    if (!file) return;
+    if (!LOGO_TYPES.includes(file.type)) {
+      setLogoError(t("projectEditModal.logoWrongType"));
+      return;
+    }
+    if (file.size > LOGO_MAX_BYTES) {
+      setLogoError(t("projectEditModal.logoTooBig"));
+      return;
+    }
+    setLogoPick({ kind: "file", file, name: file.name.replace(/\.[a-z0-9]+$/i, "") });
+  }
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [pickedMembers, setPickedMembers] = useState<Record<string, InviteRole>>({});
   // 2026-07-18 (Todoist #193, Lino: "kann man immernoch nicht Personen zum
@@ -152,7 +194,11 @@ export function ProjectEditModal({
     setSaving(true);
     try {
       const members: ProjectMemberPick[] = Object.entries(pickedMembers).map(([email, role]) => ({ email, role }));
-      await onSave(trimmed, color, emoji.trim() || null, modules, members, clientName.trim() || null);
+      const logo: ProjectLogoPick =
+        !existing && logoPick?.kind === "file" ? { ...logoPick, name: clientName.trim() || logoPick.name } : existing ? null : logoPick;
+      await onSave(trimmed, color, emoji.trim() || null, modules, members, clientName.trim() || null, logo);
+      setLogoPick(null);
+      setLogoError(null);
       onClose();
     } finally {
       setSaving(false);
@@ -180,6 +226,69 @@ export function ProjectEditModal({
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
         />
       </FieldGroup>
+      {!existing && (
+        <FieldGroup>
+          <Label>{t("projectEditModal.clientLogo")}</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {logoPick?.kind === "file" && logoPreview ? (
+              <div className="flex items-center gap-2 rounded-lg border border-blue-400/60 bg-white/[0.04] p-1.5 pr-2">
+                <span className="flex h-10 w-16 items-center justify-center overflow-hidden rounded-md bg-white/90 p-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
+                  <img src={logoPreview} alt="" className="max-h-full max-w-full object-contain" />
+                </span>
+                <span className="max-w-[140px] truncate text-xs text-white/70">{logoPick.file.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setLogoPick(null)}
+                  aria-label={t("projectEditModal.logoRemove")}
+                  title={t("projectEditModal.logoRemove")}
+                  className="ml-1 h-7 w-7 rounded-full text-white/60 hover:bg-white/10 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <label className="flex h-[52px] cursor-pointer items-center gap-2 rounded-lg border border-dashed border-white/20 px-3 text-xs font-semibold text-white/70 hover:border-white/40 hover:text-white">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg>
+                {t("projectEditModal.logoUpload")}
+                <input
+                  type="file"
+                  accept={LOGO_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    pickLogoFile(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            {(logoLibrary ?? []).map((l) => {
+              const active = logoPick?.kind === "library" && logoPick.id === l.id;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  title={l.name}
+                  aria-pressed={active}
+                  onClick={() => setLogoPick(active ? null : { kind: "library", id: l.id })}
+                  className={`flex h-[52px] w-20 flex-col items-center justify-center gap-0.5 rounded-lg border p-1 ${active ? "border-blue-400 bg-blue-500/15" : "border-white/10 bg-white/[0.04] hover:border-white/30"}`}
+                >
+                  <span className="flex h-7 w-full items-center justify-center overflow-hidden rounded bg-white/90 p-0.5">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
+                    <img src={l.url} alt="" className="max-h-full max-w-full object-contain" />
+                  </span>
+                  <span className="w-full truncate text-center text-[10px] text-white/60">{l.name}</span>
+                </button>
+              );
+            })}
+          </div>
+          {logoError ? (
+            <p className="mt-1.5 text-xs text-red-400">{logoError}</p>
+          ) : (
+            <p className="mt-1.5 text-xs text-white/40">{t("projectEditModal.logoHint")}</p>
+          )}
+        </FieldGroup>
+      )}
       <FieldGroup>
         <Label>{t("projectEditModal.emoji")}</Label>
         <EmojiField value={emoji} onChange={setEmoji} />

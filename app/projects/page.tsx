@@ -36,7 +36,7 @@ import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useToast } from "@/app/components/ui/Toast";
 import { FolderEditModal } from "@/app/components/FolderEditModal";
-import { ProjectEditModal, type ProjectMemberPick, type ProjectModules } from "@/app/components/ProjectEditModal";
+import { ProjectEditModal, type ProjectLogoPick, type ProjectMemberPick, type ProjectModules } from "@/app/components/ProjectEditModal";
 import { TodoSidebar } from "@/app/components/TodoSidebar";
 
 /** Prefixed-id-aware collision detection.
@@ -292,7 +292,8 @@ function ProjectsPageContent() {
     modules: ProjectModules,
     members: ProjectMemberPick[],
     existing: Project | null,
-    clientName: string | null
+    clientName: string | null,
+    logo: ProjectLogoPick = null
   ) {
     try {
       if (existing) {
@@ -316,6 +317,23 @@ function ProjectsPageContent() {
         }
         setProjects((prev) => [{ ...created, folder_id: folderId }, ...prev]);
         toast.showSuccess("Projekt angelegt.");
+        // 2026-10-30, Lino: client logo chosen in the dialog → the project's logo (tile badge + Deliver page).
+        // Needs the project id, so it runs after the project exists; a failure keeps the project.
+        if (logo) {
+          try {
+            if (logo.kind === "library") {
+              await api.chooseDeliverLogo(created.id, logo.id);
+            } else {
+              const type = logo.file.type || "image/png";
+              const { key, upload_url } = await api.startClientLogoUpload(created.id, type);
+              await api.putFile(upload_url, logo.file, type);
+              await api.createClientLogo(created.id, logo.name || clientName || name, key);
+            }
+            api.projectsOverviewMeta().then(setMeta).catch(() => {});
+          } catch {
+            toast.showError(t("projectEditModal.logoSaveFailed"));
+          }
+        }
       }
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
@@ -732,8 +750,8 @@ function ProjectsPageContent() {
         onClose={() => setEditingProject(null)}
         existing={editingProject === "new" ? null : editingProject}
         teamId={myTeamId}
-        onSave={(name, color, emoji, modules, members, clientName) =>
-          createOrEditProject(name, color, emoji, modules, members, editingProject === "new" ? null : editingProject, clientName)
+        onSave={(name, color, emoji, modules, members, clientName, logo) =>
+          createOrEditProject(name, color, emoji, modules, members, editingProject === "new" ? null : editingProject, clientName, logo)
         }
       />
       <ConfirmDialog

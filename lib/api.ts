@@ -402,6 +402,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     deliverDownloads: (projectId: string) => request<DeliverDownloadLog>(`projects/${projectId}/deliver-downloads?t=${Date.now()}`),
     // ── Fassungen + Musiklizenzen pro Video (2026-10-12) ──
     // ── Logo-Bibliothek (2026-10-12) ──
+    // 2026-10-30: the library a NEW project will use (logo chosen in the «Neues Projekt» dialog)
+    clientLogoLibrary: () => request<{ logos: ClientLogo[]; team_id: string | null }>(`client-logos/library?t=${Date.now()}`),
     clientLogos: (projectId: string) => request<{ logos: ClientLogo[]; selected_id: string | null }>(`projects/${projectId}/client-logos?t=${Date.now()}`),
     startClientLogoUpload: (projectId: string, contentType: string) =>
       request<{ key: string; upload_url: string }>(`projects/${projectId}/client-logos/upload`, { method: "POST", body: JSON.stringify({ content_type: contentType }) }),
