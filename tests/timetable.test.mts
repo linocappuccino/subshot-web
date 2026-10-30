@@ -9,10 +9,12 @@ import {
   editSceneTime,
   formatDuration,
   htmlToPlain,
+  isLogistics,
   normalizeTime,
   parseDuration,
   parseTimeInput,
   sceneTimes,
+  scheduleRow,
   timetableColumns,
   timetableRows,
 } from "../lib/timetable.ts";
@@ -196,4 +198,21 @@ test("shared cases: timetableRows", () => {
   for (const c of CASES.rows) {
     assert.deepEqual(timetableRows(cards(c.cards), c.sort).map((r) => [r.id, r.number, r.start, r.end, r.duration]), c.expect);
   }
+});
+
+test("project Drehplan: scene → Timetable row, idea in the group column, logistics flag", () => {
+  const s = {
+    kind: "scene" as const, id: "c1", idea_id: "i1", number: 3, title: "Selfie", group: "Küche", idea_title: "Ausgang V1",
+    start: "08:30", end: "08:50", end_next_day: false, duration: 20, location: "Zürich", description: "Text", dialogue: ["A: «Hoi»"],
+    tags: ["Logistik"],
+  };
+  const r = scheduleRow(s, 0);
+  assert.equal(r.id, "i1:c1");
+  assert.equal(r.group, "Ausgang V1\nKüche");
+  assert.deepEqual([r.number, r.start, r.end, r.duration, r.endNextDay], [3, "08:30", "08:50", 20, false]);
+  assert.deepEqual(r.tags, []);
+  assert.equal(isLogistics(s), true);
+  assert.equal(isLogistics({ ...s, tags: [], logistics: undefined }), false);
+  assert.equal(isLogistics({ ...s, tags: undefined, logistics: true }), true);
+  assert.equal(scheduleRow({ ...s, id: undefined, group: "" }, 4).id, "row-4");
 });

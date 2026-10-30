@@ -46,6 +46,7 @@ import type {
 } from "./types";
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
+import type { BoardSchedule } from "./timetable";
 
 export type OAuthConsentRequest = {
   client_name: string;
@@ -480,6 +481,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     moveProject: (id: string, beforeProjectId: string | null) =>
       request<Project>(`projects/${id}/move`, { method: "POST", body: JSON.stringify({ before_project_id: beforeProjectId }) }),
     // ── Zeitplan mit Live-Verzug (2026-10-12) ──
+    // 2026-10-30, Lino: «Drehplan» on the ideas page — every idea board's Timetable, live (no cache)
+    boardSchedule: (projectId: string) => request<BoardSchedule>(`projects/${projectId}/board-schedule?t=${Date.now()}`),
     liveSchedule: (projectId: string, date?: string) =>
       request<LiveSchedule>(`projects/${projectId}/live-schedule?${date ? `date=${date}&` : ""}t=${Date.now()}`),
     autoSchedule: (projectId: string, date: string, start: string, sceneIds: string[]) =>

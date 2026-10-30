@@ -289,3 +289,81 @@ export function timetableRows(elements: BoardElement[], sort: TimetableElement["
     };
   });
 }
+
+// ── project-wide Drehplan (2026-10-30) ──────────────────────────────────────
+/* Lino: «Shooting schedule» next to the PDF button on the ideas page — every idea board's
+ * Timetable together, in time order, pauses between scenes. The rows come from the backend
+ * (app/project_schedule.compute, the same data as the Drehplan PDF) and are shown with the
+ * Timetable node's own cells (BoardTimetable.tsx). */
+
+export interface ScheduleScene {
+  kind: "scene";
+  id?: string;
+  idea_id?: string;
+  number: number | null;
+  title: string;
+  group: string;
+  /** the idea's title — a «Logistik» card's short label (Aufbau, Briefing, Umbau, Mittag, Abbau) */
+  idea_title: string;
+  start: string;
+  end: string;
+  end_next_day: boolean;
+  duration: number | null;
+  fixed?: boolean;
+  location: string;
+  description: string;
+  dialogue: string[];
+  priority?: SceneElement["priority"] | null;
+  tags?: string[];
+  /** share page: set by the backend instead of the tags */
+  logistics?: boolean;
+  overlap?: boolean;
+  no_end?: boolean;
+}
+
+export interface SchedulePause {
+  kind: "pause";
+  start: string;
+  end: string;
+  duration: number;
+}
+
+export interface BoardSchedule {
+  items: (ScheduleScene | SchedulePause)[];
+  untimed: ScheduleScene[];
+  warnings: string[];
+  totals: { scenes: number; first_start: string; last_end: string; span: number | null; shooting: number; pauses: number };
+  project_name?: string;
+  shoot_date?: string | null;
+}
+
+export const LOGISTICS_TAG = "Logistik";
+
+/** the columns of the project Drehplan — the node's default set with the idea in the group column */
+export const SCHEDULE_COLUMNS: TimetableColumn[] = ["number", "group", "title", "start", "end", "duration", "location", "description", "dialogue"];
+
+export function isLogistics(s: ScheduleScene): boolean {
+  return s.logistics ?? (Array.isArray(s.tags) && s.tags.includes(LOGISTICS_TAG));
+}
+
+/** a Drehplan scene as a Timetable row; the «group» cell shows the idea (+ the board group) */
+export function scheduleRow(s: ScheduleScene, index: number): TimetableRow {
+  const idea = s.idea_title || "";
+  return {
+    id: s.id ? `${s.idea_id ?? ""}:${s.id}` : `row-${index}`,
+    number: s.number ?? 0,
+    title: s.title || "",
+    group: s.group ? `${idea}\n${s.group}` : idea,
+    start: s.start || "",
+    end: s.end || "",
+    endNextDay: !!s.end_next_day,
+    duration: s.duration ?? null,
+    fixed: !!s.fixed,
+    location: s.location || "",
+    description: s.description || "",
+    dialogue: Array.isArray(s.dialogue) ? s.dialogue : [],
+    priority: s.priority ?? null,
+    tags: [],
+    image: null,
+  };
+}

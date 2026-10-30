@@ -59,6 +59,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { CallsheetModal } from "@/app/components/CallsheetModal";
 import { SceneWeatherContext, type SceneWeather } from "@/lib/sceneWeather";
 import { LiveScheduleModal } from "@/app/components/LiveScheduleModal";
+import { ProjectScheduleView } from "@/app/components/ProjectScheduleView";
 import { ShootingOrderModal } from "@/app/components/ShootingOrderModal";
 import { SectionLocationButton } from "@/app/components/SectionLocationButton";
 import { ShotlistProgress } from "@/app/components/ShotlistProgress";
@@ -662,6 +663,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     return () => clearTimeout(timer);
   }, [autoOpenCommentId]);
   const [exportingPdf, setExportingPdf] = useState(false);
+  // 2026-10-30, Lino: «Drehplan» / «Shooting schedule» next to the ideas page's PDF button
+  const [boardScheduleOpen, setBoardScheduleOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "table">(() =>
     typeof window !== "undefined" && window.localStorage.getItem("subshotSceneViewMode") === "table" ? "table" : "grid"
   );
@@ -1995,6 +1998,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 )}
               </Menu>
             )}
+            {activeView === "ideas" && (
+              <Button variant="secondary" size="sm" onClick={() => setBoardScheduleOpen(true)}>
+                <ScheduleIcon /> {t("projectSchedule.button")}
+              </Button>
+            )}
             {activeView === "scenes" && (
               <Button variant="secondary" size="sm" onClick={exportGoodTakes}>
                 <GoodTakeIcon /> {t("workflow.goodTakes")}
@@ -2897,6 +2905,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         }
       }}
     />
+    {boardScheduleOpen && (
+      <ProjectScheduleView
+        load={() => api.boardSchedule(id)}
+        onClose={() => setBoardScheduleOpen(false)}
+        onDownloadPdf={() => exportPdf("schedule")}
+        projectName={data?.name ?? ""}
+      />
+    )}
     <CallsheetModal open={callsheetOpen} onClose={() => setCallsheetOpen(false)} projectId={id} />
     <LiveScheduleModal
       open={scheduleOpen}
@@ -3440,6 +3456,13 @@ function DocIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" />
+    </svg>
+  );
+}
+function ScheduleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 4v17M16 2v4M8 2v4" />
     </svg>
   );
 }

@@ -26,7 +26,7 @@ export const BoardTimetableContext = createContext<{
 // 2026-10-29, Lino: "kein Text über den Frame der Node hinaus" — the flexible columns may
 // shrink to 0 (minmax(0, …fr)), so the table always fits the node's width; long words wrap,
 // long texts are clamped (full text on hover / «+ N weitere»).
-const COL_WIDTH: Record<TimetableColumn, string> = {
+export const COL_WIDTH: Record<TimetableColumn, string> = {
   number: "44px",
   title: "minmax(0, 1.2fr)",
   group: "minmax(0, 1fr)",
@@ -42,7 +42,7 @@ const COL_WIDTH: Record<TimetableColumn, string> = {
 };
 
 /** below this width per column set the table becomes a list of compact cards (no squeezed columns) */
-const COL_MIN: Record<TimetableColumn, number> = {
+export const COL_MIN: Record<TimetableColumn, number> = {
   number: 44, title: 120, group: 100, start: 60, end: 64, duration: 64, location: 110,
   description: 140, dialogue: 170, priority: 70, tags: 80, image: 90,
 };
@@ -265,7 +265,7 @@ export function TimetableNode({
   );
 }
 
-function Cell({
+export function Cell({
   col,
   row,
   placeColor,
@@ -300,7 +300,7 @@ function Cell({
     case "title":
       return <div title={row.title || undefined} className={`${base} pt-1 font-semibold text-white/95 line-clamp-4`}>{row.title}</div>;
     case "group":
-      return <div title={row.group || undefined} className={`${base} pt-1 text-white/70 line-clamp-4`}>{row.group}</div>;
+      return <div title={row.group || undefined} className={`${base} pt-1 text-white/70 whitespace-pre-line line-clamp-4`}>{row.group}</div>;
     case "start":
       return (
         <div className={`${base} pt-1 font-semibold tabular-nums text-white/95 whitespace-nowrap flex items-center gap-1`}>
@@ -379,7 +379,7 @@ function Cell({
 /** 2026-10-29, Lino: "Dialoge übersichtlicher — man kann die einzelnen Dialoge gar nicht
  * auseinanderhalten": one block per line, the speaker as a small label, the text upright,
  * a thin line on the left; after DIALOGUE_LINES lines «+ N weitere». */
-function DialogueCell({ lines }: { lines: string[] }) {
+export function DialogueCell({ lines }: { lines: string[] }) {
   const { t } = useLanguage();
   const [open, setOpen] = useState(false);
   if (!lines.length) return <div className="min-w-0" />;
@@ -414,7 +414,7 @@ function DialogueCell({ lines }: { lines: string[] }) {
 
 /** narrow Timetable: one compact card per scene — number, title and time on top, then the
  * other chosen columns underneath at full width (2026-10-29) */
-function CompactRow({
+export function CompactRow({
   row,
   columns,
   striped,
@@ -450,7 +450,7 @@ function CompactRow({
         </div>
         {(has("group") || has("location") || has("priority") || has("tags")) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-white/60">
-            {has("group") && row.group && <span className="min-w-0 break-words">{row.group}</span>}
+            {has("group") && row.group && <span className="min-w-0 break-words">{row.group.replace(/\n/g, " · ")}</span>}
             {has("location") && row.location && <Cell col="location" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
             {has("priority") && row.priority && <Cell col="priority" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
             {has("tags") && row.tags.length > 0 && <Cell col="tags" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}

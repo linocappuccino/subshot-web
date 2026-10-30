@@ -1,6 +1,7 @@
 import type { SharedIdeasPreviewData, IdeaFeedback, IdeaFeedbackSendResult, Annotation, FeedbackPinAnchor } from "./types";
 import { ApiError } from "./api";
 import type { BoardResponse, BoardVote, PublicBoardTodoList } from "./board";
+import type { BoardSchedule } from "./timetable";
 
 // 2026-07-21 (#262) — the public no-login "Ideen-Preview" page's own tiny
 // API client, same reasoning/shape as lib/publicPreviewApi.ts (#254, video):
@@ -68,6 +69,17 @@ export const publicIdeasPreviewApi = {
         body: JSON.stringify({ group_id: groupId, element_id: elementId, voter_name: voterName }),
       })
     ),
+  // 2026-10-30, Lino: the project Drehplan on the client page (view + PDF), read-only —
+  // only when the backend switch is on (SharedIdeasPreviewData.schedule_available)
+  fetchBoardSchedule: (token: string, unlockToken: string | null) =>
+    handle<BoardSchedule>(
+      fetch(`${BASE_URL}/share/${token}/board-schedule?t=${Date.now()}`, { headers: unlockHeaders(unlockToken), cache: "no-store" })
+    ),
+  boardSchedulePdfUrl: async (token: string, unlockToken: string | null) => {
+    const res = await fetch(`${BASE_URL}/share/${token}/board-schedule.pdf`, { headers: unlockHeaders(unlockToken), cache: "no-store" });
+    if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+    return URL.createObjectURL(await res.blob());
+  },
   fetchIdeaBoard: (token: string, unlockToken: string | null, ideaId: string) =>
     handle<BoardResponse>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board`, { headers: unlockHeaders(unlockToken) })

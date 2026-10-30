@@ -12,6 +12,7 @@ import type { SharedIdeasPreviewData, IdeaPreview, Annotation } from "@/lib/type
 import { PENDING_ANNOTATION_ID } from "@/app/components/PublicHighlightedText";
 import { isIdeaFeedbackLocked } from "@/lib/ideaFeedbackLock";
 import { subscribeToChanges } from "@/lib/realtime";
+import { ProjectScheduleView } from "@/app/components/ProjectScheduleView";
 
 // 2026-07-21 (#262) — public no-login "Ideen-Preview" counterpart to
 // /projects/[id]/ideas/page.tsx (the authenticated Ideen/Planungssektor
@@ -63,6 +64,26 @@ function PreviewIdeasPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [openedFromParam, setOpenedFromParam] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // 2026-10-30, Lino: the project Drehplan for the client too — view + PDF, read-only
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [schedulePdfBusy, setSchedulePdfBusy] = useState(false);
+
+  async function downloadSchedulePdf() {
+    if (schedulePdfBusy) return;
+    setSchedulePdfBusy(true);
+    try {
+      const url = await publicIdeasPreviewApi.boardSchedulePdfUrl(token, unlockToken);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${data?.project_name || "Projekt"} – ${t("projectSchedule.title")}.pdf`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (e) {
+      setToast(e instanceof ApiError ? e.message : t("projectSchedule.loadError"));
+    } finally {
+      setSchedulePdfBusy(false);
+    }
+  }
 
   // Textmarker (2026-07-22, unification): used to be a separate on/off
   // "mode" toggled via a fixed toolbar, with its own floating popup+sidebar
@@ -375,7 +396,32 @@ function PreviewIdeasPageInner() {
             {data.client_name}
           </div>
         )}
-        <h1 className="text-2xl font-bold text-white mb-6">{t("previewPage.projectLabel", { name: data?.project_name ?? "…" })}</h1>
+        <h1 className={`text-2xl font-bold text-white ${data?.schedule_available ? "mb-3" : "mb-6"}`}>{t("previewPage.projectLabel", { name: data?.project_name ?? "…" })}</h1>
+        {data?.schedule_available && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setScheduleOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.08] border border-white/10 px-3.5 py-2 text-[13px] font-semibold text-white/85 hover:bg-white/[0.13] hover:text-white"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 4v17M16 2v4M8 2v4" />
+              </svg>
+              {t("projectSchedule.button")}
+            </button>
+            <button
+              type="button"
+              onClick={downloadSchedulePdf}
+              disabled={schedulePdfBusy}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.08] border border-white/10 px-3.5 py-2 text-[13px] font-semibold text-white/85 hover:bg-white/[0.13] hover:text-white disabled:opacity-50"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" />
+              </svg>
+              {schedulePdfBusy ? t("workflow.pdfExporting") : t("projectSchedule.pdf")}
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-sm text-white/40">{t("common.loading")}</p>
@@ -422,6 +468,15 @@ function PreviewIdeasPageInner() {
           pendingSelection={pending?.ideaId === openIdea.id ? pending.text : null}
           onCancelPendingSelection={() => setPending(null)}
           onSaveHighlightComment={saveHighlightComment}
+        />
+      )}
+
+      {scheduleOpen && data?.schedule_available && (
+        <ProjectScheduleView
+          load={() => publicIdeasPreviewApi.fetchBoardSchedule(token, unlockToken)}
+          onClose={() => setScheduleOpen(false)}
+          onDownloadPdf={downloadSchedulePdf}
+          projectName={data.project_name}
         />
       )}
 

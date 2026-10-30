@@ -660,6 +660,8 @@ export interface SharedIdeasPreviewData {
   language: "de" | "en";
   expires_at: string;
   ideas: IdeaPreview[];
+  /** 2026-10-30: «Drehplan» (view + PDF) on the client page — backend switch SHARE_BOARD_SCHEDULE */
+  schedule_available?: boolean;
 }
 
 /** Response of POST /share/{token}/ideas/{idea_id}/feedback/send-json —
