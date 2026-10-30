@@ -285,6 +285,27 @@ function ProjectsPageContent() {
     });
   }, [flatProjects, meta, query, stepFilter, showArchive]);
 
+  /** the dialog's client logo → this project's logo (same endpoints as the Deliver page's ClientLogoPicker):
+   * a library logo or a new upload is chosen, "none" takes it off the project (the library logo stays) */
+  async function applyProjectLogo(projectId: string, logo: ProjectLogoPick, fallbackName: string) {
+    if (!logo) return;
+    try {
+      if (logo.kind === "library") {
+        await api.chooseDeliverLogo(projectId, logo.id);
+      } else if (logo.kind === "none") {
+        await api.chooseDeliverLogo(projectId, null);
+      } else {
+        const type = logo.file.type || "image/png";
+        const { key, upload_url } = await api.startClientLogoUpload(projectId, type);
+        await api.putFile(upload_url, logo.file, type);
+        await api.createClientLogo(projectId, logo.name || fallbackName, key);
+      }
+      api.projectsOverviewMeta().then(setMeta).catch(() => {});
+    } catch {
+      toast.showError(t("projectEditModal.logoSaveFailed"));
+    }
+  }
+
   async function createOrEditProject(
     name: string,
     color: string,
@@ -299,6 +320,7 @@ function ProjectsPageContent() {
       if (existing) {
         const updated = await api.patchProject(existing.id, { name, color, emoji, client_name: clientName, ...modules });
         setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+        await applyProjectLogo(existing.id, logo, clientName || name);
       } else {
         const created = await api.createProject(name, color, emoji ?? undefined, modules, clientName);
         if (folderId) await api.patchProject(created.id, { folder_id: folderId });
@@ -319,21 +341,7 @@ function ProjectsPageContent() {
         toast.showSuccess("Projekt angelegt.");
         // 2026-10-30, Lino: client logo chosen in the dialog → the project's logo (tile badge + Deliver page).
         // Needs the project id, so it runs after the project exists; a failure keeps the project.
-        if (logo) {
-          try {
-            if (logo.kind === "library") {
-              await api.chooseDeliverLogo(created.id, logo.id);
-            } else {
-              const type = logo.file.type || "image/png";
-              const { key, upload_url } = await api.startClientLogoUpload(created.id, type);
-              await api.putFile(upload_url, logo.file, type);
-              await api.createClientLogo(created.id, logo.name || clientName || name, key);
-            }
-            api.projectsOverviewMeta().then(setMeta).catch(() => {});
-          } catch {
-            toast.showError(t("projectEditModal.logoSaveFailed"));
-          }
-        }
+        await applyProjectLogo(created.id, logo, clientName || name);
       }
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");

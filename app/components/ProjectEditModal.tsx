@@ -21,7 +21,9 @@ export type ProjectMemberPick = { email: string; role: InviteRole };
 
 /** 2026-10-30, Lino: «Kundenlogo schon beim Projekt-Erstellen» — a library logo or a new file (linked after
  * the project was created, see projects/page.tsx createOrEditProject) */
-export type ProjectLogoPick = { kind: "library"; id: string } | { kind: "file"; file: File; name: string } | null;
+export type ProjectLogoPick = { kind: "library"; id: string } | { kind: "file"; file: File; name: string } | { kind: "none" } | null;
+// 2026-10-30, Lino: «muss auch beim Bearbeiten kommen» — editing: null = logo unchanged, "none" = take the
+// logo off this project (the library logo itself stays)
 
 const LOGO_ACCEPT = "image/png,image/jpeg,image/webp,image/svg+xml";
 const LOGO_TYPES = LOGO_ACCEPT.split(",");
@@ -107,22 +109,36 @@ export function ProjectEditModal({
       : DEFAULT_MODULES
   );
   const [saving, setSaving] = useState(false);
-  // client logo (new projects only): library pick or a new file with preview
+  // client logo: library pick or a new file with preview (new project, and since 2026-10-30 also editing)
   const [logoLibrary, setLogoLibrary] = useState<ClientLogo[] | null>(null);
   const [logoPick, setLogoPick] = useState<ProjectLogoPick>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
+  /** editing: the project's current logo (library id) when the dialog opened */
+  const [initialLogoId, setInitialLogoId] = useState<string | null>(null);
   useEffect(() => {
-    if (!open || existing) return;
+    if (!open) return;
     let alive = true;
-    api
-      .clientLogoLibrary()
-      .then((r) => alive && setLogoLibrary(r.logos))
-      .catch(() => alive && setLogoLibrary([]));
+    if (existing) {
+      api
+        .clientLogos(existing.id)
+        .then((r) => {
+          if (!alive) return;
+          setLogoLibrary(r.logos);
+          setInitialLogoId(r.selected_id);
+          setLogoPick(r.selected_id ? { kind: "library", id: r.selected_id } : null);
+        })
+        .catch(() => alive && setLogoLibrary(null));
+    } else {
+      api
+        .clientLogoLibrary()
+        .then((r) => alive && setLogoLibrary(r.logos))
+        .catch(() => alive && setLogoLibrary([]));
+    }
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, existing]);
+  }, [open, existing?.id]);
   const logoPreview = useMemo(() => (logoPick?.kind === "file" ? URL.createObjectURL(logoPick.file) : null), [logoPick]);
   useEffect(() => () => {
     if (logoPreview) URL.revokeObjectURL(logoPreview);
@@ -173,6 +189,10 @@ export function ProjectEditModal({
   const [openedFor, setOpenedFor] = useState(existing?.id ?? "new");
   if (open && openedFor !== (existing?.id ?? "new")) {
     setOpenedFor(existing?.id ?? "new");
+    setLogoLibrary(null);
+    setLogoPick(null);
+    setInitialLogoId(null);
+    setLogoError(null);
     setClientName(existing?.client_name ?? "");
     setName(existing?.name ?? "");
     setColor(existing?.color ?? PALETTE[0]);
@@ -194,8 +214,13 @@ export function ProjectEditModal({
     setSaving(true);
     try {
       const members: ProjectMemberPick[] = Object.entries(pickedMembers).map(([email, role]) => ({ email, role }));
-      const logo: ProjectLogoPick =
-        !existing && logoPick?.kind === "file" ? { ...logoPick, name: clientName.trim() || logoPick.name } : existing ? null : logoPick;
+      let logo: ProjectLogoPick;
+      if (logoPick?.kind === "file") logo = { ...logoPick, name: clientName.trim() || logoPick.name };
+      else if (!existing) logo = logoPick;
+      else {
+        const now = logoPick?.kind === "library" ? logoPick.id : null;
+        logo = now === initialLogoId ? null : now ? { kind: "library", id: now } : { kind: "none" };
+      }
       await onSave(trimmed, color, emoji.trim() || null, modules, members, clientName.trim() || null, logo);
       setLogoPick(null);
       setLogoError(null);
@@ -226,7 +251,7 @@ export function ProjectEditModal({
           onKeyDown={(e) => e.key === "Enter" && handleSave()}
         />
       </FieldGroup>
-      {!existing && (
+      {logoLibrary !== null && (
         <FieldGroup>
           <Label>{t("projectEditModal.clientLogo")}</Label>
           <div className="flex flex-wrap items-center gap-2">
@@ -282,10 +307,27 @@ export function ProjectEditModal({
               );
             })}
           </div>
+          {existing && (logoPick?.kind === "library" || logoPick?.kind === "file") && (
+            <button
+              type="button"
+              onClick={() => setLogoPick(null)}
+              className="mt-2 text-xs font-semibold text-white/50 hover:text-white"
+            >
+              {t("projectEditModal.logoNone")}
+            </button>
+          )}
           {logoError ? (
             <p className="mt-1.5 text-xs text-red-400">{logoError}</p>
           ) : (
-            <p className="mt-1.5 text-xs text-white/40">{t("projectEditModal.logoHint")}</p>
+            <p className="mt-1.5 text-xs text-white/40">
+              {existing
+                ? logoPick?.kind === "library"
+                  ? t("projectEditModal.logoCurrent", { name: logoLibrary.find((l) => l.id === logoPick.id)?.name ?? "" })
+                  : logoPick?.kind === "file"
+                    ? t("projectEditModal.logoNew")
+                    : t("projectEditModal.logoNoneSelected")
+                : t("projectEditModal.logoHint")}
+            </p>
           )}
         </FieldGroup>
       )}
