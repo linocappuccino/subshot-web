@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { ClientLogoImage } from "./ClientLogoImage";
 import { useToast } from "./ui/Toast";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
@@ -143,17 +144,14 @@ export function ClientLogoPicker({ projectId, canEdit }: { projectId: string; ca
 
   if (logos === null) return null;
   const current = logos.find((l) => l.id === selected) ?? null;
-  const thumbBox = "flex shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white/90 p-1";
+  const thumbBox = "flex shrink-0 items-center justify-center overflow-hidden rounded-lg";
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <span className="text-xs text-white/50">{t("deliverRecipient.logo")}</span>
       {current ? (
         <span className="flex items-center gap-2">
-          <span className={cn(thumbBox, "h-10 w-16")}>
-            {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
-            <img src={current.url} alt="" className="max-h-full max-w-full object-contain" />
-          </span>
+          <ClientLogoImage src={current.url} className="h-10 w-16" />
           <span className="text-sm text-white/85">{current.name}</span>
         </span>
       ) : (
@@ -179,9 +177,8 @@ export function ClientLogoPicker({ projectId, canEdit }: { projectId: string; ca
               </li>
               {logos.map((l) => (
                 <li key={l.id} className={cn("flex items-center gap-3 px-3 py-2.5", busy === l.id && "opacity-60")}>
-                  <button type="button" onClick={() => choose(l.id)} className={cn(thumbBox, "h-9 w-14")} title={t("clientLogo.use")}>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
-                    <img src={l.url} alt="" className="max-h-full max-w-full object-contain" />
+                  <button type="button" onClick={() => choose(l.id)} className="shrink-0 rounded-lg" title={t("clientLogo.use")}>
+                    <ClientLogoImage src={l.url} className="h-9 w-14" />
                   </button>
                   {editing === l.id ? (
                     <input

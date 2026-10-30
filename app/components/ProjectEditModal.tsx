@@ -7,6 +7,7 @@ import { Button } from "./ui/Button";
 import { Input, Label, FieldGroup } from "./ui/Field";
 import { ColorPicker } from "./ui/ColorPicker";
 import { Avatar } from "./ui/Avatar";
+import { ClientLogoImage } from "./ClientLogoImage";
 import { useApi } from "@/lib/useApi";
 import type { ClientLogo, InviteRole, Project, TeamMember } from "@/lib/types";
 import { PALETTE } from "@/lib/types";
@@ -257,10 +258,7 @@ export function ProjectEditModal({
           <div className="flex flex-wrap items-center gap-2">
             {logoPick?.kind === "file" && logoPreview ? (
               <div className="flex items-center gap-2 rounded-lg border border-blue-400/60 bg-white/[0.04] p-1.5 pr-2">
-                <span className="flex h-10 w-16 items-center justify-center overflow-hidden rounded-md bg-white/90 p-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element -- local object URL preview */}
-                  <img src={logoPreview} alt="" className="max-h-full max-w-full object-contain" />
-                </span>
+                <ClientLogoImage src={logoPreview} className="h-10 w-16 rounded-md" />
                 <span className="max-w-[140px] truncate text-xs text-white/70">{logoPick.file.name}</span>
                 <button
                   type="button"
@@ -298,10 +296,7 @@ export function ProjectEditModal({
                   onClick={() => setLogoPick(active ? null : { kind: "library", id: l.id })}
                   className={`flex h-[52px] w-20 flex-col items-center justify-center gap-0.5 rounded-lg border p-1 ${active ? "border-blue-400 bg-blue-500/15" : "border-white/10 bg-white/[0.04] hover:border-white/30"}`}
                 >
-                  <span className="flex h-7 w-full items-center justify-center overflow-hidden rounded bg-white/90 p-0.5">
-                    {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
-                    <img src={l.url} alt="" className="max-h-full max-w-full object-contain" />
-                  </span>
+                  <ClientLogoImage src={l.url} className="h-7 w-full rounded" />
                   <span className="w-full truncate text-center text-[10px] text-white/60">{l.name}</span>
                 </button>
               );

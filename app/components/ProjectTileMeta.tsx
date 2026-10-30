@@ -3,6 +3,7 @@
 import { useLanguage } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { daysFromToday, formatStorage, type NextEvent, type ProjectMeta } from "@/lib/projectMeta";
+import { ClientLogoImage } from "./ClientLogoImage";
 
 // 2026-10-13, Lino: Projektübersicht — what a project tile shows from GET /projects/overview-meta:
 // mini pipeline rings (same as the PipelineTimeline), the next date ("Dreh in 3 Tagen", red when
@@ -80,14 +81,9 @@ export function NextEventChip({ event }: { event: NextEvent }) {
   );
 }
 
-/** the client's logo on a small white plate (bottom-right of the tile image) */
+/** the client's logo, filling its badge field (bottom-right of the tile image; 2026-10-30 no white plate) */
 export function ClientLogoBadge({ url }: { url: string }) {
-  return (
-    <span className="flex h-7 max-w-[72px] items-center justify-center rounded-lg bg-white/95 px-1.5 shadow-md shadow-black/40 ring-1 ring-black/10">
-      {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
-      <img src={url} alt="" className="max-h-5 max-w-full object-contain" />
-    </span>
-  );
+  return <ClientLogoImage src={url} className="h-8 w-14 shadow-md shadow-black/40 ring-1 ring-white/20" />;
 }
 
 /** under the title: next date chip + storage */
