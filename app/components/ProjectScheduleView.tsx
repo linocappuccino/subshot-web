@@ -193,7 +193,7 @@ export function ProjectScheduleView({
     const flag = scene.overlap ? "overlap" : scene.no_end ? "noEnd" : null;
     const tone = flag === "overlap" ? "bg-red-500/[0.09] shadow-[inset_3px_0_0_rgb(239,68,68)]" : flag === "noEnd" ? "bg-amber-400/[0.07] shadow-[inset_3px_0_0_rgb(251,191,36)]" : logistics ? "bg-white/[0.035]" : i % 2 ? "bg-white/[0.02]" : "";
     const badge = flag && (
-      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${flag === "overlap" ? "bg-red-500/20 text-red-300" : "bg-amber-400/15 text-amber-200"}`}>
+      <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider [overflow-wrap:anywhere] ${flag === "overlap" ? "bg-red-500/20 text-red-300" : "bg-amber-400/15 text-amber-200"}`}>
         ⚠ {t(flag === "overlap" ? "projectSchedule.badgeOverlap" : "projectSchedule.badgeNoEnd")}
       </span>
     );
@@ -263,7 +263,7 @@ export function ProjectScheduleView({
             <div key={c} className="min-w-0">{timeEdit("duration")}</div>
           ) : c === "group" && (logistics || badge) ? (
             <div key={c} className="min-w-0 flex flex-col items-start gap-1 pt-1">
-              <span className={`text-[13px] leading-snug whitespace-pre-line break-words ${logistics ? "rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-semibold text-white/75" : "text-white/70"}`}>
+              <span className={`max-w-full text-[13px] leading-snug whitespace-pre-line break-words ${logistics ? "rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-semibold text-white/75" : "text-white/70"}`}>
                 {row.group}
               </span>
               {badge}
@@ -301,9 +301,11 @@ export function ProjectScheduleView({
 
   if (typeof document === "undefined") return null;
   return createPortal(
-    <div className="fixed inset-0 z-[80] flex sm:p-4 lg:p-6" role="dialog" aria-modal="true" aria-label={t("projectSchedule.title")}>
+    // 2026-10-30, Lino: «Ansichtsfenster breiter, passt sich dem Bildschirm an» — the whole window minus a
+    // small margin (8 px phone, 16 px tablet, 24 px desktop) instead of a fixed max width
+    <div className="fixed inset-0 z-[80] flex p-2 sm:p-4 lg:p-6" role="dialog" aria-modal="true" aria-label={t("projectSchedule.title")}>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-hidden bg-[#161617] text-white sm:rounded-2xl sm:border sm:border-white/10 shadow-2xl">
+      <div className="relative flex h-full w-full min-w-0 flex-col overflow-hidden bg-[#161617] text-white rounded-xl sm:rounded-2xl border border-white/10 shadow-2xl">
         {/* header */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
           <div className="shrink-0 h-9 w-9 rounded-lg bg-blue-500/15 text-blue-300 flex items-center justify-center">
