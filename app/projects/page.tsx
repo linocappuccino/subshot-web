@@ -285,6 +285,11 @@ function ProjectsPageContent() {
     });
   }, [flatProjects, meta, query, stepFilter, showArchive]);
 
+  // 2026-10-30, Lino: «die abgeschlossenen in einer Kategorie unter den noch offenen Projekten» — finished = the
+  // same «Fertig» as the filter pill (every pipeline step done, meta.current_step === "done"); the archive is separate
+  const doneProjects = useMemo(() => projects.filter((p) => meta[p.id]?.current_step === "done"), [projects, meta]);
+  const openProjects = useMemo(() => projects.filter((p) => meta[p.id]?.current_step !== "done"), [projects, meta]);
+
   /** the dialog's client logo → this project's logo (same endpoints as the Deliver page's ClientLogoPicker):
    * a library logo or a new upload is chosen, "none" takes it off the project (the library logo stays) */
   async function applyProjectLogo(projectId: string, logo: ProjectLogoPick, fallbackName: string) {
@@ -603,7 +608,7 @@ function ProjectsPageContent() {
               )}
               {(folders.length > 0 || projects.length > 0) && <SectionLabel>{t("projects.projects")}</SectionLabel>}
               <ListRows>
-                {projects.map((project) => (
+                {openProjects.map((project) => (
                   <DraggableProjectListRow
                     key={project.id}
                     project={project}
@@ -612,6 +617,20 @@ function ProjectsPageContent() {
                   />
                 ))}
               </ListRows>
+              {doneProjects.length > 0 && (
+                <DoneSection folderKey={folderId ?? "root"} count={doneProjects.length}>
+                  <ListRows>
+                    {doneProjects.map((project) => (
+                      <DraggableProjectListRow
+                        key={project.id}
+                        project={project}
+                        onEdit={() => setEditingProject(project)}
+                        onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                      />
+                    ))}
+                  </ListRows>
+                </DoneSection>
+              )}
               {projects.length === 0 && folders.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-24 text-center">
                   <span className="text-4xl mb-3">🎬</span>
@@ -692,7 +711,7 @@ function ProjectsPageContent() {
 
             {(folders.length > 0 || projects.length > 0) && <SectionLabel>{t("projects.projects")}</SectionLabel>}
             <TileGrid key={`projects-${folderId ?? "root"}`}>
-              {projects.map((project) => (
+              {openProjects.map((project) => (
                 <DraggableProjectTile
                   key={project.id}
                   project={project}
@@ -701,6 +720,20 @@ function ProjectsPageContent() {
                 />
               ))}
             </TileGrid>
+            {doneProjects.length > 0 && (
+              <DoneSection folderKey={folderId ?? "root"} count={doneProjects.length}>
+                <TileGrid key={`projects-done-${folderId ?? "root"}`}>
+                  {doneProjects.map((project) => (
+                    <DraggableProjectTile
+                      key={project.id}
+                      project={project}
+                      onEdit={() => setEditingProject(project)}
+                      onDelete={() => setDeleteTarget({ kind: "project", id: project.id, name: project.name })}
+                    />
+                  ))}
+                </TileGrid>
+              </DoneSection>
+            )}
 
             {projects.length === 0 && folders.length === 0 && (
               <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -807,6 +840,45 @@ function useFolderBreadcrumb(folderId: string | null) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [folderId]);
   return chain;
+}
+
+/** «Abgeschlossen (N)» under the open projects — open by default, folded state remembered per folder */
+function DoneSection({ folderKey, count, children }: { folderKey: string; count: number; children: React.ReactNode }) {
+  const { t } = useLanguage();
+  const storageKey = `subshot-done-collapsed-${folderKey}`;
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(storageKey, c ? "0" : "1");
+      } catch {
+        // not remembered
+      }
+      return !c;
+    });
+  };
+  return (
+    <section>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        className="mb-3 mt-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-white/40 hover:text-white/70"
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${collapsed ? "-rotate-90" : ""}`}>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+        {t("projects.doneSection", { count })}
+      </button>
+      {!collapsed && <div className="opacity-70 transition-opacity hover:opacity-100">{children}</div>}
+    </section>
+  );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
