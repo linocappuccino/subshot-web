@@ -1226,9 +1226,9 @@ function ProjectTile({
           shown, stretched over a ~400-px tile (×2 on retina). Now it is just the instant placeholder; the full
           cover (presigned original, thumbnail_url) is laid over it and fades in once loaded. */}
       {project.thumbnail_data_uri ? (
-        <SharpCover placeholder={project.thumbnail_data_uri} src={project.thumbnail_url} alt={project.name} />
+        <SharpCover placeholder={project.thumbnail_data_uri} src={project.thumbnail_url} alt={project.name} objectPosition={coverPosition(project)} />
       ) : project.thumbnail_url ? (
-        <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" />
+        <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" objectPosition={coverPosition(project)} />
       ) : (
         <span className="text-3xl">{project.emoji || "🎬"}</span>
       )}
@@ -1373,9 +1373,9 @@ function ProjectListRow({
       thumbnail={
         project.thumbnail_data_uri ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={project.thumbnail_data_uri} alt={project.name} />
+          <img src={project.thumbnail_data_uri} alt={project.name} style={{ objectPosition: coverPosition(project) }} />
         ) : project.thumbnail_url ? (
-          <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" />
+          <AuthImage path={project.thumbnail_url} alt={project.name} className="w-full h-full object-cover" objectPosition={coverPosition(project)} />
         ) : undefined
       }
       badge={
@@ -1650,13 +1650,21 @@ function GridSkeleton() {
   );
 }
 
+/** 2026-10-30, Lino: «Gesichter zentriert» — the detected face of the cover, else a bit above the middle
+ * (on a tall cover cropped to a landscape tile, faces are usually in the upper part) */
+function coverPosition(p: Project): string {
+  return p.thumbnail_focus_x != null && p.thumbnail_focus_y != null
+    ? `${(p.thumbnail_focus_x * 100).toFixed(1)}% ${(p.thumbnail_focus_y * 100).toFixed(1)}%`
+    : "50% 30%";
+}
+
 /** the small inline placeholder at once, the full-resolution cover on top as soon as it has loaded */
-function SharpCover({ placeholder, src, alt }: { placeholder: string; src: string | null; alt: string }) {
+function SharpCover({ placeholder, src, alt, objectPosition }: { placeholder: string; src: string | null; alt: string; objectPosition?: string }) {
   const [loaded, setLoaded] = useState(false);
   return (
     <span className="relative block w-full h-full">
       {/* eslint-disable-next-line @next/next/no-img-element -- inline data URI placeholder */}
-      <img src={placeholder} alt={loaded ? "" : alt} aria-hidden={loaded} className="absolute inset-0 w-full h-full object-cover" />
+      <img src={placeholder} alt={loaded ? "" : alt} aria-hidden={loaded} style={{ objectPosition }} className="absolute inset-0 w-full h-full object-cover" />
       {src && (
         // eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL
         <img
@@ -1665,6 +1673,7 @@ function SharpCover({ placeholder, src, alt }: { placeholder: string; src: strin
           loading="lazy"
           decoding="async"
           onLoad={() => setLoaded(true)}
+          style={{ objectPosition }}
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
         />
       )}

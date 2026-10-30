@@ -81,6 +81,9 @@ export interface Project {
    * so the project tile can render it immediately, no separate AuthImage
    * fetch needed for this specific low-res use. */
   thumbnail_data_uri: string | null;
+  /** 2026-10-30 — face focus of the cover (0..1), null = none found / not yet detected */
+  thumbnail_focus_x?: number | null;
+  thumbnail_focus_y?: number | null;
   notion_database_id: string | null;
   notion_last_synced_at: string | null;
   last_opened_at: string;
