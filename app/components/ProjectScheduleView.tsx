@@ -8,7 +8,7 @@
  * (BoardTimetable.tsx cells, columns, widths, compact cards when narrow). Read-only; loaded
  * fresh every time it opens (`load`), nothing is cached and nothing is ever changed. */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { TimetableColumn } from "@/lib/board";
@@ -44,6 +44,7 @@ export function ProjectScheduleView({
   pollStatus,
   embedded = false,
   onOrderChange,
+  rowExtra,
 }: {
   /** fetches the schedule (app: GET /projects/{id}/board-schedule, share page: /share/{token}/board-schedule) */
   load: () => Promise<BoardSchedule>;
@@ -61,6 +62,8 @@ export function ProjectScheduleView({
   embedded?: boolean;
   /** the order switch changed (the Callsheet's PDF follows it) */
   onOrderChange?: (order: ScheduleOrder) => void;
+  /** 2026-10-30 — small extra chips per scene (Callsheet: location no., weather, crew) */
+  rowExtra?: (scene: ScheduleScene) => ReactNode;
 }) {
   const { t, language } = useLanguage();
   const [data, setData] = useState<BoardSchedule | null>(null);
@@ -259,10 +262,12 @@ export function ProjectScheduleView({
         ⚠ {t(flag === "overlap" ? "projectSchedule.badgeOverlap" : "projectSchedule.badgeNoEnd")}
       </span>
     );
-    const badge = (statusChip || flagChip) && (
+    const extra = rowExtra?.(scene);
+    const badge = (statusChip || flagChip || extra) && (
       <>
         {statusChip}
         {flagChip}
+        {extra}
       </>
     );
     const key = scheduleKey(scene);
@@ -334,7 +339,7 @@ export function ProjectScheduleView({
               <span className={`max-w-full text-[13px] leading-snug whitespace-pre-line break-words ${logistics ? "rounded-md bg-white/10 px-2 py-0.5 text-[12px] font-semibold text-white/75" : "text-white/70"}`}>
                 {row.group}
               </span>
-              {badge}
+              <div className="flex max-w-full flex-wrap gap-1">{badge}</div>
             </div>
           ) : (
             <Cell key={c} col={c} row={row} placeColor={null} goToLabel="" priorityLabel="" />
@@ -387,7 +392,7 @@ export function ProjectScheduleView({
           ) : data ? (
             <>
               {/* stat tiles — like the PDF, no «Pausen» tile (Lino 2026-10-29) */}
-              <div className={`grid grid-cols-2 gap-2 ${embedded ? "sm:grid-cols-3" : stats.length > 5 ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-5"}`}>
+              <div className={`grid grid-cols-2 gap-2 ${stats.length > 5 ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-5"}`}>
                 {stats.map(([label, value]) => (
                   <div key={label} className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-3.5 py-2.5">
                     <div className="text-[17px] font-semibold tabular-nums">{value}</div>

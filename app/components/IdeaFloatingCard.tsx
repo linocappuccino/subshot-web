@@ -150,6 +150,7 @@ export function IdeaFloatingCard({
   // "done" state to design for; on failure it resets back to grey so the
   // click can be retried.
   const [approving, setApproving] = useState(false);
+  const approvingRef = useRef(false);
   // 2026-07-19, Lino: "nicht nur einen Abgenommen Button sondern auch einen
   // Abgelehnt Button" — same shape as `approving` above, just for the
   // reject path (no feedback-resolved gate, discarding an idea doesn't need
@@ -384,14 +385,21 @@ export function IdeaFloatingCard({
       toast.showError(t("ideaCard.resolveFeedbackFirst"));
       return;
     }
+    if (approvingRef.current) return; // 2026-10-30: no second POST from a quick double click
+    approvingRef.current = true;
     setApproving(true);
+    const before = idea;
+    onUpdated({ ...idea, status: "approved" }); // shown at once, rolled back on an error
     try {
       const updated = await api.approveIdea(idea.id);
       onUpdated(updated);
       toast.showSuccess(t("ideaCard.approvedToast"));
     } catch (e) {
+      onUpdated(before);
       toast.showError(e instanceof ApiError ? e.message : t("ideaCard.approveFailed"));
       setApproving(false);
+    } finally {
+      approvingRef.current = false;
     }
   }
 

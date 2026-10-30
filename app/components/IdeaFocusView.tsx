@@ -532,8 +532,16 @@ function IdeaBoardScreen({
     }, 600);
   }
 
+  // 2026-10-30, Lino: «Approve dauert mehrere Sekunden» — a ref guard (a second click before React re-rendered the
+  // disabled button sent a second POST) and the status switches at once (rolled back if the request fails)
+  const runningRef = useRef(false);
   async function run(kind: NonNullable<typeof busy>, fn: () => Promise<Idea>, failKey: Parameters<typeof t>[0], successKey?: Parameters<typeof t>[0]) {
+    if (runningRef.current) return;
+    runningRef.current = true;
     setBusy(kind);
+    const optimistic = kind === "approve" ? "approved" : kind === "reject" ? "rejected" : kind === "unapprove" ? "open" : null;
+    const before = idea;
+    if (optimistic) onUpdated(withBoardSummary({ ...idea, status: optimistic }));
     try {
       await flush();
       const updated = await fn();
@@ -541,8 +549,10 @@ function IdeaBoardScreen({
       if (successKey) toast.showSuccess(t(successKey));
       if (kind === "approve" || kind === "unapprove" || kind === "reject") loadBoard();
     } catch (e) {
+      if (optimistic) onUpdated(withBoardSummary(before));
       toast.showError(e instanceof ApiError ? e.message : t(failKey));
     } finally {
+      runningRef.current = false;
       setBusy(null);
     }
   }
