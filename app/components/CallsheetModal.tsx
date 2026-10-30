@@ -9,6 +9,8 @@ import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import type { Callsheet, CallsheetDay } from "@/lib/types";
+import { ProjectScheduleView } from "./ProjectScheduleView";
+import type { ScheduleOrder } from "@/lib/timetable";
 
 // 2026-10-12, Lino: "Callsheet / Dispo automatisch — ein Link bzw. PDF pro Drehtag für die Crew:
 // Location und Karte, Zuständige und Zeiten, plus Wetter und Sonnenstand (Golden Hour,
@@ -27,6 +29,8 @@ export function CallsheetModal({ open, onClose, projectId }: { open: boolean; on
   const [day, setDay] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Callsheet | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  // 2026-10-30, Lino: the Callsheet shows the same live Drehplan (status green / red); its order switch drives the PDF
+  const [order, setOrder] = useState<ScheduleOrder>("shooting");
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +66,7 @@ export function CallsheetModal({ open, onClose, projectId }: { open: boolean; on
     if (!day) return;
     setPdfBusy(true);
     try {
-      const url = await api.callsheetPdfUrl(projectId, day);
+      const url = await api.callsheetPdfUrl(projectId, day, order);
       const a = document.createElement("a");
       a.href = url;
       a.download = `Callsheet ${sheet?.project ?? ""} ${day}.pdf`;
@@ -145,11 +149,34 @@ export function CallsheetModal({ open, onClose, projectId }: { open: boolean; on
                 ))}
               </div>
 
+              <section>
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-white/45">{t("callsheet.liveSchedule")}</h3>
+                <ProjectScheduleView
+                  embedded
+                  load={() => api.boardSchedule(projectId)}
+                  pollStatus={() => api.boardScheduleStatus(projectId)}
+                  onClose={() => {}}
+                  onOrderChange={setOrder}
+                />
+              </section>
+
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/45">{t("callsheet.sceneDetails")}</h3>
               <div className="overflow-hidden rounded-xl border border-white/10">
                 <table className="w-full text-sm">
                   <tbody>
-                    {shown.rows.map((r, i) => (
-                      <tr key={i} className={cn("border-b border-white/6 last:border-0", r.intermediate && "bg-white/[0.03]")}>
+                    {(order === "story"
+                      ? [...shown.rows].sort((a, b) => (a.number ?? 0) - (b.number ?? 0) || (a.letter ?? "").localeCompare(b.letter ?? ""))
+                      : shown.rows
+                    ).map((r, i) => (
+                      <tr
+                        key={i}
+                        className={cn(
+                          "border-b border-white/6 last:border-0",
+                          r.intermediate && "bg-white/[0.03]",
+                          r.status === "done" && "bg-emerald-500/[0.10]",
+                          r.status === "not_shot" && "bg-red-500/[0.10]"
+                        )}
+                      >
                         <td className="whitespace-nowrap px-3 py-2 align-top tabular-nums text-white/80">
                           {r.start}
                           {r.end ? `–${r.end}` : ""}
@@ -157,6 +184,8 @@ export function CallsheetModal({ open, onClose, projectId }: { open: boolean; on
                         <td className="px-3 py-2 align-top text-white">
                           {!r.intermediate && r.number ? <b className="mr-1.5">{r.number}{r.letter ?? ""}</b> : null}
                           {r.title || "–"}
+                          {r.status === "done" && <span className="ml-1.5 text-xs font-semibold text-emerald-300">✓ {t("projectSchedule.statusDone")}</span>}
+                          {r.status === "not_shot" && <span className="ml-1.5 text-xs font-semibold text-red-300">✗ {t("projectSchedule.statusNotShot")}</span>}
                           {r.intermediate && <span className="ml-1.5 text-xs text-white/40">({t("callsheet.inBetween")})</span>}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2 align-top text-white/50">{r.location ? `L${r.location}` : ""}</td>

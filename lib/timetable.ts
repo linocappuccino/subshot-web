@@ -319,6 +319,8 @@ export interface ScheduleScene {
   tags?: string[];
   /** share page: set by the backend instead of the tags */
   logistics?: boolean;
+  /** 2026-10-30 — from the shot list: «im Kasten» (done) / «nicht gedreht» (not_shot) / open */
+  status?: "open" | "done" | "not_shot";
   overlap?: boolean;
   no_end?: boolean;
 }
@@ -334,7 +336,10 @@ export interface BoardSchedule {
   items: (ScheduleScene | SchedulePause)[];
   untimed: ScheduleScene[];
   warnings: string[];
-  totals: { scenes: number; first_start: string; last_end: string; span: number | null; shooting: number; pauses: number };
+  totals: {
+    scenes: number; first_start: string; last_end: string; span: number | null; shooting: number; pauses: number;
+    status_total?: number; status_done?: number; status_not_shot?: number;
+  };
   project_name?: string;
   shoot_date?: string | null;
   /** editors: a snapshot to go back to exists (app/schedule_plan.py) */

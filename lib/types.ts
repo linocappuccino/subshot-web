@@ -756,7 +756,7 @@ export interface CallsheetLocation {
 }
 export interface Callsheet {
   date: string; project: string; client: string | null; start: string | null; end: string | null;
-  rows: { start: string; end: string; minutes: number | null; number: number | null; letter: string | null; title: string; description: string; intermediate: boolean; location: number | null; assignees: string[]; shots: number; weather?: { temp: number; rain_prob: number | null; text: string; symbol: string } }[];
+  rows: { start: string; end: string; minutes: number | null; number: number | null; letter: string | null; title: string; description: string; intermediate: boolean; location: number | null; assignees: string[]; shots: number; weather?: { temp: number; rain_prob: number | null; text: string; symbol: string }; status?: "open" | "done" | "not_shot" }[];
   locations: CallsheetLocation[];
   crew: { name: string; email: string; role: string }[];
   team: { name: string; email: string; role: string }[];

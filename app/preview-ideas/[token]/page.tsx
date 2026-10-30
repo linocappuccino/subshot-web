@@ -474,6 +474,7 @@ function PreviewIdeasPageInner() {
       {scheduleOpen && data?.schedule_available && (
         <ProjectScheduleView
           load={() => publicIdeasPreviewApi.fetchBoardSchedule(token, unlockToken)}
+          pollStatus={() => publicIdeasPreviewApi.fetchBoardScheduleStatus(token, unlockToken)}
           onClose={() => setScheduleOpen(false)}
           onDownloadPdf={downloadSchedulePdf}
           projectName={data.project_name}

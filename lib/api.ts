@@ -501,6 +501,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // 2026-10-30, Lino: «Drehplan» on the ideas page — every idea board's Timetable, live (no cache)
     boardSchedule: (projectId: string) => request<BoardSchedule>(`projects/${projectId}/board-schedule?t=${Date.now()}`),
     // 2026-10-30, Lino: «Shotreihenfolge planen» — move / Beginn·Ende·Dauer / fix / Story-Reihenfolge / Rückgängig
+    // 2026-10-30 — light poll of the open Drehplan / Callsheet (hash + counts)
+    boardScheduleStatus: (projectId: string) =>
+      request<{ hash: string; done: number; not_shot: number }>(`projects/${projectId}/board-schedule/status?t=${Date.now()}`),
     planBoardSchedule: (projectId: string, op: SchedulePlanOp) =>
       request<{ changed: number; schedule: BoardSchedule }>(`projects/${projectId}/board-schedule/plan`, { method: "POST", body: JSON.stringify(op) }),
     liveSchedule: (projectId: string, date?: string) =>
@@ -512,10 +515,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<Record<string, { emoji: string; temp: number; rain_prob: number | null; wind: number | null; text: string }>>(`projects/${projectId}/scene-weather?t=${Date.now()}`),
     callsheetDays: (projectId: string) => request<{ days: CallsheetDay[] }>(`projects/${projectId}/callsheet/days?t=${Date.now()}`),
     callsheet: (projectId: string, date: string) => request<Callsheet>(`projects/${projectId}/callsheet?date=${date}&t=${Date.now()}`),
-    callsheetPdfUrl: async (projectId: string, date: string) => {
+    callsheetPdfUrl: async (projectId: string, date: string, order: "shooting" | "story" = "shooting") => {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Nicht angemeldet.");
-      const res = await fetch(`${BASE_URL}/projects/${projectId}/callsheet.pdf?date=${date}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${BASE_URL}/projects/${projectId}/callsheet.pdf?date=${date}&order=${order}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       return URL.createObjectURL(await res.blob());
     },
