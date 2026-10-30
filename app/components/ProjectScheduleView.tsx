@@ -21,7 +21,9 @@ import {
   parseTimeInput,
   scheduleKey,
   scheduleRow,
+  storyOrder,
   type BoardSchedule,
+  type ScheduleOrder,
   type SchedulePlanOp,
   type ScheduleScene,
   type TimeField,
@@ -43,7 +45,8 @@ export function ProjectScheduleView({
   /** fetches the schedule (app: GET /projects/{id}/board-schedule, share page: /share/{token}/board-schedule) */
   load: () => Promise<BoardSchedule>;
   onClose: () => void;
-  onDownloadPdf?: () => Promise<void> | void;
+  /** the PDF in the order shown (story | shooting) */
+  onDownloadPdf?: (order: ScheduleOrder) => Promise<void> | void;
   projectName?: string;
   /** 2026-10-30, Lino: «Shotreihenfolge planen» — editors only (never on the client share page): move
    * scenes up / down, edit Beginn / Ende / Dauer, lock, story order, undo. Returns the new schedule. */
@@ -57,7 +60,10 @@ export function ProjectScheduleView({
   const [width, setWidth] = useState(1200);
   const [busy, setBusy] = useState(false);
   const [planMsg, setPlanMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
-  const editable = !!onPlan;
+  // 2026-10-30, Lino: switch «Shootingreihenfolge» (time order, default) ↔ «Szenenreihenfolge» (story) —
+  // display only, the real times stay; planning only in the shooting order
+  const [order, setOrder] = useState<ScheduleOrder>("shooting");
+  const editable = !!onPlan && order === "shooting";
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const reload = useCallback(() => {
@@ -103,20 +109,21 @@ export function ProjectScheduleView({
     return () => ro.disconnect();
   }, []);
 
+  const shown = useMemo(() => (data && order === "story" ? storyOrder(data) : data), [data, order]);
   const lines = useMemo<Line[]>(
     () =>
-      (data?.items ?? []).map((it, i) =>
+      (shown?.items ?? []).map((it, i) =>
         it.kind === "pause" ? it : { kind: "scene", row: scheduleRow(it, i), scene: it }
       ),
-    [data]
+    [shown]
   );
-  const untimed = useMemo(() => (data?.untimed ?? []).map((s, i) => ({ row: scheduleRow(s, 10000 + i), scene: s })), [data]);
+  const untimed = useMemo(() => (shown?.untimed ?? []).map((s, i) => ({ row: scheduleRow(s, 10000 + i), scene: s })), [shown]);
 
   // warnings in the viewer's language, from the backend's flags (same rules as the PDF)
   const warnings = useMemo(() => {
     const out: string[] = [];
     let prev: ScheduleScene | null = null;
-    for (const it of data?.items ?? []) {
+    for (const it of shown?.items ?? []) {
       if (it.kind !== "scene") continue;
       const name = (s: ScheduleScene) => t("projectSchedule.sceneRef", { number: s.number ?? "–", title: s.title || "–", idea: s.idea_title || "–" });
       if (it.overlap && prev) out.push(t("projectSchedule.warnOverlap", { scene: name(it), start: it.start, other: name(prev) }));
@@ -124,7 +131,7 @@ export function ProjectScheduleView({
       prev = it;
     }
     return out;
-  }, [data, t]);
+  }, [shown, t]);
 
   const columns = SCHEDULE_COLUMNS;
   const timeCols: TimetableColumn[] = ["start", "end", "duration"];
@@ -175,7 +182,7 @@ export function ProjectScheduleView({
     if (!onDownloadPdf || downloading) return;
     setDownloading(true);
     try {
-      await onDownloadPdf();
+      await onDownloadPdf(order);
     } finally {
       setDownloading(false);
     }
@@ -368,8 +375,26 @@ export function ProjectScheduleView({
                 ))}
               </div>
 
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div role="tablist" aria-label={t("projectSchedule.orderLabel")} className="flex rounded-lg bg-white/[0.06] p-0.5 text-[12px] font-semibold">
+                  {(["shooting", "story"] as const).map((o) => (
+                    <button
+                      key={o}
+                      type="button"
+                      role="tab"
+                      aria-selected={order === o}
+                      onClick={() => setOrder(o)}
+                      className={`rounded-md px-3 py-1.5 transition-colors ${order === o ? "bg-white/15 text-white" : "text-white/50 hover:text-white/85"}`}
+                    >
+                      {t(o === "shooting" ? "projectSchedule.orderShooting" : "projectSchedule.orderStory")}
+                    </button>
+                  ))}
+                </div>
+                {order === "story" && <span className="text-[12px] text-white/45">{t("projectSchedule.orderStoryHint")}</span>}
+              </div>
+
               {editable && (
-                <div className="mt-4 flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => plan({ op: "undo" })}

@@ -305,6 +305,8 @@ export interface ScheduleScene {
   group: string;
   /** the idea's title — a «Logistik» card's short label (Aufbau, Briefing, Umbau, Mittag, Abbau) */
   idea_title: string;
+  /** position of the idea on the ideas page (story order) */
+  idea_order?: number;
   start: string;
   end: string;
   end_next_day: boolean;
@@ -390,5 +392,26 @@ export function scheduleRow(s: ScheduleScene, index: number): TimetableRow {
     priority: s.priority ?? null,
     tags: [],
     image: null,
+  };
+}
+
+export type ScheduleOrder = "shooting" | "story";
+
+/** 2026-10-30, Lino: «Szenenreihenfolge» — the same scenes with exactly their real times, listed in story
+ * order (ideas in their order, cards by number). Display only: no pause rows, no overlap / no-end
+ * flags or warnings (they belong to the shooting order). Mirrors app/project_schedule.py story_view. */
+export function storyOrder(s: BoardSchedule): BoardSchedule {
+  const key = (r: ScheduleScene): [number, number, string] => [r.idea_order ?? 0, r.number ?? 0, r.title || ""];
+  const cmp = (a: ScheduleScene, b: ScheduleScene) => {
+    const ka = key(a);
+    const kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1] || (ka[2] < kb[2] ? -1 : ka[2] > kb[2] ? 1 : 0);
+  };
+  const clean = (r: ScheduleScene): ScheduleScene => ({ ...r, overlap: false, no_end: false });
+  return {
+    ...s,
+    items: s.items.filter((it): it is ScheduleScene => it.kind === "scene").map(clean).sort(cmp),
+    untimed: s.untimed.map(clean).sort(cmp),
+    warnings: [],
   };
 }

@@ -11,6 +11,7 @@ import {
   htmlToPlain,
   isLogistics,
   moveInOrder,
+  storyOrder,
   normalizeTime,
   parseDuration,
   parseTimeInput,
@@ -224,4 +225,20 @@ test("project Drehplan: move a scene up / down in the order", () => {
   assert.equal(moveInOrder(["a", "b", "c"], "a", -1), null);
   assert.equal(moveInOrder(["a", "b", "c"], "c", 1), null);
   assert.equal(moveInOrder(["a"], "x", 1), null);
+});
+
+test("project Drehplan: «Szenenreihenfolge» only re-lists, times stay, no pauses / warnings", () => {
+  const sc = (idea: number, number: number, start: string, extra: Record<string, unknown> = {}) => ({
+    kind: "scene" as const, id: `${idea}-${number}`, idea_id: `i${idea}`, idea_order: idea, number, title: "", group: "", idea_title: "",
+    start, end: "", end_next_day: false, duration: 20, location: "", description: "", dialogue: [], ...extra,
+  });
+  const s = {
+    items: [sc(1, 1, "08:00"), sc(0, 2, "08:20", { overlap: true }), { kind: "pause" as const, start: "08:40", end: "09:00", duration: 20 }, sc(0, 1, "09:00")],
+    untimed: [], warnings: ["x"], totals: { scenes: 3, first_start: "08:00", last_end: "09:20", span: 80, shooting: 60, pauses: 20 },
+  };
+  const o = storyOrder(s);
+  assert.deepEqual(o.items.map((i) => (i.kind === "scene" ? [i.idea_order, i.number, i.start] : null)), [[0, 1, "09:00"], [0, 2, "08:20"], [1, 1, "08:00"]]);
+  assert.deepEqual(o.warnings, []);
+  assert.equal(o.items.some((i) => i.kind === "scene" && i.overlap), false);
+  assert.equal(s.items.length, 4); // input untouched
 });

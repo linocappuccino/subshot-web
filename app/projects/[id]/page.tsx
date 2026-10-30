@@ -1595,11 +1595,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // 2026-10-29, Lino: "über den PDF button auf der Ideenübersicht soll einfach der gesamte
   // Timetable über das gesamte Projekt ausgegeben werden" — "schedule" (backend:
   // app/project_schedule.py) is the first entry there now, the ideas export stays as the second.
-  async function exportPdf(view: "cards" | "table" | "ideas" | "schedule") {
+  async function exportPdf(view: "cards" | "table" | "ideas" | "schedule", order: "shooting" | "story" = "shooting") {
     if (!data) return;
     setExportingPdf(true);
     try {
-      const url = await api.projectPdfUrl(data.id, view);
+      const url = await api.projectPdfUrl(data.id, view, order);
       const a = document.createElement("a");
       a.href = url;
       a.download = view === "schedule" ? `${data.name || "Projekt"} – Drehplan.pdf` : `${data.name || (view === "ideas" ? "ideen" : "shotlist")}.pdf`;
@@ -2910,7 +2910,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         load={() => api.boardSchedule(id)}
         onPlan={async (op) => (await api.planBoardSchedule(id, op)).schedule}
         onClose={() => setBoardScheduleOpen(false)}
-        onDownloadPdf={() => exportPdf("schedule")}
+        onDownloadPdf={(order) => exportPdf("schedule", order)}
         projectName={data?.name ?? ""}
       />
     )}

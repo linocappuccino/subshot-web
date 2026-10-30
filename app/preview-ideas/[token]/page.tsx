@@ -68,11 +68,11 @@ function PreviewIdeasPageInner() {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [schedulePdfBusy, setSchedulePdfBusy] = useState(false);
 
-  async function downloadSchedulePdf() {
+  async function downloadSchedulePdf(order: "shooting" | "story" = "shooting") {
     if (schedulePdfBusy) return;
     setSchedulePdfBusy(true);
     try {
-      const url = await publicIdeasPreviewApi.boardSchedulePdfUrl(token, unlockToken);
+      const url = await publicIdeasPreviewApi.boardSchedulePdfUrl(token, unlockToken, order);
       const a = document.createElement("a");
       a.href = url;
       a.download = `${data?.project_name || "Projekt"} – ${t("projectSchedule.title")}.pdf`;
@@ -411,7 +411,7 @@ function PreviewIdeasPageInner() {
             </button>
             <button
               type="button"
-              onClick={downloadSchedulePdf}
+              onClick={() => downloadSchedulePdf()}
               disabled={schedulePdfBusy}
               className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.08] border border-white/10 px-3.5 py-2 text-[13px] font-semibold text-white/85 hover:bg-white/[0.13] hover:text-white disabled:opacity-50"
             >

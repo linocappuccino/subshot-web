@@ -75,8 +75,8 @@ export const publicIdeasPreviewApi = {
     handle<BoardSchedule>(
       fetch(`${BASE_URL}/share/${token}/board-schedule?t=${Date.now()}`, { headers: unlockHeaders(unlockToken), cache: "no-store" })
     ),
-  boardSchedulePdfUrl: async (token: string, unlockToken: string | null) => {
-    const res = await fetch(`${BASE_URL}/share/${token}/board-schedule.pdf`, { headers: unlockHeaders(unlockToken), cache: "no-store" });
+  boardSchedulePdfUrl: async (token: string, unlockToken: string | null, order: "shooting" | "story" = "shooting") => {
+    const res = await fetch(`${BASE_URL}/share/${token}/board-schedule.pdf?order=${order}`, { headers: unlockHeaders(unlockToken), cache: "no-store" });
     if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
     return URL.createObjectURL(await res.blob());
   },
