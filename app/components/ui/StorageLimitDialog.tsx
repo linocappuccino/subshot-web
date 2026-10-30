@@ -12,9 +12,12 @@ import { useApi } from "@/lib/useApi";
  *   storage-tier picker, PATCH /teams/{id}/storage-tier — no new payment flow), members the hint to ask the owner.
  * - "subshot:storage-warning" (an upload response at ≥ 90 %): a small dismissible bar at the bottom, at most
  *   once per team and browser session — not intrusive. Same event pattern as InsufficientCreditsDialog. */
-type Detail = { used_bytes?: number; limit_bytes?: number; team_id?: string };
+type Detail = { used_bytes?: number; limit_bytes?: number; team_id?: string | null; scope?: "team" | "trial" };
+// 2026-10-30, Lino: single users in the trial have 1 GB (backend TRIAL_STORAGE_LIMIT_GB) — «Team erstellen» instead
 
 const gb = (b?: number) => ((b ?? 0) / 1024 / 1024 / 1024).toFixed(1);
+/** the limit as people say it: 1, 50, 100 (GB) */
+const gbLimit = (b?: number) => Number(((b ?? 0) / 1024 / 1024 / 1024).toFixed(1));
 
 export function StorageLimitDialog() {
   const { t } = useLanguage();
@@ -46,11 +49,12 @@ export function StorageLimitDialog() {
       setWarn(null);
       setFull(d);
       setIsOwner(null);
-      ownerOf(d.team_id);
+      if (d.scope !== "trial") ownerOf(d.team_id ?? undefined);
     }
     function onWarning(e: Event) {
-      const d = (e as CustomEvent<Detail>).detail ?? {};
-      const key = `subshot-storage-warning-${d.team_id ?? ""}`;
+      const raw = (e as CustomEvent<Detail>).detail ?? {};
+      const d: Detail = raw.team_id === "trial" ? { ...raw, team_id: null, scope: "trial" } : raw;
+      const key = `subshot-storage-warning-${raw.team_id ?? ""}`;
       try {
         if (sessionStorage.getItem(key)) return;
         sessionStorage.setItem(key, "1");
@@ -59,7 +63,7 @@ export function StorageLimitDialog() {
       }
       if (shownRef.current) return;
       setWarn(d);
-      ownerOf(d.team_id);
+      if (d.scope !== "trial") ownerOf(d.team_id ?? undefined);
     }
     window.addEventListener("subshot:storage-limit", onLimit);
     window.addEventListener("subshot:storage-warning", onWarning);
@@ -71,8 +75,35 @@ export function StorageLimitDialog() {
 
   if (typeof document === "undefined") return null;
 
+  if (full && full.scope === "trial") {
+    return createPortal(
+      <div className="fixed inset-0 z-[120] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFull(null)} />
+        <div className="relative w-full max-w-sm bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl p-5">
+          <h3 className="font-semibold mb-1.5">{t("storageLimit.title")}</h3>
+          <p className="text-sm text-white/60 mb-2">{t("storageLimit.trialMessage", { used: gb(full.used_bytes), limit: gbLimit(full.limit_bytes) })}</p>
+          <div className="mt-4 flex justify-end gap-2">
+            <button onClick={() => setFull(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors">
+              {t("storageLimit.later")}
+            </button>
+            <button
+              onClick={() => {
+                setFull(null);
+                router.push("/team");
+              }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+            >
+              {t("storageLimit.createTeam")}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body
+    );
+  }
+
   if (full) {
-    const limitGb = full.limit_bytes ? Math.round(full.limit_bytes / 1024 / 1024 / 1024) : 0;
+    const limitGb = gbLimit(full.limit_bytes);
     return createPortal(
       <div className="fixed inset-0 z-[120] flex items-center justify-center p-4" role="dialog" aria-modal="true">
         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setFull(null)} />
@@ -110,18 +141,18 @@ export function StorageLimitDialog() {
       <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[110] w-[calc(100vw-32px)] max-w-md rounded-xl border border-amber-400/25 bg-[#2a2418] shadow-2xl px-4 py-3 flex items-center gap-3 text-sm">
         <span aria-hidden>⚠️</span>
         <span className="flex-1 text-amber-100/90">
-          {t("storageWarning.message", { used: gb(warn.used_bytes), limit: Math.round((warn.limit_bytes ?? 0) / 1024 / 1024 / 1024) })}
-          {isOwner === false && <span className="text-amber-100/60"> {t("storageLimit.askOwner")}</span>}
+          {t("storageWarning.message", { used: gb(warn.used_bytes), limit: gbLimit(warn.limit_bytes) })}
+          {warn.scope !== "trial" && isOwner === false && <span className="text-amber-100/60"> {t("storageLimit.askOwner")}</span>}
         </span>
-        {isOwner && (
+        {(warn.scope === "trial" || isOwner) && (
           <button
             onClick={() => {
               setWarn(null);
-              router.push("/team#storage");
+              router.push(warn.scope === "trial" ? "/team" : "/team#storage");
             }}
             className="shrink-0 rounded-lg bg-amber-400/20 px-2.5 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-400/30"
           >
-            {t("storageWarning.upgrade")}
+            {t(warn.scope === "trial" ? "storageLimit.createTeam" : "storageWarning.upgrade")}
           </button>
         )}
         <button onClick={() => setWarn(null)} aria-label={t("storageWarning.dismiss")} className="shrink-0 text-amber-100/60 hover:text-amber-100">
