@@ -7,6 +7,7 @@ import { LANGUAGE_COOKIE } from "@/lib/i18nConstants";
 import { ToastProvider } from "@/app/components/ui/Toast";
 import { TrialExpiredDialog } from "@/app/components/ui/TrialExpiredDialog";
 import { InsufficientCreditsDialog } from "@/app/components/ui/InsufficientCreditsDialog";
+import { StorageLimitDialog } from "@/app/components/ui/StorageLimitDialog";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -89,6 +90,7 @@ export default async function RootLayout({
           <ToastProvider>{children}</ToastProvider>
           <TrialExpiredDialog />
           <InsufficientCreditsDialog />
+          <StorageLimitDialog />
         </body>
       </html>
     </ClerkProvider>

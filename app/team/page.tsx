@@ -14,7 +14,7 @@ import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
 import { useLanguage } from "@/lib/i18n";
-import type { SeatPrice, Team, TeamMember, TeamRole } from "@/lib/types";
+import type { SeatPrice, Team, TeamMember, TeamRole, TeamStorageUsage } from "@/lib/types";
 import { SEAT_MIN, SEAT_MAX, STORAGE_TIERS_GB, STORAGE_TIER_MIN_GB, STORAGE_TIER_MAX_GB, chf, formatStorageTierGb } from "@/lib/seats";
 
 export default function TeamPage() {
@@ -68,6 +68,12 @@ function TeamPageInner() {
   // storage IS changeable after all: "erhöhen geht sofort, verkleinern
   // erst auf den nächsten Abrechnungszyklus").
   const [storageTierDraft, setStorageTierDraft] = useState(STORAGE_TIERS_GB[0]);
+  // 2026-10-30, Lino: «Speicher voll → Hinweis + direkt upgraden» — banner at ≥ 90 %, /team#storage scrolls here
+  const [storageUsage, setStorageUsage] = useState<TeamStorageUsage | null>(null);
+  useEffect(() => {
+    if (!storageUsage || typeof window === "undefined" || window.location.hash !== "#storage") return;
+    document.getElementById("storage")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [storageUsage]);
   const [savingStorageTier, setSavingStorageTier] = useState(false);
 
   // 2026-07-18 (Todoist #203, Lino: "Man kann seinen Teamnamen nicht
@@ -114,8 +120,9 @@ function TeamPageInner() {
         setSeatDraft(mine.seat_count);
         setStorageTierDraft(mine.storage_tier_gb);
         setTeamNameDraft(mine.name);
-        const m = await api.teamMembers(mine.id);
+        const [m, usage] = await Promise.all([api.teamMembers(mine.id), api.teamStorageUsage(mine.id).catch(() => null)]);
         setMembers(m);
+        setStorageUsage(usage);
       }
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("teamPage.loadFailed"));
@@ -410,7 +417,22 @@ function TeamPageInner() {
                   sofort, verkleinern erst auf den nächsten
                   Abrechnungszyklus"), same button-grid picker as the
                   create-team form. */}
-              <div className="mt-5 pt-4 border-t border-white/8">
+              <div id="storage" className="mt-5 pt-4 border-t border-white/8 scroll-mt-24">
+                {storageUsage && storageUsage.used_bytes >= storageUsage.tier_bytes * 0.9 && (
+                  <div
+                    className={`mb-3 rounded-lg border px-3 py-2 text-sm ${
+                      storageUsage.used_bytes >= storageUsage.tier_bytes
+                        ? "border-red-400/30 bg-red-500/10 text-red-200"
+                        : "border-amber-400/30 bg-amber-400/10 text-amber-100"
+                    }`}
+                  >
+                    {t(storageUsage.used_bytes >= storageUsage.tier_bytes ? "teamPage.storageFull" : "teamPage.storageAlmostFull", {
+                      used: (storageUsage.used_bytes / 1024 / 1024 / 1024).toFixed(1),
+                      limit: storageUsage.tier_gb,
+                      pct: Math.floor((storageUsage.used_bytes / storageUsage.tier_bytes) * 100),
+                    })}
+                  </div>
+                )}
                 <div className="flex items-baseline justify-between mb-2">
                   <Label>{t("teamPage.storageTier")}</Label>
                   <span className="text-sm font-semibold">{formatStorageTierGb(storageTierDraft)}</span>

@@ -222,14 +222,21 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       // out here once, centrally, instead of at each of the ~30 call sites.
       let message = text || res.statusText;
       let code: string | undefined;
+      let parsedBody: Record<string, unknown> | null = null;
       if (text) {
         try {
           const parsed = JSON.parse(text);
+          parsedBody = parsed && typeof parsed === "object" ? parsed : null;
           if (typeof parsed?.detail === "string") message = parsed.detail;
           if (typeof parsed?.error === "string") code = parsed.error;
         } catch {
           // Not JSON (e.g. a plain-text 502 from the proxy) — keep the raw text.
         }
+      }
+      // 2026-10-30, Lino: «Speicher voll → klarer Hinweis + direkt upgraden» — one shared dialog
+      // (StorageLimitDialog), same pattern as trial_expired / insufficient_credits below
+      if (code === "storage_limit_reached" && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("subshot:storage-limit", { detail: { ...(parsedBody ?? {}), message } }));
       }
       if (code === "trial_expired" && typeof window !== "undefined") {
         // One shared dialog (see TrialExpiredDialog) instead of a toast per
@@ -245,6 +252,14 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         window.dispatchEvent(new CustomEvent("subshot:insufficient-credits", { detail: message }));
       }
       throw new ApiError(res.status, message, code);
+    }
+    // ≥ 90 % of the team's storage: the upload went through, a gentle one-time hint (StorageLimitDialog)
+    const storageWarning = res.headers.get("X-Storage-Warning");
+    if (storageWarning && typeof window !== "undefined") {
+      const [used, limit, teamId] = storageWarning.split("/");
+      window.dispatchEvent(
+        new CustomEvent("subshot:storage-warning", { detail: { used_bytes: Number(used), limit_bytes: Number(limit), team_id: teamId } })
+      );
     }
     if (res.status === 204) return undefined as T;
     return res.json();
