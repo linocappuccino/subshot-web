@@ -7,6 +7,7 @@ import { NotificationBell } from "./NotificationBell";
 import { CreditsNavLink } from "./CreditsNavLink";
 import { LanguageDialog } from "./LanguageDialog";
 import { NotificationSettingsDialog } from "./NotificationSettingsDialog";
+import { McpConnectDialog } from "./McpConnectDialog";
 import { LanguageProvider, useLanguage } from "@/lib/i18n";
 import { useApi } from "@/lib/useApi";
 import type { TeamStorageUsage } from "@/lib/types";
@@ -76,6 +77,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
   const { language, setLanguage, t } = useLanguage();
   const [showLanguageDialog, setShowLanguageDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showMcpDialog, setShowMcpDialog] = useState(false);
   const [teamName, setTeamName] = useState<string | null>(teamInfoCache?.teamName ?? null);
   const [teamLogoUrl, setTeamLogoUrl] = useState<string | null>(teamInfoCache?.teamLogoUrl ?? null);
   // 2026-07-18, Lino: "ich sehe den Team Button nicht mehr wo ich die Team
@@ -227,6 +229,19 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
               </svg>
               {t("nav.devlog")}
             </Link>
+            {/* 2026-10-31, Lino: MCP-Button — öffnet die Anleitung «Subshot mit deiner KI verbinden» */}
+            <button
+              type="button"
+              onClick={() => setShowMcpDialog(true)}
+              title={t("mcp.title")}
+              aria-label={t("nav.mcp")}
+              className="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 2v6M15 2v6" /><path d="M6 8h12v3a6 6 0 0 1-12 0z" /><path d="M12 17v5" />
+              </svg>
+              <span className="hidden md:inline">{t("nav.mcp")}</span>
+            </button>
             <CreditsNavLink />
             {showTeamLink && (
               <Link href="/team" className="flex items-center gap-1.5 text-sm text-white/60 hover:text-white transition-colors">
@@ -262,6 +277,15 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
                     </svg>
                   }
                 />
+                <UserButton.Action
+                  label={t("avatar.mcp")}
+                  onClick={() => setShowMcpDialog(true)}
+                  labelIcon={
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 2v6M15 2v6" /><path d="M6 8h12v3a6 6 0 0 1-12 0z" /><path d="M12 17v5" />
+                    </svg>
+                  }
+                />
                 {/* 2026-10-28 — AI apps connected through the Subshot MCP connector */}
                 <UserButton.Link
                   label={t("avatar.aiApps")}
@@ -292,6 +316,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
       <main className="flex-1 flex flex-col">{children}</main>
       <LanguageDialog open={showLanguageDialog} onClose={() => setShowLanguageDialog(false)} />
       <NotificationSettingsDialog open={showNotificationSettings} onClose={() => setShowNotificationSettings(false)} />
+      <McpConnectDialog open={showMcpDialog} onClose={() => setShowMcpDialog(false)} />
     </div>
   );
 }
