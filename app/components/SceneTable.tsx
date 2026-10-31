@@ -334,8 +334,8 @@ function SceneRow({
               e.stopPropagation();
               onToggleNotShot(scene);
             }}
-            aria-label="Nicht geschossen"
-            title="Nicht geschossen"
+            aria-label="Cancel"
+            title="Cancel"
           >
             <span
               className="inline-flex w-5 h-5 rounded-full border-[1.5px] items-center justify-center transition-colors"

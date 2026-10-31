@@ -636,7 +636,7 @@ export function SceneCard({
                     close();
                   }}
                 >
-                  Nicht mehr im Kasten
+                  Tick off aufheben
                 </MenuItem>
                 {onDuplicate && (
                   <MenuItem
@@ -737,12 +737,12 @@ export function SceneCard({
             )}
             {scene.not_shot ? (
               <Pill tone="danger" icon={<XIcon size={9} />}>
-                NICHT GESCHOSSEN
+                Cancel
               </Pill>
             ) : (
               scene.completed && (
                 <Pill tone="good" icon={<CheckIcon />}>
-                  IM KASTEN
+                  Tick off
                 </Pill>
               )
             )}
@@ -1047,8 +1047,8 @@ export function SceneCard({
         </Menu>
         <button
           onClick={toggleNotShot}
-          aria-label="Nicht geschossen"
-          title="Nicht geschossen"
+          aria-label="Cancel"
+          title="Cancel"
           className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
             scene.not_shot ? "bg-red-500/25 text-red-400" : "bg-white/8 text-white/40 hover:bg-red-500/15 hover:text-red-400"
           }`}
@@ -1062,7 +1062,7 @@ export function SceneCard({
           }`}
         >
           {scene.completed && <CheckIcon />}
-          Im Kasten
+          Tick off
         </button>
       </div>
         </>
