@@ -737,12 +737,12 @@ export function SceneCard({
             )}
             {scene.not_shot ? (
               <Pill tone="danger" icon={<XIcon size={9} />}>
-                Cancel
+                Cancelled
               </Pill>
             ) : (
               scene.completed && (
                 <Pill tone="good" icon={<CheckIcon />}>
-                  Tick off
+                  Ticked off
                 </Pill>
               )
             )}

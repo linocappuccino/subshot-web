@@ -1089,8 +1089,8 @@ const translations = {
     "projectSchedule.refresh": "Aktualisieren",
     "projectSchedule.pdf": "Drehplan als PDF",
     "projectSchedule.colOrder": "Folge",
-    "projectSchedule.statusDone": "Tick off",
-    "projectSchedule.statusNotShot": "Cancel",
+    "projectSchedule.statusDone": "Ticked off",
+    "projectSchedule.statusNotShot": "Cancelled",
     "projectSchedule.statProgress": "Ticked off · {notShot} Cancelled",
     "projectSchedule.statProgressValue": "{done} von {total}",
     "callsheet.liveSchedule": "Drehplan (live)",
@@ -1394,7 +1394,7 @@ const translations = {
     "sceneTable.colGoodTake": "Good Take",
     "sceneTable.colAssignee": "Zuständig",
     "sceneTable.colShots": "Einst.",
-    "sceneTable.colDone": "Tick off",
+    "sceneTable.colDone": "Ticked off",
     "sceneTable.dragSceneAria": "Szene verschieben",
     "sceneTable.projectInfo": "Projektinfo",
     "sceneTable.unnamedScene": "Unbenannte Szene",
@@ -1609,8 +1609,8 @@ const translations = {
     "publicIdeaTile.feedbackCount": "{count} Feedback{suffix}",
 
     // PublicSceneCard.tsx
-    "publicSceneCard.inTheCan": "Tick off",
-    "publicSceneCard.notShot": "Cancel",
+    "publicSceneCard.inTheCan": "Ticked off",
+    "publicSceneCard.notShot": "Cancelled",
     "publicSceneCard.shotsCountSingular": "{count} Einstellung",
     "publicSceneCard.shotsCountPlural": "{count} Einstellungen",
 
@@ -2706,8 +2706,8 @@ const translations = {
     "projectSchedule.refresh": "Refresh",
     "projectSchedule.pdf": "Shooting schedule as PDF",
     "projectSchedule.colOrder": "Order",
-    "projectSchedule.statusDone": "Tick off",
-    "projectSchedule.statusNotShot": "Cancel",
+    "projectSchedule.statusDone": "Ticked off",
+    "projectSchedule.statusNotShot": "Cancelled",
     "projectSchedule.statProgress": "Ticked off · {notShot} Cancelled",
     "projectSchedule.statProgressValue": "{done} of {total}",
     "callsheet.liveSchedule": "Shooting schedule (live)",
@@ -3009,7 +3009,7 @@ const translations = {
     "sceneTable.colGoodTake": "Good Take",
     "sceneTable.colAssignee": "Assigned to",
     "sceneTable.colShots": "Shots",
-    "sceneTable.colDone": "Tick off",
+    "sceneTable.colDone": "Ticked off",
     "sceneTable.dragSceneAria": "Move scene",
     "sceneTable.projectInfo": "Project info",
     "sceneTable.unnamedScene": "Untitled scene",
@@ -3218,8 +3218,8 @@ const translations = {
     "publicIdeaTile.feedbackCount": "{count} Feedback{suffix}",
 
     // PublicSceneCard.tsx
-    "publicSceneCard.inTheCan": "Tick off",
-    "publicSceneCard.notShot": "Cancel",
+    "publicSceneCard.inTheCan": "Ticked off",
+    "publicSceneCard.notShot": "Cancelled",
     "publicSceneCard.shotsCountSingular": "{count} shot",
     "publicSceneCard.shotsCountPlural": "{count} shots",
 
