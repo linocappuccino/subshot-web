@@ -58,6 +58,7 @@ import {
   type LutPreviewElement,
   type TimetableElement,
   MEDIA_SLOTS,
+  boardImageConfig,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
 import { BoardTimetableContext } from "./BoardTimetable";
@@ -412,6 +413,15 @@ export function IdeaBoard({
   const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
   const dataRef = useRef(data);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  // viewport size in CSS px (for culling far-away nodes in the iOS embed, see cullRect)
+  const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const node = viewportRef.current;
+    if (!node || !boardImageConfig.cull) return;
+    const ro = new ResizeObserver(() => setViewportSize({ w: node.clientWidth, h: node.clientHeight }));
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
   // 2026-10-08 (Lino, iPad: "immer noch super unscharf und verpixelt"):
   // WebKit on Apple devices paints a composited layer at device resolution
   // and IGNORES CSS scale transforms (GraphicsLayerCA::updateRootRelativeScale
@@ -3277,6 +3287,16 @@ export function IdeaBoard({
     return { x: el.x + x * el.w, y: el.y + y * el.h };
   }
 
+  // world-space rectangle that is rendered when culling is on (boardImageConfig.cull, the iOS embed): the visible
+  // area plus one screen in every direction
+  const cullRect = (() => {
+    if (!boardImageConfig.cull || !viewportSize.w) return null;
+    const s = Math.max(0.01, view.scale);
+    const w = viewportSize.w / s, h = viewportSize.h / s;
+    const x0 = -view.x / s, y0 = -view.y / s;
+    return { x1: x0 - w, y1: y0 - h, x2: x0 + 2 * w, y2: y0 + 2 * h };
+  })();
+
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
     <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
@@ -3407,6 +3427,10 @@ export function IdeaBoard({
 
         {elements.map((el, rank) => {
           if (hidden.has(el.id)) return null;
+          // 2026-11-01 (iOS out of memory, Apfelkiste board): in the app's web view only nodes in / near the
+          // visible area are rendered (one screen of margin around it) — far-away cards cost no memory there
+          if (cullRect && !selection.has(el.id) && editingId !== el.id && el.type !== "group" &&
+              (el.x > cullRect.x2 || el.y > cullRect.y2 || el.x + el.w < cullRect.x1 || el.y + Math.max(el.h, 40) < cullRect.y1)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;

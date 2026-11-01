@@ -23,13 +23,21 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   // 2026-11-01 (iOS «out of memory»): the iPhone's 3× screen made every card ask for the 2048-px image — in the app
   // the board plans for at most 2× (looks the same on a phone); after a crash the app reloads with ?lite=1
   // (Speichersparmodus): only the ≤1000-px R2 thumbs, 1×. Originals stay untouched for downloads.
+  // 2026-11-01, 2nd round (crash stayed): the app's board is ALWAYS in saving mode now — images planned for 1×
+  // (≤1000-px R2 thumb at normal zoom, mid only when zoomed in), and no backdrop-filter blur (below): on iOS the
+  // frosted group frame of the Apfelkiste board (2308×2318 board px) became one huge CoreAnimation backdrop layer.
   const [lite] = useState(() => {
     const on = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("lite") === "1";
-    boardImageConfig.densityCap = on ? 1 : 2;
+    boardImageConfig.densityCap = 1;
     boardImageConfig.thumbOnly = on;
+    boardImageConfig.cull = true; // only nodes in / near the visible area are rendered
     return on;
   });
   const [liteNote, setLiteNote] = useState(lite);
+  useEffect(() => {
+    document.documentElement.classList.add("embed-lite");
+    return () => document.documentElement.classList.remove("embed-lite");
+  }, []);
 
   // the page itself never scrolls — iOS scrolled the whole web view when a text field on the board
   // got focus, which pushed the idea header out of sight
@@ -80,6 +88,10 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   }
   return (
     <div className="fixed inset-0 bg-[#161616]">
+      {/* (the idea window renders through a portal into <body> — the class sits on <html>, see the effect above).
+          No transitions inside board nodes: a tap sets :hover on iOS, the fading download button / connector dots
+          became animated layers and pulled the whole board into one giant composited layer (WebKit: 530 → 1120 MB). */}
+      <style>{`.embed-lite *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}.embed-lite [data-group-body]{background:rgba(28,28,30,0.88)!important}.embed-lite [data-el-id] *{transition:none!important}`}</style>
       {liteNote && (
         <button
           onClick={() => setLiteNote(false)}

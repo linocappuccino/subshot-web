@@ -1084,7 +1084,7 @@ export function startDownload(url: string) {
  * web/… ≤4096 px; the original stays untouched for downloads). `densityCap` limits the device-pixel ratio the
  * browser plans for (iPhone = 3× → a 420 px card asked for the 2048-px mid version: 17 cards ≈ 160 MB decoded);
  * `thumbOnly` (Speichersparmodus, ?lite=1) never goes past the ≤1000 px thumb. Desktop: unchanged (no cap). */
-export const boardImageConfig = { densityCap: Infinity, thumbOnly: false };
+export const boardImageConfig = { densityCap: Infinity, thumbOnly: false, cull: false };
 
 export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number, srcset?: string | null) {
   if (!src) return { src: thumb ?? undefined };
