@@ -74,7 +74,7 @@ import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
-import { BoardDownloadContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
+import { BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
 import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
 import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
 
@@ -3280,6 +3280,7 @@ export function IdeaBoard({
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
     <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
+    <BoardImageZoomContext.Provider value={settledScale <= 0.3 ? 0.3 : settledScale <= 0.55 ? 0.55 : settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
     <BoardTimetableContext.Provider value={timetableCtx}>
     <BoardScaleContext.Provider value={viewScaleRef}>
     <div
@@ -4627,6 +4628,7 @@ export function IdeaBoard({
     </div>
     </BoardScaleContext.Provider>
     </BoardTimetableContext.Provider>
+    </BoardImageZoomContext.Provider>
     </BoardZoomContext.Provider>
     </BoardDownloadContext.Provider>
   );

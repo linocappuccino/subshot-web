@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { IdeaFocusView } from "@/app/components/IdeaFocusView";
 import { useApi } from "@/lib/useApi";
 import type { Idea, Member } from "@/lib/types";
+import { boardImageConfig } from "@/lib/board";
 
 // 2026-10-12 — the idea board for the iOS app's embedded web view (Lino chose "Web-Board
 // eingebettet"): just the idea window (IdeaFocusView: title, status, Fassungen, feedback, board,
@@ -19,6 +20,16 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   const [index, setIndex] = useState(0);
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
   const [failed, setFailed] = useState(false);
+  // 2026-11-01 (iOS «out of memory»): the iPhone's 3× screen made every card ask for the 2048-px image — in the app
+  // the board plans for at most 2× (looks the same on a phone); after a crash the app reloads with ?lite=1
+  // (Speichersparmodus): only the ≤1000-px R2 thumbs, 1×. Originals stay untouched for downloads.
+  const [lite] = useState(() => {
+    const on = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("lite") === "1";
+    boardImageConfig.densityCap = on ? 1 : 2;
+    boardImageConfig.thumbOnly = on;
+    return on;
+  });
+  const [liteNote, setLiteNote] = useState(lite);
 
   // the page itself never scrolls — iOS scrolled the whole web view when a text field on the board
   // got focus, which pushed the idea header out of sight
@@ -69,6 +80,14 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   }
   return (
     <div className="fixed inset-0 bg-[#161616]">
+      {liteNote && (
+        <button
+          onClick={() => setLiteNote(false)}
+          className="absolute left-1/2 top-14 z-[90] -translate-x-1/2 whitespace-nowrap rounded-full bg-amber-500/90 px-3 py-1.5 text-[12px] font-semibold text-black shadow-lg"
+        >
+          Dieses Board ist gross – Speichersparmodus aktiv ✕
+        </button>
+      )}
       <IdeaFocusView
         ideas={ideas}
         index={Math.min(index, ideas.length - 1)}

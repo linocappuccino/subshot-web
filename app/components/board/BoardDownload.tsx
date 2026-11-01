@@ -11,6 +11,10 @@ export const BoardDownloadContext = createContext<((key: string, name: string) =
  * when the board is zoomed in far enough to need it */
 export const BoardZoomContext = createContext(1);
 
+/** 2026-11-01 — zoom bucket for picking image SIZES only (0.25 / 0.5 / 1 / 2 / 4): unlike BoardZoomContext it goes
+ * below 1, so a zoomed-out board asks for the small R2 variant instead of the 2048-px one (iOS out-of-memory) */
+export const BoardImageZoomContext = createContext(1);
+
 /** the board's live zoom factor (a ref, so reading it doesn't re-render) */
 export const BoardScaleContext = createContext<{ current: number }>({ current: 1 });
 
@@ -19,7 +23,7 @@ export const BoardScaleContext = createContext<{ current: number }>({ current: 1
  * it's shown at — on iPad too. */
 export function SharpImg({ className = "", ...img }: React.ImgHTMLAttributes<HTMLImageElement>) {
   // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-  return <img {...img} className={`absolute inset-0 w-full h-full ${className}`} />;
+  return <img decoding="async" {...img} className={`absolute inset-0 w-full h-full ${className}`} />;
 }
 
 export function DownloadButton({ fileKey, name, title, scale = 1, className = "" }: { fileKey: string; name: string; title: string; scale?: number; className?: string }) {

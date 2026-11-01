@@ -1,6 +1,6 @@
 "use client";
 
-import { BoardDownloadContext, BoardZoomContext, SharpImg } from "./BoardDownload";
+import { BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
 import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
@@ -282,7 +282,7 @@ function SceneNode({
   onImageSize: (w: number, h: number) => void;
   onMeasure: (h: number) => void;
 }) {
-  const zoom = useContext(BoardZoomContext);
+  const imgZoom = useContext(BoardImageZoomContext);
   const cardRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -414,7 +414,7 @@ function SceneNode({
             style={{ aspectRatio: Math.min(3, Math.max(0.5, el.image_ratio ?? 16 / 9)) }}
           >
             <SharpImg
-              {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * zoom, el.image_srcset)}
+              {...imageSources(el.image_src, el.image_thumb_src, el.image_ratio ?? 16 / 9, (el.w - 24) * imgZoom, el.image_srcset)}
               alt=""
               draggable={false}
               onLoad={(e) => onImageSize(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
@@ -844,7 +844,7 @@ function PlaceholderNode({ el, editable, labels }: { el: PlaceholderElement; edi
 }
 
 function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; missing: string }) {
-  const zoom = useContext(BoardZoomContext);
+  const imgZoom = useContext(BoardImageZoomContext);
   if (!el.src) {
     return (
       <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
@@ -855,7 +855,7 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
   return (
     <div className="relative w-full h-full rounded-lg overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5">
       <SharpImg
-        {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * zoom, el.srcset)}
+        {...imageSources(el.src, el.thumb_src, el.w / Math.max(1, el.h), el.w * imgZoom, el.srcset)}
         alt={el.name || ""}
         draggable={false}
         className="object-cover pointer-events-none select-none"

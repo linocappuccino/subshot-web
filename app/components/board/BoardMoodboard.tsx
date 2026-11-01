@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useContext } from "react";
-import { BoardScaleContext, BoardZoomContext, DownloadButton, SharpImg } from "./BoardDownload";
+import { BoardImageZoomContext, BoardScaleContext, DownloadButton, SharpImg } from "./BoardDownload";
 import {
   imageSources,
   fitMosaicRowH,
@@ -62,7 +62,7 @@ export function MoodboardNode({
   onAdd?: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const zoom = useContext(BoardZoomContext);
+  const imgZoom = useContext(BoardImageZoomContext);
   // while an image is dragged: the items as they'd be + the pointer's frame
   const [draft, setDraft] = useState<{ items: MoodboardItem[]; ghost?: MoodboardBox } | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -263,7 +263,7 @@ export function MoodboardNode({
               >
                 {it.src && (
                   <SharpImg
-                    {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * zoom, it.srcset)}
+                    {...imageSources(it.src, it.thumb_src, it.ar ?? 1, b.w * imgZoom, it.srcset)}
                     alt=""
                     draggable={false}
                     onLoad={(e) => {

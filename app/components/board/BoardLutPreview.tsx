@@ -1,7 +1,7 @@
 "use client";
 
 import { useContext, useRef, useState } from "react";
-import { BoardZoomContext, SharpImg } from "./BoardDownload";
+import { BoardImageZoomContext, BoardZoomContext, SharpImg } from "./BoardDownload";
 import { imageSources, type LutPreviewElement } from "@/lib/board";
 
 /** 2026-10-11, Lino: "LUT Preview" node — a LOG image + a .cube LUT (the graded version is rendered
@@ -39,13 +39,14 @@ export function LutPreviewNode({
   onPick?: () => void;
 }) {
   const zoom = useContext(BoardZoomContext);
+  const imgZoom = useContext(BoardImageZoomContext);
   const boxRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState(50);
   const [dragging, setDragging] = useState(false);
   const ar = el.ar && el.ar > 0 ? el.ar : 16 / 9;
   const innerW = el.w - LUT_PAD * 2;
-  const a = el.src ? imageSources(el.src, el.thumb_src, ar, innerW * zoom, el.srcset) : null;
-  const b = el.image_src ? imageSources(el.image_src, el.image_thumb_src, ar, innerW * zoom, el.image_srcset) : null;
+  const a = el.src ? imageSources(el.src, el.thumb_src, ar, innerW * imgZoom, el.srcset) : null;
+  const b = el.image_src ? imageSources(el.image_src, el.image_thumb_src, ar, innerW * imgZoom, el.image_srcset) : null;
   const leftLabel = el.mode === "compare" ? el.a_name || "1" : labels.log;
   const rightLabel = el.mode === "compare" ? el.b_name || "2" : el.lut_name || labels.lut;
 

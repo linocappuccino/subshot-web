@@ -1079,15 +1079,27 @@ export function startDownload(url: string) {
  * big web version only when the image is shown large. `cssWidth` is the
  * size it's drawn at (board px × zoom bucket); the browser adds the screen's
  * pixel density itself. */
+/** 2026-11-01, Lino («Das Board musste neu geladen werden (out of memory)» in the iOS app): how big the board's
+ * DISPLAY images may get. Every variant lives in R2 (boards/ideas/<id>/web/t-… ≤1000 px, web/m-… ≤2048 px,
+ * web/… ≤4096 px; the original stays untouched for downloads). `densityCap` limits the device-pixel ratio the
+ * browser plans for (iPhone = 3× → a 420 px card asked for the 2048-px mid version: 17 cards ≈ 160 MB decoded);
+ * `thumbOnly` (Speichersparmodus, ?lite=1) never goes past the ≤1000 px thumb. Desktop: unchanged (no cap). */
+export const boardImageConfig = { densityCap: Infinity, thumbOnly: false };
+
 export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number, srcset?: string | null) {
   if (!src) return { src: thumb ?? undefined };
+  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  const cap = boardImageConfig.densityCap;
+  // `sizes` is multiplied by the device pixel ratio by the browser — scale it down so the effective ratio ≤ cap
+  const css = Math.max(40, Math.round(cssWidth * (dpr > cap ? cap / dpr : 1)));
+  if (boardImageConfig.thumbOnly && thumb) return { src: thumb };
   // the server knows every size and its real pixel width (thumb/mid/full)
-  if (srcset) return { src: thumb ?? src, srcSet: srcset, sizes: `${Math.max(40, Math.round(cssWidth))}px` };
+  if (srcset) return { src: thumb ?? src, srcSet: srcset, sizes: `${css}px` };
   if (!thumb) return { src };
   const ar = aspect > 0 ? aspect : 1;
   const tw = Math.round(ar >= 1 ? 1000 : 1000 * ar);
   const ww = Math.round(ar >= 1 ? 2400 : 2400 * ar);
-  return { src: thumb, srcSet: `${thumb} ${tw}w, ${src} ${ww}w`, sizes: `${Math.max(40, Math.round(cssWidth))}px` };
+  return { src: thumb, srcSet: `${thumb} ${tw}w, ${src} ${ww}w`, sizes: `${css}px` };
 }
 
 
