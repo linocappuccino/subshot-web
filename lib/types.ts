@@ -138,6 +138,8 @@ export interface Scene {
   scheduled_at: string | null;
   duration_minutes: number | null;
   image_url: string | null;
+  /** 2026-11-01 — ≤800-px WebP display version in R2 (null until rendered); image_url = original (download / full screen) */
+  image_thumb_url?: string | null;
   /** Survives modal close/reopen + reload (backend-tracked, not component
    * state) — see Scene.image_generating in models.py for why. */
   image_generating: boolean;
@@ -189,6 +191,8 @@ export interface Shot {
   project_id: string;
   scene_id: string | null;
   image_url: string | null;
+  /** 2026-11-01 — ≤800-px display version (see Scene.image_thumb_url) */
+  image_thumb_url?: string | null;
   description: string | null;
   duration_seconds: number | null;
   camera_angle: string | null;

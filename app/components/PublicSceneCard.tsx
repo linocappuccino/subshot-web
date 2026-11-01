@@ -45,7 +45,7 @@ function ShotRow({
     <div className="flex gap-2.5 items-center p-2 rounded-lg bg-white/[0.03]">
       {shot.image_url ? (
         <PublicSceneMedia
-          imageUrl={shot.image_url}
+          imageUrl={shot.image_thumb_url ?? shot.image_url}
           className="w-[60px] h-[46px] object-cover rounded-md shrink-0"
         />
       ) : (
@@ -211,7 +211,7 @@ export function PublicSceneCard({
 
       {scene.image_url && (
         <PublicSceneMedia
-          imageUrl={scene.image_url}
+          imageUrl={scene.image_thumb_url ?? scene.image_url}
           className="w-full aspect-video object-cover rounded-xl mb-3 block"
         />
       )}

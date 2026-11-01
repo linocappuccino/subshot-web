@@ -197,7 +197,7 @@ function SceneRow({
   const { t } = useLanguage();
   // Same fix as SceneCard's tile view — pin by path so the 12s live-update
   // poll's freshly re-signed image_url doesn't flicker/reload this thumbnail.
-  const pinnedImageUrl = usePinnedUrl(scene.image_url);
+  const pinnedImageUrl = usePinnedUrl(scene.image_thumb_url ?? scene.image_url);
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({ id: scene.id, data: { sectionId: scene.section_id ?? null } });
   const color = PRIORITY_COLORS[scene.priority ?? "none"];
   // 2026-07-14: read-only display of possibly several assignees — editing

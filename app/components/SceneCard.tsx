@@ -396,7 +396,7 @@ export function SceneCard({
   // re-signed fresh on every 12s poll, and without this the tile's cover
   // photo visibly flickers/reloads on every tick even though it's still
   // the exact same file.
-  const pinnedImageUrl = usePinnedUrl(scene.image_url);
+  const pinnedImageUrl = usePinnedUrl(scene.image_thumb_url ?? scene.image_url); // 800-px display version (2026-11-01)
   const api = useApi();
   const toast = useToast();
   const { t } = useLanguage();
@@ -1105,7 +1105,7 @@ export function ShotRowContent({
   dragHandleProps?: { attributes: DraggableAttributes; listeners: DraggableSyntheticListeners };
 }) {
   const { t } = useLanguage();
-  const pinnedImageUrl = usePinnedUrl(shot.image_url);
+  const pinnedImageUrl = usePinnedUrl(shot.image_thumb_url ?? shot.image_url);
   return (
     <div className="flex gap-2 items-center bg-white/[0.03] hover:bg-white/[0.06] rounded-lg p-2 transition-colors">
       {dragHandleProps && (
