@@ -367,9 +367,11 @@ export function Cell({
     case "image":
       return (
         <div className="min-w-0">
-          {row.image && (
+          {row.image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={row.image} alt="" draggable={false} className="w-full aspect-video object-cover rounded-md pointer-events-none select-none" />
+            <img src={row.image} alt="" loading="lazy" decoding="async" draggable={false} className="w-full aspect-video object-cover rounded-md bg-white/5 pointer-events-none select-none" />
+          ) : (
+            <div className="w-full aspect-video rounded-md bg-white/[0.04] border border-white/[0.06]" />
           )}
         </div>
       );
@@ -422,10 +424,13 @@ export function CompactRow({
   onGoTo,
   goToLabel,
   priorityLabel,
+  imageAfterNumber = false,
 }: {
   row: TimetableRow;
   columns: TimetableColumn[];
   striped: boolean;
+  /** 2026-11-02 (Drehplan): the image sits right after the number instead of under the text */
+  imageAfterNumber?: boolean;
   placeColor: string | null;
   onGoTo?: (id: string) => void;
   goToLabel: string;
@@ -437,6 +442,15 @@ export function CompactRow({
   return (
     <div className={`flex gap-3 rounded-lg px-2 py-2.5 border-t border-white/[0.06] first:border-t-0 ${striped ? "bg-white/[0.025]" : ""}`}>
       {has("number") && <Cell col="number" row={row} placeColor={placeColor} onGoTo={onGoTo} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
+      {imageAfterNumber && has("image") && (
+        <div className="w-20 shrink-0 pt-0.5">
+          {row.image ? (
+            <Cell col="image" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />
+          ) : (
+            <div className="w-full aspect-video rounded-md bg-white/[0.04] border border-white/[0.06]" />
+          )}
+        </div>
+      )}
       <div className="min-w-0 flex-1 flex flex-col gap-1.5">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pt-1">
           {has("title") && row.title && <span className="min-w-0 text-[13px] font-semibold leading-snug text-white/95 break-words">{row.title}</span>}
@@ -458,7 +472,7 @@ export function CompactRow({
         )}
         {has("description") && row.description && <Cell col="description" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />}
         {has("dialogue") && row.dialogue.length > 0 && <DialogueCell lines={row.dialogue} />}
-        {has("image") && row.image && (
+        {!imageAfterNumber && has("image") && row.image && (
           <div className="w-40 max-w-full">
             <Cell col="image" row={row} placeColor={placeColor} goToLabel={goToLabel} priorityLabel={priorityLabel} />
           </div>

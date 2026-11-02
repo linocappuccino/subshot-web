@@ -189,8 +189,10 @@ export function ProjectScheduleView({
   const columns = SCHEDULE_COLUMNS;
   const timeCols: TimetableColumn[] = ["start", "end", "duration"];
   const editWidth: Partial<Record<TimetableColumn, string>> = { start: "92px", end: "72px", duration: "76px" };
+  // the storyboard image: a fixed small 16:9 thumbnail (2026-11-02)
+  const fixedWidth: Partial<Record<TimetableColumn, string>> = { image: "92px" };
   const grid = {
-    gridTemplateColumns: (editable ? ["66px"] : []).concat(columns.map((c) => (editable && editWidth[c]) || COL_WIDTH[c])).join(" "),
+    gridTemplateColumns: (editable ? ["66px"] : []).concat(columns.map((c) => (editable && editWidth[c]) || fixedWidth[c] || COL_WIDTH[c])).join(" "),
   };
   const compact = width < columns.reduce((sum, c) => sum + COL_MIN[c] + 12, 32) + (editable ? 140 : 0);
   const colLabel = (c: TimetableColumn) => (c === "group" ? t("projectSchedule.colIdea") : t(`ideaBoard.timetable.col.${c}` as TranslationKey));
@@ -306,7 +308,7 @@ export function ProjectScheduleView({
       return (
         <div key={row.id} className={`rounded-lg ${tone} ${logistics ? "opacity-90" : ""}`}>
           {badge && <div className="flex flex-wrap gap-1 px-2 pt-2">{badge}</div>}
-          <CompactRow row={row} columns={editable ? columns.filter((c) => !timeCols.includes(c)) : columns} striped={false} placeColor={null} goToLabel="" priorityLabel="" />
+          <CompactRow row={row} columns={editable ? columns.filter((c) => !timeCols.includes(c)) : columns} striped={false} placeColor={null} goToLabel="" priorityLabel="" imageAfterNumber />
           {editable && (
             <div className="flex flex-wrap items-end gap-2 px-2 pb-2.5 pl-[52px]">
               {arrows}

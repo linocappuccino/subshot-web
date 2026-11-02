@@ -323,6 +323,8 @@ export interface ScheduleScene {
   status?: "open" | "done" | "not_shot";
   overlap?: boolean;
   no_end?: boolean;
+  /** 2026-11-02 — storyboard image (small R2 display version) */
+  image?: string | null;
 }
 
 export interface SchedulePause {
@@ -372,7 +374,8 @@ export function moveInOrder(keys: string[], key: string, dir: -1 | 1): string[] 
 export const LOGISTICS_TAG = "Logistik";
 
 /** the columns of the project Drehplan — the node's default set with the idea in the group column */
-export const SCHEDULE_COLUMNS: TimetableColumn[] = ["number", "group", "title", "start", "end", "duration", "location", "description", "dialogue"];
+// 2026-11-02, Lino: the storyboard image right after the number
+export const SCHEDULE_COLUMNS: TimetableColumn[] = ["number", "image", "group", "title", "start", "end", "duration", "location", "description", "dialogue"];
 
 export function isLogistics(s: ScheduleScene): boolean {
   return s.logistics ?? (Array.isArray(s.tags) && s.tags.includes(LOGISTICS_TAG));
@@ -396,7 +399,7 @@ export function scheduleRow(s: ScheduleScene, index: number): TimetableRow {
     dialogue: Array.isArray(s.dialogue) ? s.dialogue : [],
     priority: s.priority ?? null,
     tags: [],
-    image: null,
+    image: s.image ?? null, // small R2 display version (t-… WebP), see project_schedule.compute
   };
 }
 
