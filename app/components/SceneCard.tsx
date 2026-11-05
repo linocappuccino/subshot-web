@@ -752,6 +752,9 @@ export function SceneCard({
               ? renderHighlightedText(scene.name, "name", highlightAnnotations, highlightedAnnotationId, onAnnotationClick)
               : t("scene.unnamed")}
           </h3>
+          {!scene.scheduled_at && scene.duration_minutes ? (
+            <div className="flex flex-wrap gap-1.5 mb-1.5"><Pill icon={<CalendarIcon />} className="rounded-lg">{scene.duration_minutes} Min.</Pill></div>
+          ) : null}
           {(scene.scheduled_at || sceneWeather || (scene.location_address && !shotlistPlaces)) && (
             <div className="flex flex-wrap gap-1.5 mb-1.5">
               {scene.scheduled_at && (

@@ -228,6 +228,7 @@ export function CallsheetModal({ open, onClose, projectId }: { open: boolean; on
                   {/* the live Drehplan: same tiles, order switch and table as the Timetable view */}
                   <ProjectScheduleView
                     embedded
+                    live
                     load={() => api.boardSchedule(projectId)}
                     pollStatus={() => api.boardScheduleStatus(projectId)}
                     onClose={() => {}}

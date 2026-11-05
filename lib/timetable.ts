@@ -321,6 +321,9 @@ export interface ScheduleScene {
   logistics?: boolean;
   /** 2026-10-30 — from the shot list: «im Kasten» (done) / «nicht gedreht» (not_shot) / open */
   status?: "open" | "done" | "not_shot";
+  /** 2026-11-04 — a card linked to a shot-list scene (can be ticked off) + when it was ticked off / cancelled (ISO UTC) */
+  linked?: boolean;
+  done_at?: string | null;
   overlap?: boolean;
   no_end?: boolean;
   /** 2026-11-02 — storyboard image (small R2 display version) */

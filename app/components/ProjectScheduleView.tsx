@@ -30,6 +30,60 @@ import {
   type TimetableRow,
 } from "@/lib/timetable";
 import { COL_MIN, COL_WIDTH, Cell, CompactRow } from "./board/BoardTimetable";
+import { fmtCountdown, liveModel, type LiveModel } from "@/lib/liveClock";
+
+/** the running countdown of the current scene: planned minutes − time since it started; negative = red + «Behind schedule» */
+function LiveCountdown({ startedMs, durMs, big = false }: { startedMs: number; durMs: number; big?: boolean }) {
+  const { t } = useLanguage();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = durMs - (now - startedMs);
+  const over = remaining < 0;
+  return (
+    <span className={`inline-flex flex-col items-start leading-tight ${over ? "text-red-400" : "text-emerald-300"}`}>
+      <span className={`${big ? "text-[28px]" : "text-[18px]"} font-bold tabular-nums`}>{fmtCountdown(remaining)}</span>
+      {over && <span className={`${big ? "text-[12px]" : "text-[10px]"} font-bold uppercase tracking-wider`}>{t("projectSchedule.liveBehind")}</span>}
+    </span>
+  );
+}
+
+function LiveBanner({ model }: { model: LiveModel }) {
+  const { t } = useLanguage();
+  if (model.state === "empty") return null;
+  const d = model.delayMin;
+  const behind = d >= 1;
+  const ahead = d <= -1;
+  const tone = behind ? "border-red-500/40 bg-red-500/10" : ahead ? "border-emerald-500/40 bg-emerald-500/10" : "border-white/10 bg-white/[0.04]";
+  const delayText = behind ? `${t("projectSchedule.liveBehind")} · −${d} min` : ahead ? t("projectSchedule.liveAhead", { n: -d }) : t("projectSchedule.liveOnTime");
+  const c = model.current;
+  return (
+    <div className={`mb-3 flex flex-wrap items-center gap-x-6 gap-y-2 rounded-xl border px-4 py-3 ${tone}`}>
+      <div className="min-w-0 flex-1 basis-[220px]">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-white/45">{model.state === "wrapped" ? t("projectSchedule.liveWrapped") : t("projectSchedule.liveNow")}</div>
+        {c && (
+          <div className="truncate text-[15px] font-semibold">
+            {c.number != null ? `#${c.number} ` : ""}
+            {c.title || c.idea_title || "–"}
+            <span className="ml-2 text-[12px] font-medium text-white/45 tabular-nums">{c.start}–{c.end}{c.duration ? ` · ${t("projectSchedule.liveOf", { n: c.duration })}` : ""}</span>
+          </div>
+        )}
+      </div>
+      {model.state === "running" && model.startedMs != null && <LiveCountdown startedMs={model.startedMs} durMs={model.durMs} big />}
+      {model.state === "not_started" && model.plannedStartMs != null && (
+        <span className="text-[14px] font-semibold text-white/70 tabular-nums">{t("projectSchedule.liveStartsAt", { time: c?.start ?? "" })}</span>
+      )}
+      <div className="text-right">
+        <div className={`text-[16px] font-bold tabular-nums ${behind ? "text-red-400" : ahead ? "text-emerald-300" : "text-white"}`}>{delayText}</div>
+        {model.plannedEnd && model.projectedEnd && (
+          <div className="text-[11px] text-white/50 tabular-nums">{t("projectSchedule.liveWrap", { planned: model.plannedEnd, projected: model.projectedEnd })}</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type Line =
   | { kind: "scene"; row: TimetableRow; scene: ScheduleScene }
@@ -45,7 +99,10 @@ export function ProjectScheduleView({
   embedded = false,
   onOrderChange,
   rowExtra,
+  live = false,
 }: {
+  /** 2026-11-04, Lino: live clock (current scene + countdown, «Behind schedule», delay carried forward) — crew views only, never the client page */
+  live?: boolean;
   /** fetches the schedule (app: GET /projects/{id}/board-schedule, share page: /share/{token}/board-schedule) */
   load: () => Promise<BoardSchedule>;
   onClose: () => void;
@@ -186,6 +243,17 @@ export function ProjectScheduleView({
     return out;
   }, [shown, t]);
 
+  const [clockTick, setClockTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const id = setInterval(() => setClockTick(Date.now()), 15000);
+    return () => clearInterval(id);
+  }, [live]);
+  const model = useMemo(
+    () => (live && data ? liveModel(data.items.filter((i): i is ScheduleScene => i.kind === "scene"), scheduleKey, new Date(clockTick)) : null),
+    [live, data, clockTick]
+  );
+
   const columns = SCHEDULE_COLUMNS;
   const timeCols: TimetableColumn[] = ["start", "end", "duration"];
   const editWidth: Partial<Record<TimetableColumn, string>> = { start: "92px", end: "72px", duration: "76px" };
@@ -265,8 +333,21 @@ export function ProjectScheduleView({
       </span>
     );
     const extra = rowExtra?.(scene);
-    const badge = (statusChip || flagChip || extra) && (
+    const liveKey = scheduleKey(scene);
+    const liveChip =
+      model &&
+      (liveKey === model.currentKey && model.state === "running" && model.startedMs != null ? (
+        <span className="inline-flex rounded-lg border border-white/10 bg-black/30 px-2.5 py-1">
+          <LiveCountdown startedMs={model.startedMs} durMs={model.durMs} />
+        </span>
+      ) : model.shifted[liveKey] && status === "open" ? (
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums ${model.delayMin > 0 ? "bg-red-500/20 text-red-300" : "bg-emerald-500/20 text-emerald-300"}`}>
+          {scene.start} → {model.shifted[liveKey]}
+        </span>
+      ) : null);
+    const badge = (statusChip || flagChip || extra || liveChip) && (
       <>
+        {liveChip}
         {statusChip}
         {flagChip}
         {extra}
@@ -393,6 +474,7 @@ export function ProjectScheduleView({
             </div>
           ) : data ? (
             <>
+              {model && <LiveBanner model={model} />}
               {/* stat tiles — like the PDF, no «Pausen» tile (Lino 2026-10-29) */}
               <div className={`grid grid-cols-2 gap-2 ${stats.length > 5 ? "sm:grid-cols-3 lg:grid-cols-6" : "sm:grid-cols-5"}`}>
                 {stats.map(([label, value]) => (

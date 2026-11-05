@@ -2913,6 +2913,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onClose={() => setBoardScheduleOpen(false)}
         onDownloadPdf={(order) => exportPdf("schedule", order)}
         projectName={data?.name ?? ""}
+        live
       />
     )}
     <CallsheetModal open={callsheetOpen} onClose={() => setCallsheetOpen(false)} projectId={id} />
