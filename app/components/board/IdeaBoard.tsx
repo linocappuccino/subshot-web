@@ -410,6 +410,16 @@ export function IdeaBoard({
   const viewportRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 2026-11-05, Lino: on the iPhone app a big board loaded 2× (first try ran out of memory, the app then reloaded in
+  // saving mode). In the app's embed (cull on) a big board now starts in saving mode right away — no crash first.
+  useState(() => {
+    if (boardImageConfig.cull && !boardImageConfig.thumbOnly) {
+      const els = (initial?.elements ?? []) as { type: string; image_key?: string | null; image_src?: string | null }[];
+      const withImages = els.filter((e) => e.type === "image" || e.type === "moodboard" || !!e.image_key || !!e.image_src).length;
+      if (els.length >= 40 || withImages >= 15) boardImageConfig.thumbOnly = true;
+    }
+    return null;
+  });
   const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
   const dataRef = useRef(data);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
