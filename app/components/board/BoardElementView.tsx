@@ -7,6 +7,7 @@ import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
 import { TimetableNode } from "./BoardTimetable";
 import { formatDuration, parseDuration, parseTimeInput, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
+import { markersFirst } from "@/lib/board";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -355,7 +356,7 @@ function SceneNode({
               ref={titleRef}
               defaultValue={el.title}
               placeholder={labels.sceneTitlePlaceholder}
-              onBlur={(e) => onCommit({ title: e.currentTarget.value })}
+              onBlur={(e) => onCommit({ title: markersFirst(e.currentTarget.value) })}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();

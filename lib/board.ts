@@ -853,6 +853,19 @@ export function hiddenElementIds(elements: BoardElement[]): Map<string, string> 
   return hidden;
 }
 
+/** Lino 2026-11-05: number markers like «V1» always stand at the START of a scene title
+ * («Intro V1» → «V1 Intro»). Only whole tokens V + digits are moved; their order is kept. */
+export function markersFirst(title: string): string {
+  const marks: string[] = [];
+  const rest = title.replace(/(^|[\s·|–—-])([Vv]\d+)(?=$|[\s·|–—,.:;])/g, (_m, pre: string, v: string) => {
+    marks.push(v.toUpperCase());
+    return pre;
+  });
+  if (!marks.length) return title;
+  const body = rest.replace(/\s{2,}/g, " ").replace(/^[\s·|–—,.:;-]+|[\s·|–—,.:;-]+$/g, "");
+  return body ? `${marks.join(" ")} ${body}` : marks.join(" ");
+}
+
 export function nextSceneNumber(elements: BoardElement[]): number {
   return elements.reduce((m, el) => (el.type === "scene" ? Math.max(m, el.number) : m), 0) + 1;
 }
