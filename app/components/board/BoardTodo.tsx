@@ -95,7 +95,12 @@ function MentionInput({
   const [text, setText] = useState(initialText);
   const [assignee, setAssignee] = useState<string | null>(initialAssignee);
   const [active, setActive] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // grow with the text instead of scrolling sideways (Lino 2026-11-05: entries must wrap, never be cut off)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+  }, [text]);
   const choosing = useRef(false);
 
   useEffect(() => {
@@ -131,12 +136,13 @@ function MentionInput({
     <div data-no-drag className="min-w-0 flex-1">
       <div className="flex flex-wrap items-center gap-1.5">
         {assigneeMember && <Chip name={displayName(assigneeMember)} id={assigneeMember.user_id} onRemove={() => setAssignee(null)} removeLabel={labels.todoUnassign} />}
-        <input
+        <textarea
           ref={inputRef}
+          rows={1}
           value={text}
           placeholder={placeholder}
           onChange={(e) => {
-            setText(e.target.value);
+            setText(e.target.value.replace(/\n/g, " "));
             setActive(0);
           }}
           onKeyDown={(e) => {
@@ -164,7 +170,7 @@ function MentionInput({
             if (choosing.current) return;
             if (submitOnBlur) submit();
           }}
-          className="min-w-[8rem] flex-1 bg-transparent text-sm text-white/90 outline-none placeholder:text-white/30 select-text"
+          className="min-w-[8rem] flex-1 resize-none overflow-hidden break-words bg-transparent text-sm text-white/90 outline-none placeholder:text-white/30 select-text"
         />
       </div>
       {query !== null && (
@@ -273,7 +279,7 @@ export function TodoNode({ el, editable, labels }: { el: TodoElement; editable: 
           <button
             data-no-drag={canEdit ? true : undefined}
             onClick={() => canEdit && setEditingTitle(true)}
-            className="min-w-0 flex-1 truncate text-left text-[15px] font-semibold text-white/90"
+            className="min-w-0 flex-1 break-words text-left text-[15px] font-semibold text-white/90"
           >
             {name}
           </button>
