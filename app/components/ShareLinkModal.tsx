@@ -17,7 +17,7 @@ import { useLanguage } from "@/lib/i18n";
  * old separate "Link"/"Teilen" quick-action buttons, since password
  * protection needs a place to live and folding it into a one-click button
  * would either bury it or turn every share into a two-click flow anyway. */
-export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard", sectionId }: {
+export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard", sectionId, ideaId }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
@@ -26,7 +26,9 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
    * client feedback) instead of the storyboard, a separate live link per
    * project (see backend ShareLink.kind). "video" (2026-07-17, #11 Schritt
    * 7) shares the Video-Feedback-Tool page instead. */
-  kind?: "storyboard" | "ideas" | "video";
+  kind?: "storyboard" | "ideas" | "video" | "board";
+  /** 2026-11-09, Lino: kind "board" — the idea whose canvas the client opens directly (and can't leave) */
+  ideaId?: string;
   /** 2026-09-10, Lino: "wenn man in einer shotlist drin ist und dann teilt,
    * muss der geteilte link auch direkt die preview öffnen IN der shotlist
    * und nicht in der shotlist übersicht" — the currently-open Section's id
@@ -68,7 +70,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
     setIsLoading(true);
     setNoneReviewed(false);
     setOpenCommentsExist(false);
-    api.shareLink(projectId, undefined, undefined, kind)
+    api.shareLink(projectId, undefined, undefined, kind, ideaId)
       .then((result) => {
         setUrl(result.url);
         setHasPassword(result.has_password);
@@ -87,7 +89,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
       })
       .finally(() => setIsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, projectId, kind]);
+  }, [open, projectId, kind, ideaId]);
 
   // Client-side only — same underlying link/token for every visitor of this
   // project+kind, just with `?section=` appended when shared from inside a
@@ -114,7 +116,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
     if (!trimmed) return;
     setIsSavingPassword(true);
     try {
-      const result = await api.shareLink(projectId, trimmed, undefined, kind);
+      const result = await api.shareLink(projectId, trimmed, undefined, kind, ideaId);
       setUrl(result.url);
       setHasPassword(result.has_password);
       setPassword("");
@@ -128,7 +130,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
 
   async function clearPassword() {
     try {
-      const result = await api.shareLink(projectId, undefined, true, kind);
+      const result = await api.shareLink(projectId, undefined, true, kind, ideaId);
       setUrl(result.url);
       setHasPassword(result.has_password);
       setIsProtecting(false);
@@ -166,7 +168,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={kind === "ideas" ? t("shareLinkModal.titleIdeas") : kind === "video" ? t("shareLinkModal.titleVideo") : t("shareLinkModal.titleDefault")}>
+    <Modal open={open} onClose={onClose} title={kind === "ideas" ? t("shareLinkModal.titleIdeas") : kind === "board" ? t("shareLinkModal.titleBoard") : kind === "video" ? t("shareLinkModal.titleVideo") : t("shareLinkModal.titleDefault")}>
       <FieldGroup>
         <Label>{t("shareLinkModal.publicLink")}</Label>
         {isLoading ? (
@@ -195,6 +197,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
             {t("shareLinkModal.ideasOnlyApprovedHint")}
           </p>
         )}
+        {kind === "board" && <p className="text-xs text-white/40 mt-1">{t("shareLinkModal.boardHint")}</p>}
       </FieldGroup>
 
       <FieldGroup className="mb-2">

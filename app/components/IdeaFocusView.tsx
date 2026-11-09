@@ -12,6 +12,7 @@ import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext, type BoardTodoApi } from "./board/BoardTodo";
 import { boardHtmlToPlain } from "./board/BoardElementView";
 import { IdeaDeleteDialog } from "./IdeaDeleteDialog";
+import { ShareLinkModal } from "./ShareLinkModal";
 import { useToast } from "./ui/Toast";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
@@ -250,6 +251,7 @@ function IdeaBoardScreen({
   const [allFeedbackResolved, setAllFeedbackResolved] = useState(true);
   const [busy, setBusy] = useState<null | "approve" | "unapprove" | "reject" | "internalApprove" | "internalReject" | "delete">(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const ideaRef = useRef(idea);
   ideaRef.current = idea;
@@ -639,6 +641,23 @@ function IdeaBoardScreen({
         ) : (
           <span className={`hidden md:inline text-xs whitespace-nowrap ${saveState === "error" ? "text-red-400" : "text-white/40"}`}>{saveLabel}</span>
         )}
+
+        {/* 2026-11-09, Lino: "oben ein Teilen-Link, damit man Kunden DIREKT in die Canvas öffnen lassen
+            kann — sie können dann aber nicht aus der Canvas heraus" (ShareLink kind "board") */}
+        {!rejected && (editable || approved) && (
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            title={t("ideaFocusView.shareBoardTitle")}
+            className="flex items-center gap-1.5 shrink-0 text-xs font-semibold text-white/80 bg-white/[0.08] hover:bg-white/[0.14] rounded-full px-3 py-1.5 whitespace-nowrap transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7" /><path d="m16 6-4-4-4 4" /><path d="M12 2v13" />
+            </svg>
+            <span className="hidden sm:inline">{t("ideaFocusView.shareBoard")}</span>
+          </button>
+        )}
+        <ShareLinkModal open={shareOpen} onClose={() => setShareOpen(false)} projectId={idea.project_id} projectName={idea.title} kind="board" ideaId={idea.id} />
 
         {/* 2026-10-12, Lino: "pro video / idee festlegen können welche fassungen benötigt werden" */}
         <div className="hidden sm:block">

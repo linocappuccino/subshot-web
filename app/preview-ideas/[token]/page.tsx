@@ -177,7 +177,10 @@ function PreviewIdeasPageInner() {
   }, [openId, unlockToken]);
 
   const ideas = useMemo(() => (data ? [...data.ideas].sort((a, b) => a.sort_order - b.sort_order) : []), [data]);
-  const openIndex = openId ? ideas.findIndex((i) => i.id === openId) : -1;
+  // 2026-11-09, Lino: a «board» share link opens straight into ONE idea's canvas — no closing, no
+  // other ideas (the server only returns that idea anyway, see get_ideas_preview)
+  const lockedId = data?.locked_idea_id ?? null;
+  const openIndex = (lockedId ?? openId) ? ideas.findIndex((i) => i.id === (lockedId ?? openId)) : -1;
   const openIdea = openIndex >= 0 ? ideas[openIndex] : null;
   // 2026-07-26, Todoist #327 — same shared `isIdeaFeedbackLocked` gate
   // PublicIdeaLightbox's compose forms now both use (see that helper's own
@@ -362,6 +365,38 @@ function PreviewIdeasPageInner() {
             </button>
           </form>
         </div>
+      </div>
+    );
+  }
+
+  if (lockedId) {
+    return (
+      <div className="min-h-screen bg-[#161616] text-white" style={{ "--idea-preview-accent": data?.project_color ?? "#3875bd" } as React.CSSProperties}>
+        {openIdea ? (
+          <PublicIdeaLightbox
+            idea={openIdea}
+            token={token}
+            unlockToken={unlockToken}
+            onIdeaUpdated={updateIdea}
+            annotations={annotationsByIdea.get(openIdea.id) ?? []}
+            onMarkClick={selectAnnotation}
+            onMarkHoverChange={setHoveredAnnotationId}
+            highlightedAnnotationId={highlightedId}
+            hoveredAnnotationId={hoveredAnnotationId}
+            onSelectAnnotation={selectAnnotation}
+            onDeleteAnnotation={handleDeleteAnnotation}
+            pendingSelection={pending?.ideaId === openIdea.id ? pending.text : null}
+            onCancelPendingSelection={() => setPending(null)}
+            onSaveHighlightComment={saveHighlightComment}
+          />
+        ) : (
+          <div className="min-h-screen flex items-center justify-center p-6 text-sm text-white/50">{t("previewIdeasPage.noIdeas")}</div>
+        )}
+        {toast && (
+          <div className="fixed left-1/2 -translate-x-1/2 bottom-6 z-[200] bg-[#2a2a2a] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white/90 shadow-2xl max-w-[calc(100vw-32px)]">
+            {toast}
+          </div>
+        )}
       </div>
     );
   }

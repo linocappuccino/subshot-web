@@ -669,6 +669,8 @@ export interface SharedIdeasPreviewData {
   ideas: IdeaPreview[];
   /** 2026-10-30: «Drehplan» (view + PDF) on the client page — backend switch SHARE_BOARD_SCHEDULE */
   schedule_available?: boolean;
+  /** 2026-11-09 — «board» share link: the page opens this idea's canvas and offers no way out */
+  locked_idea_id?: string | null;
 }
 
 /** Response of POST /share/{token}/ideas/{idea_id}/feedback/send-json —

@@ -72,7 +72,8 @@ export function PublicIdeaLightbox({
   idea: IdeaPreview;
   token: string;
   unlockToken: string | null;
-  onClose: () => void;
+  /** 2026-11-09 — omitted on a «board» share link: the client can't leave the canvas */
+  onClose?: () => void;
   onPrev?: () => void;
   onNext?: () => void;
   onIdeaUpdated: (idea: IdeaPreview) => void;
@@ -379,14 +380,16 @@ export function PublicIdeaLightbox({
 
   return (
     <div data-idea-id={idea.id} className={`fixed inset-0 z-50 flex items-center justify-center ${boardMode ? "" : "gap-6 p-4"}`}>
-      <div className="absolute inset-0 bg-black/75 backdrop-blur-xl cursor-pointer" onClick={onClose} />
-      <button
-        onClick={onClose}
-        aria-label={t("modal.closeAria")}
-        className={`absolute z-20 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors ${boardMode ? "top-3 right-3" : "top-5 right-5"}`}
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-      </button>
+      <div className={`absolute inset-0 bg-black/75 backdrop-blur-xl ${onClose ? "cursor-pointer" : ""}`} onClick={onClose} />
+      {onClose && (
+        <button
+          onClick={onClose}
+          aria-label={t("modal.closeAria")}
+          className={`absolute z-20 w-10 h-10 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors ${boardMode ? "top-3 right-3" : "top-5 right-5"}`}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      )}
 
       {onPrev && (
         <button
