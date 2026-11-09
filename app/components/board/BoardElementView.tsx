@@ -868,6 +868,19 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
 
 function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
   const canDownload = !!useContext(BoardDownloadContext);
+  // 2026-11-09, Lino: "mit einem Klick aufs Video das Video starten oder stoppen — jetzt muss man immer auf
+  // den kleinen Play-Button": a click / tap anywhere on the picture plays or pauses. A layer over the
+  // picture takes the click (the native player never sees it → no double toggle); the bottom strip with
+  // the player's own controls (scrubbing, volume, fullscreen) stays native. data-no-drag: on the team's
+  // board the click also selects the card as before (cards move by their header).
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  function toggle() {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused || v.ended) void v.play().catch(() => {});
+    else v.pause();
+  }
   return (
     <div className="w-full h-full rounded-lg overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       <div className="shrink-0 flex items-center gap-2 px-3 text-xs text-white/60" style={{ height: VIDEO_HEADER }}>
@@ -875,20 +888,39 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
         <span className="truncate">{el.name || "Video"}</span>
       </div>
       {el.src ? (
-        <video
-          src={el.src}
-          controls
-          // no download in the player's menu where downloads are off (client view)
-          controlsList={canDownload ? undefined : "nodownload"}
-          disablePictureInPicture={!canDownload}
-          playsInline
-          // with a poster nothing of the video loads until it's played
-          poster={el.thumb_src ?? undefined}
-          preload={el.thumb_src ? "none" : "metadata"}
-          data-no-drag
-          className="flex-1 min-h-0 w-full bg-black object-contain"
-          onLoadedMetadata={(e) => onNaturalSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-        />
+        <div className="relative flex-1 min-h-0 flex">
+          <video
+            ref={videoRef}
+            src={el.src}
+            controls
+            // no download in the player's menu where downloads are off (client view)
+            controlsList={canDownload ? undefined : "nodownload"}
+            disablePictureInPicture={!canDownload}
+            playsInline
+            // with a poster nothing of the video loads until it's played
+            poster={el.thumb_src ?? undefined}
+            preload={el.thumb_src ? "none" : "metadata"}
+            data-no-drag
+            className="flex-1 min-h-0 w-full bg-black object-contain"
+            onLoadedMetadata={(e) => onNaturalSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
+            onPlay={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            onEnded={() => setPlaying(false)}
+          />
+          <div
+            data-no-drag
+            role="button"
+            aria-label={playing ? "Pause" : "Play"}
+            onClick={toggle}
+            className="absolute inset-x-0 top-0 bottom-12 cursor-pointer flex items-center justify-center"
+          >
+            {!playing && (
+              <span className="flex items-center justify-center w-14 h-14 max-w-[40%] max-h-[40%] aspect-square rounded-full bg-black/55 text-white shadow-lg pointer-events-none">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z" /></svg>
+              </span>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="flex-1 bg-black" />
       )}
