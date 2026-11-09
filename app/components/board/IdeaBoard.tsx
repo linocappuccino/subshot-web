@@ -777,6 +777,8 @@ export function IdeaBoard({
   }
 
   // ── variant votes (2026-10-08) ────────────────────────────────────────
+  /** vote badges: like board content when zoomed out, constant screen size when zoomed in */
+  const voteScale = Math.min(1, 1 / view.scale);
   /** the 👍🏼 whose voter names are shown (hover / long-press, 2026-11-09) */
   const [voteNamesFor, setVoteNamesFor] = useState<string | null>(null);
   const votePress = useRef<{ timer: number | null; fired: boolean }>({ timer: null, fired: false });
@@ -3749,18 +3751,19 @@ export function IdeaBoard({
             );
           })}
 
-        {/* variant votes (2026-10-08): letter top-left, 👍🏼 bottom-right */}
+        {/* variant votes (2026-10-08): letter top-left, 👍🏼 bottom-right. 2026-11-09, Lino: they must not grow
+            on screen when zooming out — they scale with the board below 100 %, keep their size above */}
         {voteInfo.map((v) => (
           <div key={`vote-${v.el.id}`} style={{ opacity: matches && !matches.has(v.el.id) ? 0.18 : undefined, transition: "opacity .2s" }}>
             {v.leader && (
               <div
                 className="absolute pointer-events-none rounded-[12px]"
-                style={{ left: v.el.x - 5 / view.scale, top: v.el.y - 5 / view.scale, width: v.el.w + 10 / view.scale, height: v.el.h + 10 / view.scale, border: `${2.5 / view.scale}px solid #f59e0b`, zIndex: 98500 }}
+                style={{ left: v.el.x - 5 * voteScale, top: v.el.y - 5 * voteScale, width: v.el.w + 10 * voteScale, height: v.el.h + 10 * voteScale, border: `${2.5 * voteScale}px solid #f59e0b`, zIndex: 98500 }}
               />
             )}
             <div
               className="absolute pointer-events-none"
-              style={{ left: v.el.x, top: v.el.y, zIndex: 98600, transform: `translate(-35%, -35%) scale(${1 / view.scale})`, transformOrigin: "0 0" }}
+              style={{ left: v.el.x, top: v.el.y, zIndex: 98600, transform: `translate(-35%, -35%) scale(${voteScale})`, transformOrigin: "0 0" }}
             >
               <span className={`flex items-center justify-center min-w-7 h-7 px-1.5 rounded-full text-xs font-bold shadow-lg border-2 border-[#161616] ${v.leader ? "bg-amber-500 text-black" : "bg-white text-black"}`}>
                 {v.letter}
@@ -3815,7 +3818,7 @@ export function IdeaBoard({
               disabled={!onVote}
               title={v.voters.some((x) => x.voter_name) ? undefined : t("ideaBoard.vote.hint")}
               className="absolute select-none [-webkit-touch-callout:none]"
-              style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${1 / view.scale})`, transformOrigin: "0 0" }}
+              style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${voteScale})`, transformOrigin: "0 0" }}
             >
               <span
                 className={`flex items-center gap-1 h-8 pl-2 pr-2.5 rounded-full text-sm font-semibold shadow-lg border transition-colors ${
