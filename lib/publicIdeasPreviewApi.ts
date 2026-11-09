@@ -59,8 +59,11 @@ export const publicIdeasPreviewApi = {
       })
     ),
   // board variant votes (2026-10-08) — the visitor votes under their name
-  fetchBoardVotes: (token: string, unlockToken: string | null, ideaId: string) =>
-    handle<{ votes: BoardVote[] }>(fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes`, { headers: unlockHeaders(unlockToken) })),
+  // 2026-11-09 — no voter names on share links; `voter` (the visitor's name) marks their own votes as "me"
+  fetchBoardVotes: (token: string, unlockToken: string | null, ideaId: string, voterName?: string) =>
+    handle<{ votes: BoardVote[] }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes${voterName?.trim() ? `?voter=${encodeURIComponent(voterName.trim())}` : ""}`, { headers: unlockHeaders(unlockToken) }),
+    ),
   toggleBoardVote: (token: string, unlockToken: string | null, ideaId: string, groupId: string, elementId: string, voterName: string) =>
     handle<{ votes: BoardVote[] }>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/votes`, {

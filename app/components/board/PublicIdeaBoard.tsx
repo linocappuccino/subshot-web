@@ -56,16 +56,22 @@ export function PublicIdeaBoard({
     presign: (keys) => publicIdeasPreviewApi.boardPresign(token, unlockToken, ideaId, keys),
   });
 
+  // the visitor's own votes come back as voter_key "me" (no names on share links, 2026-11-09);
+  // re-read shortly after the name changes so the own 👍🏼 highlight follows it
+  const nameForVotes = voterName.trim();
   useEffect(() => {
     let cancelled = false;
-    publicIdeasPreviewApi
-      .fetchBoardVotes(token, unlockToken, ideaId)
-      .then((r) => !cancelled && setVotes(r.votes))
-      .catch(() => {});
+    const id = window.setTimeout(() => {
+      publicIdeasPreviewApi
+        .fetchBoardVotes(token, unlockToken, ideaId, nameForVotes)
+        .then((r) => !cancelled && setVotes(r.votes))
+        .catch(() => {});
+    }, nameForVotes ? 500 : 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(id);
     };
-  }, [token, unlockToken, ideaId]);
+  }, [token, unlockToken, ideaId, nameForVotes]);
 
   function vote(groupId: string, elementId: string, nameOverride?: string) {
     const name = (nameOverride ?? voterName).trim();
@@ -120,7 +126,7 @@ export function PublicIdeaBoard({
         // 2026-10-09, Lino: no presentation mode on the client page
         allowPresentation={false}
         votes={votes}
-        myVoterKey={voterName.trim() ? `name:${voterName.trim().split(/\s+/).join(" ").toLowerCase()}` : null}
+        myVoterKey={voterName.trim() ? "me" : null}
         onVote={vote}
       />
     </BoardTodoContext.Provider>

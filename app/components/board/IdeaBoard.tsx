@@ -775,6 +775,19 @@ export function IdeaBoard({
   }
 
   // ── variant votes (2026-10-08) ────────────────────────────────────────
+  /** the 👍🏼 whose voter names are shown (hover / long-press, 2026-11-09) */
+  const [voteNamesFor, setVoteNamesFor] = useState<string | null>(null);
+  const votePress = useRef<{ timer: number | null; fired: boolean }>({ timer: null, fired: false });
+  useEffect(() => {
+    if (!voteNamesFor) return;
+    // a touch-opened list closes with the next tap anywhere
+    const close = (e: PointerEvent) => e.pointerType !== "mouse" && setVoteNamesFor(null);
+    const id = window.setTimeout(() => window.addEventListener("pointerdown", close), 0);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener("pointerdown", close);
+    };
+  }, [voteNamesFor]);
   function toggleVoteGroup(id: string) {
     const g = dataRef.current.elements.find((e) => e.id === id);
     if (!g || g.type !== "group") return;
@@ -3657,12 +3670,54 @@ export function IdeaBoard({
                 {v.leader && <span className="ml-0.5">★</span>}
               </span>
             </div>
+            {/* 2026-11-09, Lino: who voted — only where the names come with the votes (logged-in project
+                members; share links get no names from the API): hover on desktop, long-press on touch */}
+            {voteNamesFor === v.el.id && v.voters.some((x) => x.voter_name) && (
+              <div
+                data-board-ui
+                className="absolute pointer-events-none"
+                style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98800, transform: `translate(-80%, -60%) scale(${1 / view.scale}) translateY(-100%) translateY(-8px)`, transformOrigin: "0 0" }}
+              >
+                <div className="min-w-36 max-w-64 rounded-xl bg-[#1c1c1e] border border-white/15 shadow-2xl px-3 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-white/45 mb-1">{t("ideaBoard.vote.votedBy")}</div>
+                  {v.voters.filter((x) => x.voter_name).map((x) => (
+                    <div key={x.voter_key} className="text-[13px] leading-snug text-white/90 truncate">{x.voter_name}</div>
+                  ))}
+                </div>
+              </div>
+            )}
             <button
               data-board-ui
-              onClick={() => onVote?.(v.groupId, v.el.id)}
+              onClick={() => {
+                if (votePress.current.fired) {
+                  votePress.current.fired = false; // the long-press showed the names — no vote
+                  return;
+                }
+                onVote?.(v.groupId, v.el.id);
+              }}
+              onPointerEnter={(e) => e.pointerType === "mouse" && setVoteNamesFor(v.el.id)}
+              onPointerLeave={(e) => e.pointerType === "mouse" && setVoteNamesFor((cur) => (cur === v.el.id ? null : cur))}
+              onPointerDown={(e) => {
+                if (e.pointerType === "mouse" || !v.voters.some((x) => x.voter_name)) return;
+                votePress.current.fired = false;
+                if (votePress.current.timer) window.clearTimeout(votePress.current.timer);
+                votePress.current.timer = window.setTimeout(() => {
+                  votePress.current.fired = true;
+                  setVoteNamesFor(v.el.id);
+                }, 450);
+              }}
+              onPointerUp={() => {
+                if (votePress.current.timer) window.clearTimeout(votePress.current.timer);
+                votePress.current.timer = null;
+              }}
+              onPointerCancel={() => {
+                if (votePress.current.timer) window.clearTimeout(votePress.current.timer);
+                votePress.current.timer = null;
+              }}
+              onContextMenu={(e) => e.preventDefault()}
               disabled={!onVote}
-              title={v.voters.length ? v.voters.map((x) => x.voter_name).join(", ") : t("ideaBoard.vote.hint")}
-              className="absolute"
+              title={v.voters.some((x) => x.voter_name) ? undefined : t("ideaBoard.vote.hint")}
+              className="absolute select-none [-webkit-touch-callout:none]"
               style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${1 / view.scale})`, transformOrigin: "0 0" }}
             >
               <span
