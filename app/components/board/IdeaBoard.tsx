@@ -2329,7 +2329,7 @@ export function IdeaBoard({
     }
   }
 
-  /** 2026-11-09 — an uploading file can be moved; files dropped together move together */
+  /** 2026-11-09 — an uploading file can be moved (each one on its own) */
   function startPendingDrag(e: React.PointerEvent<HTMLDivElement>, p: Pending) {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -2337,7 +2337,9 @@ export function IdeaBoard({
     const el = e.currentTarget;
     el.setPointerCapture(e.pointerId);
     let last = { x: e.clientX, y: e.clientY };
-    const ids = new Set(pendingRef.current.filter((pi) => (p.batch ? pi.batch === p.batch : pi.id === p.id)).map((pi) => pi.id));
+    // 2026-11-09, Lino: "man soll doch die einzelnen Dateien beim Upload verschieben können" — only the
+    // dragged file moves (was: the whole batch dropped together)
+    const ids = new Set([p.id]);
     const move = (ev: PointerEvent) => {
       const s = viewRef.current.scale;
       const dx = (ev.clientX - last.x) / s;
