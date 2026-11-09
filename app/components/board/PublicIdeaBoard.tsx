@@ -28,7 +28,8 @@ export function PublicIdeaBoard({
 }: {
   /** 2026-10-08 — 👍🏼 votes are cast under the visitor's feedback name */
   voterName?: string;
-  onNeedName?: () => void;
+  /** no name yet: ask for it, then `retry(name)` casts the vote (2026-11-09) */
+  onNeedName?: (retry: (name: string) => void) => void;
   onVoteError?: (message: string) => void;
   token: string;
   unlockToken: string | null;
@@ -66,9 +67,11 @@ export function PublicIdeaBoard({
     };
   }, [token, unlockToken, ideaId]);
 
-  function vote(groupId: string, elementId: string) {
-    const name = voterName.trim();
-    if (!name) return onNeedName?.();
+  function vote(groupId: string, elementId: string, nameOverride?: string) {
+    const name = (nameOverride ?? voterName).trim();
+    // 2026-11-09, Lino: "der Vote-Button auf der Preview-Seite geht nicht" — without a name nothing
+    // visible happened (the name field + hint sit in the closed comments panel); now the page asks
+    if (!name) return onNeedName?.((n) => vote(groupId, elementId, n));
     publicIdeasPreviewApi
       .toggleBoardVote(token, unlockToken, ideaId, groupId, elementId, name)
       .then((r) => setVotes(r.votes))

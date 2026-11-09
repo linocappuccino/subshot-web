@@ -172,6 +172,16 @@ export function PublicIdeaLightbox({
   const [activePinId, setActivePinId] = useState<string | null>(null);
   const commentRef = useRef<HTMLTextAreaElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  // 2026-11-09 — 👍🏼 without a name: a small dialog right on the board (the comments panel with the
+  // name field is usually closed there), then the vote is cast; vote errors show as a floating banner
+  const [namePrompt, setNamePrompt] = useState<((name: string) => void) | null>(null);
+  const [nameDraft, setNameDraft] = useState("");
+  const [floatMsg, setFloatMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!floatMsg) return;
+    const id = window.setTimeout(() => setFloatMsg(null), 4500);
+    return () => window.clearTimeout(id);
+  }, [floatMsg]);
   const pinAnchor = pendingPin ? { board_element_id: pendingPin.elementId, pin_x: pendingPin.x, pin_y: pendingPin.y } : null;
   const boardPins: BoardPin[] = idea.feedback
     .filter((f) => f.board_element_id && f.pin_x != null && f.pin_y != null && f.comment)
@@ -380,6 +390,47 @@ export function PublicIdeaLightbox({
 
   return (
     <div data-idea-id={idea.id} className={`fixed inset-0 z-50 flex items-center justify-center ${boardMode ? "" : "gap-6 p-4"}`}>
+      {namePrompt && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setNamePrompt(null)}>
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const n = nameDraft.trim().split(/\s+/).join(" ");
+              if (!n) return;
+              persistName(n);
+              const retry = namePrompt;
+              setNamePrompt(null);
+              retry(n);
+            }}
+            className="w-full max-w-xs rounded-2xl bg-[#232325] border border-white/10 p-5 shadow-2xl"
+          >
+            <p className="text-sm font-semibold text-white mb-1">{t("ideaBoard.vote.nameTitle")}</p>
+            <p className="text-xs text-white/50 mb-3">{t("ideaBoard.vote.nameHint")}</p>
+            <input
+              autoFocus
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              maxLength={80}
+              placeholder={t("ideaBoard.vote.namePlaceholder")}
+              className="w-full text-sm bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 mb-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setNamePrompt(null)} className="flex-1 rounded-lg bg-white/10 py-2 text-sm font-semibold text-white/80 hover:bg-white/15">
+                {t("common.cancel")}
+              </button>
+              <button type="submit" disabled={!nameDraft.trim()} className="flex-1 rounded-lg bg-blue-600 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                👍🏼 {t("ideaBoard.vote.nameSubmit")}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {floatMsg && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] max-w-[calc(100vw-32px)] rounded-xl bg-red-900/90 border border-red-400/30 px-4 py-2.5 text-sm text-red-100 shadow-2xl">
+          {floatMsg}
+        </div>
+      )}
       <div className={`absolute inset-0 bg-black/75 backdrop-blur-xl ${onClose ? "cursor-pointer" : ""}`} onClick={onClose} />
       {onClose && (
         <button
@@ -487,11 +538,14 @@ export function PublicIdeaLightbox({
                 pendingPin={pendingPin ? { ...pendingPin, color: authorColor(authorName.trim() || "?") } : null}
                 focusRequest={pinFocus}
                 voterName={authorName}
-                onNeedName={() => {
-                  showNotice("error", t("ideaBoard.vote.needName"));
-                  nameRef.current?.focus();
+                onNeedName={(retry) => {
+                  setNameDraft("");
+                  setNamePrompt(() => retry);
                 }}
-                onVoteError={(msg) => showNotice("error", msg)}
+                onVoteError={(msg) => {
+                  showNotice("error", msg);
+                  setFloatMsg(msg);
+                }}
               />
               {pinPlacing && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full bg-blue-600 text-white text-xs font-semibold pl-3.5 pr-1.5 py-1.5 shadow-xl">
