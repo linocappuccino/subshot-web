@@ -98,6 +98,8 @@ interface View {
 }
 interface Pending {
   id: string;
+  /** files dropped together move together while they upload (2026-11-09) */
+  batch?: string;
   label: string;
   progress: number | null;
   x: number;
@@ -473,6 +475,10 @@ export function IdeaBoard({
   editingRef.current = editingId;
   const editingStartHtml = useRef("");
   const [pending, setPending] = useState<Pending[]>([]);
+  const pendingRef = useRef<Pending[]>([]);
+  useLayoutEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
   const [busyOp, setBusyOp] = useState<null | "move" | "resize">(null);
@@ -1217,66 +1223,69 @@ export function IdeaBoard({
     }
     if (items.length === 0) return;
 
-    // 2) positions. One file: the usual free spot. Several files from one
-    // upload (2026-10-08, Lino): a compact, slightly overlapping stack
-    // centred on the drop point / view centre, so it's obvious these just
-    // came in together — rows of ~√n, each card overlapping the previous
-    // one by ~20%, squeezed tighter if the stack wouldn't fit in view.
+    // 2) positions. One file: the usual free spot. Several files (2026-11-09, Lino: "wenn man mehrere
+    // Dateien auf das Canvas zieht, die Dateien NIE übereinander lagern"): a tidy grid of ~√n columns
+    // with a gap, as one block in a free area near the drop point — never on top of each other, nor on
+    // anything already on the board or still uploading. No free area in view → right of everything.
     let spots: Point[];
     if (items.length === 1) {
       const it = items[0];
-      spots = [place(at.x - it.w / 2, at.y - it.h / 2, it.w, it.h, avoidOverlap)];
+      spots = [place(at.x - it.w / 2, at.y - it.h / 2, it.w, it.h, avoidOverlap, pendingRef.current)];
     } else {
       const cols = Math.ceil(Math.sqrt(items.length));
-      const view = visibleWorldRect();
-      const layout = (f: number) => {
-        const pos: Point[] = [];
-        let y = 0;
-        let width = 0;
-        for (let r = 0; r * cols < items.length; r++) {
-          const row = items.slice(r * cols, r * cols + cols);
-          let x = 0;
-          row.forEach((it, i) => {
-            pos.push({ x, y });
-            width = Math.max(width, x + it.w);
-            if (i < row.length - 1) x += it.w * f;
-          });
-          const rowH = Math.max(...row.map((it) => it.h));
-          if ((r + 1) * cols < items.length) y += rowH * f;
-          else y += rowH;
-        }
-        return { pos, width, height: y };
-      };
-      let f = 0.8;
-      let lay = layout(f);
-      while (f > 0.3 && (lay.width > view.w || lay.height > view.h)) {
-        f -= 0.05;
-        lay = layout(f);
+      const pos: Point[] = [];
+      let y = 0;
+      let width = 0;
+      for (let r = 0; r * cols < items.length; r++) {
+        const row = items.slice(r * cols, r * cols + cols);
+        let x = 0;
+        row.forEach((it) => {
+          pos.push({ x, y });
+          x += it.w + GRID;
+        });
+        width = Math.max(width, x - GRID);
+        y += Math.max(...row.map((it) => it.h)) + GRID;
       }
-      const origin = clampInto(at.x - lay.width / 2, at.y - lay.height / 2, lay.width, lay.height, view);
-      const ox = snap(origin.x);
-      const oy = snap(origin.y);
-      spots = lay.pos.map((p) => ({ x: Math.round(ox + p.x), y: Math.round(oy + p.y) }));
+      const height = y - GRID;
+      const hiddenNow = hiddenElementIds(dataRef.current.elements);
+      const taken: Rect[] = [...dataRef.current.elements.filter((el) => !hiddenNow.has(el.id)), ...pendingRef.current];
+      const hits = (ox: number, oy: number) =>
+        taken.some((r) => ox < r.x + r.w + GRID / 2 && ox + width + GRID / 2 > r.x && oy < r.y + r.h + GRID / 2 && oy + height + GRID / 2 > r.y);
+      let origin = freeSpot(at.x - width / 2, at.y - height / 2, width, height, taken, visibleWorldRect(), true);
+      if (hits(origin.x, origin.y)) {
+        const view = visibleWorldRect();
+        const right = taken.length ? Math.max(...taken.map((r) => r.x + r.w)) : at.x;
+        origin = { x: snap(right + GRID * 2), y: snap(view.y + GRID) };
+      }
+      spots = pos.map((p) => ({ x: Math.round(origin.x + p.x), y: Math.round(origin.y + p.y) }));
+      const view = visibleWorldRect();
+      if (origin.x < view.x || origin.y < view.y || origin.x + width > view.x + view.w || origin.y + height > view.y + view.h) {
+        zoomToRect({ x: origin.x, y: origin.y, w: width, h: height }, { animate: true });
+      }
     }
 
     // 3) placeholders right away, uploads in parallel; stacking order is the
     // upload order, not whichever finishes first
     const zBase = maxZ(dataRef.current.elements) + 1;
     const added: string[] = [];
+    const batch = newId();
     await Promise.all(
       items.map(async (it, i) => {
         const { x, y } = spots[i];
         const pid = newId();
-        setPending((p) => [...p, { id: pid, label: it.file.name, progress: 0, x, y, w: it.w, h: it.h }]);
+        setPending((p) => [...p, { id: pid, batch, label: it.file.name, progress: 0, x, y, w: it.w, h: it.h }]);
         try {
           const { key, src } = await uploadFile(it.file, it.mime, (fr) =>
             setPending((p) => p.map((pi) => (pi.id === pid ? { ...pi, progress: fr } : pi))),
           );
+          // 2026-11-09, Lino: "während Dateien hochladen muss man sie verschieben können" — the file
+          // lands where its placeholder is NOW (it may have been dragged meanwhile)
+          const now = pendingRef.current.find((pi) => pi.id === pid);
           const el: MediaElement = {
             id: newId(),
             type: it.kind,
-            x,
-            y,
+            x: now?.x ?? x,
+            y: now?.y ?? y,
             w: it.w,
             h: it.h,
             z: zBase + i,
@@ -2305,6 +2314,34 @@ export function IdeaBoard({
     } else if ((el.type === "pdf" || el.type === "file" || el.type === "image") && el.src) {
       window.open(el.src, "_blank", "noopener,noreferrer");
     }
+  }
+
+  /** 2026-11-09 — an uploading file can be moved; files dropped together move together */
+  function startPendingDrag(e: React.PointerEvent<HTMLDivElement>, p: Pending) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let last = { x: e.clientX, y: e.clientY };
+    const ids = new Set(pendingRef.current.filter((pi) => (p.batch ? pi.batch === p.batch : pi.id === p.id)).map((pi) => pi.id));
+    const move = (ev: PointerEvent) => {
+      const s = viewRef.current.scale;
+      const dx = (ev.clientX - last.x) / s;
+      const dy = (ev.clientY - last.y) / s;
+      last = { x: ev.clientX, y: ev.clientY };
+      setPending((list) => list.map((pi) => (ids.has(pi.id) ? { ...pi, x: pi.x + dx, y: pi.y + dy } : pi)));
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      // snap to the grid like a normal move
+      setPending((list) => list.map((pi) => (ids.has(pi.id) ? { ...pi, x: snap(pi.x), y: snap(pi.y) } : pi)));
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
   }
 
   // ── pointer handling ──────────────────────────────────────────────────
@@ -3724,7 +3761,9 @@ export function IdeaBoard({
         {pending.map((p) => (
           <div
             key={p.id}
-            className="absolute rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60"
+            data-board-ui
+            onPointerDown={(e) => startPendingDrag(e, p)}
+            className="absolute rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60 cursor-grab active:cursor-grabbing touch-none select-none"
             style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: 100000 }}
           >
             <span className="truncate max-w-full">{p.progress === null ? p.label : `${t("ideaBoard.uploading")} ${p.label}`}</span>
