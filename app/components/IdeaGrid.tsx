@@ -47,6 +47,8 @@ export interface IdeaGridHandle {
    * callable on demand instead of only once via a prop/query-param change.
    * No-ops if the id isn't in this grid's own (already-loaded) ideas list. */
   openIdea: (id: string) => void;
+  /** 2026-11-09 — browser back / forward closed the idea (URL ?idea= gone) */
+  closeIdea: () => void;
 }
 
 /** "💡 Ideen" panel — the Planungssektor (2026-07-16), sits above the
@@ -69,6 +71,8 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
    * (otherwise a page refresh would keep reopening it). */
   autoOpenIdeaId?: string | null;
   onAutoOpened?: () => void;
+  /** 2026-11-09 — which idea's canvas is open (null = the grid), so the page can keep it in the URL */
+  onOpenIdeaChange?: (ideaId: string | null) => void;
   /** 2026-07-22 — passed straight through to IdeaFocusView/IdeaFloatingCard,
    * see IdeaFeedbackPanel's own doc comment for what this powers. */
   annotations?: Annotation[];
@@ -92,7 +96,7 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
    * IdeaFeedback delete button the same way onDeleteAnnotation's own
    * presence already gates HighlightEntry's. */
   canDeleteComments?: boolean;
-}>(function IdeaGrid({ projectId, onIdeaApproved, autoOpenIdeaId, onAutoOpened, annotations, highlightedAnnotationId, onDeleteAnnotation, onAnnotationUpdated, myRole, canDeleteComments }, ref) {
+}>(function IdeaGrid({ projectId, onIdeaApproved, autoOpenIdeaId, onAutoOpened, onOpenIdeaChange, annotations, highlightedAnnotationId, onDeleteAnnotation, onAnnotationUpdated, myRole, canDeleteComments }, ref) {
   const api = useApi();
   const toast = useToast();
   const { t } = useLanguage();
@@ -115,6 +119,12 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  const openIdeaId = focusIndex !== null ? ideas[focusIndex]?.id ?? null : null;
+  useEffect(() => {
+    onOpenIdeaChange?.(openIdeaId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openIdeaId]);
 
   useEffect(() => {
     if (!autoOpenIdeaId) return;
@@ -170,6 +180,7 @@ export const IdeaGrid = forwardRef<IdeaGridHandle, {
   useImperativeHandle(ref, () => ({
     createIdea,
     getBoundingClientRect: () => containerRef.current?.getBoundingClientRect() ?? null,
+    closeIdea: () => setFocusIndex(null),
     openIdea: (id: string) => {
       const index = ideas.findIndex((i) => i.id === id);
       if (index !== -1) setFocusIndex(index);

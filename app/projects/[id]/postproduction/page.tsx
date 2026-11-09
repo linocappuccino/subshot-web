@@ -12,6 +12,7 @@ import { ShareLinkModal } from "@/app/components/ShareLinkModal";
 import { VideoTile } from "@/app/components/VideoTile";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { subscribeToChanges } from "@/lib/realtime";
+import { setUrlParams } from "@/lib/urlState";
 import { EdgeNavButton } from "@/app/components/EdgeNavButton";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -43,17 +44,25 @@ const RETURN_VIEW_KEY = "subshot:returnView";
 // already on this exact postproduction page.
 function NotificationParamsWatcher({
   onParams,
+  onVideoParam,
 }: {
   onParams: (params: { openVideo: string | null; openComment: string | null }) => void;
+  /** 2026-11-09 — ?video=<id>: the open video review (reload / back / forward restore it) */
+  onVideoParam?: (video: string | null) => void;
 }) {
   const searchParams = useSearchParams();
   const openVideo = searchParams.get("openVideo");
   const openComment = searchParams.get("openComment");
+  const video = searchParams.get("video");
   useEffect(() => {
     if (!openVideo && !openComment) return;
     onParams({ openVideo, openComment });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openVideo, openComment]);
+  useEffect(() => {
+    onVideoParam?.(video);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [video]);
   return null;
 }
 
@@ -245,9 +254,32 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     if (!video) return;
     setReviewingVideo(video);
     setAutoOpenVideoId(null);
-    router.replace(`/projects/${id}/postproduction`, { scroll: false });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setUrlParams({ openVideo: null, openComment: null });
   }, [autoOpenVideoId, videosBySection]);
+  // 2026-11-09, Lino: "lade ich die Seite neu, lande ich irgendwo anders" — the open video review lives in
+  // ?video=<id>: opening is its own history step, closing one that was opened here goes back one step
+  const videoUrlReady = useRef(false);
+  const lastVideoParam = useRef<string | null>(null);
+  const pushedVideo = useRef<string | null>(null);
+  const reviewingId = reviewingVideo?.id ?? null;
+  const reviewingIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    reviewingIdRef.current = reviewingId;
+  }, [reviewingId]);
+  useEffect(() => {
+    if (!videoUrlReady.current) return;
+    const next = reviewingId ?? autoOpenVideoId;
+    const prev = lastVideoParam.current;
+    if (next === prev) return;
+    lastVideoParam.current = next;
+    if (prev && !next && pushedVideo.current === prev) {
+      pushedVideo.current = null;
+      window.history.back();
+      return;
+    }
+    if (next && !prev) pushedVideo.current = next;
+    setUrlParams({ video: next }, prev && next ? "replace" : "push");
+  }, [reviewingId, autoOpenVideoId]);
   const [showShareModal, setShowShareModal] = useState(false);
   // 2026-07-17, Lino: "Auf der Postproduction fehlt die Navigation mit
   // Team, Kommentare etc." — dieselbe Header-Toolbar wie auf der
@@ -787,6 +819,15 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           onParams={({ openVideo, openComment }) => {
             if (openVideo) setAutoOpenVideoId(openVideo);
             if (openComment) setAutoOpenCommentId(openComment);
+          }}
+          onVideoParam={(video) => {
+            videoUrlReady.current = true;
+            lastVideoParam.current = video;
+            if (video && video !== reviewingIdRef.current) setAutoOpenVideoId(video);
+            else if (!video && reviewingIdRef.current) {
+              pushedVideo.current = null;
+              setReviewingVideo(null);
+            }
           }}
         />
       </Suspense>

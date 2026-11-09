@@ -30,6 +30,7 @@ import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 import { ApiError } from "@/lib/api";
 import { setNavCache, takeNavCache } from "@/lib/navCache";
+import { setUrlParams } from "@/lib/urlState";
 import type { Annotation, Member, PostproductionStatus, ProjectDetail, Scene, Section, Shot, Video } from "@/lib/types";
 import { SortableSceneCard } from "@/app/components/SortableSceneCard";
 import { SceneCard } from "@/app/components/SceneCard";
@@ -243,6 +244,21 @@ function NotificationParamsWatcher({
   return null;
 }
 
+/** 2026-11-09, Lino: "lade ich die Seite neu, lande ich irgendwo anders" — the open view / shot list /
+ * idea live in ?view=scenes&section=…&idea=… (lib/urlState.ts); this follows the URL (first load,
+ * browser back / forward) and hands it to the page */
+function UrlStateWatcher({ onUrl }: { onUrl: (s: { view: string | null; section: string | null; idea: string | null }) => void }) {
+  const searchParams = useSearchParams();
+  const view = searchParams.get("view");
+  const section = searchParams.get("section");
+  const idea = searchParams.get("idea");
+  useEffect(() => {
+    onUrl({ view, section, idea });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, section, idea]);
+  return null;
+}
+
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
   const api = useApi();
@@ -363,6 +379,11 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   }
   const initialReturnView = returnViewRef.current;
   const [activeView, setActiveView] = useState<"ideas" | "scenes">(initialReturnView === "scenes" ? "scenes" : "ideas");
+  // 2026-11-09 — URL ⇄ view state (see UrlStateWatcher): which idea's canvas is open, set by IdeaGrid
+  const [openIdeaInGrid, setOpenIdeaInGrid] = useState<string | null>(null);
+  const urlReady = useRef(false);
+  const lastUrl = useRef<{ view: string | null; section: string | null; idea: string | null }>({ view: null, section: null, idea: null });
+  const pushedIdea = useRef<string | null>(null);
   // 2026-10-12, Lino: "das Wetter in der Shotlist per Emoji" — weather at each scene's start and
   // place (forecast ≤ 16 days), re-read shortly after anything on the page changes (time / place)
   const [callsheetOpen, setCallsheetOpen] = useState(false);
@@ -426,6 +447,30 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // Reset beim Verlassen der Skript-Seite (siehe goToIdeas unten), damit
   // ein erneuter Besuch immer wieder bei der Übersicht startet.
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
+  // 2026-11-09 — keep ?view / ?section / ?idea in step with what is open: opening something is its own
+  // history step (push), switching ideas inside the canvas only replaces it, closing an idea that was
+  // opened here goes one step back (so «back» doesn't reopen it)
+  const openIdeaRef = useRef<string | null>(null);
+  useEffect(() => {
+    openIdeaRef.current = openIdeaInGrid;
+  }, [openIdeaInGrid]);
+  useEffect(() => {
+    if (!urlReady.current) return;
+    const idea = activeView === "ideas" ? openIdeaInGrid ?? autoOpenIdeaId : null;
+    const next = { view: activeView === "scenes" ? "scenes" : null, section: activeView === "scenes" ? openSectionId : null, idea };
+    const prev = lastUrl.current;
+    if (prev.view === next.view && prev.section === next.section && prev.idea === next.idea) return;
+    lastUrl.current = next;
+    if (prev.idea && !next.idea && prev.view === next.view && pushedIdea.current === prev.idea) {
+      pushedIdea.current = null;
+      window.history.back();
+      return;
+    }
+    const minor = prev.view === next.view && prev.section === next.section && !!prev.idea && !!next.idea;
+    if (next.idea && !prev.idea) pushedIdea.current = next.idea;
+    else if (minor && pushedIdea.current) pushedIdea.current = next.idea;
+    setUrlParams(next, minor ? "replace" : "push");
+  }, [activeView, openSectionId, openIdeaInGrid, autoOpenIdeaId]);
   // 2026-09-07 fix, Lino: "wenn ich einen Abschnitt erstelle und in diesen
   // hinein gehen, müssen ALLE neuen Szenen in das geöffnete Projekt [sic,
   // gemeint: den geöffneten Abschnitt]" — the FAB's "Neue Szene"/
@@ -623,7 +668,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       setEditingScene(scene);
     }
     setAutoOpenSceneId(null);
-    router.replace(`/projects/${id}`, { scroll: false });
+    setUrlParams({ openIdea: null, openScene: null, openSection: null, openComment: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSceneId, data]);
   // 2026-09-10, Lino: "wurde ein kommentar in einer Shotlist gemacht, muss
@@ -643,7 +688,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     goToScenes();
     if (autoOpenCommentId) setShowAnnotations(true);
     setAutoOpenSectionId(null);
-    router.replace(`/projects/${id}`, { scroll: false });
+    setUrlParams({ openIdea: null, openScene: null, openSection: null, openComment: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpenSectionId, data]);
   // Fires the actual highlight/pulse for EITHER kind, ~700ms after
@@ -1845,6 +1890,23 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     <ShotlistPlacesContext.Provider value={shotlistPlaces}>
     <AppShell>
       <Suspense fallback={null}>
+        <UrlStateWatcher
+          onUrl={({ view, section, idea }) => {
+            const first = !urlReady.current;
+            urlReady.current = true;
+            lastUrl.current = { view: view === "scenes" ? "scenes" : null, section: view === "scenes" ? section : null, idea };
+            // a fresh load without ?view keeps the "back from Postproduktion" return view
+            if (view === "scenes") setActiveView("scenes");
+            else if (!first || view === "ideas") setActiveView("ideas");
+            setOpenSectionId(view === "scenes" ? section : null);
+            if (idea) {
+              if (idea !== openIdeaRef.current) setAutoOpenIdeaId(idea);
+            } else if (openIdeaRef.current) {
+              pushedIdea.current = null;
+              ideaGridRef.current?.closeIdea();
+            }
+          }}
+        />
         <NotificationParamsWatcher
           onParams={({ openIdea, openScene, openSection, openComment }) => {
             if (openIdea) setAutoOpenIdeaId(openIdea);
@@ -2129,9 +2191,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 projectId={data.id}
                 onIdeaApproved={() => api.projectDetail(data.id).then(setData)}
                 autoOpenIdeaId={autoOpenIdeaId}
+                onOpenIdeaChange={setOpenIdeaInGrid}
                 onAutoOpened={() => {
                   setAutoOpenIdeaId(null);
-                  router.replace(`/projects/${id}`, { scroll: false });
+                  setUrlParams({ openIdea: null, openScene: null, openSection: null, openComment: null });
                 }}
                 annotations={annotations}
                 highlightedAnnotationId={highlightedAnnotationId}
