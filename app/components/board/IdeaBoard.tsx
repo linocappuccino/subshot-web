@@ -151,6 +151,8 @@ type Op =
       /** Alt-drag (2026-10-11, Lino): copies were made at pointer-down and are what moves;
        *  without a real drag they are removed again and the original selection comes back */
       duplicated?: { selection: Set<string>; clickedId: string };
+      /** 2026-11-09 — pressed on a video's picture: a click without moving plays / pauses it */
+      videoToggle?: HTMLElement | null;
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string; target: string | null }
@@ -780,6 +782,8 @@ export function IdeaBoard({
   // ── variant votes (2026-10-08) ────────────────────────────────────────
   /** vote badges: like board content when zoomed out, constant screen size when zoomed in */
   const voteScale = Math.min(1, 1 / view.scale);
+  /** 2026-11-09, Lino: letters + 👍🏼 a bit bigger (+25 %), same zoom behaviour */
+  const voteBadgeScale = voteScale * 1.25;
   /** the 👍🏼 whose voter names are shown (hover / long-press, 2026-11-09) */
   const [voteNamesFor, setVoteNamesFor] = useState<string | null>(null);
   const votePress = useRef<{ timer: number | null; fired: boolean }>({ timer: null, fired: false });
@@ -987,7 +991,7 @@ export function IdeaBoard({
     return best;
   }
   /** while moving: which group would the nodes join / leave (join after a short dwell) */
-  function trackGroupDrop(p: Point, movingIds: Set<string>, blocked: boolean, before: BoardElement[]) {
+  function trackGroupDrop(p: Point, movingIds: Set<string>, blocked: boolean) {
     const els = dataRef.current.elements;
     const movingEls = els.filter((el) => movingIds.has(el.id));
     if (blocked || !movingEls.length || movingEls.some((el) => el.type === "group")) {
@@ -996,17 +1000,9 @@ export function IdeaBoard({
       return;
     }
     const home = els.find((el): el is GroupElement => el.type === "group" && !el.collapsed && movingEls.every((m) => el.children.includes(m.id)));
-    if (home) {
-      clearGroupHover();
-      // out = the pointer left the group's frame as it was when the drag started (its own frame grows
-      // with the dragged member, so that can't be the test)
-      const f = before.find((el) => el.id === home.id) ?? home;
-      const m = GRID;
-      const outside = p.x < f.x - m || p.y < f.y - m || p.x > f.x + f.w + m || p.y > f.y + f.h + m;
-      showGroupDrop(outside ? { id: home.id, mode: "leave" } : null);
-      return;
-    }
-    const g = groupAt(p, movingIds);
+    // 2026-11-09, Lino: rearranging inside a group must never take a node out — that only happens via
+    // right-click «Aus Gruppe nehmen». A member can still be dragged into ANOTHER group.
+    const g = groupAt(p, home ? new Set([...movingIds, home.id]) : movingIds);
     if (!g) {
       clearGroupHover();
       if (groupDropRef.current) showGroupDrop(null);
@@ -2620,6 +2616,7 @@ export function IdeaBoard({
         onGroupTitle: !!target.closest("[data-group-title]"),
         wasSelected: !duplicated && selectionRef.current.size === 1 && selectionRef.current.has(id),
         duplicated,
+        videoToggle: target.closest<HTMLElement>("[data-video-toggle]"),
         ...(() => {
           const all = dataRef.current.elements;
           const hiddenNow = hiddenElementIds(all);
@@ -2738,7 +2735,7 @@ export function IdeaBoard({
           const ph = moving.length === 1 ? placeholderAt(wp, new Set(op.origin.keys()), (p) => placeholderTakes(p, moving[0])) : null;
           const target = ph ?? (images ? imageTargetAt(wp, new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null);
           if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
-          trackGroupDrop(wp, new Set(op.origin.keys()), !!target, op.snapshot.elements);
+          trackGroupDrop(wp, new Set(op.origin.keys()), !!target);
         }
         const next: BoardData = {
           ...dataRef.current,
@@ -2938,6 +2935,14 @@ export function IdeaBoard({
           }
           apply(dataRef.current, { history: op.snapshot });
           return;
+        }
+        if (op.videoToggle && !op.duplicated) {
+          // 2026-11-09, Lino: the whole video picture drags the card; a click without moving plays / pauses
+          const v = op.videoToggle.parentElement?.querySelector("video");
+          if (v) {
+            if (v.paused || v.ended) void v.play().catch(() => {});
+            else v.pause();
+          }
         }
         if (op.duplicated) {
           // Alt-click without dragging: no copy
@@ -3766,7 +3771,7 @@ export function IdeaBoard({
             )}
             <div
               className="absolute pointer-events-none"
-              style={{ left: v.el.x, top: v.el.y, zIndex: 98600, transform: `translate(-35%, -35%) scale(${voteScale})`, transformOrigin: "0 0" }}
+              style={{ left: v.el.x, top: v.el.y, zIndex: 98600, transform: `translate(-35%, -35%) scale(${voteBadgeScale})`, transformOrigin: "0 0" }}
             >
               <span className={`flex items-center justify-center min-w-7 h-7 px-1.5 rounded-full text-xs font-bold shadow-lg border-2 border-[#161616] ${v.leader ? "bg-amber-500 text-black" : "bg-white text-black"}`}>
                 {v.letter}
@@ -3821,7 +3826,7 @@ export function IdeaBoard({
               disabled={!onVote}
               title={v.voters.some((x) => x.voter_name) ? undefined : t("ideaBoard.vote.hint")}
               className="absolute select-none [-webkit-touch-callout:none]"
-              style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${voteScale})`, transformOrigin: "0 0" }}
+              style={{ left: v.el.x + v.el.w, top: v.el.y + v.el.h, zIndex: 98700, transform: `translate(-80%, -60%) scale(${voteBadgeScale})`, transformOrigin: "0 0" }}
             >
               <span
                 className={`flex items-center gap-1 h-8 pl-2 pr-2.5 rounded-full text-sm font-semibold shadow-lg border transition-colors ${
@@ -4436,6 +4441,18 @@ export function IdeaBoard({
                   ))}
                 {!multi && target.type === "image" && <MenuItem label={t("ideaBoard.toScene")} onPress={() => menuAction(() => convertToScene(target.id))} />}
                 {multi && <MenuItem label={t("ideaBoard.groupAction")} hint="⌘G" onPress={() => menuAction(groupSelection)} />}
+                {/* 2026-11-09, Lino: taking a node out of its group only from here */}
+                {target.type !== "group" && data.elements.some((g) => g.type === "group" && [...selection].some((id) => g.children.includes(id))) && (
+                  <MenuItem
+                    label={t("ideaBoard.groupDrop.leave")}
+                    onPress={() =>
+                      menuAction(() => {
+                        const ids = new Set([...selectionRef.current].filter((id) => dataRef.current.elements.find((el) => el.id === id)?.type !== "group"));
+                        commit((d) => ({ ...d, elements: withMembership(d.elements, ids, null) }));
+                      })
+                    }
+                  />
+                )}
                 <MenuItem label={t("ideaBoard.duplicate")} hint="⌘D" onPress={() => menuAction(duplicateSelection)} />
                 <MenuItem label={t("ideaBoard.bringFront")} onPress={() => menuAction(() => reorderSelection(true))} />
                 <MenuItem label={t("ideaBoard.sendBack")} onPress={() => menuAction(() => reorderSelection(false))} />

@@ -181,7 +181,7 @@ export function BoardElementView({
     case "image":
       return <ImageNode el={el} onNaturalSize={onNaturalSize} missing={labels.missingFile} />;
     case "video":
-      return <VideoNode el={el} onNaturalSize={onNaturalSize} />;
+      return <VideoNode el={el} onNaturalSize={onNaturalSize} editable={editable} />;
     case "audio":
       return <AudioNode el={el} />;
     case "pdf":
@@ -873,7 +873,7 @@ function pauseOtherMedia(me: HTMLMediaElement) {
   });
 }
 
-function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
+function VideoNode({ el, onNaturalSize, editable }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; editable?: boolean }) {
   const canDownload = !!useContext(BoardDownloadContext);
   // 2026-11-09, Lino: "mit einem Klick aufs Video das Video starten oder stoppen — jetzt muss man immer auf
   // den kleinen Play-Button": a click / tap anywhere on the picture plays or pauses. A layer over the
@@ -919,11 +919,15 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
           />
+          {/* editable board (2026-11-09): no data-no-drag — the whole picture drags the card, the board
+              plays / pauses on a click without movement (IdeaBoard, data-video-toggle); read-only views
+              (client preview) keep their own click */}
           <div
-            data-no-drag
+            data-no-drag={editable ? undefined : true}
+            data-video-toggle
             role="button"
             aria-label={playing ? "Pause" : "Play"}
-            onClick={toggle}
+            onClick={editable ? undefined : toggle}
             className="absolute inset-x-0 top-0 bottom-12 cursor-pointer flex items-center justify-center"
           >
             {!playing && (
