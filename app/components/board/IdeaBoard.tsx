@@ -14,6 +14,7 @@ import {
   boundsOf,
   elementKindForMime,
   hiddenElementIds,
+  voteLetters,
   normalizeGroups,
   guessMime,
   looksLikeUrl,
@@ -806,9 +807,11 @@ export function IdeaBoard({
       const members = data.elements
         .filter((e) => g.children.includes(e.id))
         .sort((a, b) => (Math.abs(a.y - b.y) > GRID * 2 ? a.y - b.y : a.x - b.x));
+      // 2026-11-09 — stable letters (lib/board.ts voteLetters): new variants get the next letter
+      const letters = voteLetters(g, members);
       const rows = members.map((el, i) => {
         const voters = (votes ?? []).filter((v) => v.group_id === g.id && v.element_id === el.id);
-        return { groupId: g.id, el, letter: String.fromCharCode(65 + (i % 26)), voters, mine: !!myVoterKey && voters.some((v) => v.voter_key === myVoterKey), leader: false };
+        return { groupId: g.id, el, letter: letters[el.id] ?? String.fromCharCode(65 + (i % 26)), voters, mine: !!myVoterKey && voters.some((v) => v.voter_key === myVoterKey), leader: false };
       });
       const top = Math.max(0, ...rows.map((r) => r.voters.length));
       for (const r of rows) r.leader = top > 0 && r.voters.length === top;

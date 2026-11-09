@@ -140,6 +140,8 @@ export interface GroupElement extends BaseElement {
   /** 2026-10-08, Lino: "Varianten zur Wahl" — members are variants people
    * vote on with 👍🏼 (votes are stored server-side, not in the board) */
   vote?: boolean;
+  /** 2026-11-09 — stable variant letter per member id (see voteLetters) */
+  letters?: Record<string, string>;
 }
 
 /** one 👍🏼 on a variant (GET …/board/votes) */
@@ -805,6 +807,25 @@ function uniqueSceneNumbers(data: BoardData): BoardData {
   return { ...data, elements: data.elements.map((el) => (renumber.has(el.id) ? ({ ...el, number: renumber.get(el.id)! } as BoardElement) : el)) };
 }
 
+const letterOf = (i: number) => (i < 26 ? String.fromCharCode(65 + i) : String.fromCharCode(64 + Math.floor(i / 26)) + String.fromCharCode(65 + (i % 26)));
+const letterIndex = (v: string) => (v.length === 1 ? v.charCodeAt(0) - 65 : 26 * (v.charCodeAt(0) - 64) + v.charCodeAt(1) - 65);
+const readingOrder = (a: BoardElement, b: BoardElement) => (Math.abs(a.y - b.y) > GRID * 2 ? a.y - b.y : a.x - b.x);
+
+/** 2026-11-09, Lino: stable letters for a 🗳️ Variantenwahl — a member keeps its letter, a new one gets the
+ * next letter after the highest ever used in this group (gaps aren't reused, so a letter never means two
+ * different variants); a group without stored letters takes over its current reading order (nothing
+ * changes visually). Mirrors the backend's idea_board.vote_letters. */
+export function voteLetters(group: GroupElement, members: BoardElement[]): Record<string, string> {
+  const stored = Object.fromEntries(Object.entries(group.letters ?? {}).filter(([, v]) => /^[A-Z]{1,2}$/.test(v)));
+  const inOrder = (els: BoardElement[]) => [...els].sort(readingOrder);
+  if (!Object.keys(stored).length) return Object.fromEntries(inOrder(members).map((m, i) => [m.id, letterOf(i)]));
+  const out: Record<string, string> = {};
+  for (const m of members) if (stored[m.id]) out[m.id] = stored[m.id];
+  let next = Math.max(-1, ...Object.values(stored).map(letterIndex)) + 1;
+  for (const m of inOrder(members.filter((m) => !out[m.id]))) out[m.id] = letterOf(next++);
+  return out;
+}
+
 export function normalizeGroups(data: BoardData): BoardData {
   data = uniqueSceneNumbers(data);
   // a thumbnail whose element is gone (or lost its image) no longer counts
@@ -828,6 +849,15 @@ export function normalizeGroups(data: BoardData): BoardData {
     if (alive.length !== el.children.length) {
       changed = true;
       el = { ...el, children: alive };
+    }
+    if ((el as GroupElement).vote) {
+      const memberEls = (el as GroupElement).children.map((id) => byId.get(id)).filter((m): m is BoardElement => !!m && m.type !== "group");
+      const letters = voteLetters(el as GroupElement, memberEls);
+      const cur = (el as GroupElement).letters ?? {};
+      if (Object.keys(letters).length !== Object.keys(cur).length || Object.entries(letters).some(([k, v]) => cur[k] !== v)) {
+        changed = true;
+        el = { ...(el as GroupElement), letters };
+      }
     }
     if (el.collapsed) return [el];
     const members = (el as GroupElement).children.map((id) => byId.get(id)).filter((m): m is BoardElement => !!m && m.type !== "group");
