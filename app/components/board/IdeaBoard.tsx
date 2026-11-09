@@ -98,8 +98,10 @@ interface View {
 }
 interface Pending {
   id: string;
-  /** files dropped together move together while they upload (2026-11-09) */
+  /** files dropped together (one upload) */
   batch?: string;
+  /** dropped onto / moved into a group: the finished file joins it (2026-11-09) */
+  groupId?: string | null;
   label: string;
   progress: number | null;
   x: number;
@@ -953,6 +955,71 @@ export function IdeaBoard({
   // from the Finder) becomes its image — while hovering, the card shows that
   // its image will be set / replaced. Moodboards get the same hint.
   const [imageDropTarget, setImageDropTarget] = useState<string | null>(null);
+  // 2026-11-09, Lino: drag a node over a group and wait briefly → the group lights up («In Gruppe legen»),
+  // dropping makes it a member (also a 🗳️ Variantenwahl: it becomes a variant); dragging a member out of
+  // its group's other members → «Aus Gruppe nehmen». Files from the desktop and upload tiles join too.
+  const [groupDrop, setGroupDrop] = useState<{ id: string; mode: "join" | "leave" } | null>(null);
+  const groupDropRef = useRef<{ id: string; mode: "join" | "leave" } | null>(null);
+  const groupHover = useRef<{ id: string | null; timer: number | null }>({ id: null, timer: null });
+  function showGroupDrop(next: { id: string; mode: "join" | "leave" } | null) {
+    groupDropRef.current = next;
+    setGroupDrop((cur) => (cur?.id === next?.id && cur?.mode === next?.mode ? cur : next));
+  }
+  function clearGroupHover() {
+    if (groupHover.current.timer) window.clearTimeout(groupHover.current.timer);
+    groupHover.current = { id: null, timer: null };
+  }
+  /** the smallest open group whose frame holds the point (not one that contains `exclude`) */
+  function groupAt(p: Point, exclude: Set<string> = new Set()): GroupElement | null {
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    let best: GroupElement | null = null;
+    for (const el of dataRef.current.elements) {
+      if (el.type !== "group" || el.collapsed || hiddenNow.has(el.id) || exclude.has(el.id)) continue;
+      if (el.children.some((c) => exclude.has(c))) continue;
+      if (p.x < el.x || p.y < el.y || p.x > el.x + el.w || p.y > el.y + el.h) continue;
+      if (!best || el.w * el.h < best.w * best.h) best = el;
+    }
+    return best;
+  }
+  /** while moving: which group would the nodes join / leave (join after a short dwell) */
+  function trackGroupDrop(p: Point, movingIds: Set<string>, blocked: boolean, before: BoardElement[]) {
+    const els = dataRef.current.elements;
+    const movingEls = els.filter((el) => movingIds.has(el.id));
+    if (blocked || !movingEls.length || movingEls.some((el) => el.type === "group")) {
+      clearGroupHover();
+      if (groupDropRef.current) showGroupDrop(null);
+      return;
+    }
+    const home = els.find((el): el is GroupElement => el.type === "group" && !el.collapsed && movingEls.every((m) => el.children.includes(m.id)));
+    if (home) {
+      clearGroupHover();
+      // out = the pointer left the group's frame as it was when the drag started (its own frame grows
+      // with the dragged member, so that can't be the test)
+      const f = before.find((el) => el.id === home.id) ?? home;
+      const m = GRID;
+      const outside = p.x < f.x - m || p.y < f.y - m || p.x > f.x + f.w + m || p.y > f.y + f.h + m;
+      showGroupDrop(outside ? { id: home.id, mode: "leave" } : null);
+      return;
+    }
+    const g = groupAt(p, movingIds);
+    if (!g) {
+      clearGroupHover();
+      if (groupDropRef.current) showGroupDrop(null);
+      return;
+    }
+    if (groupHover.current.id === g.id) return;
+    clearGroupHover();
+    if (groupDropRef.current) showGroupDrop(null);
+    groupHover.current = { id: g.id, timer: window.setTimeout(() => showGroupDrop({ id: g.id, mode: "join" }), 450) };
+  }
+  /** nodes into a group (out of any other group first) */
+  function withMembership(elements: BoardElement[], ids: Set<string>, groupId: string | null): BoardElement[] {
+    return elements.map((el) => {
+      if (el.type !== "group") return el;
+      const kept = el.children.filter((c) => !ids.has(c));
+      return { ...el, children: el.id === groupId ? [...kept, ...ids] : kept } as BoardElement;
+    });
+  }
   function imageTargetAt(w: Point, exclude: Set<string>, kinds: ("scene" | "moodboard" | "lutpreview")[]): BoardElement | null {
     const hiddenNow = hiddenElementIds(dataRef.current.elements);
     let best: BoardElement | null = null;
@@ -1208,7 +1275,7 @@ export function IdeaBoard({
     }
   }
 
-  async function addFiles(files: File[], at: Point, avoidOverlap = false) {
+  async function addFiles(files: File[], at: Point, avoidOverlap = false, groupId: string | null = null) {
     if (!uploadFile) return;
     // 1) measure every file first (sizes decide the layout)
     const items: { file: File; mime: string; kind: MediaElement["type"]; w: number; h: number }[] = [];
@@ -1286,7 +1353,7 @@ export function IdeaBoard({
       items.map(async (it, i) => {
         const { x, y } = spots[i];
         const pid = newId();
-        setPending((p) => [...p, { id: pid, batch, label: it.file.name, progress: 0, x, y, w: it.w, h: it.h }]);
+        setPending((p) => [...p, { id: pid, batch, groupId, label: it.file.name, progress: 0, x, y, w: it.w, h: it.h }]);
         try {
           const { key, src } = await uploadFile(it.file, it.mime, (fr) =>
             setPending((p) => p.map((pi) => (pi.id === pid ? { ...pi, progress: fr } : pi))),
@@ -1308,7 +1375,13 @@ export function IdeaBoard({
             mime: it.mime,
             ...(it.kind === "pdf" ? { size: it.file.size } : {}),
           };
-          addElements([el], items.length === 1);
+          const joinGroup = now ? now.groupId : groupId;
+          if (joinGroup && dataRef.current.elements.some((g) => g.id === joinGroup && g.type === "group")) {
+            commit((d) => ({ ...d, elements: withMembership([...d.elements, el], new Set([el.id]), joinGroup) }));
+            if (items.length === 1) setSelection(new Set([el.id]));
+          } else {
+            addElements([el], items.length === 1);
+          }
           added.push(el.id);
         } catch {
           onError?.(t("ideaBoard.uploadFailed", { name: it.file.name }));
@@ -2351,8 +2424,14 @@ export function IdeaBoard({
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
-      // snap to the grid like a normal move
-      setPending((list) => list.map((pi) => (ids.has(pi.id) ? { ...pi, x: snap(pi.x), y: snap(pi.y) } : pi)));
+      // snap to the grid like a normal move; the tile's centre decides which group the file will join
+      setPending((list) =>
+        list.map((pi) => {
+          if (!ids.has(pi.id)) return pi;
+          const g = groupAt({ x: pi.x + pi.w / 2, y: pi.y + pi.h / 2 });
+          return { ...pi, x: snap(pi.x), y: snap(pi.y), groupId: g?.id ?? null };
+        }),
+      );
     };
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -2654,6 +2733,7 @@ export function IdeaBoard({
           const ph = moving.length === 1 ? placeholderAt(wp, new Set(op.origin.keys()), (p) => placeholderTakes(p, moving[0])) : null;
           const target = ph ?? (images ? imageTargetAt(wp, new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null);
           if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
+          trackGroupDrop(wp, new Set(op.origin.keys()), !!target, op.snapshot.elements);
         }
         const next: BoardData = {
           ...dataRef.current,
@@ -2841,6 +2921,14 @@ export function IdeaBoard({
               { history: op.snapshot },
             );
             setSelection(new Set([mb.id]));
+            return;
+          }
+          const gd = groupDropRef.current;
+          clearGroupHover();
+          showGroupDrop(null);
+          if (gd) {
+            const ids = new Set(moving.filter((x) => x.type !== "group").map((x) => x.id));
+            apply({ ...dataRef.current, elements: withMembership(dataRef.current.elements, ids, gd.mode === "join" ? gd.id : null) }, { history: op.snapshot });
             return;
           }
           apply(dataRef.current, { history: op.snapshot });
@@ -3203,7 +3291,9 @@ export function IdeaBoard({
       return;
     }
     if (files.length) {
-      void addFiles(files, at, files.length > 1);
+      const g = groupAt(at);
+      showGroupDrop(null);
+      void addFiles(files, at, files.length > 1, g?.id ?? null);
       return;
     }
     const uri = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
@@ -3391,9 +3481,14 @@ export function IdeaBoard({
         const wp = toWorld(e.clientX, e.clientY);
         const target = files ? (imageTargetAt(wp, new Set(), ["lutpreview"]) ?? (one ? placeholderAt(wp, new Set(), takesFiles) : null) ?? imageTargetAt(wp, new Set(), one ? ["scene", "moodboard"] : ["moodboard"])) : null;
         if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
+        const g = files && !target ? groupAt(wp) : null;
+        if ((g?.id ?? null) !== (groupDropRef.current?.id ?? null)) showGroupDrop(g ? { id: g.id, mode: "join" } : null);
       }}
       onDragLeave={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setImageDropTarget(null);
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+          setImageDropTarget(null);
+          showGroupDrop(null);
+        }
       }}
       onDrop={onDrop}
       // middle-click pans the view — no "open link in new tab" on release
@@ -3864,6 +3959,24 @@ export function IdeaBoard({
               >
                 <svg width={14 / view.scale} height={14 / view.scale} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
                 {label}
+              </span>
+            </div>
+          );
+        })()}
+        {(() => {
+          const g = groupDrop ? data.elements.find((x) => x.id === groupDrop.id) : null;
+          if (!g || !groupDrop) return null;
+          const leave = groupDrop.mode === "leave";
+          return (
+            <div
+              className={`absolute rounded-[14px] pointer-events-none flex items-start justify-center ${leave ? "bg-red-500/[0.06]" : "bg-blue-500/10"}`}
+              style={{ left: g.x, top: g.y, width: g.w, height: g.h, zIndex: 99990, boxShadow: `0 0 0 ${3 / view.scale}px ${leave ? "#f87171" : "#3b82f6"}` }}
+            >
+              <span
+                className={`mt-2 rounded-full text-white font-semibold shadow-lg whitespace-nowrap ${leave ? "bg-red-500" : "bg-blue-600"}`}
+                style={{ fontSize: 13 / view.scale, padding: `${6 / view.scale}px ${12 / view.scale}px`, transform: `translateY(-${36 / view.scale}px)` }}
+              >
+                {leave ? t("ideaBoard.groupDrop.leave") : t("ideaBoard.groupDrop.join")}
               </span>
             </div>
           );
