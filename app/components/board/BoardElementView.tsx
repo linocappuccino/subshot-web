@@ -866,6 +866,13 @@ function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNatural
   );
 }
 
+/** 2026-11-09, Lino: one medium at a time — starting a video / audio on the board pauses the others */
+function pauseOtherMedia(me: HTMLMediaElement) {
+  document.querySelectorAll<HTMLMediaElement>("video, audio").forEach((m) => {
+    if (m !== me && !m.paused) m.pause();
+  });
+}
+
 function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void }) {
   const canDownload = !!useContext(BoardDownloadContext);
   // 2026-11-09, Lino: "mit einem Klick aufs Video das Video starten oder stoppen — jetzt muss man immer auf
@@ -903,7 +910,12 @@ function VideoNode({ el, onNaturalSize }: { el: MediaElement; onNaturalSize: (w:
             data-no-drag
             className="flex-1 min-h-0 w-full bg-black object-contain"
             onLoadedMetadata={(e) => onNaturalSize(e.currentTarget.videoWidth, e.currentTarget.videoHeight)}
-            onPlay={() => setPlaying(true)}
+            onPlay={(e) => {
+              setPlaying(true);
+              // 2026-11-09, Lino: "klickt man auf ein anderes Video, wird das vorherige automatisch gestoppt"
+              // — only one video / audio plays at a time on the board
+              pauseOtherMedia(e.currentTarget);
+            }}
             onPause={() => setPlaying(false)}
             onEnded={() => setPlaying(false)}
           />
@@ -938,7 +950,17 @@ function AudioNode({ el }: { el: MediaElement }) {
         </div>
         <span className="text-sm text-white/85 truncate">{el.name || "Audio"}</span>
       </div>
-      {el.src && <audio src={el.src} controls controlsList={canDownload ? undefined : "nodownload"} preload="metadata" data-no-drag className="w-full h-9" />}
+      {el.src && (
+        <audio
+          src={el.src}
+          controls
+          controlsList={canDownload ? undefined : "nodownload"}
+          preload="metadata"
+          data-no-drag
+          className="w-full h-9"
+          onPlay={(e) => pauseOtherMedia(e.currentTarget)}
+        />
+      )}
     </div>
   );
 }
