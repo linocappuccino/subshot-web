@@ -1560,18 +1560,23 @@ export function VideoReviewModal({
         // with the timeline truly centered; sm–lg the timeline gets its own centered row above
         // the existing nav/icons row (a 4-step timeline doesn't fit between them there); below
         // sm everything stacks as before, timeline first.
+        // 2026-11-09, Lino (9:16 video: «Neue Version» lay on top of «Approved»): the layout follows the
+        // WINDOW's width (container queries), not the browser's — a portrait video makes the window much
+        // narrower than the screen, and the one-row layout's right column then overflowed onto the
+        // timeline. One row only when everything fits (≥ 1280 px), else timeline on its own row.
+        <div className="@container shrink-0">
         <div
           ref={headerRef}
-          className="flex flex-col gap-2 px-5 py-3 border-b border-white/10 shrink-0 sm:grid sm:items-center sm:gap-x-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:[grid-template-areas:'time_time'_'left_right'] 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] 2xl:[grid-template-areas:'left_time_right']"
+          className="flex flex-col gap-2 px-5 py-3 border-b border-white/10 @min-[640px]:grid @min-[640px]:items-center @min-[640px]:gap-x-4 @min-[640px]:grid-cols-[minmax(0,1fr)_auto] @min-[640px]:[grid-template-areas:'time_time'_'left_right'] @min-[1280px]:grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] @min-[1280px]:[grid-template-areas:'left_time_right']"
         >
-          <div className="flex justify-center min-w-0 overflow-x-auto sm:[grid-area:time]">
+          <div className="flex justify-center min-w-0 overflow-x-auto @min-[640px]:[grid-area:time]">
             <PostStageTimeline
               stage={effectivePostStage(currentVersion, video, sectionStatus)}
               onChange={canEdit && !publicMode ? saveStage : undefined}
               disabled={savingStage || !currentVersion}
             />
           </div>
-          <div className="flex items-center gap-3 min-w-0 sm:[grid-area:left]">
+          <div className="flex items-center gap-3 min-w-0 @min-[640px]:[grid-area:left]">
             <button
               onClick={() => setVersionIndex((i) => i - 1)}
               disabled={versionIndex <= 0}
@@ -1697,7 +1702,7 @@ export function VideoReviewModal({
               machen?" — grouped with hairline dividers: Neue Version | watermark, download, frame,
               subtitles, comments | present, delete | close; never wraps (the X used to drop onto its
               own line at laptop width). */}
-          <div className="flex items-center gap-1 shrink-0 flex-nowrap sm:[grid-area:right] sm:justify-self-end">
+          <div className="flex items-center gap-1 shrink-0 flex-nowrap @min-[640px]:[grid-area:right] @min-[640px]:justify-self-end">
             {canEdit && (
               <>
                 <input
@@ -1713,7 +1718,7 @@ export function VideoReviewModal({
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
-                  className="relative overflow-hidden text-xs font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 disabled:opacity-100 rounded-lg px-3 py-1.5 transition-colors"
+                  className="relative overflow-hidden shrink-0 whitespace-nowrap text-xs font-medium text-white/70 hover:text-white bg-white/5 hover:bg-white/10 disabled:opacity-100 rounded-lg px-3 py-1.5 transition-colors"
                 >
                   {uploading
                     ? `${t("videoTile.uploading")}${uploadProgress !== null ? ` ${Math.round(uploadProgress * 100)}%` : ""}`
@@ -1839,6 +1844,7 @@ export function VideoReviewModal({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
             </button>
           </div>
+        </div>
         </div>
         )}
         {/* 2026-08-04 — schwebendes X, nur im Präsentationsmodus: verlässt
