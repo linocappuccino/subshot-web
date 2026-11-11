@@ -17,7 +17,7 @@ import { useLanguage } from "@/lib/i18n";
  * old separate "Link"/"Teilen" quick-action buttons, since password
  * protection needs a place to live and folding it into a one-click button
  * would either bury it or turn every share into a two-click flow anyway. */
-export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard", sectionId, ideaId }: {
+export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "storyboard", sectionId, ideaId, currentView }: {
   open: boolean;
   onClose: () => void;
   projectId: string;
@@ -38,6 +38,9 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
    * preview-scenes/[token]/page.tsx's own `?section=` handling), so this
    * is purely a client-side URL addition, not a new backend concept. */
   sectionId?: string | null;
+  /** 2026-11-11, Lino: kind "board" — «Aktuellen Ausschnitt teilen»: the board area visible right now
+   * (board pixels); the link then opens exactly there (?view=x,y,w,h, fitted into any screen) */
+  currentView?: () => { x: number; y: number; w: number; h: number } | null;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -94,7 +97,10 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
   // Client-side only — same underlying link/token for every visitor of this
   // project+kind, just with `?section=` appended when shared from inside a
   // specific shotlist (see sectionId's own doc comment above).
-  const displayUrl = url && kind === "storyboard" && sectionId ? `${url}?section=${sectionId}` : url;
+  const [viewOnly, setViewOnly] = useState(false);
+  const [view, setView] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const viewUrl = (u: string) => (view ? `${u}${u.includes("?") ? "&" : "?"}view=${[view.x, view.y, view.w, view.h].map((n) => Math.round(n)).join(",")}` : u);
+  const displayUrl = url && kind === "storyboard" && sectionId ? `${url}?section=${sectionId}` : url && kind === "board" && viewOnly ? viewUrl(url) : url;
 
   async function copyLink() {
     if (!displayUrl) return;
@@ -198,6 +204,20 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
           </p>
         )}
         {kind === "board" && <p className="text-xs text-white/40 mt-1">{t("shareLinkModal.boardHint")}</p>}
+        {kind === "board" && currentView && (
+          <div className="mt-3">
+            <Switch
+              checked={viewOnly}
+              onChange={(on: boolean) => {
+                // the area at the moment of switching on (the board doesn't move while the dialog is open)
+                if (on) setView(currentView());
+                setViewOnly(on);
+              }}
+              label="Aktuellen Ausschnitt teilen"
+            />
+            <p className="text-xs text-white/40 mt-1">Der Link öffnet genau den Bereich, den du gerade siehst – auf jedem Bildschirm passend eingepasst.</p>
+          </div>
+        )}
       </FieldGroup>
 
       <FieldGroup className="mb-2">

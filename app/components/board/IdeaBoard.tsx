@@ -343,6 +343,8 @@ export function IdeaBoard({
   onPlacePin,
   pendingPin,
   focusRequest,
+  initialView,
+  viewRectRef,
   votes,
   myVoterKey,
   onVote,
@@ -380,6 +382,11 @@ export function IdeaBoard({
   onPlacePin?: (anchor: BoardPinAnchor) => void;
   /** the pin being composed, before it's saved */
   pendingPin?: (BoardPinAnchor & { color?: string }) | null;
+  /** 2026-11-11, Lino: «Aktuellen Ausschnitt teilen» — open on exactly this board area (board pixels),
+   * fitted into this screen, instead of the whole board */
+  initialView?: Rect | null;
+  /** the sender side: reads the area visible right now (board pixels) */
+  viewRectRef?: React.MutableRefObject<(() => Rect | null) | null>;
   /** zoom to a node (e.g. clicking a pinned comment in the sidebar) */
   focusRequest?: { elementId: string; nonce: number } | null;
   /** 👍🏼 on the variants of vote groups (see GroupElement.vote) */
@@ -836,8 +843,22 @@ export function IdeaBoard({
   const votedIds = useMemo(() => new Set(voteInfo.map((v) => v.el.id)), [voteInfo]);
 
   useLayoutEffect(() => {
-    fitToContent();
+    if (initialView && initialView.w > 0 && initialView.h > 0) zoomToRect(initialView, { pad: 0, maxScale: MAX_SCALE });
+    else fitToContent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToContent]);
+  useEffect(() => {
+    if (!viewRectRef) return;
+    viewRectRef.current = () => {
+      const rect = viewportRef.current?.getBoundingClientRect();
+      if (!rect) return null;
+      const v = viewRef.current;
+      return { x: -v.x / v.scale, y: -v.y / v.scale, w: rect.width / v.scale, h: rect.height / v.scale };
+    };
+    return () => {
+      viewRectRef.current = null;
+    };
+  }, [viewRectRef]);
 
   // Wheel = zoom around the pointer (Lino's spec), trackpad pinch arrives as
   // ctrl+wheel and zooms faster per delta. Native listener: React's onWheel

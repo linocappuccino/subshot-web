@@ -68,10 +68,13 @@ export function PublicIdeaLightbox({
   highlightedAnnotationId = null, hoveredAnnotationId = null,
   onSelectAnnotation, onDeleteAnnotation,
   pendingSelection = null, onCancelPendingSelection, onSaveHighlightComment,
+  initialView = null,
 }: {
   idea: IdeaPreview;
   token: string;
   unlockToken: string | null;
+  /** 2026-11-11 — «Aktuellen Ausschnitt teilen»: the board area the link opens on (?view=x,y,w,h) */
+  initialView?: { x: number; y: number; w: number; h: number } | null;
   /** 2026-11-09 — omitted on a «board» share link: the client can't leave the canvas */
   onClose?: () => void;
   onPrev?: () => void;
@@ -527,6 +530,7 @@ export function PublicIdeaLightbox({
                 token={token}
                 unlockToken={unlockToken}
                 ideaId={idea.id}
+                initialView={initialView}
                 pins={boardPins}
                 onPinClick={onBoardPinClick}
                 pinPlacing={pinPlacing}
