@@ -749,6 +749,28 @@ export interface FlowPathEntry {
   /** «Ja» taken automatically when an end step was done (resumed after a «Nein») */
   r?: boolean;
 }
+/** 2026-11-11, Lino: «Credits» — the project's AI spend (Higgsfield, Weavy …) in CHF / USD. The entries
+ * live on the server per project (GET /projects/{id}/credits), the node only stores how it looks.
+ * Members only: share pages never get it. */
+export interface CreditsElement extends BaseElement {
+  type: "credits";
+  title: string;
+  currency?: "CHF" | "USD";
+  collapsed?: boolean;
+}
+
+export interface ProjectCredits {
+  entries: { id: string; date: string | null; source: string; description: string; credits: number; amount_usd: number | null; usd: number | null; estimated: boolean; idea_id: string | null }[];
+  sources: { source: string; credits: number; usd: number; chf: number; entries: number; unpriced: number; usd_per_credit?: number | null }[];
+  total_credits: number;
+  total_usd: number;
+  total_chf: number;
+  unpriced_entries: number;
+  usd_per_credit: Record<string, number>;
+  rate: { rate: number; date: string | null; source: string; stale?: boolean };
+  known_sources: string[];
+}
+
 export interface FlowElement extends BaseElement {
   type: "flow";
   title: string;
@@ -759,7 +781,7 @@ export interface FlowElement extends BaseElement {
   finished?: boolean;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);

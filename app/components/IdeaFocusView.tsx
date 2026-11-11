@@ -1,5 +1,6 @@
 "use client";
 
+import { BoardCreditsContext, type BoardCreditsApi } from "./board/BoardCredits";
 import { IdeaFassungenButton } from "./RequiredFassungen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -321,6 +322,17 @@ function IdeaBoardScreen({
     api.members(idea.project_id).then(setMembers).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea.id]);
+  // 2026-11-11: the «Credits» node's data (project-wide AI spend, members only)
+  const creditsApi = useMemo<BoardCreditsApi>(
+    () => ({
+      get: () => api.getProjectCredits(idea.project_id),
+      add: (body) => api.addProjectCredit(idea.project_id, body),
+      remove: (entryId) => api.deleteProjectCredit(idea.project_id, entryId),
+      setPrice: (source, v) => api.setProjectCreditPrice(idea.project_id, source, v),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idea.project_id],
+  );
   const todoApi = useMemo<BoardTodoApi>(() => {
     const fail = (e: unknown) => {
       toast.showError(e instanceof ApiError ? e.message : t("ideaBoard.saveFailed"));
@@ -753,6 +765,7 @@ function IdeaBoardScreen({
       <div className="relative flex-1 min-h-0">
         {board ? (
           <BoardTodoContext.Provider value={{ api: todoApi }}>
+          <BoardCreditsContext.Provider value={creditsApi}>
           <IdeaBoard
             key={boardKey}
             className="absolute inset-0"
@@ -846,6 +859,7 @@ function IdeaBoardScreen({
               throw new Error(t("ideaBoard.aiFailed"));
             }}
           />
+          </BoardCreditsContext.Provider>
           </BoardTodoContext.Provider>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center text-sm text-white/40">

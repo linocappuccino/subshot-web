@@ -45,7 +45,7 @@ import type {
   VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule, ShootingOrderSuggestion, ClientLogo
 } from "./types";
 
-import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview } from "./board";
+import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview, ProjectCredits } from "./board";
 import type { BoardSchedule, SchedulePlanOp } from "./timetable";
 
 export type OAuthConsentRequest = {
@@ -1009,6 +1009,18 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         method: "POST",
         body: JSON.stringify({ ordered_image_ids: orderedImageIds }),
       }),
+
+    // ── «Credits» (2026-11-11): AI spend per project ─────────────────────
+    getProjectCredits: (projectId: string) => {
+      invalidateGetCache(`projects/${projectId}/credits`);
+      return request<ProjectCredits>(`projects/${projectId}/credits`);
+    },
+    addProjectCredit: (projectId: string, body: { credits: number; amount_usd?: number | null; description: string; source: string; date?: string }) =>
+      request<ProjectCredits>(`projects/${projectId}/credits`, { method: "POST", body: JSON.stringify(body) }),
+    deleteProjectCredit: (projectId: string, entryId: string) =>
+      request<ProjectCredits>(`projects/${projectId}/credits/${entryId}`, { method: "DELETE" }),
+    setProjectCreditPrice: (projectId: string, source: string, usdPerCredit: number | null) =>
+      request<ProjectCredits>(`projects/${projectId}/credits/price`, { method: "PUT", body: JSON.stringify({ source, usd_per_credit: usdPerCredit }) }),
 
     // ── Idea board (2026-10-08, see lib/board.ts) ────────────────────────
     // Board GETs bypass the 4s GET cache: reopening an idea right after
