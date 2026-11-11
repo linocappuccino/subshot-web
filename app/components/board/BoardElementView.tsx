@@ -57,7 +57,12 @@ export function boardHtmlToPlain(html: string): string {
   return (div.innerText || div.textContent || "").trim();
 }
 
-export const VIDEO_HEADER = 32;
+// 2026-11-11, Lino: no file-name bar inside video nodes any more — the video fills the whole node and the
+// name sits as a small label ABOVE the node, outside its frame (like a Figma frame label). Older nodes still
+// sized with the 32 px bar shrink to the video's aspect on load.
+export const VIDEO_HEADER = 0;
+/** room the label above a video node takes (world px) — the selection bar sits above it */
+export const VIDEO_LABEL = 22;
 
 export type ScenePatch = {
   title?: string;
@@ -139,6 +144,7 @@ export function BoardElementView({
   lutActive,
   lutBusy,
   onLutPick,
+  voted,
 }: {
   el: BoardElement;
   editing: boolean;
@@ -172,6 +178,8 @@ export function BoardElementView({
   lutActive?: boolean;
   lutBusy?: string | null;
   onLutPick?: () => void;
+  /** member of a vote group: the letter badge sits on the top-left corner → the video label starts after it */
+  voted?: boolean;
 }) {
   switch (el.type) {
     case "lutpreview":
@@ -181,7 +189,7 @@ export function BoardElementView({
     case "image":
       return <ImageNode el={el} onNaturalSize={onNaturalSize} missing={labels.missingFile} />;
     case "video":
-      return <VideoNode el={el} onNaturalSize={onNaturalSize} editable={editable} />;
+      return <VideoNode el={el} onNaturalSize={onNaturalSize} editable={editable} voted={voted} />;
     case "audio":
       return <AudioNode el={el} />;
     case "pdf":
@@ -873,13 +881,13 @@ function pauseOtherMedia(me: HTMLMediaElement) {
   });
 }
 
-function VideoNode({ el, onNaturalSize, editable }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; editable?: boolean }) {
+function VideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; editable?: boolean; voted?: boolean }) {
   const canDownload = !!useContext(BoardDownloadContext);
   // 2026-11-09, Lino: "mit einem Klick aufs Video das Video starten oder stoppen — jetzt muss man immer auf
   // den kleinen Play-Button": a click / tap anywhere on the picture plays or pauses. A layer over the
   // picture takes the click (the native player never sees it → no double toggle); the bottom strip with
   // the player's own controls (scrubbing, volume, fullscreen) stays native. data-no-drag: on the team's
-  // board the click also selects the card as before (cards move by their header).
+  // board the click also selects the card as before (the whole picture drags the card).
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   function toggle() {
@@ -889,11 +897,14 @@ function VideoNode({ el, onNaturalSize, editable }: { el: MediaElement; onNatura
     else v.pause();
   }
   return (
-    <div className="w-full h-full rounded-lg overflow-hidden bg-[#232325] border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
-      <div className="shrink-0 flex items-center gap-2 px-3 text-xs text-white/60" style={{ height: VIDEO_HEADER }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="shrink-0 opacity-70"><path d="M8 5v14l11-7z" /></svg>
-        <span className="truncate">{el.name || "Video"}</span>
-      </div>
+    <div className="relative w-full h-full">
+    <span
+      className="absolute bottom-full left-0 right-0 mb-1 truncate text-[12px] leading-4 font-medium text-white/60 pointer-events-none select-none"
+      style={{ paddingLeft: voted ? 26 : 2 }}
+    >
+      {el.name || "Video"}
+    </span>
+    <div title={el.name || "Video"} className="w-full h-full rounded-lg overflow-hidden bg-black border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
       {el.src ? (
         <div className="relative flex-1 min-h-0 flex">
           <video
@@ -940,6 +951,7 @@ function VideoNode({ el, onNaturalSize, editable }: { el: MediaElement; onNatura
       ) : (
         <div className="flex-1 bg-black" />
       )}
+    </div>
     </div>
   );
 }

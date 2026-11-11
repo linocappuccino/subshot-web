@@ -61,7 +61,7 @@ import {
   MEDIA_SLOTS,
   boardImageConfig,
 } from "@/lib/board";
-import { BoardElementView, VIDEO_HEADER, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
+import { BoardElementView, VIDEO_HEADER, VIDEO_LABEL, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
 import { BoardTimetableContext } from "./BoardTimetable";
 import { cascadeTimes, chainEnabled, chainSort, editSceneTime } from "@/lib/timetable";
 import { BoardTodoContext } from "./BoardTodo";
@@ -826,6 +826,7 @@ export function IdeaBoard({
     }
     return out;
   }, [data.elements, votes, myVoterKey]);
+  const votedIds = useMemo(() => new Set(voteInfo.map((v) => v.el.id)), [voteInfo]);
 
   useLayoutEffect(() => {
     fitToContent();
@@ -3389,6 +3390,10 @@ export function IdeaBoard({
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));
   const selBounds = boundsOf(selectedEls);
+  // the selection bar sits above a video's name label, not on it (2026-11-11)
+  const selBarBounds = selectedEls.some((el) => el.type === "video")
+    ? boundsOf(selectedEls.map((el) => (el.type === "video" ? { ...el, y: el.y - VIDEO_LABEL, h: el.h + VIDEO_LABEL } : el)))
+    : selBounds;
   const labels = {
     textPlaceholder: t("ideaBoard.textPlaceholder"),
     open: t("ideaBoard.open"),
@@ -3668,6 +3673,7 @@ export function IdeaBoard({
             >
               <BoardElementView
                 el={el}
+                voted={el.type === "video" && votedIds.has(el.id)}
                 editing={editingId === el.id}
                 editable={editable}
                 moodboardActive={el.type === "moodboard" && editable && selected && selection.size === 1 && !busyOp}
@@ -4123,7 +4129,7 @@ export function IdeaBoard({
         <FloatingBar
           view={view}
           bounds={
-            selBounds ??
+            selBarBounds ??
             (() => {
               const c = data.connectors.find((x) => x.id === selectedConnector);
               const a = c && byId.get(c.from);
