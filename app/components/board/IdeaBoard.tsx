@@ -619,7 +619,10 @@ export function IdeaBoard({
     // an open group's whole (frosted) frame counts as taken — something new
     // placed inside it would end up blurred behind the glass
     const taken = dataRef.current.elements.filter((el) => !hiddenNow.has(el.id));
-    return freeSpot(x, y, w, h, [...taken, ...extra], visibleWorldRect(), avoidOverlap);
+    // 2026-11-11: tiles still uploading / converting count as taken too — two GIFs or links started
+    // one after the other never land on top of each other
+    const busy: Rect[] = [...pendingRef.current, ...pendingGifsRef.current].map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h }));
+    return freeSpot(x, y, w, h, [...taken, ...busy, ...extra], visibleWorldRect(), avoidOverlap);
   }
 
   /** where pasted things go: at the mouse pointer, else the screen centre */
@@ -948,16 +951,24 @@ export function IdeaBoard({
     setMenu(null);
     setQuickAdd({ world: toWorld(client.x, client.y), client });
   }
-  function addGif(gif: { key: string; src: string; w: number; h: number }, slot?: Rect) {
+  function addGif(gif: { key: string; src: string; w: number; h: number }, slot?: Rect & { groupId?: string | null }) {
     const at = gifAt ?? viewportCenterWorld();
-    setGifAt(null);
+    // 2026-11-09, Lino: "alle Prozesse parallel" — a GIF that finishes in the background must not close
+    // a GIF maker that is open right now (only the maker's own direct result closes it)
+    if (!slot) setGifAt(null);
     const w = Math.min(360, gif.w);
     const h = Math.round((w * gif.h) / Math.max(1, gif.w));
     // from a progress node: exactly where it was (top-left, its width)
     const spot = slot ? { x: slot.x, y: slot.y } : place(at.x - w / 2, at.y - h / 2, w, h, true);
     const el: MediaElement = { id: newId(), type: "image", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, asset_key: gif.key, src: gif.src, name: "clip.gif", mime: "image/gif" };
-    addElements([el]);
-    setSelection(new Set([el.id]));
+    const joinGroup = slot?.groupId;
+    if (joinGroup && dataRef.current.elements.some((g) => g.id === joinGroup && g.type === "group")) {
+      commit((d) => ({ ...d, elements: withMembership([...d.elements, el], new Set([el.id]), joinGroup) }));
+    } else {
+      addElements([el], false);
+    }
+    // don't steal the selection from whatever the person is doing meanwhile
+    if (!slot) setSelection(new Set([el.id]));
   }
 
   // 2026-10-09, Lino: an image dragged over a scene card (from the canvas or
@@ -1035,7 +1046,42 @@ export function IdeaBoard({
   // "Make GIF" (2026-10-09, Lino): the maker closes, a progress node in the
   // video's format holds the spot until the GIF is ready and replaces it.
   // Local to this browser — nothing is saved until the GIF exists.
-  const [pendingGifs, setPendingGifs] = useState<{ id: string; x: number; y: number; w: number; h: number; started: number }[]>([]);
+  const [pendingGifs, setPendingGifs] = useState<{ id: string; x: number; y: number; w: number; h: number; started: number; groupId?: string | null }[]>([]);
+  const pendingGifsRef = useRef(pendingGifs);
+  useLayoutEffect(() => {
+    pendingGifsRef.current = pendingGifs;
+  }, [pendingGifs]);
+  /** 2026-11-09, Lino: every loading / converting node can be moved on its own at any time */
+  function startPendingGifDrag(e: React.PointerEvent<HTMLDivElement>, id: string) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
+    let last = { x: e.clientX, y: e.clientY };
+    const move = (ev: PointerEvent) => {
+      const sc = viewRef.current.scale;
+      const dx = (ev.clientX - last.x) / sc;
+      const dy = (ev.clientY - last.y) / sc;
+      last = { x: ev.clientX, y: ev.clientY };
+      setPendingGifs((list) => list.map((g) => (g.id === id ? { ...g, x: g.x + dx, y: g.y + dy } : g)));
+    };
+    const up = () => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      setPendingGifs((list) =>
+        list.map((g) => {
+          if (g.id !== id) return g;
+          const grp = groupAt({ x: g.x + g.w / 2, y: g.y + g.h / 2 });
+          return { ...g, x: snap(g.x), y: snap(g.y), groupId: grp?.id ?? null };
+        }),
+      );
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  }
   function startGif(render: () => Promise<{ key: string; src: string; w: number; h: number }>, aspect: number) {
     const at = gifAt ?? viewportCenterWorld();
     setGifAt(null);
@@ -1046,7 +1092,7 @@ export function IdeaBoard({
     const slot = { id: newId(), x: spot.x, y: spot.y, w, h, started: Date.now() };
     setPendingGifs((p) => [...p, slot]);
     render()
-      .then((gif) => addGif(gif, slot))
+      .then((gif) => addGif(gif, pendingGifsRef.current.find((g) => g.id === slot.id) ?? slot))
       .catch(() => onError?.(t("ideaBoard.gif.renderFailed" as never)))
       .finally(() => setPendingGifs((p) => p.filter((x) => x.id !== slot.id)));
   }
@@ -1405,14 +1451,15 @@ export function IdeaBoard({
       preview = fetchLinkPreview ? await fetchLinkPreview(url) : null;
     } catch {
       onError?.(t("ideaBoard.linkFailed"));
-    } finally {
-      setPending((p) => p.filter((it) => it.id !== pid));
     }
+    // moved while loading (2026-11-09): the card lands where its loading tile is now
+    const moved = pendingRef.current.find((it) => it.id === pid);
+    setPending((p) => p.filter((it) => it.id !== pid));
     const el: LinkElement = {
       id: newId(),
       type: "link",
-      x,
-      y,
+      x: moved?.x ?? x,
+      y: moved?.y ?? y,
       w: 336,
       h: preview?.image_src ? 288 : 120,
       z: maxZ(dataRef.current.elements) + 1,
@@ -3996,7 +4043,9 @@ export function IdeaBoard({
           // "GIF wird erstellt …" — holds the GIF's spot until it's ready
           <div
             key={g.id}
-            className="absolute rounded-lg border border-white/15 bg-[#232325] shadow-[0_2px_10px_rgba(0,0,0,0.35)] flex flex-col items-center justify-center gap-3 px-6 pointer-events-none"
+            data-board-ui
+            onPointerDown={(e) => startPendingGifDrag(e, g.id)}
+            className="absolute rounded-lg border border-white/15 bg-[#232325] shadow-[0_2px_10px_rgba(0,0,0,0.35)] flex flex-col items-center justify-center gap-3 px-6 cursor-grab active:cursor-grabbing touch-none select-none"
             style={{ left: g.x, top: g.y, width: g.w, height: g.h, zIndex: 100001 }}
           >
             <span className="text-2xl">🎞</span>

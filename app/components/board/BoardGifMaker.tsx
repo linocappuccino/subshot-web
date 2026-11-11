@@ -60,6 +60,16 @@ export function BoardGifMaker({
   const [duration, setDuration] = useState(0);
   const [start, setStart] = useState(0);
   const [len, setLen] = useState(2);
+  // 2026-11-11, Lino: a video shorter than 3 s → the GIF takes the whole video right away
+  function applyDuration(d: number) {
+    setDuration(d);
+    if (d > 0 && d <= MAX_LEN + 0.05) {
+      setStart(0);
+      setLen(Math.max(MIN_LEN, Math.min(MAX_LEN, d)));
+    } else {
+      setLen((l) => Math.min(l, d || l));
+    }
+  }
   const [now, setNow] = useState(0);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
@@ -112,7 +122,7 @@ export function BoardGifMaker({
       const r = await api.fromLink(link.trim());
       sourceKey.current = r.key;
       setVideoSrc(r.src);
-      setDuration(r.duration || 0);
+      applyDuration(r.duration || 0);
       setStage("edit");
     } catch (e) {
       setError(e instanceof Error && e.message === "blocked" ? tt("ideaBoard.gif.blocked") : tt("ideaBoard.gif.linkFailed"));
@@ -131,7 +141,7 @@ export function BoardGifMaker({
         const r = await api.fromLink(up.src);
         sourceKey.current = r.key;
         setVideoSrc(r.src);
-        setDuration(r.duration || 0);
+        applyDuration(r.duration || 0);
         setStage("edit");
       } finally {
         void api.discard(up.key).catch(() => {});
@@ -340,8 +350,7 @@ export function BoardGifMaker({
                   setDims({ w: e.currentTarget.videoWidth, h: e.currentTarget.videoHeight });
                   const d = e.currentTarget.duration;
                   if (isFinite(d) && d > 0) {
-                    setDuration(d);
-                    setLen((l) => Math.min(l, d));
+                    applyDuration(d);
                   }
                 }}
                 onTimeUpdate={onTime}
