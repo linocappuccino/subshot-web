@@ -1086,6 +1086,21 @@ export function IdeaBoard({
     if (groupDropRef.current) showGroupDrop(null);
     groupHover.current = { id: g.id, timer: window.setTimeout(() => showGroupDrop({ id: g.id, mode: "join" }), 450) };
   }
+  /** a tile that is still uploading / converting, dragged over a group: same dwell + highlight as a node */
+  function trackTileGroupDrop(p: Point) {
+    const g = groupAt(p);
+    if (!g) {
+      clearGroupHover();
+      if (groupDropRef.current) showGroupDrop(null);
+      return;
+    }
+    if (groupHover.current.id === g.id) return;
+    clearGroupHover();
+    if (groupDropRef.current) showGroupDrop(null);
+    groupHover.current = { id: g.id, timer: window.setTimeout(() => showGroupDrop({ id: g.id, mode: "join" }), 450) };
+  }
+  /** the temp tile being dragged right now (it shows the selection frame) */
+  const [tempDrag, setTempDrag] = useState<string | null>(null);
   /** nodes into a group (out of any other group first) */
   function withMembership(elements: BoardElement[], ids: Set<string>, groupId: string | null): BoardElement[] {
     return elements.map((el) => {
@@ -1115,34 +1130,7 @@ export function IdeaBoard({
   }, [pendingGifs]);
   /** 2026-11-09, Lino: every loading / converting node can be moved on its own at any time */
   function startPendingGifDrag(e: React.PointerEvent<HTMLDivElement>, id: string) {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
-    let last = { x: e.clientX, y: e.clientY };
-    const move = (ev: PointerEvent) => {
-      const sc = viewRef.current.scale;
-      const dx = (ev.clientX - last.x) / sc;
-      const dy = (ev.clientY - last.y) / sc;
-      last = { x: ev.clientX, y: ev.clientY };
-      setPendingGifs((list) => list.map((g) => (g.id === id ? { ...g, x: g.x + dx, y: g.y + dy } : g)));
-    };
-    const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
-      setPendingGifs((list) =>
-        list.map((g) => {
-          if (g.id !== id) return g;
-          const grp = groupAt({ x: g.x + g.w / 2, y: g.y + g.h / 2 });
-          return { ...g, x: snap(g.x), y: snap(g.y), groupId: grp?.id ?? null };
-        }),
-      );
-    };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    dragTempTile(e, "gif", id);
   }
   function startGif(render: () => Promise<{ key: string; src: string; w: number; h: number }>, aspect: number) {
     const at = gifAt ?? viewportCenterWorld();
@@ -2524,38 +2512,71 @@ export function IdeaBoard({
 
   /** 2026-11-09 — an uploading file can be moved (each one on its own) */
   function startPendingDrag(e: React.PointerEvent<HTMLDivElement>, p: Pending) {
+    // 2026-11-09, Lino: "man soll doch die einzelnen Dateien beim Upload verschieben können" — only the
+    // dragged file moves (was: the whole batch dropped together)
+    dragTempTile(e, "upload", p.id);
+  }
+
+  /** 2026-11-11, Lino: a tile that is still uploading / converting drags exactly like a node — live grid
+   * snap + smart guides to the other nodes (red lines), the selection frame, and the «In Gruppe legen»
+   * highlight after a short dwell over a group (dropped there = the finished node joins it). The upload /
+   * conversion keeps running; the finished node lands where the tile was dropped. */
+  function dragTempTile(e: React.PointerEvent<HTMLDivElement>, kind: "upload" | "gif", id: string) {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    const el = e.currentTarget;
-    el.setPointerCapture(e.pointerId);
-    let last = { x: e.clientX, y: e.clientY };
-    // 2026-11-09, Lino: "man soll doch die einzelnen Dateien beim Upload verschieben können" — only the
-    // dragged file moves (was: the whole batch dropped together)
-    const ids = new Set([p.id]);
+    const node = e.currentTarget;
+    node.setPointerCapture(e.pointerId);
+    const list = kind === "upload" ? pendingRef.current : pendingGifsRef.current;
+    const tile = list.find((t) => t.id === id);
+    if (!tile) return;
+    const box = { x: tile.x, y: tile.y, w: tile.w, h: tile.h };
+    const hiddenNow = hiddenElementIds(dataRef.current.elements);
+    const others: Rect[] = [
+      ...dataRef.current.elements.filter((el) => !hiddenNow.has(el.id) && el.type !== "drawing").map((el) => ({ x: el.x, y: el.y, w: el.w, h: el.h })),
+      ...[...pendingRef.current, ...pendingGifsRef.current].filter((t) => t.id !== id).map((t) => ({ x: t.x, y: t.y, w: t.w, h: t.h })),
+    ];
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let moved = false;
+    const setPos = (x: number, y: number, extra: Record<string, unknown> = {}) => {
+      if (kind === "upload") setPending((l) => l.map((t) => (t.id === id ? { ...t, x, y, ...extra } : t)));
+      else setPendingGifs((l) => l.map((t) => (t.id === id ? { ...t, x, y, ...extra } : t)));
+    };
     const move = (ev: PointerEvent) => {
-      const s = viewRef.current.scale;
-      const dx = (ev.clientX - last.x) / s;
-      const dy = (ev.clientY - last.y) / s;
-      last = { x: ev.clientX, y: ev.clientY };
-      setPending((list) => list.map((pi) => (ids.has(pi.id) ? { ...pi, x: pi.x + dx, y: pi.y + dy } : pi)));
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+      if (!moved) setTempDrag(id);
+      moved = true;
+      const scale = viewRef.current.scale;
+      const dx = (ev.clientX - sx) / scale;
+      const dy = (ev.clientY - sy) / scale;
+      const free = ev.altKey;
+      let ddx = snap(box.x + dx, !free) - box.x;
+      let ddy = snap(box.y + dy, !free) - box.y;
+      const g = smartGuides(box, ddx, ddy, others, GUIDE_SNAP_PX / scale);
+      ddx = g.ddx;
+      ddy = g.ddy;
+      setGuides(g.lines.length ? g.lines : null);
+      setPos(box.x + ddx, box.y + ddy);
+      trackTileGroupDrop(toWorld(ev.clientX, ev.clientY));
     };
     const up = () => {
-      el.removeEventListener("pointermove", move);
-      el.removeEventListener("pointerup", up);
-      el.removeEventListener("pointercancel", up);
-      // snap to the grid like a normal move; the tile's centre decides which group the file will join
-      setPending((list) =>
-        list.map((pi) => {
-          if (!ids.has(pi.id)) return pi;
-          const g = groupAt({ x: pi.x + pi.w / 2, y: pi.y + pi.h / 2 });
-          return { ...pi, x: snap(pi.x), y: snap(pi.y), groupId: g?.id ?? null };
-        }),
-      );
+      node.removeEventListener("pointermove", move);
+      node.removeEventListener("pointerup", up);
+      node.removeEventListener("pointercancel", up);
+      setGuides(null);
+      setTempDrag(null);
+      if (!moved) return;
+      // like a node: it joins the group that lit up («In Gruppe legen»), else none
+      const join = groupDropRef.current?.mode === "join" ? groupDropRef.current.id : null;
+      clearGroupHover();
+      showGroupDrop(null);
+      const cur = (kind === "upload" ? pendingRef.current : pendingGifsRef.current).find((t) => t.id === id);
+      if (cur) setPos(cur.x, cur.y, { groupId: join });
     };
-    el.addEventListener("pointermove", move);
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
+    node.addEventListener("pointermove", move);
+    node.addEventListener("pointerup", up);
+    node.addEventListener("pointercancel", up);
   }
 
   // ── pointer handling ──────────────────────────────────────────────────
@@ -4069,7 +4090,7 @@ export function IdeaBoard({
             key={p.id}
             data-board-ui
             onPointerDown={(e) => startPendingDrag(e, p)}
-            className="absolute rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60 cursor-grab active:cursor-grabbing touch-none select-none"
+            className={`absolute rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-2 p-3 text-xs text-white/60 cursor-grab active:cursor-grabbing touch-none select-none ${tempDrag === p.id ? "outline outline-2 outline-blue-500 outline-offset-2 shadow-2xl" : ""}`}
             style={{ left: p.x, top: p.y, width: p.w, height: p.h, zIndex: 100000 }}
           >
             <span className="truncate max-w-full">{p.progress === null ? p.label : `${t("ideaBoard.uploading")} ${p.label}`}</span>
@@ -4141,7 +4162,7 @@ export function IdeaBoard({
             key={g.id}
             data-board-ui
             onPointerDown={(e) => startPendingGifDrag(e, g.id)}
-            className="absolute rounded-lg border border-white/15 bg-[#232325] shadow-[0_2px_10px_rgba(0,0,0,0.35)] flex flex-col items-center justify-center gap-3 px-6 cursor-grab active:cursor-grabbing touch-none select-none"
+            className={`absolute rounded-lg border border-white/15 bg-[#232325] shadow-[0_2px_10px_rgba(0,0,0,0.35)] flex flex-col items-center justify-center gap-3 px-6 cursor-grab active:cursor-grabbing touch-none select-none ${tempDrag === g.id ? "outline outline-2 outline-blue-500 outline-offset-2 shadow-2xl" : ""}`}
             style={{ left: g.x, top: g.y, width: g.w, height: g.h, zIndex: 100001 }}
           >
             <span className="text-2xl">🎞</span>
