@@ -58,11 +58,13 @@ import {
   type BoardTemplate,
   type LutPreviewElement,
   type TimetableElement,
+  type FlowElement,
   MEDIA_SLOTS,
   boardImageConfig,
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, VIDEO_LABEL, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
 import { BoardTimetableContext } from "./BoardTimetable";
+import type { FlowPatch } from "./BoardFlow";
 import { cascadeTimes, chainEnabled, chainSort, editSceneTime } from "@/lib/timetable";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
@@ -343,6 +345,7 @@ export function IdeaBoard({
   myVoterKey,
   onVote,
   gifMaker,
+  allowFlow = false,
   clipboard,
   templates,
   allowPresentation = true,
@@ -384,6 +387,8 @@ export function IdeaBoard({
   onVote?: (groupId: string, elementId: string) => void;
   /** GIF maker (video link/upload → ≤3 s GIF image on the board) */
   gifMaker?: BoardGifApi;
+  /** 2026-11-11: «Frageablauf» node — admin-only (add menus + «Bearbeiten» only when true) */
+  allowFlow?: boolean;
   /** presentation mode button (2026-10-09, Lino: not on the client page) */
   allowPresentation?: boolean;
   /** 2026-10-09, Lino: ⌘C / ⌘V of nodes between boards — this board's idea,
@@ -904,6 +909,22 @@ export function IdeaBoard({
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
+  }
+
+  // 2026-11-11, Lino: «Frageablauf» (admin-only) — starts empty in «Bearbeiten»
+  function addFlow(at: Point) {
+    const w = 420;
+    const h = 300;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: FlowElement = { id: newId(), type: "flow", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "Frageablauf", steps: [] };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+  }
+  function commitFlow(id: string, patch: FlowPatch) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    if (!el || el.type !== "flow") return;
+    patchElements(new Map([[id, patch as Record<string, unknown>]]));
   }
 
   /** sets / removes (undefined) fields of elements in one undoable step */
@@ -2363,6 +2384,7 @@ export function IdeaBoard({
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
     { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
+    ...(allowFlow ? [{ id: "flow", icon: "🧭", label: "Frageablauf", keywords: "frageablauf ablauf entscheidung fragen ja nein checkliste flow decision tree" }] : []),
     { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
     ...(uploadFile ? [{ id: "lutpreview", icon: "◐", label: t("ideaBoard.menu.lutpreview" as never), keywords: "lut preview cube log grading look farbe vergleich vorher nachher compare before after" }] : []),
     { id: "upload", icon: "🖼", label: t("ideaBoard.menu.upload"), keywords: "bild foto video audio pdf datei hochladen upload image photo file" },
@@ -2386,6 +2408,7 @@ export function IdeaBoard({
       case "scene": return addScene(at, true);
       case "moodboard": return addMoodboard(at);
       case "timetable": return addTimetable(at);
+      case "flow": return addFlow(at);
       case "lutpreview": return addLutPreview(at);
       case "todo": return void addTodo(at);
       case "gif": return setGifAt(at);
@@ -3653,7 +3676,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -3686,6 +3709,8 @@ export function IdeaBoard({
                 onCommitText={(html) => commitText(el.id, html)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
                 onCommitTimetable={(patch) => commitTimetable(el.id, patch)}
+                canEditFlow={allowFlow}
+                onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
                 scenePlaceColor={el.type === "scene" ? placeColorOf(el.location_address) : null}
@@ -4448,6 +4473,7 @@ export function IdeaBoard({
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
                   <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
+                  {allowFlow && <MenuItem label="Frageablauf" onPress={() => menuAction(() => addFlow(menu.world))} />}
                   <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
                   {uploadFile && <MenuItem label={t("ideaBoard.menu.lutpreview" as never)} onPress={() => menuAction(() => addLutPreview(menu.world))} />}
                   {gifMaker && <MenuItem label={t("ideaBoard.menu.gif")} onPress={() => menuAction(() => setGifAt(menu.world))} />}
@@ -4613,6 +4639,11 @@ export function IdeaBoard({
           {todoCtx?.api && (
             <ToolButton title={t("ideaBoard.toolTodo")} onPress={() => void addTodo(viewportCenterWorld())}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 7 2 2 4-4" /><path d="m3 17 2 2 4-4" /><path d="M13 6h8M13 12h8M13 18h8" /></svg>
+            </ToolButton>
+          )}
+          {allowFlow && (
+            <ToolButton title="Frageablauf (Ja/Nein)" onPress={() => addFlow(viewportCenterWorld())}>
+              <span className="text-[15px] leading-none">🧭</span>
             </ToolButton>
           )}
           <ToolButton title={t("ideaBoard.toolTimetable")} onPress={() => addTimetable(viewportCenterWorld())}>

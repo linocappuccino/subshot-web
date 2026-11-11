@@ -58,6 +58,9 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
     case "timetable":
       parts.push(el.title, "Timetable", "Drehplan");
       break;
+    case "flow":
+      parts.push(el.title, "Frageablauf", ...el.steps.map((st) => st.text));
+      break;
   }
   if (withTags) parts.push(...(el.tags ?? []));
   return parts.filter(Boolean).join(" \n ");
@@ -65,7 +68,7 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
 
 const TYPE_ICON: Record<BoardElement["type"], string> = {
   text: "📝", sticky: "🗒️", scene: "🎬", link: "🔗", image: "🖼️", video: "🎞️", audio: "🎵", pdf: "📄", file: "📎",
-  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚", lutpreview: "◐", timetable: "🗓️",
+  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚", lutpreview: "◐", timetable: "🗓️", flow: "🧭",
 };
 
 export function elementLabel(el: BoardElement, t: (k: never) => string): string {
@@ -98,6 +101,8 @@ export function elementLabel(el: BoardElement, t: (k: never) => string): string 
       return el.title || tt(`ideaBoard.placeholder.${el.slot}`);
     case "timetable":
       return el.title || tt("ideaBoard.timetable.label");
+    case "flow":
+      return el.title || "Frageablauf";
     default:
       return el.name;
   }

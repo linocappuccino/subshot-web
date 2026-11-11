@@ -1,5 +1,6 @@
 "use client";
 
+import { FlowNode, type FlowPatch } from "./BoardFlow";
 import { BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
 import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
@@ -145,6 +146,8 @@ export function BoardElementView({
   lutBusy,
   onLutPick,
   voted,
+  canEditFlow,
+  onCommitFlow,
 }: {
   el: BoardElement;
   editing: boolean;
@@ -178,6 +181,9 @@ export function BoardElementView({
   lutActive?: boolean;
   lutBusy?: string | null;
   onLutPick?: () => void;
+  /** «Frageablauf» (admin-only, 2026-11-11): this viewer may switch the node to «Bearbeiten» */
+  canEditFlow?: boolean;
+  onCommitFlow?: (patch: FlowPatch) => void;
   /** member of a vote group: the letter badge sits on the top-left corner → the video label starts after it */
   voted?: boolean;
 }) {
@@ -236,6 +242,8 @@ export function BoardElementView({
           onCommitTitle={(title) => onCommitGroupTitle?.(title)}
         />
       );
+    case "flow":
+      return <FlowNode el={el} editable={editable} canEdit={!!canEditFlow && editable} onCommit={(patch) => onCommitFlow?.(patch)} onMeasure={onMeasure} />;
     case "timetable":
       return <TimetableNode el={el} editing={editing} editable={editable} onCommit={(patch) => onCommitTimetable?.(patch)} onMeasure={onMeasure} />;
     case "scene":

@@ -205,7 +205,7 @@ function IdeaBoardScreen({
   const toast = useToast();
   const { t } = useLanguage();
 
-  const [board, setBoard] = useState<{ data: BoardData; editable: boolean } | null>(null);
+  const [board, setBoard] = useState<{ data: BoardData; editable: boolean; flow?: boolean } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [boardKey, setBoardKey] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -294,7 +294,7 @@ function IdeaBoardScreen({
         latestRef.current = res.data;
         stickyCoverRef.current = res.data.cover_key ? { id: res.data.cover ?? null, key: res.data.cover_key, src: res.data.cover_src ?? null } : null;
         coverKeyRef.current = boardCoverKey(res.data, stickyCoverRef.current);
-        setBoard({ data: res.data, editable: !!res.editable });
+        setBoard({ data: res.data, editable: !!res.editable, flow: !!res.flow });
         setBoardKey((k) => k + 1);
       })
       .catch(() => setLoadError(true));
@@ -758,6 +758,7 @@ function IdeaBoardScreen({
             className="absolute inset-0"
             initial={board.data}
             editable={board.editable}
+            allowFlow={!!board.flow && board.editable}
             onChange={handleBoardChange}
             externalData={collab.remote}
             historyApi={collabLive ? collab.history : undefined}

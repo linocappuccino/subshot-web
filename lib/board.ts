@@ -730,7 +730,36 @@ export interface PlaceholderElement extends BaseElement {
 }
 export const MEDIA_SLOTS: PlaceholderSlot[] = ["image", "video", "audio", "pdf", "file"];
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement;
+/** 2026-11-11, Lino: «Frageablauf» — a decision flow of Ja / Nein questions and end steps (answers /
+ * tasks), played right on the board. ADMIN-ONLY (the API keeps it only on the admin's projects).
+ * The play state (current_step, path, finished) is part of the node → shared live like any change. */
+export interface FlowStep {
+  id: string;
+  kind: "question" | "end";
+  text: string;
+  /** question: the step «Ja» / «Nein» lead to (missing = the flow ends there) */
+  yes?: string;
+  no?: string;
+  /** end step: continue here after «Erledigt» (missing = back to the last «Nein» question's «Ja») */
+  next?: string;
+}
+export interface FlowPathEntry {
+  s: string;
+  a: "yes" | "no" | "done";
+  /** «Ja» taken automatically when an end step was done (resumed after a «Nein») */
+  r?: boolean;
+}
+export interface FlowElement extends BaseElement {
+  type: "flow";
+  title: string;
+  steps: FlowStep[];
+  start_step?: string;
+  current_step?: string;
+  path?: FlowPathEntry[];
+  finished?: boolean;
+}
+
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);
@@ -946,6 +975,8 @@ export interface BoardResponse {
   version: number;
   data: BoardData;
   editable?: boolean;
+  /** 2026-11-11: this viewer may add / edit «Frageablauf» nodes (admin on an admin project) */
+  flow?: boolean;
 }
 
 export interface BoardUploadTicket {
