@@ -34,6 +34,24 @@ interface BaseElement {
   z: number;
   /** 2026-10-08, Lino: tags (search / filter), up to 10 */
   tags?: string[];
+  /** 2026-11-11, Lino: «Ausgeblendet» — the team sees it dimmed, share / preview pages never get it */
+  hidden?: boolean;
+}
+
+/** ids of hidden nodes incl. the members of hidden groups (mirrors subshot-api idea_board.hidden_ids) */
+export function concealedIds(elements: BoardElement[]): Set<string> {
+  const out = new Set(elements.filter((e) => e.hidden).map((e) => e.id));
+  const groups = new Map(elements.filter((e): e is GroupElement => e.type === "group").map((g) => [g.id, g.children]));
+  const todo = [...out].filter((id) => groups.has(id));
+  while (todo.length) {
+    for (const c of groups.get(todo.pop()!) ?? []) {
+      if (!out.has(c)) {
+        out.add(c);
+        if (groups.has(c)) todo.push(c);
+      }
+    }
+  }
+  return out;
 }
 
 export interface TextElement extends BaseElement {

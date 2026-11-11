@@ -14,6 +14,7 @@ import {
   boundsOf,
   elementKindForMime,
   hiddenElementIds,
+  concealedIds,
   voteLetters,
   normalizeGroups,
   guessMime,
@@ -3457,6 +3458,12 @@ export function IdeaBoard({
     return [...loose, ...grouped, ...drawings];
   }, [data.elements, busyOp, selection]);
   const hidden = useMemo(() => hiddenElementIds(data.elements), [data.elements]);
+  // 2026-11-11, Lino: «Ausgeblendet» for clients — dimmed + crossed-eye badge for the team
+  const concealed = useMemo(() => concealedIds(data.elements), [data.elements]);
+  function setConcealed(hide: boolean) {
+    const ids = selectionRef.current;
+    patchElements(new Map([...ids].map((id) => [id, { hidden: hide ? true : undefined }])));
+  }
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));
   const selBounds = boundsOf(selectedEls);
@@ -3737,7 +3744,7 @@ export function IdeaBoard({
                 width: el.w,
                 height: growsWithContent ? undefined : el.h,
                 zIndex: rank + 10,
-                opacity: matches && !matches.has(el.id) ? 0.18 : undefined,
+                opacity: matches && !matches.has(el.id) ? 0.18 : concealed.has(el.id) ? 0.4 : undefined,
                 transition: "opacity .2s",
               }}
             >
@@ -3833,6 +3840,16 @@ export function IdeaBoard({
                     borderRadius: 12,
                   }}
                 />
+              )}
+              {concealed.has(el.id) && (el.hidden || el.type !== "group") && (
+                <span
+                  title="Ausgeblendet – Kunden sehen das nicht"
+                  data-concealed-badge
+                  className="absolute -top-2.5 -right-2.5 z-20 flex items-center justify-center w-7 h-7 rounded-full bg-[#1c1c1e] border border-white/25 text-white shadow-lg"
+                  style={{ transform: `scale(${Math.min(1, 1 / view.scale)})`, transformOrigin: "100% 0" }}
+                >
+                  <EyeOffIcon />
+                </span>
               )}
               {canResize && editingId !== el.id && (
                 <div
@@ -4470,6 +4487,15 @@ export function IdeaBoard({
               <Divider />
             </>
           )}
+          {selectedEls.length > 0 && (
+            <BarButton
+              title={selectedEls.every((e) => e.hidden) ? "Einblenden (Kunden sehen es wieder)" : "Ausblenden (Kunden sehen es nicht)"}
+              active={selectedEls.every((e) => e.hidden)}
+              onPress={() => setConcealed(!selectedEls.every((e) => e.hidden))}
+            >
+              <EyeOffIcon />
+            </BarButton>
+          )}
           <BarButton title={t("ideaBoard.delete")} onPress={deleteSelection} danger>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
           </BarButton>
@@ -4583,6 +4609,11 @@ export function IdeaBoard({
                     }
                   />
                 )}
+                {(() => {
+                  const sel = data.elements.filter((e) => selection.has(e.id));
+                  const allHidden = sel.length > 0 && sel.every((e) => e.hidden);
+                  return <MenuItem label={allHidden ? "Einblenden" : "Ausblenden (für Kunden)"} onPress={() => menuAction(() => setConcealed(!allHidden))} />;
+                })()}
                 <MenuItem label={t("ideaBoard.duplicate")} hint="⌘D" onPress={() => menuAction(duplicateSelection)} />
                 <MenuItem label={t("ideaBoard.bringFront")} onPress={() => menuAction(() => reorderSelection(true))} />
                 <MenuItem label={t("ideaBoard.sendBack")} onPress={() => menuAction(() => reorderSelection(false))} />
@@ -5209,5 +5240,16 @@ function ZoomButton({ title, onPress, children }: { title: string; onPress: () =
     <button title={title} aria-label={title} onClick={onPress} className="w-8 h-8 rounded-lg flex items-center justify-center text-base hover:bg-white/10">
       {children}
     </button>
+  );
+}
+
+function EyeOffIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c7 0 10 8 10 8a17 17 0 0 1-3.2 4.4" />
+      <path d="M6.6 6.6C3.6 8.6 2 12 2 12s3 8 10 8a10 10 0 0 0 5.4-1.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="M2 2l20 20" />
+    </svg>
   );
 }
