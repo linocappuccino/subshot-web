@@ -51,6 +51,11 @@ function PreviewIdeasPageInner() {
   const token = params.token;
   const searchParams = useSearchParams();
   const openIdeaId = searchParams.get("idea");
+  // 2026-11-11, Lino: «Aktuellen Ausschnitt teilen» — ?view=x,y,w,h (board pixels) opens the canvas on that area
+  const sharedView = (() => {
+    const parts = (searchParams.get("view") ?? "").split(",").map(Number);
+    return parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0 ? { x: parts[0], y: parts[1], w: parts[2], h: parts[3] } : null;
+  })();
 
   const [data, setData] = useState<SharedIdeasPreviewData | null>(null);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -374,6 +379,7 @@ function PreviewIdeasPageInner() {
       <div className="min-h-screen bg-[#161616] text-white" style={{ "--idea-preview-accent": data?.project_color ?? "#3875bd" } as React.CSSProperties}>
         {openIdea ? (
           <PublicIdeaLightbox
+            initialView={sharedView}
             idea={openIdea}
             token={token}
             unlockToken={unlockToken}

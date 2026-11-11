@@ -322,6 +322,8 @@ function IdeaBoardScreen({
     api.members(idea.project_id).then(setMembers).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea.id]);
+  // 2026-11-11, Lino: «Aktuellen Ausschnitt teilen» — the board's visible area for the share dialog
+  const boardViewRef = useRef<(() => { x: number; y: number; w: number; h: number } | null) | null>(null);
   // 2026-11-11: the «Credits» node's data (project-wide AI spend, members only)
   const creditsApi = useMemo<BoardCreditsApi>(
     () => ({
@@ -669,7 +671,7 @@ function IdeaBoardScreen({
             <span className="hidden sm:inline">{t("ideaFocusView.shareBoard")}</span>
           </button>
         )}
-        <ShareLinkModal open={shareOpen} onClose={() => setShareOpen(false)} projectId={idea.project_id} projectName={idea.title} kind="board" ideaId={idea.id} />
+        <ShareLinkModal open={shareOpen} onClose={() => setShareOpen(false)} projectId={idea.project_id} projectName={idea.title} kind="board" ideaId={idea.id} currentView={() => boardViewRef.current?.() ?? null} />
 
         {/* 2026-10-12, Lino: "pro video / idee festlegen können welche fassungen benötigt werden" */}
         <div className="hidden sm:block">
@@ -771,6 +773,7 @@ function IdeaBoardScreen({
             className="absolute inset-0"
             initial={board.data}
             editable={board.editable}
+            viewRectRef={boardViewRef}
             allowFlow={!!board.flow && board.editable}
             onChange={handleBoardChange}
             externalData={collab.remote}

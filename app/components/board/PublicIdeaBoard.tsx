@@ -22,6 +22,7 @@ export function PublicIdeaBoard({
   onPlacePin,
   pendingPin,
   focusRequest,
+  initialView,
   voterName = "",
   onNeedName,
   onVoteError,
@@ -41,6 +42,8 @@ export function PublicIdeaBoard({
   onPlacePin?: (anchor: BoardPinAnchor) => void;
   pendingPin?: (BoardPinAnchor & { color?: string }) | null;
   focusRequest?: { elementId: string; nonce: number } | null;
+  /** «Aktuellen Ausschnitt teilen» (2026-11-11): the area the link was shared with */
+  initialView?: { x: number; y: number; w: number; h: number } | null;
 }) {
   const { t } = useLanguage();
   const [data, setData] = useState<BoardData | null>(null);
@@ -119,6 +122,7 @@ export function PublicIdeaBoard({
         onPlacePin={onPlacePin}
         pendingPin={pendingPin}
         focusRequest={focusRequest}
+        initialView={initialView}
         externalData={collab.remote}
         // 2026-10-09, Lino: clients can't download anything from the board —
         // no downloadFile here = no download buttons, no "open file" links,
