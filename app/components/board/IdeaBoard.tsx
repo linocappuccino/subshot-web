@@ -1785,10 +1785,16 @@ export function IdeaBoard({
     setEditingId(null);
   }
 
-  function commitText(id: string, rawHtml: string) {
+  function commitText(id: string, rawHtml: string, opts?: { keepEditing?: boolean }) {
     const html = sanitizeBoardHtml(rawHtml);
     const el = dataRef.current.elements.find((e) => e.id === id);
     if (!el || (el.type !== "text" && el.type !== "sticky")) return;
+    if (opts?.keepEditing) {
+      // the window lost focus mid-edit (emoji palette, app switch): save what's there, keep editing,
+      // never drop the box (2026-11-11)
+      if (boardHtmlToPlain(html) && html !== el.html) updateElement(id, { html } as Partial<TextElement | StickyElement>, { history: true });
+      return;
+    }
     if (el.type === "text" && !boardHtmlToPlain(html) && !boardHtmlToPlain(editingStartHtml.current)) {
       // a freshly created text box left empty — drop it instead of keeping an empty card
       commit((d) => ({
@@ -3706,7 +3712,7 @@ export function IdeaBoard({
                 lutBusy={lutBusy[el.id] ?? null}
                 onLutPick={editable && uploadFile ? () => pickLutFiles(el.id) : undefined}
                 labels={labels}
-                onCommitText={(html) => commitText(el.id, html)}
+                onCommitText={(html, opts) => commitText(el.id, html, opts)}
                 onCommitScene={(patch) => commitScene(el.id, patch)}
                 onCommitTimetable={(patch) => commitTimetable(el.id, patch)}
                 canEditFlow={allowFlow}

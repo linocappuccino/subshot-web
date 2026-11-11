@@ -153,7 +153,7 @@ export function BoardElementView({
   editing: boolean;
   editable: boolean;
   labels: ElementViewLabels;
-  onCommitText: (html: string) => void;
+  onCommitText: (html: string, opts?: { keepEditing?: boolean }) => void;
   onCommitScene?: (patch: ScenePatch) => void;
   /** Timetable node: title / sort / column choice */
   onCommitTimetable?: (patch: Partial<Pick<TimetableElement, "title" | "sort" | "columns" | "chain">>) => void;
@@ -691,7 +691,7 @@ function TextNode({
   el: TextElement | StickyElement;
   editing: boolean;
   placeholder: string;
-  onCommit: (html: string) => void;
+  onCommit: (html: string, opts?: { keepEditing?: boolean }) => void;
   onMeasure: (h: number) => void;
 }) {
   const sticky = el.type === "sticky" ? STICKY_STYLES[el.color] ?? STICKY_STYLES.yellow : null;
@@ -757,7 +757,18 @@ function TextNode({
             const node = e.currentTarget;
             node.dataset.empty = String(!node.textContent);
           }}
-          onBlur={(e) => onCommit(e.currentTarget.innerHTML)}
+          onBlur={(e) => {
+            // 2026-11-11, Lino: «Emoji im Textfeld löscht die Textbox / fügt nichts ein» — the macOS
+            // emoji palette (and any app switch) takes the WINDOW's focus: the box gets a blur although
+            // nobody left it. Ending the edit there unmounted the editor (nowhere for the emoji to go)
+            // and dropped a still-empty new box. Now the edit goes on (focus comes back to this field),
+            // only the text so far is saved, never deleted.
+            if (typeof document !== "undefined" && !document.hasFocus()) {
+              onCommit(e.currentTarget.innerHTML, { keepEditing: true });
+              return;
+            }
+            onCommit(e.currentTarget.innerHTML);
+          }}
         />
       ) : (
         <div
