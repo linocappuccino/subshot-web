@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
 import { type BoardVote } from "@/lib/board";
-import { useBoardCollab } from "@/lib/collab";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
@@ -47,14 +46,34 @@ export function PublicIdeaBoard({
   const [failed, setFailed] = useState(false);
   const [todoLists, setTodoLists] = useState<Record<string, PublicBoardTodoList>>({});
   const [votes, setVotes] = useState<BoardVote[]>([]);
-  // 2026-10-08 — the client watches the board live (read-only)
-  const collab = useBoardCollab({
-    enabled: !!data,
-    docKey: ideaId,
-    initial: data,
-    getSession: () => publicIdeasPreviewApi.boardCollab(token, unlockToken, ideaId),
-    presign: (keys) => publicIdeasPreviewApi.boardPresign(token, unlockToken, ideaId, keys),
-  });
+  // 2026-11-11, Lino: «Ausblenden» — the live document would carry hidden nodes too, so the client page
+  // polls the server's filtered board instead (every 6 s while the tab is visible; only a new version
+  // re-renders)
+  const [remote, setRemote] = useState<{ data: BoardData; nonce: number } | null>(null);
+  const versionRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    let cancelled = false;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      publicIdeasPreviewApi
+        .fetchIdeaBoard(token, unlockToken, ideaId)
+        .then((res) => {
+          if (cancelled || res.version === versionRef.current) return;
+          versionRef.current = res.version;
+          setRemote({ data: res.data, nonce: Date.now() });
+          // votes on variants that were hidden / shown meanwhile
+          publicIdeasPreviewApi.fetchBoardVotes(token, unlockToken, ideaId, voterName.trim()).then((r) => !cancelled && setVotes(r.votes)).catch(() => {});
+        })
+        .catch(() => {});
+    };
+    const id = window.setInterval(tick, 6000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!data, token, unlockToken, ideaId]);
 
   // the visitor's own votes come back as voter_key "me" (no names on share links, 2026-11-09);
   // re-read shortly after the name changes so the own 👍🏼 highlight follows it
@@ -88,7 +107,11 @@ export function PublicIdeaBoard({
     let cancelled = false;
     publicIdeasPreviewApi
       .fetchIdeaBoard(token, unlockToken, ideaId)
-      .then((res) => !cancelled && setData(res.data))
+      .then((res) => {
+        if (cancelled) return;
+        versionRef.current = res.version;
+        setData(res.data);
+      })
       .catch(() => !cancelled && setFailed(true));
     publicIdeasPreviewApi
       .fetchIdeaTodoLists(token, unlockToken, ideaId)
@@ -119,7 +142,7 @@ export function PublicIdeaBoard({
         onPlacePin={onPlacePin}
         pendingPin={pendingPin}
         focusRequest={focusRequest}
-        externalData={collab.remote}
+        externalData={remote}
         // 2026-10-09, Lino: clients can't download anything from the board —
         // no downloadFile here = no download buttons, no "open file" links,
         // no save-image / video-download menus (see BoardDownloadContext)
