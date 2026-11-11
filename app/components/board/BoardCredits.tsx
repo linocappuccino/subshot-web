@@ -14,6 +14,8 @@ export interface BoardCreditsApi {
   add: (body: { credits: number; amount_usd?: number | null; description: string; source: string; date?: string }) => Promise<ProjectCredits>;
   remove: (entryId: string) => Promise<ProjectCredits>;
   setPrice: (source: string, usdPerCredit: number | null) => Promise<ProjectCredits>;
+  /** 2026-11-11: «PDF herunterladen» — object URL of the PDF */
+  pdfUrl: (currency: "CHF" | "USD", start?: string, end?: string) => Promise<string>;
 }
 export const BoardCreditsContext = createContext<BoardCreditsApi | null>(null);
 
@@ -36,6 +38,7 @@ export function CreditsNode({
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
   const [priceFor, setPriceFor] = useState<string | null>(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const currency = el.currency ?? "CHF";
 
   // the card follows its content (like the Timetable)
@@ -163,6 +166,21 @@ export function CreditsNode({
           </div>
         )}
       </div>
+      <div data-no-drag className="px-3 pb-2 flex flex-col gap-1.5">
+        {!pdfOpen ? (
+          <button type="button" onClick={() => setPdfOpen(true)} className="self-start rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1 text-xs font-semibold">
+            ⤓ PDF herunterladen
+          </button>
+        ) : (
+          <PdfExport
+            first={data?.entries.length ? data.entries[data.entries.length - 1].date : null}
+            last={data?.entries.length ? data.entries[0].date : null}
+            currency={currency}
+            onExport={(start, end) => api.pdfUrl(currency, start, end)}
+            onClose={() => setPdfOpen(false)}
+          />
+        )}
+      </div>
       {data && (
         <div className="px-4 pb-2 text-[10px] text-white/35">
           1 USD = {data.rate.rate.toFixed(4)} CHF · {data.rate.source}
@@ -215,6 +233,51 @@ function PriceEditor({ source, value, onSave, onCancel }: { source: string; valu
       <input value={v} onChange={(e) => setV(e.target.value)} inputMode="decimal" placeholder="z. B. 0.06" className="w-20 rounded-md bg-black/40 border border-white/10 px-2 py-1 outline-none focus:border-emerald-400 select-text" />
       <button type="button" onClick={() => onSave(v.trim() ? Number(v.replace(",", ".")) : null)} className="rounded-md bg-emerald-500 text-black px-2 py-1 font-semibold">OK</button>
       <button type="button" onClick={onCancel} className="px-1 text-white/50 hover:text-white">✕</button>
+    </div>
+  );
+}
+
+function PdfExport({ first, last, currency, onExport, onClose }: { first: string | null; last: string | null; currency: "CHF" | "USD"; onExport: (start?: string, end?: string) => Promise<string>; onClose: () => void }) {
+  const [start, setStart] = useState(first ?? "");
+  const [end, setEnd] = useState(last ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(false);
+  const input = "rounded-md bg-black/30 border border-white/10 px-1.5 py-1 text-xs outline-none focus:border-emerald-400 [color-scheme:dark]";
+  async function go() {
+    setBusy(true);
+    setError(false);
+    try {
+      // the whole period = no filter (the PDF then shows first – last entry)
+      const url = await onExport(start && start !== first ? start : undefined, end && end !== last ? end : undefined);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "KI-Credits.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      onClose();
+    } catch {
+      setError(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="rounded-lg border border-white/15 bg-black/25 p-2 flex flex-col gap-1.5 text-xs">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-white/60">Zeitraum</span>
+        <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
+        <span className="text-white/40">–</span>
+        <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="flex-1 text-white/45">Beträge in {currency}{error ? " · Fehler beim Erstellen" : ""}</span>
+        <button type="button" onClick={onClose} className="px-2 py-1 text-white/60 hover:text-white">Abbrechen</button>
+        <button type="button" disabled={busy} onClick={() => void go()} className="rounded-md bg-emerald-500 text-black px-2.5 py-1 font-semibold disabled:opacity-50">
+          {busy ? "Erstelle …" : "PDF erstellen"}
+        </button>
+      </div>
     </div>
   );
 }

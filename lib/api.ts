@@ -1019,6 +1019,14 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<ProjectCredits>(`projects/${projectId}/credits`, { method: "POST", body: JSON.stringify(body) }),
     deleteProjectCredit: (projectId: string, entryId: string) =>
       request<ProjectCredits>(`projects/${projectId}/credits/${entryId}`, { method: "DELETE" }),
+    creditsPdfUrl: async (projectId: string, currency: "CHF" | "USD", start?: string, end?: string) => {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      const q = new URLSearchParams({ currency, ...(start ? { start } : {}), ...(end ? { end } : {}) });
+      const res = await fetch(`${BASE_URL}/projects/${projectId}/credits.pdf?${q}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+      return URL.createObjectURL(await res.blob());
+    },
     setProjectCreditPrice: (projectId: string, source: string, usdPerCredit: number | null) =>
       request<ProjectCredits>(`projects/${projectId}/credits/price`, { method: "PUT", body: JSON.stringify({ source, usd_per_credit: usdPerCredit }) }),
 

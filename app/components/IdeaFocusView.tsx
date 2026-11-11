@@ -329,6 +329,7 @@ function IdeaBoardScreen({
       add: (body) => api.addProjectCredit(idea.project_id, body),
       remove: (entryId) => api.deleteProjectCredit(idea.project_id, entryId),
       setPrice: (source, v) => api.setProjectCreditPrice(idea.project_id, source, v),
+      pdfUrl: (currency, start, end) => api.creditsPdfUrl(idea.project_id, currency, start, end),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [idea.project_id],
