@@ -24,6 +24,10 @@ async function handle<T>(res: Response): Promise<T> {
 }
 
 export const publicDubbingApi = {
+  saveSections: (token: string, sections: DubbingSection[]) =>
+    fetch(`${BASE_URL}/dubbing-share/${token}/sections`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sections }) }).then((r) =>
+      handle<{ sections: DubbingSection[] }>(r),
+    ),
   get: (token: string) => fetch(`${BASE_URL}/dubbing-share/${token}`, { cache: "no-store" }).then((r) => handle<PublicDubbing>(r)),
   uploadTake: async (token: string, wav: Blob, sectionId: string, lang: string, seconds: number, speakerName: string) => {
     const t = await fetch(`${BASE_URL}/dubbing-share/${token}/upload`, { method: "POST" }).then((r) => handle<{ key: string; upload_url: string }>(r));

@@ -154,7 +154,13 @@ export function DubbingNode({
     <div ref={cardRef} data-dubbing-node className="w-full rounded-xl bg-[#1d1f26] border border-rose-400/30 shadow-[0_2px_10px_rgba(0,0,0,0.35)] text-white overflow-hidden">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-rose-500/10">
         <span className="text-base">🎙️</span>
-        <span className="flex-1 min-w-0 truncate text-sm font-semibold">{el.title || "Live-Dubbing"}</span>
+        {/* 2026-11-12, Lino: right under «Live-Dubbing» the video's file name, big — so you know which video it is */}
+        <span className="flex-1 min-w-0 flex flex-col">
+          <span className="truncate text-xs font-semibold text-white/60">{el.title || "Live-Dubbing"}</span>
+          <span data-video-name className="text-base font-bold leading-tight break-all" title={el.name || ""}>
+            {el.name || (el.asset_key ? "Video ohne Namen" : "Noch kein Video")}
+          </span>
+        </span>
         {el.asset_key && (
           <button data-no-drag type="button" onClick={() => setStudio(true)} className="shrink-0 rounded-lg bg-rose-500 hover:bg-rose-400 px-2.5 py-1 text-xs font-semibold">
             🎙️ Studio öffnen
@@ -399,6 +405,7 @@ function Timeline({
   disabled,
   onSelect,
   onSeek,
+  onScrub,
   onChange,
   onCreate,
 }: {
@@ -412,100 +419,138 @@ function Timeline({
   disabled: boolean;
   onSelect: (id: string) => void;
   onSeek: (t: number) => void;
+  /** live while dragging on the ruler / the playhead (no stopping of anything per move) */
+  onScrub: (t: number) => void;
   onChange: (id: string, start: number, end: number) => void;
   onCreate: (start: number, end: number) => void;
 }) {
-  const barRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ a: number; b: number } | null>(null);
   const [live, setLive] = useState<{ id: string; start: number; end: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
   const D = Math.max(0.1, duration);
   const at = (clientX: number) => {
-    const r = barRef.current!.getBoundingClientRect();
+    const r = innerRef.current!.getBoundingClientRect();
     return Math.round(Math.max(0, Math.min(D, ((clientX - r.left) / r.width) * D)) * 10) / 10;
   };
   const pct = (t: number) => `${(t / D) * 100}%`;
+  // the playhead stays in view while zoomed in
+  useEffect(() => {
+    const sc = scrollRef.current;
+    const inner = innerRef.current;
+    if (!sc || !inner || zoom === 1) return;
+    const x = (time / D) * inner.offsetWidth;
+    if (x < sc.scrollLeft || x > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = x - sc.clientWidth / 3;
+  }, [time, D, zoom]);
 
-  function dragEdge(e: React.PointerEvent, s: DubbingSection, edge: "start" | "end") {
+  function drag(e: React.PointerEvent, onMove: (t: number) => void, onUp: (t: number, moved: boolean) => void) {
+    e.preventDefault();
     e.stopPropagation();
-    if (!editable || disabled) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const move = (ev: PointerEvent) => {
-      const t = at(ev.clientX);
-      const start = edge === "start" ? Math.min(t, s.end - 0.3) : s.start;
-      const end = edge === "end" ? Math.max(t, s.start + 0.3) : s.end;
-      setLive({ id: s.id, start, end });
-    };
-    const up = (ev: PointerEvent) => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      const t = at(ev.clientX);
-      const start = edge === "start" ? Math.min(t, s.end - 0.3) : s.start;
-      const end = edge === "end" ? Math.max(t, s.start + 0.3) : s.end;
-      setLive(null);
-      onChange(s.id, start, end);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
-
-  function downEmpty(e: React.PointerEvent) {
-    if (disabled) return;
-    const a = at(e.clientX);
+    const sx = e.clientX;
     let moved = false;
     const move = (ev: PointerEvent) => {
-      if (!editable) return;
-      const b = at(ev.clientX);
-      if (Math.abs(b - a) >= 0.2) moved = true;
-      setDraft({ a, b });
+      if (Math.abs(ev.clientX - sx) > 3) moved = true;
+      onMove(at(ev.clientX));
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      setDraft(null);
-      const b = at(ev.clientX);
-      if (editable && moved && Math.abs(b - a) >= 0.3) onCreate(Math.min(a, b), Math.max(a, b));
-      else onSeek(a);
+      window.removeEventListener("pointercancel", up);
+      onUp(at(ev.clientX), moved);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }
 
+  // ruler / playhead: press and drag = scrub through the video
+  function scrub(e: React.PointerEvent) {
+    if (disabled) return;
+    onSeek(at(e.clientX));
+    drag(e, (t) => onScrub(t), (t) => onScrub(t));
+  }
+  function edge(e: React.PointerEvent, s: DubbingSection, which: "start" | "end") {
+    if (!editable || disabled) return;
+    const calc = (t: number) => ({ start: which === "start" ? Math.min(t, s.end - 0.3) : s.start, end: which === "end" ? Math.max(t, s.start + 0.3) : s.end });
+    drag(e, (t) => setLive({ id: s.id, ...calc(t) }), (t) => {
+      setLive(null);
+      const c = calc(t);
+      onChange(s.id, c.start, c.end);
+    });
+  }
+  // section track, empty spot: click = jump there, press-drag = a new section (team + speakers)
+  function track(e: React.PointerEvent) {
+    if (disabled) return;
+    const a0 = at(e.clientX);
+    drag(e, (t) => editable && setDraft({ a: a0, b: t }), (t, moved) => {
+      setDraft(null);
+      if (editable && moved && Math.abs(t - a0) >= 0.3) onCreate(Math.min(a0, t), Math.max(a0, t));
+      else onSeek(a0);
+    });
+  }
+
+  const ticks = Math.min(40, Math.max(4, Math.round(8 * zoom)));
   return (
     <div className="select-none">
-      <div ref={barRef} data-timeline onPointerDown={downEmpty} className={`relative h-14 rounded-xl bg-white/[0.06] border border-white/10 ${disabled ? "" : "cursor-crosshair"}`}>
-        {el.sections.map((s, i) => {
-          const v = live?.id === s.id ? live : s;
-          const n = takes.filter((t) => t.section_id === s.id && t.lang === lang && t.source !== "ai");
-          const sel = s.id === selected;
-          return (
-            <div
-              key={s.id}
-              data-tl-section={s.id}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                if (!disabled) onSelect(s.id);
-              }}
-              className={`absolute top-1.5 bottom-1.5 rounded-lg px-2 flex items-center gap-1 text-[11px] font-semibold text-white overflow-hidden cursor-pointer ${sel ? "ring-2 ring-white shadow-lg" : "opacity-80 hover:opacity-100"}`}
-              style={{ left: pct(v.start), width: `calc(${pct(v.end - v.start)} - 2px)`, background: COLORS[i % COLORS.length] }}
-              title={`${i + 1}. ${s.label || ""} ${fmt(v.start)}–${fmt(v.end)}`}
-            >
-              <span className="truncate">{i + 1}{s.label ? ` ${s.label}` : ""}</span>
-              {n.length > 0 && <span className="ml-auto shrink-0">{n.some((t) => t.best) ? "★" : n.length}</span>}
-              {editable && sel && !disabled && (
-                <>
-                  <span data-edge="start" onPointerDown={(e) => dragEdge(e, s, "start")} className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40" />
-                  <span data-edge="end" onPointerDown={(e) => dragEdge(e, s, "end")} className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40" />
-                </>
-              )}
-            </div>
-          );
-        })}
-        {draft && <div className="absolute top-1.5 bottom-1.5 rounded-lg border-2 border-dashed border-white/70 bg-white/10" style={{ left: pct(Math.min(draft.a, draft.b)), width: pct(Math.abs(draft.b - draft.a)) }} />}
-        <div className="absolute top-0 bottom-0 w-0.5 bg-white pointer-events-none" style={{ left: pct(Math.min(time, D)) }} />
+      <div className="flex items-center gap-2 mb-1 text-[11px] text-white/40">
+        <span className="flex-1 truncate">
+          {editable ? "Oben ziehen = durchs Video spulen · unten in freier Stelle ziehen = neuer Abschnitt · Enden ziehen = anpassen" : "Oben ziehen = spulen · Abschnitt anklicken = auswählen"}
+        </span>
+        <button type="button" title="Timeline verkleinern" disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">−</button>
+        <span className="tabular-nums w-8 text-center">{zoom}×</span>
+        <button type="button" title="Timeline vergrössern" disabled={zoom >= 16} onClick={() => setZoom((z) => Math.min(16, z * 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">+</button>
+      </div>
+      <div ref={scrollRef} data-timeline-scroll className="overflow-x-auto overflow-y-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+        <div ref={innerRef} className="relative" style={{ width: `${zoom * 100}%`, minWidth: "100%" }}>
+          {/* ruler: scrub */}
+          <div data-ruler onPointerDown={scrub} className={`relative h-6 border-b border-white/10 touch-none ${disabled ? "" : "cursor-ew-resize"}`}>
+            {Array.from({ length: ticks + 1 }, (_, i) => (
+              <span key={i} className="absolute top-0 h-full border-l border-white/10 text-[9px] text-white/35 pl-0.5 tabular-nums" style={{ left: `${(i / ticks) * 100}%` }}>
+                {i < ticks ? fmt((i / ticks) * D) : ""}
+              </span>
+            ))}
+          </div>
+          {/* sections */}
+          <div ref={undefined} data-timeline onPointerDown={track} className={`relative h-12 touch-none ${disabled ? "" : "cursor-crosshair"}`}>
+            {el.sections.map((s, i) => {
+              const v = live?.id === s.id ? live : s;
+              const n = takes.filter((t) => t.section_id === s.id && t.lang === lang && t.source !== "ai");
+              const sel = s.id === selected;
+              return (
+                <div
+                  key={s.id}
+                  data-tl-section={s.id}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (!disabled) onSelect(s.id);
+                  }}
+                  className={`absolute top-1.5 bottom-1.5 rounded-lg px-2 flex items-center gap-1 text-[11px] font-semibold text-white overflow-hidden cursor-pointer ${sel ? "ring-2 ring-white shadow-lg" : "opacity-80 hover:opacity-100"}`}
+                  style={{ left: pct(v.start), width: `calc(${pct(v.end - v.start)} - 2px)`, background: COLORS[i % COLORS.length] }}
+                  title={`${i + 1}. ${s.label || ""} ${fmt(v.start)}–${fmt(v.end)}`}
+                >
+                  <span className="truncate">{i + 1}{s.label ? ` ${s.label}` : ""}</span>
+                  {n.length > 0 && <span className="ml-auto shrink-0">{n.some((t) => t.best) ? "★" : n.length}</span>}
+                  {editable && sel && !disabled && (
+                    <>
+                      <span data-edge="start" onPointerDown={(e) => edge(e, s, "start")} className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize bg-white/50 touch-none" />
+                      <span data-edge="end" onPointerDown={(e) => edge(e, s, "end")} className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize bg-white/50 touch-none" />
+                    </>
+                  )}
+                </div>
+              );
+            })}
+            {draft && <div className="absolute top-1.5 bottom-1.5 rounded-lg border-2 border-dashed border-white/70 bg-white/10" style={{ left: pct(Math.min(draft.a, draft.b)), width: pct(Math.abs(draft.b - draft.a)) }} />}
+          </div>
+          {/* playhead: also draggable */}
+          <div className="absolute top-0 bottom-0 pointer-events-none" style={{ left: pct(Math.min(time, D)) }}>
+            <div className="absolute top-0 bottom-0 w-0.5 -ml-px bg-white" />
+            <div data-playhead onPointerDown={scrub} className="absolute -top-0.5 -ml-2 h-4 w-4 rounded-full bg-white shadow pointer-events-auto cursor-ew-resize touch-none" />
+          </div>
+        </div>
       </div>
       <div className="flex justify-between text-[10px] text-white/35 mt-1 tabular-nums">
-        <span>0:00</span>
-        <span>{editable ? "Klick = Abschnitt wählen · in einer freien Stelle ziehen = neuer Abschnitt · Enden ziehen = anpassen" : "Klick auf einen Abschnitt = auswählen"}</span>
+        <span>{fmt(time)}</span>
         <span>{fmt(D)}</span>
       </div>
     </div>
@@ -554,6 +599,37 @@ export function DubbingStudio({
   const stopRef = useRef<(() => void) | null>(null);
   const sec = el.sections.find((s) => s.id === secId) ?? null;
   const nodeKey = el.id;
+  // 2026-11-12, Lino: «Text über Video» — the script big over the picture (remembered per person)
+  const [overlay, setOverlay] = useState(() => {
+    try {
+      return localStorage.getItem("subshot-dubbing-overlay") === "1";
+    } catch {
+      return false;
+    }
+  });
+  function toggleOverlay() {
+    setOverlay((o) => {
+      try {
+        localStorage.setItem("subshot-dubbing-overlay", o ? "0" : "1");
+      } catch {
+        // private mode
+      }
+      return !o;
+    });
+  }
+  const areaRef = useRef<HTMLDivElement>(null);
+  const [area, setArea] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setArea({ w: el.clientWidth, h: el.clientHeight }));
+    ro.observe(el);
+    setArea({ w: el.clientWidth, h: el.clientHeight });
+    return () => ro.disconnect();
+  }, []);
+  const wide = area.w >= 700 || (aspect < 1 && area.w >= 420);
+  // side by side: the video as high as the area allows, but leaving the script at least ~38 % of the width
+  const stageW = wide ? Math.max(160, Math.min(area.w * 0.62, area.h * aspect)) : undefined;
   const { ref: stageRef, box } = useFit(aspect);
   // 2026-11-12, Lino: play a take → the picture runs along from the section start, muted (lip-sync check)
   const previewRef = useRef<HTMLAudioElement | null>(null);
@@ -734,7 +810,10 @@ export function DubbingStudio({
     >
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0">
         <span className="text-lg">🎙️</span>
-        <span className="font-semibold truncate">{el.title || "Live-Dubbing"}</span>
+        <span className="min-w-0 flex flex-col">
+          <span className="text-xs text-white/50 truncate">{el.title || "Live-Dubbing"}</span>
+          <span data-studio-video-name className="font-bold break-all leading-tight">{el.name || "Video ohne Namen"}</span>
+        </span>
         <select value={lang} onChange={(e) => setLang(e.target.value)} className="ml-2 rounded-md bg-white/10 px-2 py-1 text-sm">
           {el.languages.map((l) => (
             <option key={l} value={l}>
@@ -751,9 +830,42 @@ export function DubbingStudio({
         )}
       </div>
       <div className="flex-1 min-h-0 flex flex-col md:flex-row max-md:overflow-auto">
-        {/* left: video (own aspect, fitted) · timeline · script */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 md:p-4 gap-3">
-          <div ref={stageRef} data-stage className="flex-1 min-h-[160px] flex items-center justify-center">
+        {/* 2026-11-12, Lino: the script to read LEFT, the video RIGHT right next to it (same height), the timeline
+            under both; on narrow screens (iPad portrait, phone) the script sits above the video */}
+        <div className="flex-1 min-w-0 min-h-0 max-md:min-h-[calc(100dvh-56px)] flex flex-col p-3 md:p-4 gap-3">
+          <div ref={areaRef} className={`flex-1 min-h-0 flex gap-3 ${wide ? "flex-row items-center" : "flex-col"}`}>
+            <div className={wide ? "flex-1 min-w-0 flex flex-col justify-center gap-1.5" : "shrink-0 flex flex-col gap-1.5"} style={wide ? { height: box.h || undefined } : undefined}>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  data-overlay-toggle
+                  onClick={toggleOverlay}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${overlay ? "bg-rose-500 text-white" : "bg-white/10 text-white/70 hover:bg-white/15"}`}
+                >
+                  {overlay ? "✓ Text über Video" : "Text über Video"}
+                </button>
+              </div>
+              <ScriptBox
+                height={wide && box.h ? Math.max(80, box.h - 34) : undefined}
+              key={`${secId ?? "none"}-${lang}`}
+              text={sec?.scripts[lang] ?? ""}
+              langLabel={langName(lang)}
+              editable={editable && phase === "idle"}
+              recording={phase === "rec"}
+              progress={progress}
+              hasSection={!!sec}
+              onChange={(text) => {
+                if (sec) patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: text } });
+                else {
+                  // no section yet: the text belongs to one over the whole video
+                  const s: DubbingSection = { id: newId(), start: 0, end: Math.round(duration * 10) / 10, label: "", scripts: { [lang]: text } };
+                  setSections([...el.sections, s]);
+                  setSecId(s.id);
+                }
+              }}
+            />
+            </div>
+            <div ref={stageRef} data-stage className={wide ? "h-full flex items-center justify-end" : "flex-1 min-h-[160px] flex items-center justify-center"} style={wide ? { width: stageW } : undefined}>
             <div className="relative rounded-2xl overflow-hidden bg-black shadow-2xl" style={{ width: box.w || undefined, height: box.h || undefined }} data-video-box>
               <video
                 ref={videoRef}
@@ -774,6 +886,10 @@ export function DubbingStudio({
                 </div>
               )}
               {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
+              {overlay && sec && (sec.scripts[lang] ?? "").trim() && (
+                <OverlayText text={sec.scripts[lang] ?? ""} recording={phase === "rec"} progress={progress} boxW={box.w} boxH={box.h} />
+              )}
+            </div>
             </div>
           </div>
           <div className="shrink-0">
@@ -793,6 +909,11 @@ export function DubbingStudio({
               onSeek={(t) => {
                 stopPreview();
                 if (videoRef.current) videoRef.current.currentTime = t;
+                setTime(t);
+              }}
+              onScrub={(t) => {
+                if (videoRef.current) videoRef.current.currentTime = t;
+                setTime(t);
               }}
               onChange={(id, start, end) => patchSection(id, { start, end })}
               onCreate={(start, end) => {
@@ -802,24 +923,6 @@ export function DubbingStudio({
               }}
             />
           </div>
-          <ScriptBox
-            key={`${secId ?? "none"}-${lang}`}
-            text={sec?.scripts[lang] ?? ""}
-            langLabel={langName(lang)}
-            editable={editable && phase === "idle"}
-            recording={phase === "rec"}
-            progress={progress}
-            hasSection={!!sec}
-            onChange={(text) => {
-              if (sec) patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: text } });
-              else {
-                // no section yet: the text belongs to one over the whole video
-                const s: DubbingSection = { id: newId(), start: 0, end: Math.round(duration * 10) / 10, label: "", scripts: { [lang]: text } };
-                setSections([...el.sections, s]);
-                setSecId(s.id);
-              }
-            }}
-          />
         </div>
         {/* right: record + takes, the section list only shows */}
         <div className="w-full md:w-[340px] shrink-0 min-h-0 border-t md:border-t-0 md:border-l border-white/10 p-4 flex flex-col gap-4 overflow-auto">
@@ -857,9 +960,9 @@ export function DubbingStudio({
               {editable && (
                 <>
                   <input value={sec.label ?? ""} placeholder="Bezeichnung (optional)" onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text" />
-                  <button type="button" onClick={() => { setSections(el.sections.filter((s) => s.id !== sec.id)); setSecId(null); }} className="self-start text-xs text-white/40 hover:text-red-300">
+                  {canChoose && <button type="button" onClick={() => { setSections(el.sections.filter((s) => s.id !== sec.id)); setSecId(null); }} className="self-start text-xs text-white/40 hover:text-red-300">
                     Abschnitt löschen
-                  </button>
+                  </button>}
                 </>
               )}
               <div className="text-xs uppercase tracking-wide text-white/40 mt-1">Takes ({langName(lang)})</div>
@@ -953,7 +1056,9 @@ function ScriptBox({
   progress,
   hasSection,
   onChange,
+  height,
 }: {
+  height?: number;
   text: string;
   langLabel: string;
   editable: boolean;
@@ -967,7 +1072,7 @@ function ScriptBox({
   const timer = useRef<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const shown = focused ? draft : text;
-  const style = { fontSize: "clamp(22px, 2.2vw + 8px, 32px)", lineHeight: 1.55 };
+  const style: React.CSSProperties = { fontSize: "clamp(20px, 1.4vw + 10px, 32px)", lineHeight: 1.5, ...(height ? { height, maxHeight: height } : {}) };
 
   function save(v: string) {
     if (timer.current) window.clearTimeout(timer.current);
@@ -987,7 +1092,7 @@ function ScriptBox({
     if (box && cur) box.scrollTop = Math.max(0, cur.offsetTop - box.clientHeight / 3);
   }, [lit, recording]);
 
-  const frame = "shrink-0 w-full rounded-2xl bg-black/40 border border-white/15 px-5 py-4 text-white max-h-[24vh] min-h-[5.5rem] overflow-auto";
+  const frame = `shrink-0 w-full rounded-2xl bg-black/40 border border-white/15 px-5 py-4 text-white overflow-auto ${height ? "" : "max-h-[26vh] min-h-[5.5rem]"}`;
   if (recording || !editable) {
     let seen = 0;
     return (
@@ -1031,5 +1136,41 @@ function ScriptBox({
       className={`${frame} resize-none outline-none focus:border-rose-400 placeholder:text-white/30 select-text`}
       style={style}
     />
+  );
+}
+
+/** «Text über Video»: the script big over the lower part of the picture (inside the round corners), same karaoke
+ * light-up and auto-scroll; the video itself keeps its size. */
+function OverlayText({ text, recording, progress, boxW, boxH }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const words = text.split(/(\s+)/);
+  const lit = Math.round(progress * words.filter((w) => w.trim()).length);
+  useEffect(() => {
+    if (!recording) return;
+    const box = ref.current;
+    const cur = box?.querySelector<HTMLElement>("[data-lit-last]");
+    if (box && cur) box.scrollTop = Math.max(0, cur.offsetTop - box.clientHeight / 3);
+  }, [lit, recording]);
+  const size = Math.max(14, Math.min(32, Math.min(boxW * 0.055, boxH * 0.06)));
+  // running word number per token (no counting during render)
+  const nth = words.reduce<number[]>((acc, w) => [...acc, (acc[acc.length - 1] ?? 0) + (w.trim() ? 1 : 0)], []);
+  return (
+    <div
+      ref={ref}
+      data-overlay-text
+      className="absolute inset-x-0 bottom-14 mx-3 rounded-xl bg-black/60 px-4 py-2 text-white overflow-auto pointer-events-none"
+      style={{ fontSize: size, lineHeight: 1.4, maxHeight: "38%", textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
+    >
+      {words.map((w, i) => {
+        if (!w.trim()) return <span key={i}>{w}</span>;
+        const seen = nth[i];
+        const on = recording && seen <= lit;
+        return (
+          <span key={i} data-lit-last={recording && seen === Math.max(1, lit) ? "" : undefined} className={on ? "text-rose-300" : recording ? "text-white/60" : "text-white"}>
+            {w}
+          </span>
+        );
+      })}
+    </div>
   );
 }

@@ -80,12 +80,20 @@ export default function DubbingSpeakerPage() {
     <BoardDubbingContext.Provider value={api}>
       <DubbingStudio
         el={el}
-        editable={false}
+        editable
         canChoose={false}
         takes={takes}
         setTakes={setTakes}
         initialLang={el.languages[0] ?? ""}
-        onCommit={() => {}}
+        onCommit={(patch) => {
+          // 2026-11-12, Lino: speakers add / adjust sections and paste the script (deleting stays with the team)
+          if (!patch.sections) return;
+          const sections = patch.sections;
+          setData((d) => (d ? { ...d, node: { ...d.node, sections } } : d));
+          publicDubbingApi.saveSections(token, sections).catch(() => {
+            setError("Die Abschnitte konnten nicht gespeichert werden. Bitte neu laden.");
+          });
+        }}
         header={<span className="ml-auto text-xs text-white/50">Sprecher·in: {name}</span>}
       />
     </BoardDubbingContext.Provider>
