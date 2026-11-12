@@ -22,6 +22,8 @@ export interface BoardDubbingApi {
   remove: (nodeId: string, takeId: string) => Promise<DubbingTake[]>;
   exportUrl: (nodeId: string, lang: string, kind: "wav" | "zip") => Promise<string>;
   uploadVideo: (file: File) => Promise<{ key: string; src: string; name: string; mime: string }>;
+  /** phase 2: link for external speakers (team only) */
+  shareLink?: (nodeId: string) => Promise<string>;
 }
 export const BoardDubbingContext = createContext<BoardDubbingApi | null>(null);
 
@@ -55,6 +57,7 @@ export function DubbingNode({
   const [lang, setLang] = useState(el.languages[0] ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [newLang, setNewLang] = useState("");
+  const [link, setLink] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -266,6 +269,27 @@ export function DubbingNode({
           ))}
         </div>
       )}
+      {editable && api.shareLink && el.asset_key && el.sections.length > 0 && (
+        <div data-no-drag className="px-3 pb-3 flex flex-col gap-1 text-xs">
+          <button
+            type="button"
+            onClick={() =>
+              void api.shareLink!(el.id).then((u) => {
+                setLink(u);
+                void navigator.clipboard?.writeText(u).catch(() => {});
+              })
+            }
+            className="self-start rounded-md bg-white/10 hover:bg-white/15 px-2 py-1 font-semibold"
+          >
+            🔗 Sprecher-Link
+          </button>
+          {link && (
+            <span data-speaker-link className="break-all text-white/55">
+              {link} <span className="text-emerald-300">(kopiert – gilt 30 Tage, nur für diese Aufnahme)</span>
+            </span>
+          )}
+        </div>
+      )}
       {busy && el.asset_key && <div className="px-3 pb-2 text-xs text-white/50">{busy}</div>}
       {studio && el.asset_key && (
         <DubbingStudio
@@ -287,7 +311,7 @@ export function DubbingNode({
 
 // ── the recording studio (full screen) ─────────────────────────────────────
 
-function DubbingStudio({
+export function DubbingStudio({
   el,
   editable,
   takes,
@@ -295,6 +319,8 @@ function DubbingStudio({
   initialLang,
   onCommit,
   onClose,
+  canChoose = true,
+  header,
 }: {
   el: DubbingElement;
   editable: boolean;
@@ -302,7 +328,11 @@ function DubbingStudio({
   setTakes: (t: DubbingTake[]) => void;
   initialLang: string;
   onCommit: (patch: DubbingPatch) => void;
-  onClose: () => void;
+  /** omitted on the speaker page (nothing to go back to) */
+  onClose?: () => void;
+  /** ★ best / ✕ delete — the team only (speakers just record) */
+  canChoose?: boolean;
+  header?: React.ReactNode;
 }) {
   const api = useContext(BoardDubbingContext)!;
   const [lang, setLang] = useState(initialLang);
@@ -372,7 +402,7 @@ function DubbingStudio({
   // Esc closes (not while recording)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && phase === "idle") onClose();
+      if (e.key === "Escape" && phase === "idle") onClose?.();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -470,9 +500,12 @@ function DubbingStudio({
           ))}
         </select>
         {uploads > 0 && <span className="text-xs text-amber-300">Lädt {uploads} Take{uploads > 1 ? "s" : ""} hoch …</span>}
-        <button type="button" onClick={onClose} disabled={phase !== "idle"} className="ml-auto rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-sm disabled:opacity-40">
-          Schliessen
-        </button>
+        {header}
+        {onClose && (
+          <button type="button" onClick={onClose} disabled={phase !== "idle"} className="ml-auto rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-sm disabled:opacity-40">
+            Schliessen
+          </button>
+        )}
       </div>
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
         <div className="flex-1 min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-auto">
@@ -582,10 +615,14 @@ function DubbingStudio({
                 <div key={t.id} data-take className="flex items-center gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-sm">
                   <span className="text-white/50 w-14 shrink-0">Take {i + 1}</span>
                   <audio src={t.url} controls className="h-8 flex-1 min-w-0" />
-                  <button type="button" title="Bester Take" onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
-                    ★
-                  </button>
-                  {editable && (
+                  {canChoose ? (
+                    <button type="button" title="Bester Take" onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
+                      ★
+                    </button>
+                  ) : (
+                    t.best && <span title="Vom Team als bester Take gewählt" className="text-lg text-amber-300">★</span>
+                  )}
+                  {editable && canChoose && (
                     <button type="button" title="Take löschen" onClick={() => void api.remove(el.id, t.id).then(setTakes)} className="text-white/30 hover:text-red-300">
                       ✕
                     </button>

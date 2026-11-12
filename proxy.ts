@@ -44,7 +44,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // who may not be signed in on app.subshot.ch yet; auth.protect() would 404 them (no sign-in
 // URL configured), so the page itself sends signed-out visitors to /sign-in and back.
 const isPublicRoute = createRouteMatcher([
-  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
+  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/dubbing(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
