@@ -10,6 +10,7 @@ import { Switch } from "@/app/components/ui/Switch";
 import { Avatar } from "@/app/components/ui/Avatar";
 import { Pill } from "@/app/components/ui/Badge";
 import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
+import { ElevenLabsKeyCard } from "@/app/components/ElevenLabsKeyCard";
 import { useApi } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
@@ -647,6 +648,8 @@ function TeamPageInner() {
             )}
           </div>
         )}
+        {/* 2026-11-12: the team's own ElevenLabs key (Live-Dubbing → KI-Dubbing), admins only */}
+        <ElevenLabsKeyCard teamId={team?.id ?? null} />
       </div>
 
       <ConfirmDialog

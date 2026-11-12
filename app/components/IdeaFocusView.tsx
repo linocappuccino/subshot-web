@@ -341,6 +341,8 @@ function IdeaBoardScreen({
   const dubbingApi = useMemo<BoardDubbingApi>(
     () => ({
       takes: (nodeId) => api.dubbingTakes(idea.id, nodeId).then((r) => r.takes),
+      aiInfo: (nodeId) => api.dubbingTakes(idea.id, nodeId).then((r) => r.ai ?? { available: false, jobs: {} }),
+      startAi: (nodeId, lang) => api.dubbingAiStart(idea.id, nodeId, lang).then(() => undefined),
       uploadTake: async (nodeId, wav, sectionId, lang, seconds) => {
         const t = await api.dubbingTakeUpload(idea.id, nodeId);
         const put = await fetch(t.upload_url, { method: "PUT", headers: { "Content-Type": "audio/wav" }, body: wav });

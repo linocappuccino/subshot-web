@@ -1013,8 +1013,16 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // ── «🎙️ Live-Dubbing» (2026-11-12) ───────────────────────────────────
     dubbingTakes: (ideaId: string, nodeId: string) => {
       invalidateGetCache(`ideas/${ideaId}/dubbing/${nodeId}/takes`);
-      return request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`);
+      return request<{ takes: DubbingTake[]; ai?: { available: boolean; jobs: Record<string, { status: string; error?: string }> } }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`);
     },
+    dubbingAiStart: (ideaId: string, nodeId: string, lang: string) => request<{ status: string }>(`ideas/${ideaId}/dubbing/${nodeId}/ai`, { method: "POST", body: JSON.stringify({ lang }) }),
+    // 2026-11-12: per-team API keys (never returned — only «hinterlegt …a1b2»)
+    integrationKey: (service: string, teamId: string | null) =>
+      request<{ stored: boolean; masked: string | null; can_edit: boolean }>(`integrations/${service}${teamId ? `?team_id=${teamId}` : ""}`),
+    setIntegrationKey: (service: string, teamId: string | null, key: string) =>
+      request<{ stored: boolean; masked: string | null; can_edit: boolean }>(`integrations/${service}${teamId ? `?team_id=${teamId}` : ""}`, { method: "PUT", body: JSON.stringify({ key }) }),
+    deleteIntegrationKey: (service: string, teamId: string | null) =>
+      request<{ stored: boolean; masked: string | null; can_edit: boolean }>(`integrations/${service}${teamId ? `?team_id=${teamId}` : ""}`, { method: "DELETE" }),
     dubbingTakeUpload: (ideaId: string, nodeId: string) => request<{ key: string; upload_url: string }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/upload`, { method: "POST" }),
     dubbingRegisterTake: (ideaId: string, nodeId: string, body: { key: string; section_id: string; lang: string; duration: number }) =>
       request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`, { method: "POST", body: JSON.stringify(body) }),

@@ -22,6 +22,9 @@ export interface BoardDubbingApi {
   remove: (nodeId: string, takeId: string) => Promise<DubbingTake[]>;
   exportUrl: (nodeId: string, lang: string, kind: "wav" | "zip") => Promise<string>;
   uploadVideo: (file: File) => Promise<{ key: string; src: string; name: string; mime: string }>;
+  /** phase 3: KI-Dubbing via the team's own ElevenLabs key (team only) */
+  aiInfo?: (nodeId: string) => Promise<{ available: boolean; jobs: Record<string, { status: string; error?: string }> }>;
+  startAi?: (nodeId: string, lang: string) => Promise<void>;
   /** phase 2: link for external speakers (team only) */
   shareLink?: (nodeId: string) => Promise<string>;
 }
@@ -53,7 +56,8 @@ export function DubbingNode({
   const api = useContext(BoardDubbingContext);
   const [takes, setTakes] = useState<DubbingTake[]>([]);
   const [studio, setStudio] = useState(false);
-  const [mode, setMode] = useState<"original" | "take">("original");
+  const [mode, setMode] = useState<"original" | "take" | "ai">("original");
+  const [ai, setAi] = useState<{ available: boolean; jobs: Record<string, { status: string; error?: string }> } | null>(null);
   const [lang, setLang] = useState(el.languages[0] ?? "");
   const [busy, setBusy] = useState<string | null>(null);
   const [newLang, setNewLang] = useState("");
@@ -83,7 +87,9 @@ export function DubbingNode({
   }, []);
 
   const reload = useCallback(() => {
-    if (api) api.takes(el.id).then(setTakes).catch(() => {});
+    if (!api) return;
+    api.takes(el.id).then(setTakes).catch(() => {});
+    api.aiInfo?.(el.id).then(setAi).catch(() => {});
   }, [api, el.id]);
   useEffect(() => {
     reload();
@@ -96,9 +102,11 @@ export function DubbingNode({
   function syncTake() {
     const v = videoRef.current;
     const a = audioRef.current;
-    if (!v || !a || mode !== "take") return;
-    const sec = el.sections.find((s) => v.currentTime >= s.start && v.currentTime < s.end);
-    const take = sec ? chosen(takes, sec.id, curLang) : null;
+    if (!v || !a || mode === "original") return;
+    // «KI-Dubbing»: ONE full-length audio from 00:00; «Aufnahme»: the chosen take of the section under the playhead
+    const aiTake = mode === "ai" ? takes.find((t) => t.source === "ai" && t.lang === curLang) ?? null : null;
+    const sec = mode === "ai" ? (aiTake ? { id: "__full__", start: 0, end: Number.MAX_VALUE } : undefined) : el.sections.find((s) => v.currentTime >= s.start && v.currentTime < s.end);
+    const take = mode === "ai" ? aiTake : sec ? chosen(takes.filter((t) => t.source !== "ai"), sec.id, curLang) : null;
     if (!sec || !take || v.paused) {
       if (!a.paused) a.pause();
       return;
@@ -175,7 +183,7 @@ export function DubbingNode({
             src={el.src ?? undefined}
             controls
             playsInline
-            muted={mode === "take"}
+            muted={mode !== "original"}
             className="w-full max-h-[260px] bg-black"
             onLoadedMetadata={(e) => {
               const d = Math.round(e.currentTarget.duration * 1000) / 1000;
@@ -197,7 +205,13 @@ export function DubbingNode({
                 {label}
               </button>
             ))}
-            <button type="button" disabled title="KI-Dubbing kommt mit Phase 3 (ElevenLabs)" className="px-2 py-1 rounded-md text-white/25 cursor-not-allowed">
+            <button
+              type="button"
+              disabled={!takes.some((t) => t.source === "ai" && t.lang === curLang)}
+              title={takes.some((t) => t.source === "ai" && t.lang === curLang) ? "KI-Dubbing von ElevenLabs" : "Noch kein KI-Dubbing für diese Sprache"}
+              onClick={() => setMode("ai")}
+              className={`px-2 py-1 rounded-md disabled:text-white/25 disabled:cursor-not-allowed ${mode === "ai" ? "bg-rose-500 text-white" : "text-white/60 hover:text-white"}`}
+            >
               KI-Dubbing
             </button>
           </div>
@@ -266,6 +280,31 @@ export function DubbingNode({
               <button type="button" onClick={() => void download(l, "wav")} className="rounded-md bg-white/10 hover:bg-white/15 px-2 py-1 font-semibold">⤓ {l.toUpperCase()} WAV</button>
               <button type="button" onClick={() => void download(l, "zip")} className="rounded-md bg-white/5 hover:bg-white/10 px-2 py-1">ZIP</button>
             </span>
+          ))}
+        </div>
+      )}
+      {editable && el.asset_key && el.languages.length > 0 && api.startAi && (
+        <div data-no-drag data-ai-dubbing className="px-3 pb-3 flex flex-col gap-1 text-xs">
+          <div className="flex flex-wrap gap-1.5">
+            {el.languages.map((l) => {
+              const job = ai?.jobs[l];
+              return (
+                <button
+                  key={l}
+                  type="button"
+                  disabled={!ai?.available || job?.status === "läuft"}
+                  onClick={() => void api.startAi!(el.id, l).then(reload).catch(() => reload())}
+                  className="rounded-md bg-violet-500/20 hover:bg-violet-500/35 px-2 py-1 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  🤖 KI-Dubbing {l.toUpperCase()}
+                  {job?.status === "läuft" ? " · läuft …" : job?.status === "fertig" ? " ✓" : job?.status === "fehler" ? " ⚠︎" : ""}
+                </button>
+              );
+            })}
+          </div>
+          {ai && !ai.available && <span className="text-white/45">Admin kann den ElevenLabs-Schlüssel in den Team-Einstellungen hinterlegen.</span>}
+          {Object.entries(ai?.jobs ?? {}).filter(([, j]) => j.status === "fehler").map(([l, j]) => (
+            <span key={l} className="text-red-300">{l.toUpperCase()}: {j.error}</span>
           ))}
         </div>
       )}
