@@ -1,5 +1,6 @@
 "use client";
 
+import { BoardDubbingContext, type BoardDubbingApi } from "./board/BoardDubbing";
 import { BoardCreditsContext, type BoardCreditsApi } from "./board/BoardCredits";
 import { IdeaFassungenButton } from "./RequiredFassungen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -335,6 +336,29 @@ function IdeaBoardScreen({
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [idea.project_id],
+  );
+  // 2026-11-12: «🎙️ Live-Dubbing» — takes go straight to R2 (presigned PUT), the server only registers them
+  const dubbingApi = useMemo<BoardDubbingApi>(
+    () => ({
+      takes: (nodeId) => api.dubbingTakes(idea.id, nodeId).then((r) => r.takes),
+      uploadTake: async (nodeId, wav, sectionId, lang, seconds) => {
+        const t = await api.dubbingTakeUpload(idea.id, nodeId);
+        const put = await fetch(t.upload_url, { method: "PUT", headers: { "Content-Type": "audio/wav" }, body: wav });
+        if (!put.ok) throw new Error("upload failed");
+        return (await api.dubbingRegisterTake(idea.id, nodeId, { key: t.key, section_id: sectionId, lang, duration: seconds })).takes;
+      },
+      best: (nodeId, takeId) => api.dubbingBest(idea.id, nodeId, takeId).then((r) => r.takes),
+      remove: (nodeId, takeId) => api.dubbingDeleteTake(idea.id, nodeId, takeId).then((r) => r.takes),
+      exportUrl: (nodeId, lang, kind) => api.dubbingExportUrl(idea.id, nodeId, lang, kind),
+      uploadVideo: async (file) => {
+        const mime = file.type || "video/mp4";
+        const ticket = await api.createIdeaBoardUpload(idea.id, { filename: file.name, content_type: mime, size: file.size });
+        await uploadWithType(ticket.upload_url, file, mime, () => {});
+        return { key: ticket.key, src: ticket.url, name: file.name, mime };
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [idea.id],
   );
   const todoApi = useMemo<BoardTodoApi>(() => {
     const fail = (e: unknown) => {
@@ -769,6 +793,7 @@ function IdeaBoardScreen({
         {board ? (
           <BoardTodoContext.Provider value={{ api: todoApi }}>
           <BoardCreditsContext.Provider value={creditsApi}>
+          <BoardDubbingContext.Provider value={dubbingApi}>
           <IdeaBoard
             key={boardKey}
             className="absolute inset-0"
@@ -863,6 +888,7 @@ function IdeaBoardScreen({
               throw new Error(t("ideaBoard.aiFailed"));
             }}
           />
+          </BoardDubbingContext.Provider>
           </BoardCreditsContext.Provider>
           </BoardTodoContext.Provider>
         ) : (

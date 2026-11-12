@@ -61,6 +61,7 @@ import {
   type TimetableElement,
   type FlowElement,
   type CreditsElement,
+  type DubbingElement,
   MEDIA_SLOTS,
   boardImageConfig,
 } from "@/lib/board";
@@ -68,6 +69,7 @@ import { BoardElementView, VIDEO_HEADER, VIDEO_LABEL, boardHtmlToPlain, sanitize
 import { BoardTimetableContext } from "./BoardTimetable";
 import type { FlowPatch } from "./BoardFlow";
 import { BoardCreditsContext } from "./BoardCredits";
+import { BoardDubbingContext, type DubbingPatch } from "./BoardDubbing";
 import { cascadeTimes, chainEnabled, chainSort, editSceneTime } from "@/lib/timetable";
 import { BoardTodoContext } from "./BoardTodo";
 import { ImageGeneratePopup } from "../ImageGeneratePopup";
@@ -955,6 +957,20 @@ export function IdeaBoard({
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
+  }
+  // 2026-11-12, Lino: «🎙️ Live-Dubbing» — record dubbed voice-overs (team boards only: needs the API context)
+  const dubbingCtx = useContext(BoardDubbingContext);
+  function addDubbing(at: Point) {
+    const w = 480;
+    const h = 420;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: DubbingElement = { id: newId(), type: "dubbing", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: "Live-Dubbing", languages: ["de"], sections: [] };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+  }
+  function commitDubbing(id: string, patch: DubbingPatch) {
+    patchElements(new Map([[id, patch as Record<string, unknown>]]));
   }
   function commitCredits(id: string, patch: Partial<Pick<CreditsElement, "currency" | "collapsed" | "title">>) {
     const next: Record<string, unknown> = { ...patch };
@@ -2418,6 +2434,7 @@ export function IdeaBoard({
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
     { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
+    ...(dubbingCtx ? [{ id: "dubbing", icon: "🎙️", label: "Live-Dubbing", keywords: "live-dubbing dubbing voice-over voiceover sprecher aufnahme mikrofon synchron übersetzung sprache vertonen" }] : []),
     ...(creditsCtx ? [{ id: "credits", icon: "💳", label: "Credits (KI-Kosten)", keywords: "credits kosten higgsfield weavy figma ki ai geld budget chf usd ausgaben" }] : []),
     ...(allowFlow ? [{ id: "flow", icon: "🧭", label: "Frageablauf", keywords: "frageablauf ablauf entscheidung fragen ja nein checkliste flow decision tree" }] : []),
     { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
@@ -2445,6 +2462,7 @@ export function IdeaBoard({
       case "timetable": return addTimetable(at);
       case "flow": return addFlow(at);
       case "credits": return addCredits(at);
+      case "dubbing": return addDubbing(at);
       case "lutpreview": return addLutPreview(at);
       case "todo": return void addTodo(at);
       case "gif": return setGifAt(at);
@@ -3751,7 +3769,7 @@ export function IdeaBoard({
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
           const isFrame = el.type === "group" && !el.collapsed;
-          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow" || el.type === "credits";
+          const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow" || el.type === "credits" || el.type === "dubbing";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
           return (
             <div
@@ -3787,6 +3805,7 @@ export function IdeaBoard({
                 canEditFlow={allowFlow}
                 onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onCommitCredits={(patch) => commitCredits(el.id, patch)}
+                onCommitDubbing={(patch) => commitDubbing(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
                 scenePlaceColor={el.type === "scene" ? placeColorOf(el.location_address) : null}
@@ -4570,6 +4589,7 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
                   {allowFlow && <MenuItem label="Frageablauf" onPress={() => menuAction(() => addFlow(menu.world))} />}
                   {creditsCtx && <MenuItem label="Credits (KI-Kosten)" onPress={() => menuAction(() => addCredits(menu.world))} />}
+                  {dubbingCtx && <MenuItem label="🎙️ Live-Dubbing" onPress={() => menuAction(() => addDubbing(menu.world))} />}
                   <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
                   {uploadFile && <MenuItem label={t("ideaBoard.menu.lutpreview" as never)} onPress={() => menuAction(() => addLutPreview(menu.world))} />}
                   {gifMaker && <MenuItem label={t("ideaBoard.menu.gif")} onPress={() => menuAction(() => setGifAt(menu.world))} />}

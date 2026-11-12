@@ -770,6 +770,38 @@ export interface FlowPathEntry {
 /** 2026-11-11, Lino: «Credits» — the project's AI spend (Higgsfield, Weavy …) in CHF / USD. The entries
  * live on the server per project (GET /projects/{id}/credits), the node only stores how it looks.
  * Members only: share pages never get it. */
+/** 2026-11-12, Lino: «🎙️ Live-Dubbing» — record dubbed voice-overs on the canvas: the original video, target
+ * languages, sections with a script per language. The takes live on the server (GET …/dubbing/{node}/takes). */
+export interface DubbingSection {
+  id: string;
+  start: number;
+  end: number;
+  label?: string;
+  scripts: Record<string, string>;
+}
+export interface DubbingElement extends BaseElement {
+  type: "dubbing";
+  title: string;
+  asset_key?: string;
+  src?: string | null;
+  name?: string;
+  mime?: string;
+  duration?: number;
+  languages: string[];
+  sections: DubbingSection[];
+}
+export interface DubbingTake {
+  id: string;
+  section_id: string;
+  lang: string;
+  duration: number | null;
+  best: boolean;
+  source: "mic" | "ai";
+  speaker_name: string | null;
+  created_at: string | null;
+  url: string;
+}
+
 export interface CreditsElement extends BaseElement {
   type: "credits";
   title: string;
@@ -799,7 +831,7 @@ export interface FlowElement extends BaseElement {
   finished?: boolean;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement | DubbingElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);

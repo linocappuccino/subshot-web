@@ -2,6 +2,7 @@
 
 import { FlowNode, type FlowPatch } from "./BoardFlow";
 import { CreditsNode } from "./BoardCredits";
+import { DubbingNode, type DubbingPatch } from "./BoardDubbing";
 import { BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
 import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
@@ -151,6 +152,7 @@ export function BoardElementView({
   canEditFlow,
   onCommitFlow,
   onCommitCredits,
+  onCommitDubbing,
 }: {
   el: BoardElement;
   editing: boolean;
@@ -187,6 +189,8 @@ export function BoardElementView({
   /** «Frageablauf» (admin-only, 2026-11-11): this viewer may switch the node to «Bearbeiten» */
   canEditFlow?: boolean;
   onCommitFlow?: (patch: FlowPatch) => void;
+  /** «Live-Dubbing» node (2026-11-12) */
+  onCommitDubbing?: (patch: DubbingPatch) => void;
   /** «Credits» node (2026-11-11): currency / list collapsed */
   onCommitCredits?: (patch: Partial<Pick<CreditsElement, "currency" | "collapsed" | "title">>) => void;
   /** member of a vote group: the letter badge sits on the top-left corner → the video label starts after it */
@@ -247,6 +251,8 @@ export function BoardElementView({
           onCommitTitle={(title) => onCommitGroupTitle?.(title)}
         />
       );
+    case "dubbing":
+      return <DubbingNode el={el} editable={editable} onCommit={(patch) => onCommitDubbing?.(patch)} onMeasure={onMeasure} />;
     case "credits":
       return <CreditsNode el={el} editable={editable} onCommit={(patch) => onCommitCredits?.(patch)} onMeasure={onMeasure} />;
     case "flow":

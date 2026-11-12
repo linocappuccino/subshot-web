@@ -45,7 +45,7 @@ import type {
   VideoVersion, PipelineProgress, VideoDeliverable, VideoLicenseFile, VideoExtras, DeliverDownloadLog, DeliverSettings, VideoQc, FeedbackRounds, CallsheetDay, Callsheet, LiveSchedule, ShootingOrderSuggestion, ClientLogo
 } from "./types";
 
-import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview, ProjectCredits } from "./board";
+import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview, ProjectCredits, DubbingTake } from "./board";
 import type { BoardSchedule, SchedulePlanOp } from "./timetable";
 
 export type OAuthConsentRequest = {
@@ -1009,6 +1009,24 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         method: "POST",
         body: JSON.stringify({ ordered_image_ids: orderedImageIds }),
       }),
+
+    // ── «🎙️ Live-Dubbing» (2026-11-12) ───────────────────────────────────
+    dubbingTakes: (ideaId: string, nodeId: string) => {
+      invalidateGetCache(`ideas/${ideaId}/dubbing/${nodeId}/takes`);
+      return request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`);
+    },
+    dubbingTakeUpload: (ideaId: string, nodeId: string) => request<{ key: string; upload_url: string }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/upload`, { method: "POST" }),
+    dubbingRegisterTake: (ideaId: string, nodeId: string, body: { key: string; section_id: string; lang: string; duration: number }) =>
+      request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`, { method: "POST", body: JSON.stringify(body) }),
+    dubbingBest: (ideaId: string, nodeId: string, takeId: string) => request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/${takeId}/best`, { method: "PUT" }),
+    dubbingDeleteTake: (ideaId: string, nodeId: string, takeId: string) => request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/${takeId}`, { method: "DELETE" }),
+    dubbingExportUrl: async (ideaId: string, nodeId: string, lang: string, kind: "wav" | "zip") => {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      const res = await fetch(`${BASE_URL}/ideas/${ideaId}/dubbing/${nodeId}/export?lang=${encodeURIComponent(lang)}&kind=${kind}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+      return URL.createObjectURL(await res.blob());
+    },
 
     // ── «Credits» (2026-11-11): AI spend per project ─────────────────────
     getProjectCredits: (projectId: string) => {

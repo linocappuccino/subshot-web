@@ -64,6 +64,9 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
     case "credits":
       parts.push(el.title, "Credits", "Kosten");
       break;
+    case "dubbing":
+      parts.push(el.title, "Live-Dubbing", ...el.sections.flatMap((s) => Object.values(s.scripts)));
+      break;
   }
   if (withTags) parts.push(...(el.tags ?? []));
   return parts.filter(Boolean).join(" \n ");
@@ -71,7 +74,7 @@ export function elementSearchText(el: BoardElement, withTags = true): string {
 
 const TYPE_ICON: Record<BoardElement["type"], string> = {
   text: "📝", sticky: "🗒️", scene: "🎬", link: "🔗", image: "🖼️", video: "🎞️", audio: "🎵", pdf: "📄", file: "📎",
-  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚", lutpreview: "◐", timetable: "🗓️", flow: "🧭", credits: "💳",
+  drawing: "✏️", group: "🗂️", todo: "☑️", palette: "🎨", location: "📍", color: "🟥", moodboard: "🖼️", placeholder: "⬚", lutpreview: "◐", timetable: "🗓️", flow: "🧭", credits: "💳", dubbing: "🎙️",
 };
 
 export function elementLabel(el: BoardElement, t: (k: never) => string): string {
@@ -108,6 +111,8 @@ export function elementLabel(el: BoardElement, t: (k: never) => string): string 
       return el.title || "Frageablauf";
     case "credits":
       return el.title || "Credits";
+    case "dubbing":
+      return el.title || "Live-Dubbing";
     default:
       return el.name;
   }
