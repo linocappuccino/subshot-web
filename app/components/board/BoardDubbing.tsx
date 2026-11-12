@@ -261,6 +261,16 @@ export function DubbingNode({
                 {i + 1}. {fmt(s.start)}–{fmt(s.end)}
               </span>
               <span className="flex-1 min-w-0 truncate">{s.label || s.scripts[curLang] || "–"}</span>
+              {(() => {
+                // 2026-11-12, Lino: which take counts (quick check + export): the ★ one, else the newest
+                const own = takes.filter((t) => t.section_id === s.id && t.lang === curLang && t.source !== "ai");
+                const c = chosen(own, s.id, curLang);
+                return c ? (
+                  <span data-used-take className={`shrink-0 ${c.best ? "text-amber-300" : "text-white/55"}`} title="Dieser Take wird im Schnellcheck und im Export verwendet">
+                    {c.best ? `★ Take ${c.number ?? own.indexOf(c) + 1}` : `Take ${c.number ?? own.length}, neuester`}
+                  </span>
+                ) : null;
+              })()}
               {el.languages.map((l) => {
                 const n = done(s.id, l);
                 return (
@@ -712,9 +722,6 @@ export function DubbingStudio({
   }
 
   const own = sec ? takes.filter((t) => t.section_id === sec.id && t.lang === lang && t.source !== "ai") : [];
-  const words = (sec?.scripts[lang] ?? "").split(/(\s+)/);
-  const lit = Math.round(progress * words.filter((w) => w.trim()).length);
-  let seen = 0;
 
   return createPortal(
     <div
@@ -795,24 +802,24 @@ export function DubbingStudio({
               }}
             />
           </div>
-          <div data-karaoke className="shrink-0 rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3 text-xl md:text-2xl leading-relaxed max-h-[18vh] overflow-auto">
-            {sec && (sec.scripts[lang] ?? "").trim() ? (
-              words.map((w, i) => {
-                if (!w.trim()) return <span key={i}>{w}</span>;
-                seen += 1;
-                const on = phase === "rec" && seen <= lit;
-                return (
-                  <span key={i} className={on ? "text-rose-300" : phase === "rec" ? "text-white/45" : "text-white"}>
-                    {w}
-                  </span>
-                );
-              })
-            ) : (
-              <span className="text-base text-white/40">
-                {sec ? (editable ? "Noch kein Skript — rechts eintragen." : "Für diese Sprache gibt es noch kein Skript.") : el.sections.length ? "Wähle unten auf der Timeline einen Abschnitt." : editable ? "Zieh auf der Timeline über eine Stelle, um den ersten Abschnitt anzulegen." : "Noch keine Abschnitte."}
-              </span>
-            )}
-          </div>
+          <ScriptBox
+            key={`${secId ?? "none"}-${lang}`}
+            text={sec?.scripts[lang] ?? ""}
+            langLabel={langName(lang)}
+            editable={editable && phase === "idle"}
+            recording={phase === "rec"}
+            progress={progress}
+            hasSection={!!sec}
+            onChange={(text) => {
+              if (sec) patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: text } });
+              else {
+                // no section yet: the text belongs to one over the whole video
+                const s: DubbingSection = { id: newId(), start: 0, end: Math.round(duration * 10) / 10, label: "", scripts: { [lang]: text } };
+                setSections([...el.sections, s]);
+                setSecId(s.id);
+              }
+            }}
+          />
         </div>
         {/* right: record + takes, the section list only shows */}
         <div className="w-full md:w-[340px] shrink-0 min-h-0 border-t md:border-t-0 md:border-l border-white/10 p-4 flex flex-col gap-4 overflow-auto">
@@ -850,13 +857,6 @@ export function DubbingStudio({
               {editable && (
                 <>
                   <input value={sec.label ?? ""} placeholder="Bezeichnung (optional)" onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text" />
-                  <textarea
-                    value={sec.scripts[lang] ?? ""}
-                    placeholder={`Skript ${langName(lang)} …`}
-                    onChange={(e) => patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: e.target.value } })}
-                    rows={3}
-                    className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text"
-                  />
                   <button type="button" onClick={() => { setSections(el.sections.filter((s) => s.id !== sec.id)); setSecId(null); }} className="self-start text-xs text-white/40 hover:text-red-300">
                     Abschnitt löschen
                   </button>
@@ -875,9 +875,14 @@ export function DubbingStudio({
                     {playing === t.id ? "■" : "▶"}
                   </button>
                   <span className="flex-1 min-w-0 text-white/70">
-                    Take {i + 1}
+                    Take {t.number ?? i + 1}
                     <span className="ml-1.5 text-xs text-white/35">{t.duration ? `${t.duration.toFixed(1)} s` : ""}{t.speaker_name ? ` · ${t.speaker_name}` : ""}</span>
                   </span>
+                  {t.download_url && (
+                    <a href={t.download_url} download title="Take herunterladen (WAV)" data-take-download className="text-white/45 hover:text-white text-lg leading-none">
+                      ⬇
+                    </a>
+                  )}
                   {canChoose ? (
                     <button type="button" title="Bester Take" onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
                       ★
@@ -901,6 +906,11 @@ export function DubbingStudio({
                       {playing === t.id ? "■" : "▶"}
                     </button>
                     <span className="flex-1 text-white/70">🤖 KI-Dubbing (ganzes Video)</span>
+                    {t.download_url && (
+                      <a href={t.download_url} download title="KI-Dubbing herunterladen" data-take-download className="text-white/45 hover:text-white text-lg leading-none">
+                        ⬇
+                      </a>
+                    )}
                   </div>
                 ))}
             </div>
@@ -929,5 +939,97 @@ export function DubbingStudio({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/** 2026-11-12, Lino: «eine Textbox, wo man den Text ablesen kann — gross dargestellt». The script of the chosen
+ * section, big and high-contrast under the video: the team types / pastes straight into it (saved automatically),
+ * speakers only read; while recording the words light up and long texts scroll along. */
+function ScriptBox({
+  text,
+  langLabel,
+  editable,
+  recording,
+  progress,
+  hasSection,
+  onChange,
+}: {
+  text: string;
+  langLabel: string;
+  editable: boolean;
+  recording: boolean;
+  progress: number;
+  hasSection: boolean;
+  onChange: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState(text);
+  const [focused, setFocused] = useState(false);
+  const timer = useRef<number | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const shown = focused ? draft : text;
+  const style = { fontSize: "clamp(22px, 2.2vw + 8px, 32px)", lineHeight: 1.55 };
+
+  function save(v: string) {
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => onChange(v), 600);
+  }
+  useEffect(() => () => {
+    if (timer.current) window.clearTimeout(timer.current);
+  }, []);
+
+  // karaoke: words up to the progress light up, the current line stays in view
+  const words = text.split(/(\s+)/);
+  const lit = Math.round(progress * words.filter((w) => w.trim()).length);
+  useEffect(() => {
+    if (!recording) return;
+    const box = boxRef.current;
+    const cur = box?.querySelector<HTMLElement>("[data-lit-last]");
+    if (box && cur) box.scrollTop = Math.max(0, cur.offsetTop - box.clientHeight / 3);
+  }, [lit, recording]);
+
+  const frame = "shrink-0 w-full rounded-2xl bg-black/40 border border-white/15 px-5 py-4 text-white max-h-[24vh] min-h-[5.5rem] overflow-auto";
+  if (recording || !editable) {
+    let seen = 0;
+    return (
+      <div ref={boxRef} data-karaoke data-script-box className={frame} style={style}>
+        {text.trim() ? (
+          words.map((w, i) => {
+            if (!w.trim()) return <span key={i}>{w}</span>;
+            seen += 1;
+            const on = recording && seen <= lit;
+            return (
+              <span key={i} data-lit-last={recording && seen === Math.max(1, lit) ? "" : undefined} className={on ? "text-rose-300" : recording ? "text-white/40" : "text-white"}>
+                {w}
+              </span>
+            );
+          })
+        ) : (
+          <span className="text-white/35">{hasSection ? `Noch kein Sprechtext (${langLabel}).` : "Wähle unten auf der Timeline einen Abschnitt."}</span>
+        )}
+      </div>
+    );
+  }
+  return (
+    <textarea
+      data-karaoke
+      data-script-box
+      value={shown}
+      placeholder={`Sprechtext hier einfügen (${langLabel}) …`}
+      onFocus={() => {
+        setDraft(text);
+        setFocused(true);
+      }}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        save(e.target.value);
+      }}
+      onBlur={() => {
+        setFocused(false);
+        if (timer.current) window.clearTimeout(timer.current);
+        if (draft !== text) onChange(draft);
+      }}
+      className={`${frame} resize-none outline-none focus:border-rose-400 placeholder:text-white/30 select-text`}
+      style={style}
+    />
   );
 }

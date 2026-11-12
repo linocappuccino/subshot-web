@@ -800,6 +800,10 @@ export interface DubbingTake {
   speaker_name: string | null;
   created_at: string | null;
   url: string;
+  /** Take 1, 2, … per section + language */
+  number?: number;
+  /** team only: the WAV as a download with a telling file name */
+  download_url?: string;
 }
 
 export interface CreditsElement extends BaseElement {
