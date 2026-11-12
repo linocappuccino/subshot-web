@@ -34,9 +34,12 @@ function sameDay(a: Date, b: Date) {
  * NAVIGATION / as the base to build a new picked date from — never for
  * display. */
 export function DateTimePicker({
-  value, onChange, placeholder, compact,
+  value, onChange, placeholder, compact, fit,
 }: {
   value: Date | null; onChange: (date: Date) => void; placeholder?: string;
+  /** 2026-11-12, Lino: «keine Texte in der Kachel abschneiden» — the trigger takes the surrounding font size
+   * (a tile scales its texts with its width) and tighter padding */
+  fit?: boolean;
   /** 2026-07-22 — renders the trigger as a small icon-only button (clock
    * glyph, tinted blue once a value is set) instead of the default
    * full-width bar. Same popover/calendar underneath either way — for
@@ -168,7 +171,8 @@ export function DateTimePicker({
           ref={buttonRef}
           type="button"
           onClick={toggleOpen}
-          className="w-full flex items-center gap-2.5 bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-sm hover:bg-white/8 transition-colors text-left"
+          className={`w-full flex items-center bg-white/5 border border-white/10 rounded-xl hover:bg-white/8 transition-colors text-left ${fit ? "gap-1.5 px-2.5 py-2" : "gap-2.5 px-3.5 py-2.5 text-sm"}`}
+          style={fit ? { fontSize: "inherit" } : undefined}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 text-white/40">
             <rect x="3" y="4" width="18" height="18" rx="2" />

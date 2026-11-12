@@ -98,11 +98,12 @@ export function PostStageLabel({ stage, className, row }: { stage: PostStage | n
   const approved = stage === "abgenommen";
   if (row) {
     return (
-      <div className={cn("flex items-center justify-between gap-2 whitespace-nowrap", className)}>
-        <span className={cn("text-[10px] uppercase tracking-[0.08em] text-white/40", approved && "invisible")}>Working on</span>
-        <span className={cn("inline-flex min-w-0 items-center gap-1.5 text-xs font-medium", approved ? "text-emerald-400" : "text-white/85")}>
+      // 2026-11-12, Lino: never cut — scaled with the tile (VideoTile's footer is a size container), wraps if needed
+      <div className={cn("flex items-center justify-between gap-2", className)}>
+        <span className={cn("shrink-0 uppercase tracking-[0.08em] text-white/40 whitespace-nowrap", approved && "invisible")} style={{ fontSize: "clamp(8px, 4.6cqw, 10px)" }}>Working on</span>
+        <span className={cn("inline-flex min-w-0 items-center gap-1.5 font-medium text-right", approved ? "text-emerald-400" : "text-white/85")} style={{ fontSize: "clamp(10px, 5.6cqw, 12px)" }}>
           <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", approved ? "bg-emerald-400" : "bg-white/80")} />
-          <span className="truncate">{labels[stage]}</span>
+          <span className="min-w-0 break-words leading-tight">{labels[stage]}</span>
         </span>
       </div>
     );

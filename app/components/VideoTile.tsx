@@ -150,13 +150,6 @@ export function VideoTile({
   };
 }) {
   const { t } = useLanguage();
-  const statusShort: Record<PostproductionStatus, string> = {
-    wartend: t("postproductionStatusShort.wartend"),
-    in_bearbeitung: t("postproductionStatusShort.inBearbeitung"),
-    wartet_auf_feedback: t("postproductionStatusShort.wartetAufFeedback"),
-    abgeschlossen: t("postproductionStatusShort.abgeschlossen"),
-    abgelehnt: t("postproductionStatusShort.abgelehnt"),
-  };
   const statusLabels: Record<PostproductionStatus, string> = {
     wartend: t("postproductionStatus.wartend"),
     in_bearbeitung: t("postproductionStatus.inBearbeitung"),
@@ -604,7 +597,10 @@ export function VideoTile({
           vertikalen Abstand.. dann sieht es ein wenig aufgeräumter aus" —
           gap-1.5 (6px) between title/status/editor/deadline read cramped,
           bumped to gap-2.5 (10px). */}
-      <div className="px-3 py-2.5 flex flex-col gap-2.5 border-t border-white/10 min-w-0">
+      {/* 2026-11-12, Lino: «es sollen keine Texte in der Kachel abgeschnitten werden — die Textgrösse soll sich
+          der Kachel anpassen»: the footer is a size container; its texts scale with the tile width
+          (clamp(min, cqw, max)) and wrap to a second line rather than being cut */}
+      <div className="@container px-3 py-2.5 flex flex-col gap-2.5 border-t border-white/10 min-w-0">
         <div className="min-w-0">
           {/* 2026-07-18, Lino: "Titel des Videos muss gross dargestellt
               werden. Jetzt ist der Titel sehr klein." — the small label
@@ -646,7 +642,7 @@ export function VideoTile({
             // 2nd line) fixes both: width now follows the thumbnail only,
             // height grows to fit 1-2 lines instead.
             <div className="flex items-start gap-1.5 group min-w-0">
-              <div className="text-lg font-semibold text-white line-clamp-2 break-words min-w-0">{video.title}</div>
+              <div className="font-semibold text-white break-words min-w-0 leading-snug" style={{ fontSize: "clamp(14px, 8cqw, 18px)" }}>{video.title}</div>
               {onRename && (
                 <button
                   onClick={(e) => {
@@ -675,36 +671,32 @@ export function VideoTile({
             onOpenMore={onOpenExtras}
           />
         )}
-        {/* 2026-11-12, Lino: «Awaiting Feedback» spilled out of the pill on small screens — the label is a
-            truncating span (short form when the tile is narrow, container query), the native select lies
-            invisibly on top (its own width never pushes the pill any more) */}
-        <div className="@container min-w-0 max-w-full self-stretch">
-          <Pill tone={STATUS_TONE[status ?? "wartend"]} className="relative max-w-full min-w-0 overflow-hidden" >
-            <span data-status-pill className="min-w-0 truncate text-xs" title={statusLabels[status ?? "wartend"]}>
-              <span className="@max-[200px]:hidden">{statusLabels[status ?? "wartend"]}</span>
-              <span className="hidden @max-[200px]:inline">{statusShort[status ?? "wartend"]}</span>
-            </span>
-            {canEditStatus && (
-              <>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80" aria-hidden>
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-                <select
-                  value={status ?? "wartend"}
-                  onChange={(e) => onChangeStatus(e.target.value as PostproductionStatus)}
-                  aria-label={statusLabels[status ?? "wartend"]}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-xs"
-                >
-                  {Object.entries(statusLabels).map(([value, label]) => (
-                    <option key={value} value={value} className="bg-[#111] text-white">
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </Pill>
-        </div>
+        {/* 2026-11-12, Lino: the status label is never cut — full text, scaled to the tile, a second line if
+            it still doesn't fit; the native select lies invisibly on top (its width never pushes the pill) */}
+        <Pill tone={STATUS_TONE[status ?? "wartend"]} wrap className="relative self-start max-w-full min-w-0">
+          <span data-status-pill className="min-w-0 break-words leading-tight" style={{ fontSize: "clamp(10px, 5.6cqw, 12px)" }}>
+            {statusLabels[status ?? "wartend"]}
+          </span>
+          {canEditStatus && (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80 mt-px" aria-hidden>
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+              <select
+                value={status ?? "wartend"}
+                onChange={(e) => onChangeStatus(e.target.value as PostproductionStatus)}
+                aria-label={statusLabels[status ?? "wartend"]}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-xs"
+              >
+                {Object.entries(statusLabels).map(([value, label]) => (
+                  <option key={value} value={value} className="bg-[#111] text-white">
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )}
+        </Pill>
         {members && onChangeAssignee && (
           <VideoTileEditorPicker
             members={members}
@@ -713,12 +705,12 @@ export function VideoTile({
             onChange={onChangeAssignee}
           />
         )}
-        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-white/60">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-white/60" style={{ fontSize: "clamp(10px, 6.4cqw, 14px)" }}>
           {canEditDeadline ? (
             <>
               {/* Lino: "deadline setzen soll auch auf einer zeile bleiben" — never wraps; portrait tiles say just "Deadline" */}
               <span className="relative max-w-full whitespace-nowrap">
-                <DateTimePicker value={deadline ? new Date(deadline) : null} onChange={onChangeDeadline} placeholder={aspectRatio < 1 ? t("videoTile.deadlineShort") : t("videoTile.setDeadline")} />
+                <DateTimePicker fit value={deadline ? new Date(deadline) : null} onChange={onChangeDeadline} placeholder={aspectRatio < 1 ? t("videoTile.deadlineShort") : t("videoTile.setDeadline")} />
                 {/* the "remove" × sits on the field's corner instead of wrapping onto its own line */}
                 {deadline && (
                   <button
@@ -769,9 +761,9 @@ function VideoTileEditorPicker({
 
   if (!editable) {
     return (
-      <div className="inline-flex self-start items-center gap-1.5 rounded-full bg-white/8 px-2.5 py-1 text-xs text-white/70 max-w-full">
+      <div className="inline-flex self-start items-center gap-1.5 rounded-full bg-white/8 px-2.5 py-1 text-white/70 max-w-full min-w-0" style={{ fontSize: "clamp(10px, 5.6cqw, 12px)" }}>
         <span className="text-white/40 shrink-0">{t("videoTile.editorLabel")}:</span>
-        <span className="truncate">{label}</span>
+        <span className="min-w-0 break-words leading-tight">{label}</span>
       </div>
     );
   }
@@ -798,11 +790,12 @@ function VideoTileEditorPicker({
         // selectable field of the same visual weight as its neighbors.
         <button
           type="button"
-          className="inline-flex self-start items-center gap-1.5 rounded-full bg-white/8 hover:bg-white/14 px-2.5 py-1 text-xs text-white/70 hover:text-white/90 transition-colors max-w-full"
+          className="inline-flex self-start items-center gap-1.5 rounded-full bg-white/8 hover:bg-white/14 px-2.5 py-1 text-white/70 hover:text-white/90 transition-colors max-w-full min-w-0 text-left"
+          style={{ fontSize: "clamp(10px, 5.6cqw, 12px)" }}
         >
           <span className="text-white/40 shrink-0">{t("videoTile.editorLabel")}:</span>
           {assignee && <Avatar name={assignee.name} email={assignee.email} avatarUrl={assignee.avatar_url} size={16} />}
-          <span className="truncate max-w-[8rem]">{label}</span>
+          <span className="min-w-0 break-words leading-tight">{label}</span>
         </button>
       }
     >
