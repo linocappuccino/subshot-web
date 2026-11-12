@@ -600,6 +600,48 @@ export function DubbingStudio({
   const sec = el.sections.find((s) => s.id === secId) ?? null;
   const nodeKey = el.id;
   // 2026-11-12, Lino: «Text über Video» — the script big over the picture (remembered per person)
+  // 2026-11-12, Lino: «Videoton an / aus» while recording (remembered per person; the count-in beeps stay audible)
+  const [videoSound, setVideoSound] = useState(() => {
+    try {
+      return localStorage.getItem("subshot-dubbing-video-sound") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  function toggleVideoSound() {
+    setVideoSound((on) => {
+      try {
+        localStorage.setItem("subshot-dubbing-video-sound", on ? "0" : "1");
+      } catch {
+        // private mode
+      }
+      return !on;
+    });
+  }
+  const videoSoundRef = useRef(videoSound);
+  useEffect(() => {
+    videoSoundRef.current = videoSound;
+    // switched while recording → takes effect right away
+    if (phase === "rec" && videoRef.current) videoRef.current.muted = !videoSound;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on the switch itself
+  }, [videoSound]);
+  // 2026-11-12, Lino: «Deckkraft» of the text over the video (20–100 %, remembered per person)
+  const [overlayOpacity, setOverlayOpacity] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("subshot-dubbing-overlay-opacity"));
+      return v >= 0.2 && v <= 1 ? v : 1;
+    } catch {
+      return 1;
+    }
+  });
+  function changeOverlayOpacity(v: number) {
+    setOverlayOpacity(v);
+    try {
+      localStorage.setItem("subshot-dubbing-overlay-opacity", String(v));
+    } catch {
+      // private mode
+    }
+  }
   const [overlay, setOverlay] = useState(() => {
     try {
       return localStorage.getItem("subshot-dubbing-overlay") === "1";
@@ -753,7 +795,7 @@ export function DubbingStudio({
     setPhase("rec");
     rec.start();
     v.volume = 0.15; // the original quietly as a guide
-    v.muted = false;
+    v.muted = !videoSoundRef.current; // «Videoton aus»: the picture runs silent
     v.addEventListener("playing", () => rec.mark(), { once: true });
     await v.play().catch(() => {});
     await new Promise<void>((resolve) => {
@@ -772,6 +814,7 @@ export function DubbingStudio({
     stopRef.current = null;
     v.pause();
     v.volume = 1;
+    v.muted = false;
     setPhase("saving");
     const { wav, seconds } = rec.stop(sec.end - sec.start);
     const id = newId();
@@ -835,7 +878,23 @@ export function DubbingStudio({
         <div className="flex-1 min-w-0 min-h-0 max-md:min-h-[calc(100dvh-56px)] flex flex-col p-3 md:p-4 gap-3">
           <div ref={areaRef} className={`flex-1 min-h-0 flex gap-3 ${wide ? "flex-row items-center" : "flex-col"}`}>
             <div className={wide ? "flex-1 min-w-0 flex flex-col justify-center gap-1.5" : "shrink-0 flex flex-col gap-1.5"} style={wide ? { height: box.h || undefined } : undefined}>
-              <div className="flex justify-end">
+              <div className="flex justify-end items-center gap-3">
+                {overlay && (
+                  <label className="flex items-center gap-2 text-xs text-white/70" title="Deckkraft vom Text über dem Video">
+                    Deckkraft
+                    <input
+                      type="range"
+                      data-overlay-opacity
+                      min={20}
+                      max={100}
+                      step={5}
+                      value={Math.round(overlayOpacity * 100)}
+                      onChange={(e) => changeOverlayOpacity(Number(e.target.value) / 100)}
+                      className="w-24 accent-rose-500"
+                    />
+                    <span className="w-8 tabular-nums text-right">{Math.round(overlayOpacity * 100)} %</span>
+                  </label>
+                )}
                 <button
                   type="button"
                   data-overlay-toggle
@@ -887,7 +946,7 @@ export function DubbingStudio({
               )}
               {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
               {overlay && sec && (sec.scripts[lang] ?? "").trim() && (
-                <OverlayText text={sec.scripts[lang] ?? ""} recording={phase === "rec"} progress={progress} boxW={box.w} boxH={box.h} />
+                <OverlayText text={sec.scripts[lang] ?? ""} recording={phase === "rec"} progress={progress} boxW={box.w} boxH={box.h} opacity={overlayOpacity} />
               )}
             </div>
             </div>
@@ -948,6 +1007,16 @@ export function DubbingStudio({
                 Abschnitt {el.sections.indexOf(sec) + 1}
                 <span className="ml-2 font-normal text-white/45 tabular-nums">{fmt(sec.start)}–{fmt(sec.end)}</span>
               </div>
+              <button
+                type="button"
+                data-video-sound
+                aria-pressed={videoSound}
+                onClick={toggleVideoSound}
+                title="Videoton während der Aufnahme"
+                className={`rounded-xl py-2 text-sm font-semibold border ${videoSound ? "border-white/15 bg-white/10 text-white" : "border-amber-300/40 bg-amber-300/15 text-amber-200"}`}
+              >
+                {videoSound ? "🔊 Videoton an" : "🔇 Videoton aus"}
+              </button>
               {phase === "rec" ? (
                 <button type="button" onClick={() => stopRef.current?.()} className="rounded-xl bg-white text-black py-3 font-bold">
                   ■ Stopp
@@ -1143,7 +1212,7 @@ function ScriptBox({
  * linksbündig, vertikal zentriert»): the whole script over the whole picture — no box, no background; the font is
  * as big as fits (shrunk until the whole text fits; only below ~18 px it scrolls instead); spoken words turn a
  * soft yellow while recording. The video keeps its size. */
-function OverlayText({ text, recording, progress, boxW, boxH }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number }) {
+function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1 }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number; opacity?: number }) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(32);
@@ -1180,6 +1249,7 @@ function OverlayText({ text, recording, progress, boxW, boxH }: { text: string; 
       ref={outer}
       data-overlay-text
       className="absolute left-0 right-0 top-0 bottom-12 px-[6%] py-[5%] overflow-auto pointer-events-none flex"
+      style={{ opacity }}
     >
       <div
         ref={inner}
