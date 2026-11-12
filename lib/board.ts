@@ -787,6 +787,8 @@ export interface DubbingElement extends BaseElement {
   name?: string;
   mime?: string;
   duration?: number;
+  /** video width / height (0.5625 = 9:16) — the tile width follows it, the video fills the tile edge to edge */
+  video_ar?: number;
   languages: string[];
   sections: DubbingSection[];
 }

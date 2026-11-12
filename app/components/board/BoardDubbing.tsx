@@ -30,7 +30,15 @@ export interface BoardDubbingApi {
 }
 export const BoardDubbingContext = createContext<BoardDubbingApi | null>(null);
 
-export type DubbingPatch = Partial<Pick<DubbingElement, "title" | "asset_key" | "src" | "name" | "mime" | "duration" | "languages" | "sections">>;
+export type DubbingPatch = Partial<Pick<DubbingElement, "title" | "asset_key" | "src" | "name" | "mime" | "duration" | "languages" | "sections" | "video_ar" | "w">>;
+
+/** 2026-11-12, Lino: the tile width that suits the video format (9:16 narrow, 16:9 wide) */
+export function dubbingTileWidth(ar: number): number {
+  if (ar < 0.7) return 360; // 9:16
+  if (ar < 0.9) return 420; // 4:5
+  if (ar < 1.2) return 480; // 1:1
+  return 640; // 16:9
+}
 
 const LANG_NAMES: Record<string, string> = { de: "Deutsch", fr: "Französisch", it: "Italienisch", en: "Englisch", es: "Spanisch", pt: "Portugiesisch", nl: "Niederländisch", rm: "Rätoromanisch" };
 const langName = (l: string) => LANG_NAMES[l] ?? l.toUpperCase();
@@ -183,18 +191,32 @@ export function DubbingNode({
           <input type="file" accept="video/*" className="hidden" disabled={!editable} onChange={(e) => e.target.files?.[0] && void pickVideo(e.target.files[0])} />
         </label>
       ) : (
-        // 2026-11-12, Lino: the video in its own format (9:16 / 16:9 …), nothing cut, no black bars, round corners always
-        <div data-no-drag className="relative flex justify-center px-3 pt-3">
+        // 2026-11-12, Lino: the video in its own format, edge to edge over the tile width (no bars left / right),
+        // round corners; the tile width follows the format (dubbingTileWidth)
+        <div data-no-drag className="relative px-3 pt-3">
           <video
             ref={videoRef}
             src={el.src ?? undefined}
             controls
             playsInline
             muted={mode !== "original"}
-            className="block max-w-full max-h-[300px] w-auto h-auto rounded-xl bg-black"
+            data-dubbing-video
+            className="block w-full h-auto rounded-xl bg-black"
+            style={el.video_ar ? { aspectRatio: String(el.video_ar) } : undefined}
             onLoadedMetadata={(e) => {
-              const d = Math.round(e.currentTarget.duration * 1000) / 1000;
-              if (editable && d && Math.abs(d - (el.duration ?? 0)) > 0.01) onCommit({ duration: d });
+              const v = e.currentTarget;
+              const d = Math.round(v.duration * 1000) / 1000;
+              const patch: DubbingPatch = {};
+              if (d && Math.abs(d - (el.duration ?? 0)) > 0.01) patch.duration = d;
+              const ar = v.videoWidth && v.videoHeight ? Math.round((v.videoWidth / v.videoHeight) * 10000) / 10000 : 0;
+              if (ar && Math.abs(ar - (el.video_ar ?? 0)) > 0.001) {
+                patch.video_ar = ar;
+                // first time the format is known: the tile takes the width that suits it — only ever narrower,
+                // so it never grows over its neighbours (a manual resize later is kept)
+                const want = dubbingTileWidth(ar);
+                if (!el.video_ar && want < el.w) patch.w = want;
+              }
+              if (editable && Object.keys(patch).length) onCommit(patch);
             }}
             onTimeUpdate={syncTake}
             onPlay={syncTake}
