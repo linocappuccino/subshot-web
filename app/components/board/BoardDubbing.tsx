@@ -177,14 +177,15 @@ export function DubbingNode({
           <input type="file" accept="video/*" className="hidden" disabled={!editable} onChange={(e) => e.target.files?.[0] && void pickVideo(e.target.files[0])} />
         </label>
       ) : (
-        <div data-no-drag className="relative bg-black">
+        // 2026-11-12, Lino: the video in its own format (9:16 / 16:9 …), nothing cut, no black bars, round corners always
+        <div data-no-drag className="relative flex justify-center px-3 pt-3">
           <video
             ref={videoRef}
             src={el.src ?? undefined}
             controls
             playsInline
             muted={mode !== "original"}
-            className="w-full max-h-[260px] bg-black"
+            className="block max-w-full max-h-[300px] w-auto h-auto rounded-xl bg-black"
             onLoadedMetadata={(e) => {
               const d = Math.round(e.currentTarget.duration * 1000) / 1000;
               if (editable && d && Math.abs(d - (el.duration ?? 0)) > 0.01) onCommit({ duration: d });
@@ -349,6 +350,157 @@ export function DubbingNode({
 }
 
 // ── the recording studio (full screen) ─────────────────────────────────────
+// 2026-11-12, Lino: «so einfach wie möglich»: the sections live on a TIMELINE under the video (click = choose, the
+// team drags the ends / drags in an empty spot for a new one); the list on the right only shows them. The video
+// box always has the video's own aspect (9:16, 16:9, …), as big as fits, nothing cut, no bars, round corners.
+
+const COLORS = ["#f43f5e", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#14b8a6", "#6366f1"];
+
+/** the biggest box of `aspect` that fits into the measured area */
+function useFit(aspect: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      const W = el.clientWidth;
+      const H = el.clientHeight;
+      if (!W || !H) return;
+      const w = Math.min(W, H * aspect);
+      setBox({ w: Math.floor(w), h: Math.floor(w / aspect) });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [aspect]);
+  return { ref, box };
+}
+
+function Timeline({
+  el,
+  duration,
+  time,
+  selected,
+  takes,
+  lang,
+  editable,
+  disabled,
+  onSelect,
+  onSeek,
+  onChange,
+  onCreate,
+}: {
+  el: DubbingElement;
+  duration: number;
+  time: number;
+  selected: string | null;
+  takes: DubbingTake[];
+  lang: string;
+  editable: boolean;
+  disabled: boolean;
+  onSelect: (id: string) => void;
+  onSeek: (t: number) => void;
+  onChange: (id: string, start: number, end: number) => void;
+  onCreate: (start: number, end: number) => void;
+}) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState<{ a: number; b: number } | null>(null);
+  const [live, setLive] = useState<{ id: string; start: number; end: number } | null>(null);
+  const D = Math.max(0.1, duration);
+  const at = (clientX: number) => {
+    const r = barRef.current!.getBoundingClientRect();
+    return Math.round(Math.max(0, Math.min(D, ((clientX - r.left) / r.width) * D)) * 10) / 10;
+  };
+  const pct = (t: number) => `${(t / D) * 100}%`;
+
+  function dragEdge(e: React.PointerEvent, s: DubbingSection, edge: "start" | "end") {
+    e.stopPropagation();
+    if (!editable || disabled) return;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const t = at(ev.clientX);
+      const start = edge === "start" ? Math.min(t, s.end - 0.3) : s.start;
+      const end = edge === "end" ? Math.max(t, s.start + 0.3) : s.end;
+      setLive({ id: s.id, start, end });
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      const t = at(ev.clientX);
+      const start = edge === "start" ? Math.min(t, s.end - 0.3) : s.start;
+      const end = edge === "end" ? Math.max(t, s.start + 0.3) : s.end;
+      setLive(null);
+      onChange(s.id, start, end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function downEmpty(e: React.PointerEvent) {
+    if (disabled) return;
+    const a = at(e.clientX);
+    let moved = false;
+    const move = (ev: PointerEvent) => {
+      if (!editable) return;
+      const b = at(ev.clientX);
+      if (Math.abs(b - a) >= 0.2) moved = true;
+      setDraft({ a, b });
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDraft(null);
+      const b = at(ev.clientX);
+      if (editable && moved && Math.abs(b - a) >= 0.3) onCreate(Math.min(a, b), Math.max(a, b));
+      else onSeek(a);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  return (
+    <div className="select-none">
+      <div ref={barRef} data-timeline onPointerDown={downEmpty} className={`relative h-14 rounded-xl bg-white/[0.06] border border-white/10 ${disabled ? "" : "cursor-crosshair"}`}>
+        {el.sections.map((s, i) => {
+          const v = live?.id === s.id ? live : s;
+          const n = takes.filter((t) => t.section_id === s.id && t.lang === lang && t.source !== "ai");
+          const sel = s.id === selected;
+          return (
+            <div
+              key={s.id}
+              data-tl-section={s.id}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                if (!disabled) onSelect(s.id);
+              }}
+              className={`absolute top-1.5 bottom-1.5 rounded-lg px-2 flex items-center gap-1 text-[11px] font-semibold text-white overflow-hidden cursor-pointer ${sel ? "ring-2 ring-white shadow-lg" : "opacity-80 hover:opacity-100"}`}
+              style={{ left: pct(v.start), width: `calc(${pct(v.end - v.start)} - 2px)`, background: COLORS[i % COLORS.length] }}
+              title={`${i + 1}. ${s.label || ""} ${fmt(v.start)}–${fmt(v.end)}`}
+            >
+              <span className="truncate">{i + 1}{s.label ? ` ${s.label}` : ""}</span>
+              {n.length > 0 && <span className="ml-auto shrink-0">{n.some((t) => t.best) ? "★" : n.length}</span>}
+              {editable && sel && !disabled && (
+                <>
+                  <span data-edge="start" onPointerDown={(e) => dragEdge(e, s, "start")} className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40" />
+                  <span data-edge="end" onPointerDown={(e) => dragEdge(e, s, "end")} className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-white/40" />
+                </>
+              )}
+            </div>
+          );
+        })}
+        {draft && <div className="absolute top-1.5 bottom-1.5 rounded-lg border-2 border-dashed border-white/70 bg-white/10" style={{ left: pct(Math.min(draft.a, draft.b)), width: pct(Math.abs(draft.b - draft.a)) }} />}
+        <div className="absolute top-0 bottom-0 w-0.5 bg-white pointer-events-none" style={{ left: pct(Math.min(time, D)) }} />
+      </div>
+      <div className="flex justify-between text-[10px] text-white/35 mt-1 tabular-nums">
+        <span>0:00</span>
+        <span>{editable ? "Klick = Abschnitt wählen · in einer freien Stelle ziehen = neuer Abschnitt · Enden ziehen = anpassen" : "Klick auf einen Abschnitt = auswählen"}</span>
+        <span>{fmt(D)}</span>
+      </div>
+    </div>
+  );
+}
 
 export function DubbingStudio({
   el,
@@ -384,11 +536,60 @@ export function DubbingStudio({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uploads, setUploads] = useState(0);
+  const [time, setTime] = useState(0);
+  const [aspect, setAspect] = useState(16 / 9);
+  const [vidDur, setVidDur] = useState(el.duration ?? 0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const recRef = useRef<DubRecorder | null>(null);
   const stopRef = useRef<(() => void) | null>(null);
   const sec = el.sections.find((s) => s.id === secId) ?? null;
   const nodeKey = el.id;
+  const { ref: stageRef, box } = useFit(aspect);
+  // 2026-11-12, Lino: play a take → the picture runs along from the section start, muted (lip-sync check)
+  const previewRef = useRef<HTMLAudioElement | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
+  function stopPreview() {
+    const a = previewRef.current;
+    if (a) {
+      a.onpause = a.onended = a.ontimeupdate = null;
+      a.pause();
+    }
+    previewRef.current = null;
+    const v = videoRef.current;
+    if (v) {
+      v.pause();
+      v.muted = false;
+    }
+    setPlaying(null);
+  }
+  async function playTake(t: DubbingTake, start: number) {
+    const v = videoRef.current;
+    if (!v) return;
+    if (playing === t.id) return stopPreview();
+    stopPreview();
+    const a = new Audio(t.url);
+    previewRef.current = a;
+    setPlaying(t.id);
+    v.muted = true;
+    v.currentTime = start;
+    // the takes are already latency-compensated at recording: take time 0 = the picture at the section start
+    a.ontimeupdate = () => {
+      const want = start + a.currentTime;
+      if (Math.abs(v.currentTime - want) > 0.08) v.currentTime = want;
+    };
+    a.onpause = a.onended = () => stopPreview();
+    await Promise.all([v.play().catch(() => {}), a.play().catch(() => stopPreview())]);
+  }
+  useEffect(() => () => previewRef.current?.pause(), []);
+  // the page behind never scrolls while the studio is open
+  useEffect(() => {
+    const prev = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = prev;
+    };
+  }, []);
+  const duration = vidDur || el.duration || Math.max(5, ...el.sections.map((s) => s.end));
 
   // microphones + level meter
   useEffect(() => {
@@ -438,7 +639,6 @@ export function DubbingStudio({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Esc closes (not while recording)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && phase === "idle") onClose?.();
@@ -448,6 +648,12 @@ export function DubbingStudio({
   }, [phase, onClose]);
 
   const micInfo = mics.find((m) => m.deviceId === mic);
+
+  function choose(id: string) {
+    setSecId(id);
+    const s = el.sections.find((x) => x.id === id);
+    if (s && videoRef.current) videoRef.current.currentTime = s.start;
+  }
 
   async function record() {
     const rec = recRef.current;
@@ -462,8 +668,7 @@ export function DubbingStudio({
     rec.start();
     v.volume = 0.15; // the original quietly as a guide
     v.muted = false;
-    const onPlaying = () => rec.mark();
-    v.addEventListener("playing", onPlaying, { once: true });
+    v.addEventListener("playing", () => rec.mark(), { once: true });
     await v.play().catch(() => {});
     await new Promise<void>((resolve) => {
       let raf = 0;
@@ -502,19 +707,11 @@ export function DubbingStudio({
   function setSections(next: DubbingSection[]) {
     onCommit({ sections: [...next].sort((a, b) => a.start - b.start) });
   }
-  function addSection() {
-    const v = videoRef.current;
-    const t = v ? Math.round(v.currentTime * 10) / 10 : 0;
-    const end = Math.min(el.duration || t + 5, t + 5);
-    const s: DubbingSection = { id: newId(), start: t, end: end > t ? end : t + 5, label: "", scripts: {} };
-    setSections([...el.sections, s]);
-    setSecId(s.id);
-  }
   function patchSection(id: string, patch: Partial<DubbingSection>) {
     setSections(el.sections.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
-  const own = sec ? takes.filter((t) => t.section_id === sec.id && t.lang === lang) : [];
+  const own = sec ? takes.filter((t) => t.section_id === sec.id && t.lang === lang && t.source !== "ai") : [];
   const words = (sec?.scripts[lang] ?? "").split(/(\s+)/);
   const lit = Math.round(progress * words.filter((w) => w.trim()).length);
   let seen = 0;
@@ -528,10 +725,10 @@ export function DubbingStudio({
       onWheel={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10">
+      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0">
         <span className="text-lg">🎙️</span>
-        <span className="font-semibold">{el.title || "Live-Dubbing"} · Studio</span>
-        <select value={lang} onChange={(e) => setLang(e.target.value)} className="ml-4 rounded-md bg-white/10 px-2 py-1 text-sm">
+        <span className="font-semibold truncate">{el.title || "Live-Dubbing"}</span>
+        <select value={lang} onChange={(e) => setLang(e.target.value)} className="ml-2 rounded-md bg-white/10 px-2 py-1 text-sm">
           {el.languages.map((l) => (
             <option key={l} value={l}>
               {langName(l)}
@@ -546,19 +743,59 @@ export function DubbingStudio({
           </button>
         )}
       </div>
-      <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col p-4 gap-3 overflow-auto">
-          <div className="relative bg-black rounded-xl overflow-hidden">
-            <video ref={videoRef} src={el.src ?? undefined} controls={phase === "idle"} playsInline className="w-full max-h-[50vh] bg-black" />
-            {phase === "count" && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                <span data-countin className="text-8xl font-bold">{count || "Los"}</span>
-              </div>
-            )}
-            {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row max-md:overflow-auto">
+        {/* left: video (own aspect, fitted) · timeline · script */}
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col p-3 md:p-4 gap-3">
+          <div ref={stageRef} data-stage className="flex-1 min-h-[160px] flex items-center justify-center">
+            <div className="relative rounded-2xl overflow-hidden bg-black shadow-2xl" style={{ width: box.w || undefined, height: box.h || undefined }} data-video-box>
+              <video
+                ref={videoRef}
+                src={el.src ?? undefined}
+                controls={phase === "idle"}
+                playsInline
+                className="absolute inset-0 w-full h-full"
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  if (v.videoWidth && v.videoHeight) setAspect(v.videoWidth / v.videoHeight);
+                  if (v.duration && Number.isFinite(v.duration)) setVidDur(v.duration);
+                }}
+                onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
+              />
+              {phase === "count" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <span data-countin className="text-8xl font-bold">{count || "Los"}</span>
+                </div>
+              )}
+              {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
+            </div>
           </div>
-          {/* karaoke script */}
-          <div data-karaoke className="rounded-xl bg-white/[0.04] border border-white/10 p-4 text-2xl leading-relaxed min-h-[6rem]">
+          <div className="shrink-0">
+            <Timeline
+              el={el}
+              duration={duration}
+              time={time}
+              selected={secId}
+              takes={takes}
+              lang={lang}
+              editable={editable}
+              disabled={phase !== "idle"}
+              onSelect={(id) => {
+                stopPreview();
+                choose(id);
+              }}
+              onSeek={(t) => {
+                stopPreview();
+                if (videoRef.current) videoRef.current.currentTime = t;
+              }}
+              onChange={(id, start, end) => patchSection(id, { start, end })}
+              onCreate={(start, end) => {
+                const s: DubbingSection = { id: newId(), start, end, label: "", scripts: {} };
+                setSections([...el.sections, s]);
+                setSecId(s.id);
+              }}
+            />
+          </div>
+          <div data-karaoke className="shrink-0 rounded-xl bg-white/[0.04] border border-white/10 px-4 py-3 text-xl md:text-2xl leading-relaxed max-h-[18vh] overflow-auto">
             {sec && (sec.scripts[lang] ?? "").trim() ? (
               words.map((w, i) => {
                 if (!w.trim()) return <span key={i}>{w}</span>;
@@ -571,25 +808,14 @@ export function DubbingStudio({
                 );
               })
             ) : (
-              <span className="text-base text-white/40">{sec ? "Für diese Sprache gibt es noch kein Skript." : "Wähle rechts einen Abschnitt."}</span>
+              <span className="text-base text-white/40">
+                {sec ? (editable ? "Noch kein Skript — rechts eintragen." : "Für diese Sprache gibt es noch kein Skript.") : el.sections.length ? "Wähle unten auf der Timeline einen Abschnitt." : editable ? "Zieh auf der Timeline über eine Stelle, um den ersten Abschnitt anzulegen." : "Noch keine Abschnitte."}
+              </span>
             )}
           </div>
-          {editable && sec && (
-            <div className="grid grid-cols-[auto_auto_1fr] gap-2 items-center text-sm">
-              <label className="flex items-center gap-1.5">Start <input type="number" step="0.1" min={0} value={sec.start} onChange={(e) => patchSection(sec.id, { start: Number(e.target.value) })} className="w-20 rounded-md bg-white/10 px-2 py-1" /></label>
-              <label className="flex items-center gap-1.5">Ende <input type="number" step="0.1" min={0} value={sec.end} onChange={(e) => patchSection(sec.id, { end: Number(e.target.value) })} className="w-20 rounded-md bg-white/10 px-2 py-1" /></label>
-              <input value={sec.label ?? ""} placeholder="Bezeichnung (optional)" onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1" />
-              <textarea
-                value={sec.scripts[lang] ?? ""}
-                placeholder={`Skript ${langName(lang)} …`}
-                onChange={(e) => patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: e.target.value } })}
-                rows={3}
-                className="col-span-3 rounded-md bg-white/10 px-2 py-1.5 select-text"
-              />
-            </div>
-          )}
         </div>
-        <div className="w-full lg:w-[380px] shrink-0 border-t lg:border-t-0 lg:border-l border-white/10 p-4 flex flex-col gap-4 overflow-auto">
+        {/* right: record + takes, the section list only shows */}
+        <div className="w-full md:w-[340px] shrink-0 min-h-0 border-t md:border-t-0 md:border-l border-white/10 p-4 flex flex-col gap-4 overflow-auto">
           <div>
             <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">Mikrofon</div>
             <select data-mic-select value={mic} onChange={(e) => setMic(e.target.value)} className="w-full rounded-md bg-white/10 px-2 py-1.5 text-sm">
@@ -603,57 +829,55 @@ export function DubbingStudio({
               <div data-level className={`h-full ${level > 0.9 ? "bg-red-500" : level > 0.6 ? "bg-amber-400" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, level * 100)}%` }} />
             </div>
             <p className="mt-2 text-xs text-white/55">🎧 Kopfhörer auf? Sonst nimmt das Mikrofon das Original mit auf.</p>
-            {micInfo?.bluetooth && <p data-bt-warning className="mt-1 text-xs text-amber-300">⚠︎ Bluetooth-Gerät: Ton verzögert und schlechtere Qualität. Besser ein Kabel-Mikrofon und Kabel-Kopfhörer.</p>}
+            {micInfo?.bluetooth && <p data-bt-warning className="mt-1 text-xs text-amber-300">⚠︎ Bluetooth-Gerät: Ton verzögert und schlechtere Qualität. Besser Kabel.</p>}
             {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
           </div>
-          <div>
-            <div className="flex items-center mb-1.5">
-              <span className="text-xs uppercase tracking-wide text-white/40">Abschnitte</span>
-              {editable && (
-                <button type="button" onClick={addSection} className="ml-auto rounded-md bg-white/10 hover:bg-white/15 px-2 py-0.5 text-xs">
-                  ＋ ab aktueller Zeit
-                </button>
-              )}
-            </div>
-            <div className="flex flex-col gap-1">
-              {el.sections.map((s, i) => {
-                const n = takes.filter((t) => t.section_id === s.id && t.lang === lang);
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    data-section={s.id}
-                    onClick={() => {
-                      setSecId(s.id);
-                      if (videoRef.current) videoRef.current.currentTime = s.start;
-                    }}
-                    className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${secId === s.id ? "bg-rose-500/25 ring-1 ring-rose-400/60" : "bg-white/[0.05] hover:bg-white/10"}`}
-                  >
-                    <span className="text-white/45 tabular-nums text-xs w-[5.5rem] shrink-0">{i + 1}. {fmt(s.start)}–{fmt(s.end)}</span>
-                    <span className="flex-1 min-w-0 truncate">{s.label || s.scripts[lang] || "–"}</span>
-                    <span className={`text-xs ${n.some((t) => t.best) ? "text-emerald-300" : n.length ? "text-amber-300" : "text-white/30"}`}>{n.length ? `${n.length} Take${n.length > 1 ? "s" : ""}` : "–"}</span>
-                  </button>
-                );
-              })}
-              {el.sections.length === 0 && <p className="text-xs text-white/40">Noch keine Abschnitte. Video an die Stelle spulen und «＋ ab aktueller Zeit».</p>}
-            </div>
-          </div>
-          {sec && (
+          {sec ? (
             <div className="flex flex-col gap-2">
+              <div className="text-sm font-semibold">
+                Abschnitt {el.sections.indexOf(sec) + 1}
+                <span className="ml-2 font-normal text-white/45 tabular-nums">{fmt(sec.start)}–{fmt(sec.end)}</span>
+              </div>
               {phase === "rec" ? (
                 <button type="button" onClick={() => stopRef.current?.()} className="rounded-xl bg-white text-black py-3 font-bold">
                   ■ Stopp
                 </button>
               ) : (
-                <button type="button" data-record disabled={phase !== "idle" || !mic} onClick={() => void record()} className="rounded-xl bg-red-600 hover:bg-red-500 py-3 font-bold disabled:opacity-50">
+                <button type="button" data-record disabled={phase !== "idle" || !mic} onClick={() => { stopPreview(); void record(); }} className="rounded-xl bg-red-600 hover:bg-red-500 py-3 font-bold disabled:opacity-50">
                   {phase === "count" ? "…" : phase === "saving" ? "Speichert …" : "● Aufnehmen"}
                 </button>
               )}
-              <div className="text-xs uppercase tracking-wide text-white/40 mt-2">Takes ({langName(lang)})</div>
+              {editable && (
+                <>
+                  <input value={sec.label ?? ""} placeholder="Bezeichnung (optional)" onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text" />
+                  <textarea
+                    value={sec.scripts[lang] ?? ""}
+                    placeholder={`Skript ${langName(lang)} …`}
+                    onChange={(e) => patchSection(sec.id, { scripts: { ...sec.scripts, [lang]: e.target.value } })}
+                    rows={3}
+                    className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text"
+                  />
+                  <button type="button" onClick={() => { setSections(el.sections.filter((s) => s.id !== sec.id)); setSecId(null); }} className="self-start text-xs text-white/40 hover:text-red-300">
+                    Abschnitt löschen
+                  </button>
+                </>
+              )}
+              <div className="text-xs uppercase tracking-wide text-white/40 mt-1">Takes ({langName(lang)})</div>
               {own.map((t, i) => (
                 <div key={t.id} data-take className="flex items-center gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-sm">
-                  <span className="text-white/50 w-14 shrink-0">Take {i + 1}</span>
-                  <audio src={t.url} controls className="h-8 flex-1 min-w-0" />
+                  <button
+                    type="button"
+                    data-take-play
+                    onClick={() => void playTake(t, sec.start)}
+                    title="Take mit dem Bild abspielen (Lippensynchronität prüfen)"
+                    className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${playing === t.id ? "bg-white text-black" : "bg-white/10 hover:bg-white/20"}`}
+                  >
+                    {playing === t.id ? "■" : "▶"}
+                  </button>
+                  <span className="flex-1 min-w-0 text-white/70">
+                    Take {i + 1}
+                    <span className="ml-1.5 text-xs text-white/35">{t.duration ? `${t.duration.toFixed(1)} s` : ""}{t.speaker_name ? ` · ${t.speaker_name}` : ""}</span>
+                  </span>
                   {canChoose ? (
                     <button type="button" title="Bester Take" onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
                       ★
@@ -669,6 +893,36 @@ export function DubbingStudio({
                 </div>
               ))}
               {own.length === 0 && <p className="text-xs text-white/40">Noch kein Take für diesen Abschnitt.</p>}
+              {takes
+                .filter((t) => t.source === "ai" && t.lang === lang)
+                .map((t) => (
+                  <div key={t.id} data-take-ai className="flex items-center gap-2 rounded-lg bg-violet-500/10 px-2 py-1.5 text-sm">
+                    <button type="button" data-take-play onClick={() => void playTake(t, 0)} className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${playing === t.id ? "bg-white text-black" : "bg-white/10 hover:bg-white/20"}`}>
+                      {playing === t.id ? "■" : "▶"}
+                    </button>
+                    <span className="flex-1 text-white/70">🤖 KI-Dubbing (ganzes Video)</span>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="text-sm text-white/45">Wähle unten auf der Timeline einen Abschnitt.</p>
+          )}
+          {el.sections.length > 0 && (
+            <div>
+              <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">Abschnitte</div>
+              <div className="flex flex-col gap-1">
+                {el.sections.map((s, i) => {
+                  const n = takes.filter((t) => t.section_id === s.id && t.lang === lang && t.source !== "ai");
+                  return (
+                    <div key={s.id} data-section={s.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm ${secId === s.id ? "bg-white/15 ring-1 ring-white/40" : "bg-white/[0.04]"}`}>
+                      <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: COLORS[i % COLORS.length] }} />
+                      <span className="text-white/45 tabular-nums text-xs w-[5.5rem] shrink-0">{fmt(s.start)}–{fmt(s.end)}</span>
+                      <span className="flex-1 min-w-0 truncate">{s.label || s.scripts[lang] || "–"}</span>
+                      <span className={`text-xs ${n.some((t) => t.best) ? "text-emerald-300" : n.length ? "text-amber-300" : "text-white/30"}`}>{n.length ? `${n.length}` : "–"}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
