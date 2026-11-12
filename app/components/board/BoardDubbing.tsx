@@ -1139,38 +1139,68 @@ function ScriptBox({
   );
 }
 
-/** «Text über Video»: the script big over the lower part of the picture (inside the round corners), same karaoke
- * light-up and auto-scroll; the video itself keeps its size. */
+/** «Text über Video» (2026-11-12, Lino: «gross über das ganze Video, nur weisse Schrift mit schwarzer Schattierung,
+ * linksbündig, vertikal zentriert»): the whole script over the whole picture — no box, no background; the font is
+ * as big as fits (shrunk until the whole text fits; only below ~18 px it scrolls instead); spoken words turn a
+ * soft yellow while recording. The video keeps its size. */
 function OverlayText({ text, recording, progress, boxW, boxH }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number }) {
-  const ref = useRef<HTMLDivElement>(null);
+  const outer = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(32);
   const words = text.split(/(\s+)/);
   const lit = Math.round(progress * words.filter((w) => w.trim()).length);
+  const nth = words.reduce<number[]>((acc, w) => [...acc, (acc[acc.length - 1] ?? 0) + (w.trim() ? 1 : 0)], []);
+  const MIN = 18;
+  // biggest font size at which the whole text fits the picture
+  useLayoutEffect(() => {
+    const o = outer.current;
+    const i = inner.current;
+    if (!o || !i) return;
+    const cs = getComputedStyle(o);
+    const availH = o.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    let lo = MIN;
+    let hi = Math.max(MIN, Math.min(96, boxH * 0.22, boxW * 0.12));
+    for (let k = 0; k < 9; k++) {
+      const mid = (lo + hi) / 2;
+      i.style.fontSize = `${mid}px`;
+      if (i.scrollHeight <= availH && i.scrollWidth <= i.clientWidth + 1) lo = mid;
+      else hi = mid;
+    }
+    i.style.fontSize = `${lo}px`;
+    setSize(Math.floor(lo));
+  }, [text, boxW, boxH]);
   useEffect(() => {
     if (!recording) return;
-    const box = ref.current;
-    const cur = box?.querySelector<HTMLElement>("[data-lit-last]");
-    if (box && cur) box.scrollTop = Math.max(0, cur.offsetTop - box.clientHeight / 3);
+    const o = outer.current;
+    const cur = o?.querySelector<HTMLElement>("[data-lit-last]");
+    if (o && cur && o.scrollHeight > o.clientHeight) o.scrollTop = Math.max(0, cur.offsetTop - o.clientHeight / 3);
   }, [lit, recording]);
-  const size = Math.max(14, Math.min(32, Math.min(boxW * 0.055, boxH * 0.06)));
-  // running word number per token (no counting during render)
-  const nth = words.reduce<number[]>((acc, w) => [...acc, (acc[acc.length - 1] ?? 0) + (w.trim() ? 1 : 0)], []);
   return (
     <div
-      ref={ref}
+      ref={outer}
       data-overlay-text
-      className="absolute inset-x-0 bottom-14 mx-3 rounded-xl bg-black/60 px-4 py-2 text-white overflow-auto pointer-events-none"
-      style={{ fontSize: size, lineHeight: 1.4, maxHeight: "38%", textShadow: "0 1px 3px rgba(0,0,0,0.9)" }}
+      className="absolute left-0 right-0 top-0 bottom-12 px-[6%] py-[5%] overflow-auto pointer-events-none flex"
     >
-      {words.map((w, i) => {
-        if (!w.trim()) return <span key={i}>{w}</span>;
-        const seen = nth[i];
-        const on = recording && seen <= lit;
-        return (
-          <span key={i} data-lit-last={recording && seen === Math.max(1, lit) ? "" : undefined} className={on ? "text-rose-300" : recording ? "text-white/60" : "text-white"}>
-            {w}
-          </span>
-        );
-      })}
+      <div
+        ref={inner}
+        className="my-auto w-full text-left font-bold text-white"
+        style={{
+          fontSize: size,
+          lineHeight: 1.25,
+          textShadow: "0 0 3px #000, 0 0 6px #000, 2px 2px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000",
+          WebkitTextStroke: "0.5px rgba(0,0,0,0.6)",
+        }}
+      >
+        {words.map((w, i) => {
+          if (!w.trim()) return <span key={i}>{w}</span>;
+          const on = recording && nth[i] <= lit;
+          return (
+            <span key={i} data-lit-last={recording && nth[i] === Math.max(1, lit) ? "" : undefined} className={on ? "text-yellow-200" : undefined}>
+              {w}
+            </span>
+          );
+        })}
+      </div>
     </div>
   );
 }
