@@ -219,7 +219,9 @@ export function TodoSidebar() {
                     left-packed. */}
                 <div className="flex items-center justify-between gap-1.5 mt-1">
                   {v.postproduction_status ? (
-                    <Pill tone={STATUS_TONE[v.postproduction_status]}>{statusLabel(v.postproduction_status)}</Pill>
+                    <Pill tone={STATUS_TONE[v.postproduction_status]} className="min-w-0 overflow-hidden">
+                      <span className="truncate" title={statusLabel(v.postproduction_status)}>{statusLabel(v.postproduction_status)}</span>
+                    </Pill>
                   ) : (
                     <span />
                   )}

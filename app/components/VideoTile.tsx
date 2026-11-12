@@ -150,6 +150,13 @@ export function VideoTile({
   };
 }) {
   const { t } = useLanguage();
+  const statusShort: Record<PostproductionStatus, string> = {
+    wartend: t("postproductionStatusShort.wartend"),
+    in_bearbeitung: t("postproductionStatusShort.inBearbeitung"),
+    wartet_auf_feedback: t("postproductionStatusShort.wartetAufFeedback"),
+    abgeschlossen: t("postproductionStatusShort.abgeschlossen"),
+    abgelehnt: t("postproductionStatusShort.abgelehnt"),
+  };
   const statusLabels: Record<PostproductionStatus, string> = {
     wartend: t("postproductionStatus.wartend"),
     in_bearbeitung: t("postproductionStatus.inBearbeitung"),
@@ -668,23 +675,36 @@ export function VideoTile({
             onOpenMore={onOpenExtras}
           />
         )}
-        <Pill tone={STATUS_TONE[status ?? "wartend"]} className="self-start max-w-full min-w-0">
-          {canEditStatus ? (
-            <select
-              value={status ?? "wartend"}
-              onChange={(e) => onChangeStatus(e.target.value as PostproductionStatus)}
-              className="bg-transparent focus:outline-none cursor-pointer text-xs max-w-full min-w-0 truncate"
-            >
-              {Object.entries(statusLabels).map(([value, label]) => (
-                <option key={value} value={value} className="bg-[#111] text-white">
-                  {label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-xs">{statusLabels[status ?? "wartend"]}</span>
-          )}
-        </Pill>
+        {/* 2026-11-12, Lino: «Awaiting Feedback» spilled out of the pill on small screens — the label is a
+            truncating span (short form when the tile is narrow, container query), the native select lies
+            invisibly on top (its own width never pushes the pill any more) */}
+        <div className="@container min-w-0 max-w-full self-stretch">
+          <Pill tone={STATUS_TONE[status ?? "wartend"]} className="relative max-w-full min-w-0 overflow-hidden" >
+            <span data-status-pill className="min-w-0 truncate text-xs" title={statusLabels[status ?? "wartend"]}>
+              <span className="@max-[200px]:hidden">{statusLabels[status ?? "wartend"]}</span>
+              <span className="hidden @max-[200px]:inline">{statusShort[status ?? "wartend"]}</span>
+            </span>
+            {canEditStatus && (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80" aria-hidden>
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+                <select
+                  value={status ?? "wartend"}
+                  onChange={(e) => onChangeStatus(e.target.value as PostproductionStatus)}
+                  aria-label={statusLabels[status ?? "wartend"]}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer text-xs"
+                >
+                  {Object.entries(statusLabels).map(([value, label]) => (
+                    <option key={value} value={value} className="bg-[#111] text-white">
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </Pill>
+        </div>
         {members && onChangeAssignee && (
           <VideoTileEditorPicker
             members={members}
