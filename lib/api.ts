@@ -1038,7 +1038,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes`, { method: "POST", body: JSON.stringify(body) }),
     dubbingBest: (ideaId: string, nodeId: string, takeId: string) => request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/${takeId}/best`, { method: "PUT" }),
     dubbingDeleteTake: (ideaId: string, nodeId: string, takeId: string) => request<{ takes: DubbingTake[] }>(`ideas/${ideaId}/dubbing/${nodeId}/takes/${takeId}`, { method: "DELETE" }),
-    dubbingShare: (ideaId: string, nodeId: string) => request<{ url: string; expires_at: string }>(`ideas/${ideaId}/dubbing/${nodeId}/share`, { method: "POST" }),
+    dubbingShare: (ideaId: string, nodeId: string, lang?: string | null) =>
+      request<{ url: string; expires_at: string }>(`ideas/${ideaId}/dubbing/${nodeId}/share`, { method: "POST", body: JSON.stringify({ lang: lang || null }) }),
     dubbingExportUrl: async (ideaId: string, nodeId: string, lang: string, kind: "wav" | "zip") => {
       const token = await getToken();
       if (!token) throw new ApiError(401, "Nicht angemeldet.");

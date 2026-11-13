@@ -87,7 +87,8 @@ export default function DubbingSpeakerPage() {
         canChoose={false}
         takes={takes}
         setTakes={setTakes}
-        initialLang={el.languages[0] ?? ""}
+        initialLang={data.fixed_lang ?? el.languages[0] ?? ""}
+        onlyLang={data.fixed_lang ?? null}
         onCommit={(patch) => {
           // 2026-11-12, Lino: speakers add / adjust sections and paste the script (deleting stays with the team)
           if (!patch.sections) return;

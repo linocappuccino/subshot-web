@@ -778,6 +778,8 @@ export interface DubbingSection {
   end: number;
   label?: string;
   scripts: Record<string, string>;
+  /** 2026-11-13: the language this section belongs to (each language has its own sections) */
+  lang?: string;
 }
 export interface DubbingElement extends BaseElement {
   type: "dubbing";
@@ -791,6 +793,8 @@ export interface DubbingElement extends BaseElement {
   video_ar?: number;
   /** default playback sound: none / split (original where no take, else the take) / full (original throughout) */
   sound_mode?: "none" | "split" | "full";
+  /** 2026-11-13: own flag per language code (default: the usual flag of the code) */
+  language_flags?: Record<string, string>;
   languages: string[];
   sections: DubbingSection[];
 }

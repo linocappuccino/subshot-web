@@ -5,7 +5,9 @@ import type { DubbingSection, DubbingTake } from "./board";
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 export interface PublicDubbing {
-  node: { id: string; title: string; name?: string; duration?: number; languages: string[]; sections: DubbingSection[]; src: string | null; video_ar?: number; sound_mode?: "none" | "split" | "full" };
+  node: { id: string; title: string; name?: string; duration?: number; languages: string[]; sections: DubbingSection[]; src: string | null; video_ar?: number; sound_mode?: "none" | "split" | "full"; language_flags?: Record<string, string> };
+  /** 2026-11-13: the link is fixed to this language (else the speaker picks) */
+  fixed_lang?: string | null;
   project_name: string;
   takes: DubbingTake[];
 }

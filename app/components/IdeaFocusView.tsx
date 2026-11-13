@@ -352,7 +352,7 @@ function IdeaBoardScreen({
       best: (nodeId, takeId) => api.dubbingBest(idea.id, nodeId, takeId).then((r) => r.takes),
       remove: (nodeId, takeId) => api.dubbingDeleteTake(idea.id, nodeId, takeId).then((r) => r.takes),
       exportUrl: (nodeId, lang, kind) => api.dubbingExportUrl(idea.id, nodeId, lang, kind),
-      shareLink: (nodeId) => api.dubbingShare(idea.id, nodeId).then((r) => r.url),
+      shareLink: (nodeId, lang) => api.dubbingShare(idea.id, nodeId, lang).then((r) => r.url),
       uploadVideo: async (file) => {
         const mime = file.type || "video/mp4";
         const ticket = await api.createIdeaBoardUpload(idea.id, { filename: file.name, content_type: mime, size: file.size });

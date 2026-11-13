@@ -10,9 +10,10 @@
  * section plays with the original quietly as a guide while the script scrolls like karaoke; every take is
  * kept in IndexedDB first, then uploaded to R2 (lib/dubbingRecorder.ts).
  */
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DubbingElement, DubbingSection, DubbingTake } from "@/lib/board";
+import { DubLangPills, addLanguage, mergeSections, sectionsFor } from "./DubbingLanguages";
 import { backupTake, dropBackup, DubRecorder, listMics, pendingBackups, type MicInfo } from "@/lib/dubbingRecorder";
 
 export interface BoardDubbingApi {
@@ -26,11 +27,11 @@ export interface BoardDubbingApi {
   aiInfo?: (nodeId: string) => Promise<{ available: boolean; jobs: Record<string, { status: string; error?: string }> }>;
   startAi?: (nodeId: string, lang: string) => Promise<void>;
   /** phase 2: link for external speakers (team only) */
-  shareLink?: (nodeId: string) => Promise<string>;
+  shareLink?: (nodeId: string, lang?: string | null) => Promise<string>;
 }
 export const BoardDubbingContext = createContext<BoardDubbingApi | null>(null);
 
-export type DubbingPatch = Partial<Pick<DubbingElement, "title" | "asset_key" | "src" | "name" | "mime" | "duration" | "languages" | "sections" | "video_ar" | "w">>;
+export type DubbingPatch = Partial<Pick<DubbingElement, "title" | "asset_key" | "src" | "name" | "mime" | "duration" | "languages" | "sections" | "video_ar" | "w" | "language_flags">>;
 
 /** 2026-11-12, Lino: the tile width that suits the video format (9:16 narrow, 16:9 wide) */
 export function dubbingTileWidth(ar: number): number {
@@ -213,7 +214,6 @@ export function DubbingNode({
   const [ai, setAi] = useState<{ available: boolean; jobs: Record<string, { status: string; error?: string }> } | null>(null);
   const [lang, setLang] = useState(el.languages[0] ?? "");
   const [busy, setBusy] = useState<string | null>(null);
-  const [newLang, setNewLang] = useState("");
   const [link, setLink] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -262,7 +262,7 @@ export function DubbingNode({
         const aiTake = takes.find((x) => x.source === "ai" && x.lang === curLang);
         return aiTake ? { take: aiTake, start: 0 } : "mute";
       }
-      return sectionTake(el.sections, takes, curLang, t);
+      return sectionTake(sectionsFor(el, curLang), takes, curLang, t);
     },
     true,
   );
@@ -377,47 +377,29 @@ export function DubbingNode({
               KI-Dubbing
             </button>
           </div>
-          {el.languages.length > 0 && (
-            <select value={curLang} onChange={(e) => setLang(e.target.value)} className="rounded-md bg-black/30 border border-white/10 px-1.5 py-1 outline-none">
-              {el.languages.map((l) => (
-                <option key={l} value={l}>
-                  {langName(l)}
-                </option>
-              ))}
-            </select>
-          )}
           {mode === "take" && <SoundModeSwitch value={soundMode} onChange={setSoundMode} small />}
         </div>
       )}
-      <div data-no-drag className="px-3 py-2 flex flex-wrap items-center gap-1.5 text-xs">
-        <span className="text-white/45">Sprachen:</span>
-        {el.languages.map((l) => (
-          <span key={l} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5">
-            {langName(l)}
-            {editable && (
-              <button type="button" title="Sprache entfernen" onClick={() => onCommit({ languages: el.languages.filter((x) => x !== l) })} className="text-white/40 hover:text-red-300">
-                ✕
-              </button>
-            )}
-          </span>
-        ))}
-        {editable && (
-          <form
-            className="inline-flex"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const l = newLang.trim().toLowerCase();
-              if (/^[a-z]{2}$/.test(l) && !el.languages.includes(l)) onCommit({ languages: [...el.languages, l] });
-              setNewLang("");
-            }}
-          >
-            <input value={newLang} onChange={(e) => setNewLang(e.target.value)} placeholder="+ fr, it, en …" className="w-24 rounded-md bg-black/30 border border-white/10 px-1.5 py-0.5 outline-none focus:border-rose-400 select-text" />
-          </form>
-        )}
+      {/* 2026-11-13, Lino: the languages as small pills with flag — a click switches the tile (playback, takes,
+          downloads) to that language; «+» adds one (team) */}
+      <div data-no-drag className="px-3 py-2">
+        <DubLangPills
+          el={el}
+          lang={curLang}
+          onLang={setLang}
+          onAdd={
+            editable
+              ? (code, copyFrom) => {
+                  onCommit(addLanguage(el, code, copyFrom));
+                  setLang(code);
+                }
+              : undefined
+          }
+        />
       </div>
-      {el.sections.length > 0 && (
+      {sectionsFor(el, curLang).length > 0 && (
         <div data-no-drag className="px-3 pb-2 flex flex-col gap-1 text-xs">
-          {el.sections.map((s, i) => (
+          {sectionsFor(el, curLang).map((s, i) => (
             <div key={s.id} className="flex items-center gap-2 rounded-md bg-white/[0.04] px-2 py-1">
               <span className="text-white/40 tabular-nums w-24 shrink-0">
                 {i + 1}. {fmt(s.start)}–{fmt(s.end)}
@@ -433,22 +415,22 @@ export function DubbingNode({
                   </span>
                 ) : null;
               })()}
-              {el.languages.map((l) => {
-                const n = done(s.id, l);
+              {(() => {
+                const n = done(s.id, curLang);
                 return (
-                  <span key={l} title={`${langName(l)}: ${n.length} Takes`} className={`rounded px-1 font-semibold ${n.some((t) => t.best) ? "bg-emerald-500/25 text-emerald-200" : n.length ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-white/30"}`}>
-                    {l.toUpperCase()}
+                  <span title={`${langName(curLang)}: ${n.length} Takes`} className={`rounded px-1 font-semibold ${n.some((t) => t.best) ? "bg-emerald-500/25 text-emerald-200" : n.length ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-white/30"}`}>
+                    {curLang.toUpperCase()}
                     {n.length ? ` ${n.length}` : ""}
                   </span>
                 );
-              })}
+              })()}
             </div>
           ))}
         </div>
       )}
-      {el.languages.length > 0 && takes.length > 0 && (
+      {curLang && takes.some((t) => t.lang === curLang) && (
         <div data-no-drag className="px-3 pb-3 flex flex-wrap gap-1.5 text-xs">
-          {el.languages.map((l) => (
+          {[curLang].map((l) => (
             <span key={l} className="inline-flex gap-1">
               <button type="button" onClick={() => void download(l, "wav")} className="rounded-md bg-white/10 hover:bg-white/15 px-2 py-1 font-semibold">⤓ {l.toUpperCase()} WAV</button>
               <button type="button" onClick={() => void download(l, "zip")} className="rounded-md bg-white/5 hover:bg-white/10 px-2 py-1">ZIP</button>
@@ -459,7 +441,7 @@ export function DubbingNode({
       {editable && el.asset_key && el.languages.length > 0 && api.startAi && (
         <div data-no-drag data-ai-dubbing className="px-3 pb-3 flex flex-col gap-1 text-xs">
           <div className="flex flex-wrap gap-1.5">
-            {el.languages.map((l) => {
+            {[curLang].filter(Boolean).map((l) => {
               const job = ai?.jobs[l];
               return (
                 <button
@@ -714,7 +696,7 @@ function Timeline({
 }
 
 export function DubbingStudio({
-  el,
+  el: elAll,
   editable,
   takes,
   setTakes,
@@ -723,6 +705,7 @@ export function DubbingStudio({
   onClose,
   canChoose = true,
   header,
+  onlyLang,
 }: {
   el: DubbingElement;
   editable: boolean;
@@ -735,10 +718,16 @@ export function DubbingStudio({
   /** ★ best / ✕ delete — the team only (speakers just record) */
   canChoose?: boolean;
   header?: React.ReactNode;
+  /** a speaker link fixed to one language (2026-11-13) */
+  onlyLang?: string | null;
 }) {
   const api = useContext(BoardDubbingContext)!;
   const [shared, setShared] = useState<string | null>(null);
+  // 2026-11-13: the speaker link for every language, or fixed to one
+  const [shareLang, setShareLang] = useState<string>("");
   const [lang, setLang] = useState(initialLang);
+  // 2026-11-13, Lino: language tabs — everything in the studio works on the open language's own sections
+  const el = useMemo(() => ({ ...elAll, sections: sectionsFor(elAll, lang) }), [elAll, lang]);
   const [secId, setSecId] = useState<string | null>(el.sections[0]?.id ?? null);
   const [mics, setMics] = useState<MicInfo[]>([]);
   const [mic, setMic] = useState<string>("");
@@ -1018,7 +1007,11 @@ export function DubbingStudio({
   }
 
   function setSections(next: DubbingSection[]) {
-    onCommit({ sections: [...next].sort((a, b) => a.start - b.start) });
+    onCommit({ sections: mergeSections(elAll, lang, next) });
+  }
+  function switchLang(code: string) {
+    setLang(code);
+    setSecId(sectionsFor(elAll, code)[0]?.id ?? null);
   }
   function patchSection(id: string, patch: Partial<DubbingSection>) {
     setSections(el.sections.map((s) => (s.id === id ? { ...s, ...patch } : s)));
@@ -1041,13 +1034,34 @@ export function DubbingStudio({
           <span className="text-xs text-white/50 truncate">{el.title || "Live-Dubbing"}</span>
           <span data-studio-video-name className="font-bold break-all leading-tight">{el.name || "Video ohne Namen"}</span>
         </span>
-        <select value={lang} onChange={(e) => setLang(e.target.value)} className="ml-2 rounded-md bg-white/10 px-2 py-1 text-sm">
-          {el.languages.map((l) => (
-            <option key={l} value={l}>
-              {langName(l)}
-            </option>
-          ))}
-        </select>
+        <div className="ml-2" data-studio-langs>
+          <DubLangPills
+            el={elAll}
+            lang={lang}
+            onLang={switchLang}
+            size="md"
+            only={onlyLang}
+            onAdd={
+              canChoose && editable
+                ? (code, copyFrom) => {
+                    onCommit(addLanguage(elAll, code, copyFrom));
+                    switchLang(code);
+                  }
+                : undefined
+            }
+            onDelete={
+              canChoose && editable
+                ? (code) => {
+                    const first = elAll.languages[0] ?? "";
+                    const rest = elAll.languages.filter((l) => l !== code);
+                    // its sections go; its takes leave with them (board trash → R2 after the grace time)
+                    onCommit({ languages: rest, sections: elAll.sections.filter((s) => (s.lang ?? first) !== code).map((s) => ({ ...s, lang: s.lang ?? first })) });
+                    if (lang === code) switchLang(rest[0] ?? "");
+                  }
+                : undefined
+            }
+          />
+        </div>
         <SoundModeSwitch value={soundMode} onChange={setSoundMode} />
         {/* 2026-11-13, Lino: share from the studio — the speaker link opens only this studio (no board, no login) */}
         {canChoose && api.shareLink && el.asset_key && (
@@ -1055,7 +1069,7 @@ export function DubbingStudio({
             type="button"
             data-studio-share
             onClick={() => {
-              void api.shareLink!(el.id)
+              void api.shareLink!(el.id, shareLang || null)
                 .then((u) => {
                   setShared(u);
                   void navigator.clipboard?.writeText(u).catch(() => {});
@@ -1066,6 +1080,16 @@ export function DubbingStudio({
           >
             🔗 Teilen
           </button>
+        )}
+        {canChoose && api.shareLink && el.asset_key && el.languages.length > 1 && (
+          <select data-studio-share-lang value={shareLang} onChange={(e) => setShareLang(e.target.value)} title="Für welche Sprache der Sprecher-Link gilt" className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none">
+            <option value="">Link: alle Sprachen</option>
+            {el.languages.map((l) => (
+              <option key={l} value={l}>
+                Link: nur {langName(l)}
+              </option>
+            ))}
+          </select>
         )}
         {shared && (
           <span data-studio-share-link className="text-xs text-white/60 break-all max-w-[22rem]">
