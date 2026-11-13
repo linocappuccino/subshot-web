@@ -50,6 +50,151 @@ function chosen(takes: DubbingTake[], sectionId: string, lang: string): DubbingT
   return own.find((t) => t.best) ?? own[own.length - 1] ?? null;
 }
 
+type MixPick = { take: DubbingTake; start: number } | "mute" | null;
+
+/** 2026-11-13, Lino: the playback sound — «No sound» (nothing, takes neither) / «Split sound» (original where no
+ * take, else only the take) / «Full audio» (original throughout). The node carries a default (sound_mode, also via
+ * MCP); each person's own choice is remembered in the browser and wins. Not while recording («Videoton» rules). */
+export type SoundMode = "none" | "split" | "full";
+const SOUND_KEY = "subshot-dubbing-sound-mode";
+const SOUND_EVENT = "subshot-dubbing-sound-mode";
+function useSoundMode(nodeDefault?: SoundMode): [SoundMode, (m: SoundMode) => void] {
+  const read = (): SoundMode | null => {
+    try {
+      const v = localStorage.getItem(SOUND_KEY);
+      return v === "none" || v === "split" || v === "full" ? v : null;
+    } catch {
+      return null;
+    }
+  };
+  const [own, setOwn] = useState<SoundMode | null>(read);
+  useEffect(() => {
+    // tile and studio stay in step
+    const on = () => setOwn(read());
+    window.addEventListener(SOUND_EVENT, on);
+    return () => window.removeEventListener(SOUND_EVENT, on);
+  }, []);
+  const set = (m: SoundMode) => {
+    try {
+      localStorage.setItem(SOUND_KEY, m);
+    } catch {
+      // private mode
+    }
+    setOwn(m);
+    window.dispatchEvent(new Event(SOUND_EVENT));
+  };
+  return [own ?? nodeDefault ?? "split", set];
+}
+function SoundModeSwitch({ value, onChange, small }: { value: SoundMode; onChange: (m: SoundMode) => void; small?: boolean }) {
+  const opts: [SoundMode, string, string][] = [
+    ["none", "🔇 No sound", "Kein Ton, auch keine Takes"],
+    ["split", "🎙️ Split sound", "Originalton, wo nichts aufgenommen ist — sonst nur der Take"],
+    ["full", "🔊 Full audio", "Originalton durchgehend, keine Takes"],
+  ];
+  return (
+    <div data-sound-mode={value} className={`flex rounded-lg bg-black/30 p-0.5 font-semibold ${small ? "text-[11px]" : "text-xs"}`}>
+      {opts.map(([m, label, title]) => (
+        <button key={m} type="button" data-sound-option={m} title={title} onClick={() => onChange(m)} className={`px-2 py-1 rounded-md whitespace-nowrap ${value === m ? "bg-white text-black" : "text-white/60 hover:text-white"}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** the take of the section under the playhead (★, else the newest) — null where nothing is recorded */
+function sectionTake(sections: DubbingElement["sections"], takes: DubbingTake[], lang: string, t: number): MixPick {
+  const sec = sections.find((s) => t >= s.start && t < s.end);
+  const take = sec ? chosen(takes.filter((x) => x.source !== "ai"), sec.id, lang) : null;
+  return sec && take ? { take, start: sec.start } : null;
+}
+
+/** 2026-11-13, Lino: playback mix for tile + studio — the original sound plays where `pick` gives nothing; with a
+ * take the original fades out (~40 ms, no clicks) and only the take plays, in sync with the picture; "mute" =
+ * original silent, no take. Checked every frame (section edges exact; scrub, jump, pause follow). While
+ * `active` is false (recording, single-take preview) it keeps its hands off the video and stays silent. */
+function useTakeMix(videoRef: React.RefObject<HTMLVideoElement | null>, pick: (t: number) => MixPick, active: boolean) {
+  const pickRef = useRef(pick);
+  const activeRef = useRef(active);
+  useLayoutEffect(() => {
+    pickRef.current = pick;
+    activeRef.current = active;
+  });
+  useEffect(() => {
+    const a = new Audio();
+    a.preload = "auto";
+    let level = NaN; // the last target — only a change fades (the player's own mute button stays usable)
+    let fade = 0;
+    const fadeTo = (v: HTMLVideoElement, target: number) => {
+      if (level === target) return;
+      level = target;
+      cancelAnimationFrame(fade);
+      if (target > 0) v.muted = false;
+      const from = v.muted ? 0 : v.volume;
+      const t0 = performance.now();
+      const step = () => {
+        const k = Math.min(1, (performance.now() - t0) / 40);
+        try {
+          v.volume = from + (target - from) * k;
+        } catch {
+          // iOS: volume is read-only — the mute below does it
+        }
+        if (k < 1) fade = requestAnimationFrame(step);
+        else if (target === 0) v.muted = true;
+      };
+      fade = requestAnimationFrame(step);
+    };
+    const sync = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      if (!activeRef.current) {
+        if (!a.paused) a.pause();
+        cancelAnimationFrame(fade);
+        level = NaN;
+        return;
+      }
+      const p = pickRef.current(v.currentTime);
+      fadeTo(v, p ? 0 : 1);
+      if (!p || p === "mute" || v.paused || v.seeking) {
+        if (!a.paused) a.pause();
+        return;
+      }
+      if (a.dataset.take !== p.take.id) {
+        a.src = p.take.url;
+        a.dataset.take = p.take.id;
+      }
+      const want = v.currentTime - p.start;
+      if (a.duration && want >= a.duration) {
+        if (!a.paused) a.pause();
+        return;
+      }
+      if (Math.abs(a.currentTime - want) > 0.08) a.currentTime = want;
+      if (a.paused) void a.play().catch(() => {});
+    };
+    // what is audible right now (read by the browser tests: data-mix = take id, data-mix-at = take time)
+    const mark = () => {
+      const v = videoRef.current;
+      if (!v) return;
+      const on = !a.paused && a.dataset.take ? a.dataset.take : "";
+      if (v.dataset.mix !== on) v.dataset.mix = on;
+      if (on) v.dataset.mixAt = a.currentTime.toFixed(2);
+    };
+    let raf = 0;
+    const loop = () => {
+      sync();
+      mark();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(raf);
+      cancelAnimationFrame(fade);
+      a.pause();
+      a.removeAttribute("src");
+    };
+  }, [videoRef]);
+}
+
 export function DubbingNode({
   el,
   editable,
@@ -71,7 +216,6 @@ export function DubbingNode({
   const [newLang, setNewLang] = useState("");
   const [link, setLink] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
 
   // the card follows its content
   const cardRef = useRef<HTMLDivElement>(null);
@@ -106,80 +250,22 @@ export function DubbingNode({
   }, [reload]);
   const curLang = el.languages.includes(lang) ? lang : el.languages[0] ?? "";
 
-  // quick check «Aufnahme» (2026-11-13, Lino): the original sound plays where nothing is recorded; inside a section
-  // with a take (★, else the newest) the original fades out (~40 ms, no clicks) and only the take plays, in sync.
-  // «KI-Dubbing»: ONE full-length audio from 00:00, the original muted throughout.
-  const fadeRef = useRef<{ raf: number; target: number } | null>(null);
-  const levelRef = useRef(1); // the last target — only a change fades (the player's own mute button stays usable)
-  function fadeVideo(v: HTMLVideoElement, target: number) {
-    if (levelRef.current === target) return;
-    levelRef.current = target;
-    if (fadeRef.current) cancelAnimationFrame(fadeRef.current.raf);
-    if (target > 0) v.muted = false;
-    const from = v.muted ? 0 : v.volume;
-    const t0 = performance.now();
-    const step = () => {
-      const k = Math.min(1, (performance.now() - t0) / 40);
-      try {
-        v.volume = from + (target - from) * k;
-      } catch {
-        // iOS: volume is read-only — the mute below does it
+  // quick check «Aufnahme» (2026-11-13, Lino): original sound where nothing is recorded, only the take inside
+  // sections with a take; «KI-Dubbing»: ONE full-length audio from 00:00, the original muted throughout
+  const [soundMode, setSoundMode] = useSoundMode(el.sound_mode);
+  useTakeMix(
+    videoRef,
+    (t) => {
+      if (mode === "original") return null;
+      if (mode === "take" && soundMode !== "split") return soundMode === "none" ? "mute" : null;
+      if (mode === "ai") {
+        const aiTake = takes.find((x) => x.source === "ai" && x.lang === curLang);
+        return aiTake ? { take: aiTake, start: 0 } : "mute";
       }
-      if (k < 1) {
-        fadeRef.current = { raf: requestAnimationFrame(step), target };
-        return;
-      }
-      fadeRef.current = null;
-      if (target === 0) v.muted = true;
-    };
-    fadeRef.current = { raf: requestAnimationFrame(step), target };
-  }
-  function syncTake() {
-    const v = videoRef.current;
-    const a = audioRef.current;
-    if (!v || !a) return;
-    if (mode === "original") {
-      if (!a.paused) a.pause();
-      fadeVideo(v, 1);
-      return;
-    }
-    const aiTake = mode === "ai" ? takes.find((t) => t.source === "ai" && t.lang === curLang) ?? null : null;
-    const sec = mode === "ai" ? (aiTake ? { id: "__full__", start: 0, end: Number.MAX_VALUE } : undefined) : el.sections.find((s) => v.currentTime >= s.start && v.currentTime < s.end);
-    const take = mode === "ai" ? aiTake : sec ? chosen(takes.filter((t) => t.source !== "ai"), sec.id, curLang) : null;
-    // the original: silent with a take here (and always for «KI-Dubbing»), otherwise back
-    fadeVideo(v, take || mode === "ai" ? 0 : 1);
-    if (!sec || !take || v.paused) {
-      if (!a.paused) a.pause();
-      return;
-    }
-    if (a.dataset.take !== take.id) {
-      a.src = take.url;
-      a.dataset.take = take.id;
-    }
-    const want = v.currentTime - sec.start;
-    if (a.duration && want >= a.duration) {
-      if (!a.paused) a.pause();
-      return;
-    }
-    if (Math.abs(a.currentTime - want) > 0.08) a.currentTime = want;
-    if (a.paused) void a.play().catch(() => {});
-  }
-  // while playing: check every frame (section edges exact, not only every 250 ms like timeupdate)
-  const syncRef = useRef(syncTake);
-  useLayoutEffect(() => {
-    syncRef.current = syncTake;
-  });
-  useEffect(() => {
-    let raf = 0;
-    const loop = () => {
-      const v = videoRef.current;
-      if (v && !v.paused) syncRef.current();
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    syncRef.current();
-    return () => cancelAnimationFrame(raf);
-  }, [mode]);
+      return sectionTake(el.sections, takes, curLang, t);
+    },
+    true,
+  );
 
   if (!api) return null; // client share pages: not here (phase 2 brings the speaker link)
 
@@ -270,12 +356,7 @@ export function DubbingNode({
               }
               if (editable && Object.keys(patch).length) onCommit(patch);
             }}
-            onTimeUpdate={syncTake}
-            onPlay={syncTake}
-            onPause={() => audioRef.current?.pause()}
-            onSeeked={syncTake}
           />
-          <audio ref={audioRef} className="hidden" />
         </div>
       )}
       {el.asset_key && (
@@ -305,6 +386,7 @@ export function DubbingNode({
               ))}
             </select>
           )}
+          {mode === "take" && <SoundModeSwitch value={soundMode} onChange={setSoundMode} small />}
         </div>
       )}
       <div data-no-drag className="px-3 py-2 flex flex-wrap items-center gap-1.5 text-xs">
@@ -764,12 +846,22 @@ export function DubbingStudio({
     }
     setPlaying(null);
   }
+  // 2026-11-13, Lino: normal playback in the studio = the same mix as the tile («Aufnahme»): original sound where
+  // nothing is recorded, only the take inside sections with a take. Not while recording (the «Videoton» switch
+  // rules there, the section being recorded never plays along) and not during a single-take preview.
+  const [soundMode, setSoundMode] = useSoundMode(el.sound_mode);
+  useTakeMix(
+    videoRef,
+    (t) => (soundMode === "none" ? "mute" : soundMode === "full" ? null : sectionTake(el.sections, takes, lang, t)),
+    phase === "idle" && playing === null,
+  );
   async function playTake(t: DubbingTake, start: number) {
     const v = videoRef.current;
     if (!v) return;
     if (playing === t.id) return stopPreview();
     stopPreview();
     const a = new Audio(t.url);
+    a.muted = soundMode === "none"; // «No sound»: nothing, takes neither
     previewRef.current = a;
     setPlaying(t.id);
     v.muted = true;
@@ -925,7 +1017,7 @@ export function DubbingStudio({
       onWheel={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 shrink-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5 border-b border-white/10 shrink-0">
         <span className="text-lg">🎙️</span>
         <span className="min-w-0 flex flex-col">
           <span className="text-xs text-white/50 truncate">{el.title || "Live-Dubbing"}</span>
@@ -938,6 +1030,7 @@ export function DubbingStudio({
             </option>
           ))}
         </select>
+        <SoundModeSwitch value={soundMode} onChange={setSoundMode} />
         {uploads > 0 && <span className="text-xs text-amber-300">Lädt {uploads} Take{uploads > 1 ? "s" : ""} hoch …</span>}
         {header}
         {onClose && (

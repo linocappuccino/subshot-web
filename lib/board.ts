@@ -789,6 +789,8 @@ export interface DubbingElement extends BaseElement {
   duration?: number;
   /** video width / height (0.5625 = 9:16) — the tile width follows it, the video fills the tile edge to edge */
   video_ar?: number;
+  /** default playback sound: none / split (original where no take, else the take) / full (original throughout) */
+  sound_mode?: "none" | "split" | "full";
   languages: string[];
   sections: DubbingSection[];
 }
