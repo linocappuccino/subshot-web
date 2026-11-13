@@ -28,6 +28,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
+import { LanguageTabs, matchesTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -81,6 +82,12 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   const router = useRouter();
 
   const [data, setData] = useState<ProjectDetail | null>(null);
+  // 2026-11-13, Lino: languages — tabs «Alle» / per language / «Nicht zugeordnet», assign (also several at once)
+  const [langs, setLangs] = useState<LanguagesOverview>({ languages: [], assignments: {}, unassigned: 0 });
+  const [langTab, setLangTab] = useState<LanguageTab>("all");
+  const langTabRef = useRef<LanguageTab>("all");
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [pickLang, setPickLang] = useState<string>("");
   const [members, setMembers] = useState<Member[]>([]);
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -243,6 +250,30 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 3 at a time, progress + error per file
   type UploadItem = { id: string; name: string; progress: number; status: "wait" | "up" | "done" | "error"; error?: string };
   const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const reloadLangs = () => api.projectLanguages(id).then(setLangs).catch(() => {});
+  useEffect(() => {
+    langTabRef.current = langTab;
+  }, [langTab]);
+  // videos added / deleted elsewhere → the counts per language follow
+  const videoCount = Object.values(videosBySection).reduce((n, v) => n + v.length, 0);
+  useEffect(() => {
+    let alive = true;
+    api
+      .projectLanguages(id)
+      .then((x) => alive && setLangs(x))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- on count changes only
+  }, [id, videoCount]);
+  async function assignLang(videoIds: string[], languageId: string | null) {
+    try {
+      setLangs(await api.assignVideoLanguages(id, videoIds, languageId));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht zugewiesen werden.");
+    }
+  }
   const [dropActive, setDropActive] = useState(false);
   const sectionCountRef = useRef(0);
   useEffect(() => {
@@ -270,7 +301,12 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           const order = sectionCountRef.current++;
           const section = await api.createSection(data.id, title, order, true);
           setData((prev) => (prev ? { ...prev, sections: [...prev.sections, section] } : prev));
-          const err = await addVideo(section, file, (fraction) => set(item.id, { progress: fraction }));
+          // new videos land in the language tab that is open (else «Nicht zugeordnet»)
+          const tabNow = langTabRef.current;
+          const err = await addVideo(section, file, (fraction) => set(item.id, { progress: fraction }), (videoId) => {
+            if (tabNow !== "all" && tabNow !== "none") void assignLang([videoId], tabNow);
+            else void reloadLangs();
+          });
           set(item.id, err ? { status: "error", error: err } : { status: "done", progress: 1 });
         } catch (e) {
           set(item.id, { status: "error", error: e instanceof ApiError ? e.message : t("postproduction.createVideoFailed") });
@@ -512,11 +548,12 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // sectionName label, which becomes redundant and is dropped there), and
   // uploads the first version in the same click — create, then the exact
   // same 3-step version-upload flow as uploadVersionFromTile below.
-  async function addVideo(section: Section, file: File, onProgress?: (fraction: number) => void): Promise<string | null> {
+  async function addVideo(section: Section, file: File, onProgress?: (fraction: number) => void, onCreated?: (videoId: string) => void): Promise<string | null> {
     setUploadProgress((prev) => ({ ...prev, [section.id]: 0 }));
     try {
       const list = videosBySection[section.id] ?? [];
       const created = await api.createVideo(section.id, section.name, list.length);
+      onCreated?.(created.id);
       const version = await api.createVideoVersion(created.id, file);
       if (!version.playback_url) throw new Error("Keine Upload-URL erhalten.");
       await api.uploadVideoFile(version.playback_url, file, (fraction) => {
@@ -960,6 +997,71 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           </h1>
         </div>
 
+        {!manualOrder && !loading && (
+          <LanguageTabs
+            data={langs}
+            tab={langTab}
+            onTab={(t) => {
+              setLangTab(t);
+              setPicked(new Set());
+            }}
+            total={Object.values(videosBySection).reduce((n, v) => n + v.length, 0)}
+            editable={canEditStatus}
+            onCreate={async (name, flag) => {
+              try {
+                setLangs(await api.createProjectLanguage(id, name, flag));
+              } catch (e) {
+                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht angelegt werden.");
+              }
+            }}
+            onUpdate={async (lid, name, flag) => {
+              try {
+                setLangs(await api.updateProjectLanguage(lid, name, flag));
+              } catch (e) {
+                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gespeichert werden.");
+              }
+            }}
+            onDelete={async (lid) => {
+              try {
+                setLangs(await api.deleteProjectLanguage(lid));
+                if (langTab === lid) setLangTab("all");
+              } catch (e) {
+                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gelöscht werden.");
+              }
+            }}
+          />
+        )}
+        {canEditStatus && picked.size > 0 && (
+          <div data-lang-selection className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-500/10 px-4 py-2.5 text-sm">
+            <span className="font-semibold">{picked.size} ausgewählt</span>
+            <span className="text-white/50">Sprache:</span>
+            <select data-lang-assign-select value={pickLang} onChange={(e) => setPickLang(e.target.value)} className="rounded-md bg-white/10 px-2 py-1 outline-none">
+              <option value="">— wählen —</option>
+              {langs.languages.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.flag} {l.name}
+                </option>
+              ))}
+              <option value="__none__">Nicht zugeordnet</option>
+            </select>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!pickLang}
+              onClick={() => {
+                void assignLang([...picked], pickLang === "__none__" ? null : pickLang).then(() => {
+                  setPicked(new Set());
+                  setPickLang("");
+                });
+              }}
+            >
+              Zuweisen
+            </Button>
+            <button type="button" onClick={() => setPicked(new Set())} className="text-white/50 hover:text-white">
+              Auswahl aufheben
+            </button>
+          </div>
+        )}
         {canEditStatus && !manualOrder && !loading && (
           <div
             data-postpro-drop
@@ -1082,10 +1184,55 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           // (siehe VideoTile's TILE_HEIGHT-Rechnung).
           <div className="flex flex-wrap gap-4 items-start">
             {sections.flatMap((section) => {
-              const videos = videosBySection[section.id] ?? [];
-              const tiles = videos.map((video) => (
+              const all = videosBySection[section.id] ?? [];
+              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments));
+              // a language tab shows only its videos (no empty «+ Video» boxes of other sections)
+              if (langTab !== "all" && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
+              const tiles = videos.map((video) => {
+                const lang = langs.languages.find((l) => l.id === langs.assignments[video.id]);
+                return (
+                <div key={video.id} data-video-lang={lang?.id ?? ""} className="relative">
+                  {(canEditStatus || lang) && (
+                    <div className="absolute -top-2.5 left-2 z-10 flex items-center gap-1">
+                      {canEditStatus && (
+                        <input
+                          type="checkbox"
+                          data-video-pick={video.id}
+                          title="Für «Sprache zuweisen» auswählen"
+                          checked={picked.has(video.id)}
+                          onChange={(e) =>
+                            setPicked((p) => {
+                              const n = new Set(p);
+                              if (e.target.checked) n.add(video.id);
+                              else n.delete(video.id);
+                              return n;
+                            })
+                          }
+                          className="h-4 w-4 accent-blue-500"
+                        />
+                      )}
+                      <span className="relative inline-flex items-center rounded-full bg-black/80 border border-white/15 px-2 py-0.5 text-xs" title={lang ? lang.name : "Nicht zugeordnet"}>
+                        {lang ? lang.flag : canEditStatus ? "＋ Sprache" : ""}
+                        {canEditStatus && (
+                          <select
+                            data-video-lang-select={video.id}
+                            value={lang?.id ?? ""}
+                            onChange={(e) => void assignLang([video.id], e.target.value || null)}
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            aria-label="Sprache"
+                          >
+                            <option value="">Nicht zugeordnet</option>
+                            {langs.languages.map((l) => (
+                              <option key={l.id} value={l.id}>
+                                {l.flag} {l.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 <VideoTile
-                  key={video.id}
                   video={video}
                   status={section.postproduction_status}
                   deadline={section.postproduction_deadline}
@@ -1116,7 +1263,9 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   roundsBadge={rounds?.videos[video.id] ? { used: rounds.videos[video.id].used, limit: rounds.videos[video.id].limit } : null}
                   onOpenRounds={canEditStatus ? () => setRoundsFor(video) : undefined}
                 />
-              ));
+                </div>
+                );
+              });
               if (videos.length === 0 && canEditStatus) {
                 const progress = uploadProgress[section.id];
                 if (progress !== undefined) {

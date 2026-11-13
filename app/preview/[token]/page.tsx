@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { VideoTile } from "@/app/components/VideoTile";
+import { LanguageTabs, matchesTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
@@ -116,6 +117,8 @@ function PreviewVideoPageInner() {
     setReviewingVideo(updated);
   }
 
+  // 2026-11-13, Lino: the client clicks through the languages too (filter only, no assigning)
+  const [langTab, setLangTab] = useState<LanguageTab>("all");
   const sectionById = useMemo(() => {
     const map = new Map<string, SharedVideoPreviewData["sections"][number]>();
     data?.sections.forEach((s) => map.set(s.id, s));
@@ -135,7 +138,8 @@ function PreviewVideoPageInner() {
   // whole point of the new reorder feature (letting Lino choose what the
   // client sees) impossible to achieve from here. `data.videos` is now
   // rendered in the order the backend already sends it, unsorted.
-  const sortedVideos = data?.videos ?? [];
+  const assignments = data?.video_languages ?? {};
+  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments));
 
   if (needsPassword) {
     return (
@@ -210,12 +214,28 @@ function PreviewVideoPageInner() {
         ) : !data || data.videos.length === 0 ? (
           <p className="text-sm text-white/40">{t("previewVideoPage.noVideos")}</p>
         ) : (
+          <>
+          {(data.languages ?? []).length > 0 && (
+            <LanguageTabs
+              data={{ languages: data.languages ?? [], assignments, unassigned: data.videos.filter((v) => !assignments[v.id]).length }}
+              tab={langTab}
+              onTab={setLangTab}
+              total={data.videos.length}
+              hideEmptyUnassigned
+            />
+          )}
           <div className="flex flex-wrap gap-4 items-start">
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);
+              const lang = (data.languages ?? []).find((l) => l.id === assignments[video.id]);
               return (
+                <div key={video.id} data-video-lang={lang?.id ?? ""} className="relative">
+                {lang && (
+                  <span className="absolute -top-2.5 left-2 z-10 rounded-full bg-black/80 border border-white/15 px-2 py-0.5 text-xs" title={lang.name}>
+                    {lang.flag}
+                  </span>
+                )}
                 <VideoTile
-                  key={video.id}
                   video={video}
                   status={section?.postproduction_status ?? null}
                   deadline={section?.postproduction_deadline ?? null}
@@ -226,9 +246,11 @@ function PreviewVideoPageInner() {
                   onChangeDeadline={() => {}}
                   showDeadlineLabel
                 />
+                </div>
               );
             })}
           </div>
+          </>
         )}
       </div>
 

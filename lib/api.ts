@@ -1,3 +1,4 @@
+import type { LanguagesOverview } from "@/app/components/PostproLanguages";
 import type {
   StoredPostStage,
   Annotation,
@@ -737,6 +738,15 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // to fetch every video in one request instead of one per section (see
     // that page's own doc comment on videosBySection).
     listProjectVideos: (projectId: string) => request<Video[]>(`projects/${projectId}/videos`),
+    // 2026-11-13, Lino: languages on the Post-Production page
+    projectLanguages: (projectId: string) => request<LanguagesOverview>(`projects/${projectId}/languages?t=${Date.now()}`),
+    createProjectLanguage: (projectId: string, name: string, flag: string) =>
+      request<LanguagesOverview>(`projects/${projectId}/languages`, { method: "POST", body: JSON.stringify({ name, flag }) }),
+    updateProjectLanguage: (languageId: string, name: string, flag: string) =>
+      request<LanguagesOverview>(`project-languages/${languageId}`, { method: "PATCH", body: JSON.stringify({ name, flag }) }),
+    deleteProjectLanguage: (languageId: string) => request<LanguagesOverview>(`project-languages/${languageId}`, { method: "DELETE" }),
+    assignVideoLanguages: (projectId: string, videoIds: string[], languageId: string | null) =>
+      request<LanguagesOverview>(`projects/${projectId}/video-languages`, { method: "PUT", body: JSON.stringify({ video_ids: videoIds, language_id: languageId }) }),
     // 2026-09-16 (Lino: "ich kann die reihenfolge der videos... noch nicht
     // ändern, diese muss ich ändern können, damit ich für die person auf
     // der preview seite die reihenfolge vorgeben kann") — the WHOLE
