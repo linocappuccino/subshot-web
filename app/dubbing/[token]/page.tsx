@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { BoardDubbingContext, DubbingStudio, type BoardDubbingApi } from "@/app/components/board/BoardDubbing";
 import type { DubbingElement, DubbingTake } from "@/lib/board";
 import { publicDubbingApi, type PublicDubbing } from "@/lib/publicDubbingApi";
+import { DubbingSpeakerHelp, useSpeakerHelp } from "@/app/components/board/DubbingSpeakerHelp";
 
 const NAME_KEY = "subshot-dubbing-speaker";
 
@@ -17,6 +18,8 @@ export default function DubbingSpeakerPage() {
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState<string>("");
   const [draft, setDraft] = useState("");
+  // 2026-11-13, Lino: a short «So funktioniert's» when the studio opens (DE / EN), «?» opens it again
+  const [help, setHelp] = useSpeakerHelp();
 
   useEffect(() => {
     try {
@@ -94,8 +97,16 @@ export default function DubbingSpeakerPage() {
             setError("Die Abschnitte konnten nicht gespeichert werden. Bitte neu laden.");
           });
         }}
-        header={<span className="ml-auto text-xs text-white/50">Sprecher·in: {name}</span>}
+        header={
+          <span className="ml-auto flex items-center gap-3">
+            <span className="text-xs text-white/50">Sprecher·in: {name}</span>
+            <button type="button" data-help-open title="So funktioniert's / How it works" onClick={() => setHelp(true)} className="h-7 w-7 rounded-full bg-white/10 hover:bg-white/20 text-sm font-bold">
+              ?
+            </button>
+          </span>
+        }
       />
+      {help && <DubbingSpeakerHelp onClose={() => setHelp(false)} />}
     </BoardDubbingContext.Provider>
   );
 }
