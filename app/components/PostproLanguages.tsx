@@ -328,7 +328,8 @@ export function FormatTabs({ videoIds, formats, tab, onTab }: { videoIds: string
     counts[k] = (counts[k] ?? 0) + 1;
   }
   const keys = [...FORMAT_ORDER.filter((f) => counts[f]), ...(counts.other ? ["other"] : [])];
-  if (keys.length < 2 && tab === "all") return null;
+  // 2026-11-13, Lino «wo ist der Formatfilter?»: always shown as soon as there are videos (also with one format only)
+  if (videoIds.length === 0 && tab === "all") return null;
   const pill = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
   return (
