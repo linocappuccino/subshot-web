@@ -737,6 +737,7 @@ export function DubbingStudio({
   header?: React.ReactNode;
 }) {
   const api = useContext(BoardDubbingContext)!;
+  const [shared, setShared] = useState<string | null>(null);
   const [lang, setLang] = useState(initialLang);
   const [secId, setSecId] = useState<string | null>(el.sections[0]?.id ?? null);
   const [mics, setMics] = useState<MicInfo[]>([]);
@@ -794,6 +795,23 @@ export function DubbingStudio({
     setOverlayOpacity(v);
     try {
       localStorage.setItem("subshot-dubbing-overlay-opacity", String(v));
+    } catch {
+      // private mode
+    }
+  }
+  // 2026-11-13, Lino: the text column over the video narrower (40–100 %, per person)
+  const [overlayWidth, setOverlayWidth] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("subshot-dubbing-overlay-width"));
+      return v >= 0.4 && v <= 1 ? v : 1;
+    } catch {
+      return 1;
+    }
+  });
+  function changeOverlayWidth(v: number) {
+    setOverlayWidth(v);
+    try {
+      localStorage.setItem("subshot-dubbing-overlay-width", String(v));
     } catch {
       // private mode
     }
@@ -1031,6 +1049,31 @@ export function DubbingStudio({
           ))}
         </select>
         <SoundModeSwitch value={soundMode} onChange={setSoundMode} />
+        {/* 2026-11-13, Lino: share from the studio — the speaker link opens only this studio (no board, no login) */}
+        {canChoose && api.shareLink && el.asset_key && (
+          <button
+            type="button"
+            data-studio-share
+            onClick={() => {
+              void api.shareLink!(el.id)
+                .then((u) => {
+                  setShared(u);
+                  void navigator.clipboard?.writeText(u).catch(() => {});
+                })
+                .catch(() => setShared("error"));
+            }}
+            className="rounded-lg bg-rose-500 hover:bg-rose-400 px-3 py-1.5 text-sm font-semibold"
+          >
+            🔗 Teilen
+          </button>
+        )}
+        {shared && (
+          <span data-studio-share-link className="text-xs text-white/60 break-all max-w-[22rem]">
+            {shared === "error" ? <span className="text-red-300">Link konnte nicht erstellt werden.</span> : <>
+              <span className="text-emerald-300">Link kopiert</span> – öffnet nur dieses Studio, ohne Login (30 Tage): {shared}
+            </>}
+          </span>
+        )}
         {uploads > 0 && <span className="text-xs text-amber-300">Lädt {uploads} Take{uploads > 1 ? "s" : ""} hoch …</span>}
         {header}
         {onClose && (
@@ -1060,6 +1103,21 @@ export function DubbingStudio({
                       className="w-24 accent-rose-500"
                     />
                     <span className="w-8 tabular-nums text-right">{Math.round(overlayOpacity * 100)} %</span>
+                  </label>
+                )}
+                {overlay && (
+                  <label className="flex items-center gap-2 text-xs text-white/70" title="Breite der Textspalte über dem Video">
+                    Breite
+                    <input
+                      type="range"
+                      data-overlay-width
+                      min={40}
+                      max={100}
+                      step={5}
+                      value={Math.round(overlayWidth * 100)}
+                      onChange={(e) => changeOverlayWidth(Number(e.target.value) / 100)}
+                      className="w-20 accent-rose-500"
+                    />
                   </label>
                 )}
                 <button
@@ -1113,7 +1171,7 @@ export function DubbingStudio({
               )}
               {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
               {overlay && sec && (sec.scripts[lang] ?? "").trim() && (
-                <OverlayText text={sec.scripts[lang] ?? ""} recording={phase === "rec"} progress={progress} boxW={box.w} boxH={box.h} opacity={overlayOpacity} />
+                <OverlayText text={sec.scripts[lang] ?? ""} recording={phase === "rec"} progress={progress} boxW={box.w} boxH={box.h} opacity={overlayOpacity} widthPct={overlayWidth} />
               )}
             </div>
             </div>
@@ -1305,10 +1363,54 @@ function ScriptBox({
 }) {
   const [draft, setDraft] = useState(text);
   const [focused, setFocused] = useState(false);
+  // 2026-11-13, Lino: the reading column narrower / wider by dragging the right edge (40–100 %, per person)
+  const [width, setWidth] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem("subshot-dubbing-script-width"));
+      return v >= 0.4 && v <= 1 ? v : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const wrapRef = useRef<HTMLDivElement>(null);
+  function dragWidth(e: React.PointerEvent<HTMLSpanElement>) {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const r = wrap.getBoundingClientRect();
+    const move = (ev: PointerEvent) => setWidth(Math.max(0.4, Math.min(1, (ev.clientX - r.left) / r.width)));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setWidth((w) => {
+        try {
+          localStorage.setItem("subshot-dubbing-script-width", String(Math.round(w * 100) / 100));
+        } catch {
+          // private mode
+        }
+        return w;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  const handle = (
+    <span
+      data-script-width-handle
+      title="Textbreite ziehen"
+      onPointerDown={dragWidth}
+      className="absolute top-2 bottom-2 w-3 -ml-1.5 cursor-ew-resize touch-none flex items-center justify-center group"
+      style={{ left: `${width * 100}%` }}
+    >
+      <span className="h-10 w-1.5 rounded-full bg-white/25 group-hover:bg-rose-400" />
+    </span>
+  );
   const timer = useRef<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const shown = focused ? draft : text;
   const style: React.CSSProperties = { fontSize: "clamp(20px, 1.4vw + 10px, 32px)", lineHeight: 1.5, ...(height ? { height, maxHeight: height } : {}) };
+  const sized: React.CSSProperties = { ...style, width: `${width * 100}%` };
 
   function save(v: string) {
     if (timer.current) window.clearTimeout(timer.current);
@@ -1328,18 +1430,19 @@ function ScriptBox({
     if (box && cur) box.scrollTop = Math.max(0, cur.offsetTop - box.clientHeight / 3);
   }, [lit, recording]);
 
-  const frame = `shrink-0 w-full rounded-2xl bg-black/40 border border-white/15 px-5 py-4 text-white overflow-auto ${height ? "" : "max-h-[26vh] min-h-[5.5rem]"}`;
+  const frame = `shrink-0 rounded-2xl bg-black/40 border border-white/15 px-5 py-4 text-white overflow-auto ${height ? "" : "max-h-[26vh] min-h-[5.5rem]"}`;
   if (recording || !editable) {
     let seen = 0;
     return (
-      <div ref={boxRef} data-karaoke data-script-box className={frame} style={style}>
+      // 2026-11-13, Lino: line breaks of the script stay while recording (pre-wrap, like the textarea)
+      <div ref={wrapRef} className="relative w-full shrink-0">
+      <div ref={boxRef} data-karaoke data-script-box className={`${frame} whitespace-pre-wrap break-words`} style={sized}>
         {text.trim() ? (
           words.map((w, i) => {
             if (!w.trim()) return <span key={i}>{w}</span>;
             seen += 1;
-            const on = recording && seen <= lit;
             return (
-              <span key={i} data-lit-last={recording && seen === Math.max(1, lit) ? "" : undefined} className={on ? "text-rose-300" : recording ? "text-white/40" : "text-white"}>
+              <span key={i} data-lit-last={recording && seen === Math.max(1, lit) ? "" : undefined} className="text-white">
                 {w}
               </span>
             );
@@ -1348,9 +1451,12 @@ function ScriptBox({
           <span className="text-white/35">{hasSection ? `Noch kein Sprechtext (${langLabel}).` : "Wähle unten auf der Timeline einen Abschnitt."}</span>
         )}
       </div>
+      {handle}
+      </div>
     );
   }
   return (
+    <div ref={wrapRef} className="relative w-full shrink-0">
     <textarea
       data-karaoke
       data-script-box
@@ -1369,9 +1475,11 @@ function ScriptBox({
         if (timer.current) window.clearTimeout(timer.current);
         if (draft !== text) onChange(draft);
       }}
-      className={`${frame} resize-none outline-none focus:border-rose-400 placeholder:text-white/30 select-text`}
-      style={style}
+      className={`${frame} block resize-none outline-none focus:border-rose-400 placeholder:text-white/30 select-text`}
+      style={sized}
     />
+    {handle}
+    </div>
   );
 }
 
@@ -1379,7 +1487,7 @@ function ScriptBox({
  * linksbündig, vertikal zentriert»): the whole script over the whole picture — no box, no background; the font is
  * as big as fits (shrunk until the whole text fits; only below ~18 px it scrolls instead); spoken words turn a
  * soft yellow while recording. The video keeps its size. */
-function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1 }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number; opacity?: number }) {
+function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1, widthPct = 1 }: { text: string; recording: boolean; progress: number; boxW: number; boxH: number; opacity?: number; widthPct?: number }) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(32);
@@ -1404,7 +1512,7 @@ function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1 }: { t
     }
     i.style.fontSize = `${lo}px`;
     setSize(Math.floor(lo));
-  }, [text, boxW, boxH]);
+  }, [text, boxW, boxH, widthPct]);
   useEffect(() => {
     if (!recording) return;
     const o = outer.current;
@@ -1420,8 +1528,9 @@ function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1 }: { t
     >
       <div
         ref={inner}
-        className="my-auto w-full text-left font-bold text-white"
+        className="my-auto text-left font-bold text-white whitespace-pre-wrap break-words"
         style={{
+          width: `${widthPct * 100}%`,
           fontSize: size,
           lineHeight: 1.25,
           textShadow: "0 0 3px #000, 0 0 6px #000, 2px 2px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000",
@@ -1430,9 +1539,8 @@ function OverlayText({ text, recording, progress, boxW, boxH, opacity = 1 }: { t
       >
         {words.map((w, i) => {
           if (!w.trim()) return <span key={i}>{w}</span>;
-          const on = recording && nth[i] <= lit;
           return (
-            <span key={i} data-lit-last={recording && nth[i] === Math.max(1, lit) ? "" : undefined} className={on ? "text-yellow-200" : undefined}>
+            <span key={i} data-lit-last={recording && nth[i] === Math.max(1, lit) ? "" : undefined} >
               {w}
             </span>
           );
