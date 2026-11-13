@@ -238,15 +238,46 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // delete_video — beide, falls der Server-Cleanup je fehlschlägt, bleibt
   // der Client trotzdem konsistent).
   const unplannedVideoInputRef = useRef<HTMLInputElement>(null);
-  async function createUnplannedVideoSection(file: File) {
-    if (!data) return;
-    try {
-      const section = await api.createSection(data.id, t("postproduction.unplannedVideoName"), data.sections.length, true);
-      setData((prev) => (prev ? { ...prev, sections: [...prev.sections, section] } : prev));
-      await addVideo(section, file);
-    } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : t("postproduction.genericFailed"));
-    }
+  // 2026-11-13, Lino: upload field (drag & drop + choose, several files at once) — EVERY file becomes its own NEW
+  // video (title from the file name, own unplanned section), never a version of an existing one; straight to R2,
+  // 3 at a time, progress + error per file
+  type UploadItem = { id: string; name: string; progress: number; status: "wait" | "up" | "done" | "error"; error?: string };
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [dropActive, setDropActive] = useState(false);
+  const sectionCountRef = useRef(0);
+  useEffect(() => {
+    sectionCountRef.current = data?.sections.length ?? 0;
+  }, [data?.sections.length]);
+  function isVideo(f: File) {
+    return f.type.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(f.name);
+  }
+  async function uploadMany(files: File[]) {
+    if (!data || !files.length) return;
+    const items = files.map((f, i) => ({ file: f, item: { id: `${Date.now()}-${i}-${f.name}`, name: f.name, progress: 0, status: "wait" as const } }));
+    setUploads((prev) => [...prev.filter((u) => u.status === "up" || u.status === "wait"), ...items.map((x) => x.item)]);
+    const set = (id: string, patch: Partial<UploadItem>) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const { file, item } = items[next++];
+        if (!isVideo(file)) {
+          set(item.id, { status: "error", error: "Kein Video (nur MP4, MOV oder WebM)" });
+          continue;
+        }
+        set(item.id, { status: "up" });
+        try {
+          const title = file.name.replace(/\.[^.]+$/, "") || file.name;
+          const order = sectionCountRef.current++;
+          const section = await api.createSection(data.id, title, order, true);
+          setData((prev) => (prev ? { ...prev, sections: [...prev.sections, section] } : prev));
+          const err = await addVideo(section, file, (fraction) => set(item.id, { progress: fraction }));
+          set(item.id, err ? { status: "error", error: err } : { status: "done", progress: 1 });
+        } catch (e) {
+          set(item.id, { status: "error", error: e instanceof ApiError ? e.message : t("postproduction.createVideoFailed") });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(3, items.length) }, worker));
   }
   useEffect(() => {
     if (!autoOpenVideoId) return;
@@ -481,16 +512,17 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // sectionName label, which becomes redundant and is dropped there), and
   // uploads the first version in the same click — create, then the exact
   // same 3-step version-upload flow as uploadVersionFromTile below.
-  async function addVideo(section: Section, file: File) {
+  async function addVideo(section: Section, file: File, onProgress?: (fraction: number) => void): Promise<string | null> {
     setUploadProgress((prev) => ({ ...prev, [section.id]: 0 }));
     try {
       const list = videosBySection[section.id] ?? [];
       const created = await api.createVideo(section.id, section.name, list.length);
       const version = await api.createVideoVersion(created.id, file);
       if (!version.playback_url) throw new Error("Keine Upload-URL erhalten.");
-      await api.uploadVideoFile(version.playback_url, file, (fraction) =>
-        setUploadProgress((prev) => ({ ...prev, [section.id]: fraction }))
-      );
+      await api.uploadVideoFile(version.playback_url, file, (fraction) => {
+        setUploadProgress((prev) => ({ ...prev, [section.id]: fraction }));
+        onProgress?.(fraction);
+      });
       // 2026-07-18 (Todoist #201, Lino: "die Kachel wird zu gross
       // dargestellt, sie soll sich ans Video anpassen") — VideoTile sizes
       // itself from filmstrip_frame_width/height, which only exist once
@@ -521,8 +553,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         ],
       }));
       pollForFilmstrip(section.id, created.id, completed.id);
+      return null;
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : t("postproduction.createVideoFailed"));
+      const msg = e instanceof ApiError ? e.message : t("postproduction.createVideoFailed");
+      // the multi-upload field shows the error per file itself
+      if (!onProgress) toast.showError(msg);
       // A failed upload into a freshly-created is_unplanned section (see
       // createUnplannedVideoSection) would otherwise leave an empty,
       // permanently-dangling section behind — clean it up rather than
@@ -531,6 +566,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         api.deleteSection(section.id).catch(() => {});
         setData((prev) => (prev ? { ...prev, sections: prev.sections.filter((s) => s.id !== section.id) } : prev));
       }
+      return msg;
     } finally {
       setUploadProgress((prev) => {
         const next = { ...prev };
@@ -924,6 +960,50 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           </h1>
         </div>
 
+        {canEditStatus && !manualOrder && !loading && (
+          <div
+            data-postpro-drop
+            onDragOver={(e) => {
+              if (![...e.dataTransfer.types].includes("Files")) return;
+              e.preventDefault();
+              setDropActive(true);
+            }}
+            onDragLeave={() => setDropActive(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDropActive(false);
+              void uploadMany([...e.dataTransfer.files]);
+            }}
+            className={`mb-6 rounded-xl border border-dashed px-4 py-4 transition-colors ${dropActive ? "border-blue-400 bg-blue-500/10" : "border-white/15 bg-white/[0.02]"}`}
+          >
+            <div className="flex flex-wrap items-center gap-3 text-sm text-white/60">
+              <span className="text-xl">⬆︎</span>
+              <span className="flex-1 min-w-[12rem]">Videos hierher ziehen – jede Datei wird ein eigenes neues Video (Titel aus dem Dateinamen).</span>
+              <Button variant="secondary" size="sm" onClick={() => unplannedVideoInputRef.current?.click()}>
+                Dateien wählen
+              </Button>
+            </div>
+            {uploads.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1.5">
+                {uploads.map((u) => (
+                  <li key={u.id} data-upload-item={u.status} className="flex items-center gap-3 text-xs">
+                    <span className="w-56 truncate text-white/80" title={u.name}>{u.name}</span>
+                    {u.status === "error" ? (
+                      <span className="text-red-300">✕ {u.error}</span>
+                    ) : (
+                      <>
+                        <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden max-w-[16rem]">
+                          <div className={`h-full rounded-full transition-[width] duration-150 ${u.status === "done" ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${Math.round(u.progress * 100)}%` }} />
+                        </div>
+                        <span className="w-20 tabular-nums text-white/50">{u.status === "done" ? "✓ fertig" : u.status === "wait" ? "wartet" : `${Math.round(u.progress * 100)} %`}</span>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {loading ? (
           <p className="text-sm text-white/40">Lädt…</p>
         ) : sections.length === 0 ? (
@@ -1118,12 +1198,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       )}
       <input
         ref={unplannedVideoInputRef}
+        data-postpro-file-input
         type="file"
         accept="video/*"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) createUnplannedVideoSection(file);
+          const files = [...(e.target.files ?? [])];
+          if (files.length) void uploadMany(files);
           e.target.value = "";
         }}
       />
