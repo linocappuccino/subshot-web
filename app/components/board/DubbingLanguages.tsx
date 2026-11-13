@@ -6,18 +6,10 @@
 import { useState } from "react";
 import type { DubbingElement, DubbingSection } from "@/lib/board";
 import { Menu } from "../ui/Menu";
+import { LANGUAGE_LIST } from "../PostproLanguages";
 
-export const DUB_LANGS: [string, string, string][] = [
-  ["de", "Deutsch", "🇩🇪"],
-  ["gsw", "Schweizerdeutsch", "🇨🇭"],
-  ["fr", "Französisch", "🇫🇷"],
-  ["it", "Italienisch", "🇮🇹"],
-  ["en", "Englisch", "🇬🇧"],
-  ["rm", "Rätoromanisch", "🇨🇭"],
-  ["es", "Spanisch", "🇪🇸"],
-  ["pt", "Portugiesisch", "🇵🇹"],
-  ["nl", "Niederländisch", "🇳🇱"],
-];
+// 2026-11-13, Lino: the same language list as the Post-Production page (name + flag come together, no flag picker)
+export const DUB_LANGS: [string, string, string][] = LANGUAGE_LIST.map((l) => [l.code, l.name, l.flag]);
 export function dubLangName(code: string): string {
   return DUB_LANGS.find(([c]) => c === code)?.[1] ?? code.toUpperCase();
 }
@@ -99,7 +91,6 @@ export function DubLangPills({
 
 function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string, copyFrom: string | null) => void; size: "sm" | "md" }) {
   const [copyFrom, setCopyFrom] = useState<string>(el.languages[0] ?? "");
-  const [custom, setCustom] = useState("");
   const free = DUB_LANGS.filter(([c]) => !el.languages.includes(c));
   const hasSections = el.sections.length > 0;
   return (
@@ -114,7 +105,7 @@ function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string
     >
       {(close) => (
         // the menu lives in a portal: React events still bubble to the canvas tile (which grabs the pointer for dragging)
-        <div data-dub-lang-menu data-no-drag className="w-60 p-1 text-sm" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div data-dub-lang-menu data-no-drag className="w-64 max-h-[70vh] overflow-auto p-1 text-sm" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {free.map(([c, name, flag]) => (
             <button
               key={c}
@@ -130,19 +121,6 @@ function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string
               <span className="flex-1">{name}</span>
             </button>
           ))}
-          <form
-            className="flex items-center gap-1.5 px-2.5 py-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const c = custom.trim().toLowerCase();
-              if (!/^[a-z]{2,3}$/.test(c) || el.languages.includes(c)) return;
-              onAdd(c, hasSections && copyFrom ? copyFrom : null);
-              setCustom("");
-              close();
-            }}
-          >
-            <input value={custom} onChange={(e) => setCustom(e.target.value)} placeholder="Andere: Code, z. B. pl" className="w-full rounded-md bg-white/10 px-2 py-1 text-xs outline-none select-text" />
-          </form>
           {hasSections && (
             <>
               <div className="my-1 h-px bg-white/10" />

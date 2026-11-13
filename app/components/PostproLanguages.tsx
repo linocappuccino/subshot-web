@@ -23,28 +23,41 @@ export interface LanguagesOverview {
 /** "all" | "none" | language id */
 export type LanguageTab = string;
 
-const SUGGEST: [string, string][] = [
-  ["Deutsch", "🇩🇪"],
-  ["Schweizerdeutsch", "🇨🇭"],
-  ["Französisch", "🇫🇷"],
-  ["Italienisch", "🇮🇹"],
-  ["Englisch", "🇬🇧"],
-  ["Rätoromanisch", "🇨🇭"],
-  ["Spanisch", "🇪🇸"],
-  ["Portugiesisch", "🇵🇹"],
+/** 2026-11-13, Lino: one list for the Post-Production page AND Live-Dubbing — the written language is picked, its
+ * flag comes with it (variants like Schweizerdeutsch 🇨🇭 or Englisch (US) 🇺🇸 have their own entry) */
+export const LANGUAGE_LIST: { code: string; name: string; flag: string }[] = [
+  { code: "de", name: "Deutsch", flag: "🇩🇪" },
+  { code: "gsw", name: "Schweizerdeutsch", flag: "🇨🇭" },
+  { code: "de-AT", name: "Deutsch (Österreich)", flag: "🇦🇹" },
+  { code: "fr", name: "Französisch", flag: "🇫🇷" },
+  { code: "it", name: "Italienisch", flag: "🇮🇹" },
+  { code: "rm", name: "Rätoromanisch", flag: "🇨🇭" },
+  { code: "en", name: "Englisch", flag: "🇬🇧" },
+  { code: "en-US", name: "Englisch (US)", flag: "🇺🇸" },
+  { code: "es", name: "Spanisch", flag: "🇪🇸" },
+  { code: "pt", name: "Portugiesisch", flag: "🇵🇹" },
+  { code: "nl", name: "Niederländisch", flag: "🇳🇱" },
+  { code: "pl", name: "Polnisch", flag: "🇵🇱" },
+  { code: "tr", name: "Türkisch", flag: "🇹🇷" },
+  { code: "sq", name: "Albanisch", flag: "🇦🇱" },
+  { code: "hr", name: "Kroatisch", flag: "🇭🇷" },
+  { code: "sr", name: "Serbisch", flag: "🇷🇸" },
+  { code: "uk", name: "Ukrainisch", flag: "🇺🇦" },
+  { code: "ru", name: "Russisch", flag: "🇷🇺" },
+  { code: "el", name: "Griechisch", flag: "🇬🇷" },
+  { code: "sv", name: "Schwedisch", flag: "🇸🇪" },
+  { code: "da", name: "Dänisch", flag: "🇩🇰" },
+  { code: "no", name: "Norwegisch", flag: "🇳🇴" },
+  { code: "fi", name: "Finnisch", flag: "🇫🇮" },
+  { code: "zh", name: "Chinesisch", flag: "🇨🇳" },
+  { code: "ja", name: "Japanisch", flag: "🇯🇵" },
+  { code: "ko", name: "Koreanisch", flag: "🇰🇷" },
+  { code: "ar", name: "Arabisch", flag: "🇸🇦" },
+  { code: "hi", name: "Hindi", flag: "🇮🇳" },
 ];
-const FLAGS = ["🇨🇭", "🇩🇪", "🇦🇹", "🇫🇷", "🇮🇹", "🇬🇧", "🇺🇸", "🇪🇸", "🇵🇹", "🇳🇱", "🇵🇱", "🇹🇷", "🇦🇱", "🇭🇷", "🇷🇸", "🇺🇦", "🏳️"];
 
 export function suggestFlag(name: string): string {
-  const n = name.trim().toLowerCase();
-  const hit = SUGGEST.find(([s]) => s.toLowerCase() === n);
-  if (hit) return hit[1];
-  if (/^(english|englisch)/.test(n)) return "🇬🇧";
-  if (/^(french|franz)/.test(n)) return "🇫🇷";
-  if (/^(ital)/.test(n)) return "🇮🇹";
-  if (/^(german|deutsch|hochdeutsch)/.test(n)) return "🇩🇪";
-  if (/(schweiz|swiss|mundart|romanisch|rumantsch)/.test(n)) return "🇨🇭";
-  return "🏳️";
+  return LANGUAGE_LIST.find((l) => l.name.toLowerCase() === name.trim().toLowerCase())?.flag ?? "🏳️";
 }
 
 /** tabs + (for the team) «+ Sprache» and editing */
@@ -156,34 +169,21 @@ export function LanguageTabs({
       </div>
       {editable && form && (
         <div data-lang-form className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm">
-          <input
+          <select
             autoFocus
-            list="subshot-language-names"
+            data-lang-select
             value={form.name}
-            placeholder="Sprache, z. B. Französisch"
-            onChange={(e) => setForm((f) => (f ? { ...f, name: e.target.value, flag: f.flagTouched ? f.flag : suggestFlag(e.target.value) } : f))}
-            onKeyDown={(e) => e.key === "Enter" && void save()}
-            className="w-52 rounded-md bg-white/10 px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-400"
-          />
-          <datalist id="subshot-language-names">
-            {SUGGEST.map(([n]) => (
-              <option key={n} value={n} />
+            onChange={(e) => setForm((f) => (f ? { ...f, name: e.target.value, flag: suggestFlag(e.target.value) } : f))}
+            className="w-60 rounded-md bg-white/10 px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">Sprache wählen …</option>
+            {LANGUAGE_LIST.filter((l) => l.name === form.name || !data.languages.some((x) => x.name === l.name)).map((l) => (
+              <option key={l.code} value={l.name}>
+                {l.flag} {l.name}
+              </option>
             ))}
-          </datalist>
-          <span className="text-white/45">Flagge:</span>
-          <input
-            data-lang-flag
-            value={form.flag}
-            onChange={(e) => setForm((f) => (f ? { ...f, flag: e.target.value, flagTouched: true } : f))}
-            className="w-14 rounded-md bg-white/10 px-2 py-1.5 text-center outline-none"
-          />
-          <span className="flex flex-wrap gap-0.5">
-            {FLAGS.map((fl) => (
-              <button key={fl} type="button" onClick={() => setForm((f) => (f ? { ...f, flag: fl, flagTouched: true } : f))} className={`rounded px-1 text-base ${form.flag === fl ? "bg-white/20" : "hover:bg-white/10"}`}>
-                {fl}
-              </button>
-            ))}
-          </span>
+            {form.name && !LANGUAGE_LIST.some((l) => l.name === form.name) && <option value={form.name}>{form.flag} {form.name}</option>}
+          </select>
           <span className="flex-1" />
           {form.id && (
             <button
@@ -226,6 +226,9 @@ const CODES: Record<string, string> = {
   french: "FR", italienisch: "IT", italian: "IT", englisch: "EN", english: "EN", "rätoromanisch": "RM", romanisch: "RM", spanisch: "ES", portugiesisch: "PT",
   "niederländisch": "NL", polnisch: "PL", "türkisch": "TR", albanisch: "SQ", kroatisch: "HR", serbisch: "SR", ukrainisch: "UK", russisch: "RU",
 };
+/** 2026-11-13, Lino: language and format badge exactly the same height and on one line (the flag can't stretch it) */
+const BADGE = "inline-flex h-5 items-center gap-1 rounded-full px-2 text-[11px] font-semibold leading-none whitespace-nowrap backdrop-blur-sm ring-1 shadow-sm box-border";
+
 /** «🇩🇪 DE» — the short code of a language name */
 export function langCode(name: string): string {
   const n = name.trim().toLowerCase();
@@ -249,14 +252,14 @@ export function LanguageBadge({
   revealOnHover?: boolean;
 }) {
   const badge = current ? (
-    <span data-lang-badge={current.id} title={current.name} className="inline-flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[11px] font-semibold text-white ring-1 ring-white/15 shadow-sm">
-      <span className="text-[13px] leading-none">{current.flag}</span>
+    <span data-lang-badge={current.id} title={current.name} className={`${BADGE} bg-black/60 text-white ring-white/15`}>
+      <span className="text-[12px] leading-none">{current.flag}</span>
       {langCode(current.name)}
     </span>
   ) : (
     <span
       data-lang-badge=""
-      className={`inline-flex items-center gap-1 rounded-full bg-black/50 backdrop-blur-sm px-2 py-0.5 text-[11px] font-medium text-white/80 ring-1 ring-dashed ring-white/25 transition-opacity ${revealOnHover ? "opacity-0 group-hover/thumb:opacity-100" : ""}`}
+      className={`${BADGE} bg-black/50 text-white/80 ring-white/25 transition-opacity ${revealOnHover ? "opacity-0 group-hover/thumb:opacity-100" : ""}`}
     >
       ＋ Sprache
     </span>
@@ -264,7 +267,7 @@ export function LanguageBadge({
   if (!onChange) return current ? badge : null;
   return (
     <span onClick={(e) => e.stopPropagation()} className="inline-flex">
-      <Menu portal align="start" trigger={<span className="cursor-pointer hover:brightness-125">{badge}</span>}>
+      <Menu portal align="start" trigger={<span className="inline-flex cursor-pointer hover:brightness-125">{badge}</span>}>
         {(close) => <LanguageMenuItems current={current?.id ?? null} languages={languages} onPick={(id) => { onChange(id); close(); }} onNew={onNew ? () => { onNew(); close(); } : undefined} />}
       </Menu>
     </span>
@@ -356,7 +359,7 @@ export function FormatIcon({ f }: { f: string }) {
 export function FormatBadge({ f }: { f?: string }) {
   if (!f) return null;
   return (
-    <span data-format-badge={f} className="inline-flex items-center gap-1 rounded-full bg-black/60 backdrop-blur-sm px-2 py-0.5 text-[11px] font-semibold text-white/90 ring-1 ring-white/15 shadow-sm">
+    <span data-format-badge={f} className={`${BADGE} bg-black/60 text-white/90 ring-white/15`}>
       {formatKey(f) === "other" ? f : f}
     </span>
   );

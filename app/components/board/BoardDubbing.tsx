@@ -749,7 +749,8 @@ export function DubbingStudio({
   // 2026-11-12, Lino: «Videoton an / aus» while recording (remembered per person; the count-in beeps stay audible)
   const [videoSound, setVideoSound] = useState(() => {
     try {
-      return localStorage.getItem("subshot-dubbing-video-sound") !== "0";
+      // 2026-11-13, Lino: the original must never end up in a take — off unless the person turned it on
+      return localStorage.getItem("subshot-dubbing-video-sound") === "1";
     } catch {
       return true;
     }
@@ -765,6 +766,7 @@ export function DubbingStudio({
     });
   }
   const videoSoundRef = useRef(videoSound);
+  // the microphone is opened with echo cancellation while the video is audible (see DubRecorder.open)
   useEffect(() => {
     videoSoundRef.current = videoSound;
     // switched while recording → takes effect right away
@@ -912,7 +914,7 @@ export function DubbingStudio({
     recRef.current = rec;
     let raf = 0;
     rec
-      .open(mic)
+      .open(mic, videoSound)
       .then(() => {
         const tick = () => {
           setLevel(rec.level());
@@ -925,7 +927,7 @@ export function DubbingStudio({
       cancelAnimationFrame(raf);
       rec.close();
     };
-  }, [mic]);
+  }, [mic, videoSound]);
   // takes that never reached the server (crash, network) are uploaded again
   useEffect(() => {
     void pendingBackups(nodeKey).then(async (list) => {
@@ -1260,12 +1262,18 @@ export function DubbingStudio({
                 type="button"
                 data-video-sound
                 aria-pressed={videoSound}
+                disabled={phase !== "idle"}
                 onClick={toggleVideoSound}
                 title="Videoton während der Aufnahme"
                 className={`rounded-xl py-2 text-sm font-semibold border ${videoSound ? "border-white/15 bg-white/10 text-white" : "border-amber-300/40 bg-amber-300/15 text-amber-200"}`}
               >
                 {videoSound ? "🔊 Videoton an" : "🔇 Videoton aus"}
               </button>
+              {videoSound && (
+                <p data-video-sound-hint className="-mt-1 text-[11px] leading-snug text-amber-200/80">
+                  🎧 Bitte mit Kopfhörern – über Lautsprecher kann der Videoton sonst trotz Echo-Unterdrückung in den Take gelangen.
+                </p>
+              )}
               {phase === "rec" ? (
                 <button type="button" onClick={() => stopRef.current?.()} className="rounded-xl bg-white text-black py-3 font-bold">
                   ■ Stopp

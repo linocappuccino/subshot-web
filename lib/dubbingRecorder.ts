@@ -51,12 +51,14 @@ export class DubRecorder {
   private captured = 0;
   private markAt: number | null = null;
 
-  async open(deviceId: string | null) {
+  /** echo = 2026-11-13 (Lino: «nie Originalton in den Takes»): with the video audible during the take the browser's
+   * echo cancellation removes the page's own playback from the microphone; without it the voice stays untouched */
+  async open(deviceId: string | null, echo = false) {
     this.close();
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         deviceId: deviceId ? { exact: deviceId } : undefined,
-        echoCancellation: false,
+        echoCancellation: echo,
         noiseSuppression: false,
         autoGainControl: false,
         channelCount: 1,
