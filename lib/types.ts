@@ -528,6 +528,7 @@ export interface SharedVideoPreviewData {
   /** 2026-11-13, Lino: languages of the Post-Production page (tabs on the preview, filter only) */
   languages?: { id: string; name: string; flag: string; sort_order: number; count: number }[];
   video_languages?: Record<string, string>;
+  video_formats?: Record<string, string>;
 }
 
 /** Up to 10 images per Idea (2026-07-16) — uploaded or AI-generated (Gemini/
