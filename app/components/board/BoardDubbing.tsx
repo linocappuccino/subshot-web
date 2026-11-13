@@ -106,15 +106,48 @@ export function DubbingNode({
   }, [reload]);
   const curLang = el.languages.includes(lang) ? lang : el.languages[0] ?? "";
 
-  // quick check «Aufnahme»: the picture muted, the chosen take of the section under the playhead
+  // quick check «Aufnahme» (2026-11-13, Lino): the original sound plays where nothing is recorded; inside a section
+  // with a take (★, else the newest) the original fades out (~40 ms, no clicks) and only the take plays, in sync.
+  // «KI-Dubbing»: ONE full-length audio from 00:00, the original muted throughout.
+  const fadeRef = useRef<{ raf: number; target: number } | null>(null);
+  const levelRef = useRef(1); // the last target — only a change fades (the player's own mute button stays usable)
+  function fadeVideo(v: HTMLVideoElement, target: number) {
+    if (levelRef.current === target) return;
+    levelRef.current = target;
+    if (fadeRef.current) cancelAnimationFrame(fadeRef.current.raf);
+    if (target > 0) v.muted = false;
+    const from = v.muted ? 0 : v.volume;
+    const t0 = performance.now();
+    const step = () => {
+      const k = Math.min(1, (performance.now() - t0) / 40);
+      try {
+        v.volume = from + (target - from) * k;
+      } catch {
+        // iOS: volume is read-only — the mute below does it
+      }
+      if (k < 1) {
+        fadeRef.current = { raf: requestAnimationFrame(step), target };
+        return;
+      }
+      fadeRef.current = null;
+      if (target === 0) v.muted = true;
+    };
+    fadeRef.current = { raf: requestAnimationFrame(step), target };
+  }
   function syncTake() {
     const v = videoRef.current;
     const a = audioRef.current;
-    if (!v || !a || mode === "original") return;
-    // «KI-Dubbing»: ONE full-length audio from 00:00; «Aufnahme»: the chosen take of the section under the playhead
+    if (!v || !a) return;
+    if (mode === "original") {
+      if (!a.paused) a.pause();
+      fadeVideo(v, 1);
+      return;
+    }
     const aiTake = mode === "ai" ? takes.find((t) => t.source === "ai" && t.lang === curLang) ?? null : null;
     const sec = mode === "ai" ? (aiTake ? { id: "__full__", start: 0, end: Number.MAX_VALUE } : undefined) : el.sections.find((s) => v.currentTime >= s.start && v.currentTime < s.end);
     const take = mode === "ai" ? aiTake : sec ? chosen(takes.filter((t) => t.source !== "ai"), sec.id, curLang) : null;
+    // the original: silent with a take here (and always for «KI-Dubbing»), otherwise back
+    fadeVideo(v, take || mode === "ai" ? 0 : 1);
     if (!sec || !take || v.paused) {
       if (!a.paused) a.pause();
       return;
@@ -124,9 +157,29 @@ export function DubbingNode({
       a.dataset.take = take.id;
     }
     const want = v.currentTime - sec.start;
-    if (Math.abs(a.currentTime - want) > 0.15) a.currentTime = want;
+    if (a.duration && want >= a.duration) {
+      if (!a.paused) a.pause();
+      return;
+    }
+    if (Math.abs(a.currentTime - want) > 0.08) a.currentTime = want;
     if (a.paused) void a.play().catch(() => {});
   }
+  // while playing: check every frame (section edges exact, not only every 250 ms like timeupdate)
+  const syncRef = useRef(syncTake);
+  useLayoutEffect(() => {
+    syncRef.current = syncTake;
+  });
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const v = videoRef.current;
+      if (v && !v.paused) syncRef.current();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    syncRef.current();
+    return () => cancelAnimationFrame(raf);
+  }, [mode]);
 
   if (!api) return null; // client share pages: not here (phase 2 brings the speaker link)
 
@@ -199,7 +252,6 @@ export function DubbingNode({
             src={el.src ?? undefined}
             controls
             playsInline
-            muted={mode !== "original"}
             data-dubbing-video
             className="block w-full h-auto rounded-xl bg-black"
             style={el.video_ar ? { aspectRatio: String(el.video_ar) } : undefined}
