@@ -1088,7 +1088,7 @@ export function DubbingStudio({
         <div className="flex-1 min-w-0 min-h-0 max-md:min-h-[calc(100dvh-56px)] flex flex-col p-3 md:p-4 gap-3">
           <div ref={areaRef} className={`flex-1 min-h-0 flex gap-3 ${wide ? "flex-row items-center" : "flex-col"}`}>
             <div className={wide ? "flex-1 min-w-0 flex flex-col justify-center gap-1.5" : "shrink-0 flex flex-col gap-1.5"} style={wide ? { height: box.h || undefined } : undefined}>
-              <div className="flex justify-end items-center gap-3">
+              <div className="flex flex-wrap justify-end items-center gap-x-3 gap-y-1">
                 {overlay && (
                   <label className="flex items-center gap-2 text-xs text-white/70" title="Deckkraft vom Text über dem Video">
                     Deckkraft
@@ -1102,7 +1102,7 @@ export function DubbingStudio({
                       onChange={(e) => changeOverlayOpacity(Number(e.target.value) / 100)}
                       className="w-24 accent-rose-500"
                     />
-                    <span className="w-8 tabular-nums text-right">{Math.round(overlayOpacity * 100)} %</span>
+                    <span className="w-10 tabular-nums text-right whitespace-nowrap">{Math.round(overlayOpacity * 100)} %</span>
                   </label>
                 )}
                 {overlay && (
@@ -1124,7 +1124,7 @@ export function DubbingStudio({
                   type="button"
                   data-overlay-toggle
                   onClick={toggleOverlay}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${overlay ? "bg-rose-500 text-white" : "bg-white/10 text-white/70 hover:bg-white/15"}`}
+                  className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${overlay ? "bg-rose-500 text-white" : "bg-white/10 text-white/70 hover:bg-white/15"}`}
                 >
                   {overlay ? "✓ Text über Video" : "Text über Video"}
                 </button>
