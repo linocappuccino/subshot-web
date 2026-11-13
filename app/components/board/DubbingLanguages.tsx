@@ -113,7 +113,8 @@ function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string
       }
     >
       {(close) => (
-        <div data-dub-lang-menu className="w-60 p-1 text-sm">
+        // the menu lives in a portal: React events still bubble to the canvas tile (which grabs the pointer for dragging)
+        <div data-dub-lang-menu data-no-drag className="w-60 p-1 text-sm" onPointerDown={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {free.map(([c, name, flag]) => (
             <button
               key={c}

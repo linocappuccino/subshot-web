@@ -135,7 +135,8 @@ export function Menu({
         // overlay z-index in this app (Modal z-50, IdeaFocusView z-[70]).
         // Non-portal menus keep z-30 (nested inside whatever they trigger
         // from, never siblings-with-a-modal the same way).
-        portal ? cn("fixed", "z-[100]") : cn("z-30 absolute", direction === "up" ? "bottom-full mb-1.5" : "mt-1.5", align === "end" ? "right-0" : "left-0")
+        // 2026-11-13: above the full-screen Live-Dubbing studio (z-[9999]) too
+        portal ? cn("fixed", "z-[10050]") : cn("z-30 absolute", direction === "up" ? "bottom-full mb-1.5" : "mt-1.5", align === "end" ? "right-0" : "left-0")
       )}
     >
       {children(() => setOpen(false))}
