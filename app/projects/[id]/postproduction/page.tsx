@@ -28,7 +28,8 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
-import { LanguageTabs, matchesTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { FormatBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { Menu } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -85,9 +86,13 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-11-13, Lino: languages — tabs «Alle» / per language / «Nicht zugeordnet», assign (also several at once)
   const [langs, setLangs] = useState<LanguagesOverview>({ languages: [], assignments: {}, unassigned: 0 });
   const [langTab, setLangTab] = useState<LanguageTab>("all");
+  // 2026-11-13, Lino: second filter — the format (combinable with the language)
+  const [fmtTab, setFmtTab] = useState<FormatTab>("all");
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [pickLang, setPickLang] = useState<string>("");
+  // «+ Neue Sprache» from a video's badge / the action bar: open the form, then assign these videos to it
+  const [newLangRequest, setNewLangRequest] = useState(0);
+  const pendingAssign = useRef<string[] | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -1009,7 +1014,16 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             editable={canEditStatus}
             onCreate={async (name, flag) => {
               try {
-                setLangs(await api.createProjectLanguage(id, name, flag));
+                const before = new Set(langs.languages.map((l) => l.id));
+                const next = await api.createProjectLanguage(id, name, flag);
+                setLangs(next);
+                const made = next.languages.find((l) => !before.has(l.id));
+                const ids = pendingAssign.current;
+                pendingAssign.current = null;
+                if (made && ids?.length) {
+                  await assignLang(ids, made.id);
+                  setPicked(new Set());
+                }
               } catch (e) {
                 toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht angelegt werden.");
               }
@@ -1029,43 +1043,25 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gelöscht werden.");
               }
             }}
+            newRequest={newLangRequest}
+            onDropVideos={canEditStatus ? (lid, ids) => void assignLang(ids, lid) : undefined}
           />
         )}
-        {!manualOrder && !loading && langTab !== "all" && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments))) && (
-          <p data-lang-empty className="mb-4 text-sm text-white/40">
-            {langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
-          </p>
+        {!manualOrder && !loading && (
+          <FormatTabs
+            videoIds={Object.values(videosBySection).flat().map((v) => v.id).filter((vid) => matchesTab(vid, langTab, langs.assignments))}
+            formats={langs.formats ?? {}}
+            tab={fmtTab}
+            onTab={(t) => {
+              setFmtTab(t);
+              setPicked(new Set());
+            }}
+          />
         )}
-        {canEditStatus && picked.size > 0 && (
-          <div data-lang-selection className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-500/10 px-4 py-2.5 text-sm">
-            <span className="font-semibold">{picked.size} ausgewählt</span>
-            <span className="text-white/50">Sprache:</span>
-            <select data-lang-assign-select value={pickLang} onChange={(e) => setPickLang(e.target.value)} className="rounded-md bg-white/10 px-2 py-1 outline-none">
-              <option value="">— wählen —</option>
-              {langs.languages.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.flag} {l.name}
-                </option>
-              ))}
-              <option value="__none__">Nicht zugeordnet</option>
-            </select>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!pickLang}
-              onClick={() => {
-                void assignLang([...picked], pickLang === "__none__" ? null : pickLang).then(() => {
-                  setPicked(new Set());
-                  setPickLang("");
-                });
-              }}
-            >
-              Zuweisen
-            </Button>
-            <button type="button" onClick={() => setPicked(new Set())} className="text-white/50 hover:text-white">
-              Auswahl aufheben
-            </button>
-          </div>
+        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}))) && (
+          <p data-lang-empty className="mb-4 text-sm text-white/40">
+            {fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
+          </p>
         )}
         {canEditStatus && !manualOrder && !loading && (
           <div
@@ -1190,53 +1186,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           <div className="flex flex-wrap gap-4 items-start">
             {sections.flatMap((section) => {
               const all = videosBySection[section.id] ?? [];
-              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments));
-              // a language tab shows only its videos (no empty «+ Video» boxes of other sections)
-              if (langTab !== "all" && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
+              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}));
+              // a filter shows only its videos (no empty «+ Video» boxes of other sections)
+              if ((langTab !== "all" || fmtTab !== "all") && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
               const tiles = videos.map((video) => {
                 const lang = langs.languages.find((l) => l.id === langs.assignments[video.id]);
                 return (
-                <div key={video.id} data-video-lang={lang?.id ?? ""} className="relative">
-                  {(canEditStatus || lang) && (
-                    <div className="absolute -top-2.5 left-2 z-10 flex items-center gap-1">
-                      {canEditStatus && (
-                        <input
-                          type="checkbox"
-                          data-video-pick={video.id}
-                          title="Für «Sprache zuweisen» auswählen"
-                          checked={picked.has(video.id)}
-                          onChange={(e) =>
-                            setPicked((p) => {
-                              const n = new Set(p);
-                              if (e.target.checked) n.add(video.id);
-                              else n.delete(video.id);
-                              return n;
-                            })
-                          }
-                          className="h-4 w-4 accent-blue-500"
-                        />
-                      )}
-                      <span className="relative inline-flex items-center rounded-full bg-black/80 border border-white/15 px-2 py-0.5 text-xs" title={lang ? lang.name : "Nicht zugeordnet"}>
-                        {lang ? lang.flag : canEditStatus ? "＋ Sprache" : ""}
-                        {canEditStatus && (
-                          <select
-                            data-video-lang-select={video.id}
-                            value={lang?.id ?? ""}
-                            onChange={(e) => void assignLang([video.id], e.target.value || null)}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            aria-label="Sprache"
-                          >
-                            <option value="">Nicht zugeordnet</option>
-                            {langs.languages.map((l) => (
-                              <option key={l.id} value={l.id}>
-                                {l.flag} {l.name}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </span>
-                    </div>
-                  )}
+                // «contents»: the tile stays a direct flex item (its width rules need the grid as parent)
+                <div key={video.id} data-video-lang={lang?.id ?? ""} className="contents">
                 <VideoTile
                   video={video}
                   status={section.postproduction_status}
@@ -1267,6 +1224,42 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   onOpenQc={canEditStatus && newestVersion(video) ? () => setQcFor(video) : undefined}
                   roundsBadge={rounds?.videos[video.id] ? { used: rounds.videos[video.id].used, limit: rounds.videos[video.id].limit } : null}
                   onOpenRounds={canEditStatus ? () => setRoundsFor(video) : undefined}
+                  languageBadge={
+                    <span className="flex items-center gap-1">
+                    <LanguageBadge
+                      current={lang ?? null}
+                      languages={langs.languages}
+                      revealOnHover
+                      onChange={canEditStatus ? (lid) => void assignLang([video.id], lid) : undefined}
+                      onNew={
+                        canEditStatus
+                          ? () => {
+                              pendingAssign.current = [video.id];
+                              setNewLangRequest((n) => n + 1);
+                            }
+                          : undefined
+                      }
+                    />
+                    <FormatBadge f={langs.formats?.[video.id]} />
+                    </span>
+                  }
+                  // drag onto a language tab = assign (all ticked ones, if this one is among them)
+                  dragVideoIds={canEditStatus ? () => (picked.has(video.id) ? [...picked] : [video.id]) : undefined}
+                  selectBox={
+                    canEditStatus
+                      ? {
+                          checked: picked.has(video.id),
+                          active: picked.size > 0,
+                          onToggle: () =>
+                            setPicked((p) => {
+                              const n = new Set(p);
+                              if (n.has(video.id)) n.delete(video.id);
+                              else n.add(video.id);
+                              return n;
+                            }),
+                        }
+                      : undefined
+                  }
                 />
                 </div>
                 );
@@ -1363,6 +1356,41 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           e.target.value = "";
         }}
       />
+      {canEditStatus && picked.size > 0 && (
+        <div data-lang-selection className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full bg-[#2a2b31] border border-white/10 shadow-2xl px-4 py-2 text-sm">
+          <span className="font-semibold tabular-nums">{picked.size} ausgewählt</span>
+          <span className="h-4 w-px bg-white/15" />
+          <Menu
+            portal
+            align="start"
+            direction="up"
+            trigger={
+              <span data-lang-assign className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-blue-500 hover:bg-blue-400 px-3 py-1 font-semibold text-white">
+                Sprache zuweisen <span className="text-xs">▾</span>
+              </span>
+            }
+          >
+            {(close) => (
+              <LanguageMenuItems
+                current={undefined}
+                languages={langs.languages}
+                onPick={(lid) => {
+                  void assignLang([...picked], lid).then(() => setPicked(new Set()));
+                  close();
+                }}
+                onNew={() => {
+                  pendingAssign.current = [...picked];
+                  setNewLangRequest((n) => n + 1);
+                  close();
+                }}
+              />
+            )}
+          </Menu>
+          <button type="button" onClick={() => setPicked(new Set())} className="text-white/55 hover:text-white">
+            Abbrechen
+          </button>
+        </div>
+      )}
       <ShareLinkModal
         open={showShareModal}
         onClose={() => setShowShareModal(false)}

@@ -85,7 +85,14 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
   showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
+  languageBadge, selectBox, dragVideoIds,
 }: {
+  /** 2026-11-13: drag the tile onto a language tab (the ids to assign: this one, or every ticked one) */
+  dragVideoIds?: () => string[];
+  /** 2026-11-13, Lino: the video's language as a badge on the picture (bottom left) */
+  languageBadge?: React.ReactNode;
+  /** 2026-11-13: tick box for «Sprache zuweisen» on several videos — shown on hover or while selecting */
+  selectBox?: { checked: boolean; active: boolean; onToggle: () => void };
   video: Video;
   status: PostproductionStatus | null;
   deadline: string | null;
@@ -298,6 +305,15 @@ export function VideoTile({
     // schnell sein" direction — reorders now snap instantly, no animation.
     <div
       ref={sortable?.setNodeRef}
+      draggable={dragVideoIds ? true : undefined}
+      onDragStart={
+        dragVideoIds
+          ? (e) => {
+              e.dataTransfer.setData("application/x-subshot-videos", JSON.stringify(dragVideoIds()));
+              e.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       style={{ width: tileWidthCss, ...sortable?.style, opacity: sortable?.isDragging ? 0.4 : 1 }}
       // 2026-08-25, Lino: "jede kachel soll bildschirmbreit sein für mobile, und untereinander" —
       // `max-sm:w-full!` overrides the inline `tileWidthCss` (Tailwind's `!` beats inline styles)
@@ -357,7 +373,7 @@ export function VideoTile({
         // the outer wrapper now stretched to 100% width (see its own comment), `aspectRatio`
         // alone computes this box's height FROM that full width instead, same native CSS
         // aspect-ratio behavior as before just with width/height roles swapped for mobile.
-        className={`relative overflow-hidden rounded-t-xl cursor-pointer ${isSixteenByNine ? "h-auto!" : "max-sm:h-auto!"}`}
+        className={`group/thumb relative overflow-hidden rounded-t-xl cursor-pointer ${isSixteenByNine ? "h-auto!" : "max-sm:h-auto!"}`}
       >
         {showFilmstripFrame ? (
           <div
@@ -379,6 +395,26 @@ export function VideoTile({
         )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+        {languageBadge && <div className="absolute bottom-2 left-2 z-[2]">{languageBadge}</div>}
+        {selectBox && (
+          <button
+            type="button"
+            data-video-pick={video.id}
+            aria-pressed={selectBox.checked}
+            title="Auswählen"
+            onClick={(e) => {
+              e.stopPropagation();
+              selectBox.onToggle();
+            }}
+            className={`absolute top-2 ${onUploadVersion ? "left-10" : "left-2"} z-[2] flex h-6 w-6 items-center justify-center rounded-full ring-2 transition-all ${
+              selectBox.checked
+                ? "bg-blue-500 ring-blue-300 text-white opacity-100"
+                : `bg-black/40 ring-white/70 text-transparent hover:bg-black/60 ${selectBox.active ? "opacity-100" : "opacity-0 group-hover/thumb:opacity-100"}`
+            }`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+          </button>
+        )}
 
         {/* 2026-07-17, Lino: "der Titel des Videos / idee soll unter dem
             Video dargestellt werden dann status dann deadline" — Titel/

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { VideoTile } from "@/app/components/VideoTile";
-import { LanguageTabs, matchesTab, type LanguageTab } from "@/app/components/PostproLanguages";
+import { FormatBadge, FormatTabs, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
@@ -119,6 +119,7 @@ function PreviewVideoPageInner() {
 
   // 2026-11-13, Lino: the client clicks through the languages too (filter only, no assigning)
   const [langTab, setLangTab] = useState<LanguageTab>("all");
+  const [fmtTab, setFmtTab] = useState<FormatTab>("all");
   const sectionById = useMemo(() => {
     const map = new Map<string, SharedVideoPreviewData["sections"][number]>();
     data?.sections.forEach((s) => map.set(s.id, s));
@@ -139,7 +140,8 @@ function PreviewVideoPageInner() {
   // client sees) impossible to achieve from here. `data.videos` is now
   // rendered in the order the backend already sends it, unsorted.
   const assignments = data?.video_languages ?? {};
-  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments));
+  const formats = data?.video_formats ?? {};
+  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats));
 
   if (needsPassword) {
     return (
@@ -224,17 +226,13 @@ function PreviewVideoPageInner() {
               hideEmptyUnassigned
             />
           )}
+          <FormatTabs videoIds={data.videos.map((v) => v.id).filter((vid) => matchesTab(vid, langTab, assignments))} formats={formats} tab={fmtTab} onTab={setFmtTab} />
           <div className="flex flex-wrap gap-4 items-start">
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);
               const lang = (data.languages ?? []).find((l) => l.id === assignments[video.id]);
               return (
-                <div key={video.id} data-video-lang={lang?.id ?? ""} className="relative">
-                {lang && (
-                  <span className="absolute -top-2.5 left-2 z-10 rounded-full bg-black/80 border border-white/15 px-2 py-0.5 text-xs" title={lang.name}>
-                    {lang.flag}
-                  </span>
-                )}
+                <div key={video.id} data-video-lang={lang?.id ?? ""} className="contents">
                 <VideoTile
                   video={video}
                   status={section?.postproduction_status ?? null}
@@ -245,6 +243,14 @@ function PreviewVideoPageInner() {
                   onChangeStatus={() => {}}
                   onChangeDeadline={() => {}}
                   showDeadlineLabel
+                  languageBadge={
+                    lang || formats[video.id] ? (
+                      <span className="flex items-center gap-1">
+                        <LanguageBadge current={lang ?? null} languages={[]} />
+                        <FormatBadge f={formats[video.id]} />
+                      </span>
+                    ) : undefined
+                  }
                 />
                 </div>
               );
