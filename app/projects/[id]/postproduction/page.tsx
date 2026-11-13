@@ -1183,7 +1183,18 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           // videogrösse anpassen (gibt ja nur 9:16 und 16:9)" — flex-wrap
           // statt CSS-Grid, jede Kachel bringt ihre eigene Breite mit
           // (siehe VideoTile's TILE_HEIGHT-Rechnung).
-          <div className="flex flex-wrap gap-4 items-start">
+          <div
+            className="flex flex-wrap gap-4 items-start"
+            // 2026-11-13, Lino: files dropped NEXT TO the tiles = new videos (onto a tile = new version, see VideoTile)
+            onDragOver={(e) => {
+              if (canEditStatus && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
+            }}
+            onDrop={(e) => {
+              if (!canEditStatus || ![...e.dataTransfer.types].includes("Files")) return;
+              e.preventDefault();
+              void uploadMany([...e.dataTransfer.files]);
+            }}
+          >
             {sections.flatMap((section) => {
               const all = videosBySection[section.id] ?? [];
               const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}));
@@ -1244,6 +1255,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                     </span>
                   }
                   // drag onto a language tab = assign (all ticked ones, if this one is among them)
+                  onDropRejected={(msg) => toast.showError(msg)}
                   dragVideoIds={canEditStatus ? () => (picked.has(video.id) ? [...picked] : [video.id]) : undefined}
                   selectBox={
                     canEditStatus

@@ -85,8 +85,10 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
   showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
-  languageBadge, selectBox, dragVideoIds,
+  languageBadge, selectBox, dragVideoIds, onDropRejected,
 }: {
+  /** 2026-11-13, Lino: a file dragged from the desktop onto the tile = NEW VERSION (uses onUploadVersion); errors here */
+  onDropRejected?: (message: string) => void;
   /** 2026-11-13: drag the tile onto a language tab (the ids to assign: this one, or every ticked one) */
   dragVideoIds?: () => string[];
   /** 2026-11-13, Lino: the video's language as a badge on the picture (bottom left) */
@@ -251,6 +253,38 @@ export function VideoTile({
   // already has known filmstrip dimensions — only true first-ever uploads
   // (no version has ever finished processing yet) still see the 16:9
   // placeholder.
+  const [fileOver, setFileOver] = useState(false);
+  const nextVersionNo = Math.max(0, ...video.versions.map((v) => v.version_number ?? 0)) + 1;
+  const isFileDrag = (e: React.DragEvent) => [...e.dataTransfer.types].includes("Files");
+  const fileDrop = onUploadVersion
+    ? {
+        onDragOver: (e: React.DragEvent) => {
+          if (!isFileDrag(e)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "copy";
+          if (!fileOver) setFileOver(true);
+        },
+        onDragLeave: (e: React.DragEvent) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileOver(false);
+        },
+        onDrop: (e: React.DragEvent) => {
+          if (!isFileDrag(e)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setFileOver(false);
+          const files = [...e.dataTransfer.files];
+          const file = files[0];
+          if (!file) return;
+          if (!(file.type.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(file.name))) {
+            onDropRejected?.(`«${file.name}» ist kein Video (nur MP4, MOV oder WebM).`);
+            return;
+          }
+          if (files.length > 1) onDropRejected?.(`Nur eine Datei pro Version – «${file.name}» wird als V${nextVersionNo} hochgeladen.`);
+          onUploadVersion(file);
+        },
+      }
+    : {};
   const versionWithKnownAspect = [...readyVersions].reverse().find(
     (v) => v.filmstrip_frame_width && v.filmstrip_frame_height
   );
@@ -314,6 +348,8 @@ export function VideoTile({
             }
           : undefined
       }
+      {...fileDrop}
+      data-video-tile={video.id}
       style={{ width: tileWidthCss, ...sortable?.style, opacity: sortable?.isDragging ? 0.4 : 1 }}
       // 2026-08-25, Lino: "jede kachel soll bildschirmbreit sein für mobile, und untereinander" —
       // `max-sm:w-full!` overrides the inline `tileWidthCss` (Tailwind's `!` beats inline styles)
@@ -396,6 +432,12 @@ export function VideoTile({
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
         {languageBadge && <div className="absolute bottom-2 left-2 z-[2]">{languageBadge}</div>}
+        {fileOver && (
+          <div data-version-drop className="absolute inset-0 z-[5] flex flex-col items-center justify-center gap-1.5 rounded-t-xl border-2 border-dashed border-blue-400 bg-blue-500/25 backdrop-blur-[2px] text-center pointer-events-none">
+            <span className="text-2xl leading-none">⬆︎</span>
+            <span className="text-sm font-semibold text-white">Als neue Version V{nextVersionNo} hochladen</span>
+          </div>
+        )}
         {selectBox && (
           <button
             type="button"
