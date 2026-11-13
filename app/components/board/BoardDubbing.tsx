@@ -1379,7 +1379,8 @@ function ScriptBox({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     const r = wrap.getBoundingClientRect();
-    const move = (ev: PointerEvent) => setWidth(Math.max(0.4, Math.min(1, (ev.clientX - r.left) / r.width)));
+    // 2026-11-13, Lino: the box stays fixed at the video side (right) — the handle sits on the LEFT edge
+    const move = (ev: PointerEvent) => setWidth(Math.max(0.4, Math.min(1, (r.right - ev.clientX) / r.width)));
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
@@ -1401,7 +1402,7 @@ function ScriptBox({
       title="Textbreite ziehen"
       onPointerDown={dragWidth}
       className="absolute top-2 bottom-2 w-3 -ml-1.5 cursor-ew-resize touch-none flex items-center justify-center group"
-      style={{ left: `${width * 100}%` }}
+      style={{ left: `${(1 - width) * 100}%` }}
     >
       <span className="h-10 w-1.5 rounded-full bg-white/25 group-hover:bg-rose-400" />
     </span>
@@ -1435,7 +1436,7 @@ function ScriptBox({
     let seen = 0;
     return (
       // 2026-11-13, Lino: line breaks of the script stay while recording (pre-wrap, like the textarea)
-      <div ref={wrapRef} className="relative w-full shrink-0">
+      <div ref={wrapRef} className="relative w-full shrink-0 flex justify-end">
       <div ref={boxRef} data-karaoke data-script-box className={`${frame} whitespace-pre-wrap break-words`} style={sized}>
         {text.trim() ? (
           words.map((w, i) => {
@@ -1456,7 +1457,7 @@ function ScriptBox({
     );
   }
   return (
-    <div ref={wrapRef} className="relative w-full shrink-0">
+    <div ref={wrapRef} className="relative w-full shrink-0 flex justify-end">
     <textarea
       data-karaoke
       data-script-box
