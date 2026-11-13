@@ -1031,6 +1031,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             }}
           />
         )}
+        {!manualOrder && !loading && langTab !== "all" && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments))) && (
+          <p data-lang-empty className="mb-4 text-sm text-white/40">
+            {langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
+          </p>
+        )}
         {canEditStatus && picked.size > 0 && (
           <div data-lang-selection className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-blue-400/30 bg-blue-500/10 px-4 py-2.5 text-sm">
             <span className="font-semibold">{picked.size} ausgewählt</span>
