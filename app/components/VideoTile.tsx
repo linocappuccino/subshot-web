@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Pill } from "./ui/Badge";
 import { Menu, MenuItem } from "./ui/Menu";
@@ -82,11 +82,35 @@ const TILE_HEIGHT_CSS = "var(--video-tile-h, clamp(220px, 22vw, 400px))";
  * in einem <button> verschachtelt — ungueltiges HTML, deshalb Root jetzt
  * ein <div>, nur die Thumbnail-Flaeche selbst ist klickbar). Versions-
  * Nummer als kleines Badge oben rechts im Thumbnail. */
+/** 2026-11-14, Lino: an even grid over the full content width (no empty strip on the right); portrait tiles take one
+ * column, landscape ones (16:9, 5:4) two — so rows of mixed formats stay about the same height */
+export const VIDEO_GRID = "grid gap-4 items-start";
+
+/** columns for VIDEO_GRID: as many ~200 px columns as fit; an even number while landscape tiles (2 columns each) are
+ * shown, so a row of only 16:9 tiles still reaches the right edge */
+export function useVideoGridCols(landscape: boolean): [React.RefCallback<HTMLDivElement>, React.CSSProperties] {
+  const [w, setW] = useState(0);
+  const ro = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((node: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    if (!node) return;
+    setW(node.clientWidth);
+    ro.current = new ResizeObserver(() => setW(node.clientWidth));
+    ro.current.observe(node);
+  }, []);
+  const GAP = 16;
+  let n = Math.max(1, Math.floor((w + GAP) / (200 + GAP)));
+  if (landscape && n > 2 && n % 2) n -= 1;
+  return [ref, { gridTemplateColumns: w ? `repeat(${n}, minmax(0, 1fr))` : "repeat(auto-fill, minmax(200px, 1fr))" }];
+}
+
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
   showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
-  languageBadge, selectBox, dragVideoIds, onDropRejected,
+  languageBadge, selectBox, dragVideoIds, onDropRejected, fill,
 }: {
+  /** 2026-11-14, Lino: inside the even grid (VIDEO_GRID) — the tile fills its cell(s), height from the format */
+  fill?: boolean;
   /** 2026-11-13, Lino: a file dragged from the desktop onto the tile = NEW VERSION (uses onUploadVersion); errors here */
   onDropRejected?: (message: string) => void;
   /** 2026-11-13: drag the tile onto a language tab (the ids to assign: this one, or every ticked one) */
@@ -350,7 +374,7 @@ export function VideoTile({
       }
       {...fileDrop}
       data-video-tile={video.id}
-      style={{ width: tileWidthCss, ...sortable?.style, opacity: sortable?.isDragging ? 0.4 : 1 }}
+      style={{ width: fill ? undefined : tileWidthCss, ...sortable?.style, opacity: sortable?.isDragging ? 0.4 : 1 }}
       // 2026-08-25, Lino: "jede kachel soll bildschirmbreit sein für mobile, und untereinander" —
       // `max-sm:w-full!` overrides the inline `tileWidthCss` (Tailwind's `!` beats inline styles)
       // below the `sm` breakpoint, so each tile takes the FULL width of the flex-wrap container
@@ -364,7 +388,7 @@ export function VideoTile({
       // this same `bg-[#1c1c1e]`, one step lighter than layout.tsx's `#161616` body) — not a new
       // color invented for this one component. The ambient status-glow blur just below this is a
       // separate, deliberate accent (also used on projects/page.tsx's project tiles) and untouched.
-      className={`relative flex flex-col rounded-xl border border-white/10 bg-[#1c1c1e] shrink-0 ${isSixteenByNine ? "w-full!" : "max-sm:w-full!"}`}
+      className={`relative flex flex-col rounded-xl border border-white/10 bg-[#1c1c1e] shrink-0 ${fill ? `w-full min-w-0 ${aspectRatio >= 1.2 ? "sm:col-span-2" : ""}` : isSixteenByNine ? "w-full!" : "max-sm:w-full!"}`}
     >
       {/* 2026-07-19 (Todoist #218) — same ambient-glow technique as the
           project tiles on projects/page.tsx (blurred color layer behind
@@ -404,12 +428,12 @@ export function VideoTile({
           setHovering(false);
           setFrameIndex(0);
         }}
-        style={{ height: TILE_HEIGHT_CSS, aspectRatio }}
+        style={fill ? { aspectRatio } : { height: TILE_HEIGHT_CSS, aspectRatio }}
         // max-sm:h-auto! overrides the inline fixed height below `sm` — with height freed up and
         // the outer wrapper now stretched to 100% width (see its own comment), `aspectRatio`
         // alone computes this box's height FROM that full width instead, same native CSS
         // aspect-ratio behavior as before just with width/height roles swapped for mobile.
-        className={`group/thumb relative overflow-hidden rounded-t-xl cursor-pointer ${isSixteenByNine ? "h-auto!" : "max-sm:h-auto!"}`}
+        className={`group/thumb relative overflow-hidden rounded-t-xl cursor-pointer ${fill ? "w-full" : isSixteenByNine ? "h-auto!" : "max-sm:h-auto!"}`}
       >
         {showFilmstripFrame ? (
           <div

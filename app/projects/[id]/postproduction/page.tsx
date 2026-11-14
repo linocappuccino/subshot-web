@@ -9,7 +9,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
 import { ShareLinkModal } from "@/app/components/ShareLinkModal";
-import { VideoTile } from "@/app/components/VideoTile";
+import { VIDEO_GRID, VideoTile, useVideoGridCols } from "@/app/components/VideoTile";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { subscribeToChanges } from "@/lib/realtime";
 import { setUrlParams } from "@/lib/urlState";
@@ -99,6 +99,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   const [langTab, setLangTab] = useState<LanguageTab>("all");
   // 2026-11-13, Lino: second filter — the format (combinable with the language)
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
+  // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // «+ Neue Sprache» from a video's badge / the action bar: open the form, then assign these videos to it
@@ -894,6 +895,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // Lookup maps for the manual-order grid below — that one renders from
   // the flat `manualOrder` id list, not from `sections`/`videosBySection`'s
   // own nesting, so it needs a video's owning section resolved by id.
+  const landscapeShown = Object.values(videosBySection)
+    .flat()
+    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
+  const [gridRef, gridStyle] = useVideoGridCols(landscapeShown);
   const videoById: Record<string, Video> = {};
   const sectionByVideoId: Record<string, Section> = {};
   for (const section of sections) {
@@ -1197,7 +1202,9 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           // statt CSS-Grid, jede Kachel bringt ihre eigene Breite mit
           // (siehe VideoTile's TILE_HEIGHT-Rechnung).
           <div
-            className="flex flex-wrap gap-4 items-start"
+            ref={gridRef}
+            className={VIDEO_GRID}
+            style={gridStyle}
             // 2026-11-13, Lino: files dropped NEXT TO the tiles = new videos (onto a tile = new version, see VideoTile)
             onDragOver={(e) => {
               if (canEditStatus && [...e.dataTransfer.types].includes("Files")) e.preventDefault();
@@ -1268,6 +1275,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                     </span>
                   }
                   // drag onto a language tab = assign (all ticked ones, if this one is among them)
+                  fill
                   onDropRejected={(msg) => toast.showError(msg)}
                   dragVideoIds={canEditStatus ? () => (picked.has(video.id) ? [...picked] : [video.id]) : undefined}
                   selectBox={
@@ -1303,8 +1311,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   tiles.push(
                     <div
                       key={`${section.id}-add`}
-                      style={{ width: (240 * 16) / 9, height: 240 }}
-                      className="flex shrink-0 flex-col items-center justify-center gap-3 rounded-xl border border-white/15 text-white/60 px-6"
+                      style={{ height: 240 }}
+                      className="w-full sm:col-span-2 flex shrink-0 flex-col items-center justify-center gap-3 rounded-xl border border-white/15 text-white/60 px-6"
                     >
                       <span className="text-sm font-medium">{t("postproduction.uploading", { percent: Math.round(progress * 100) })}</span>
                       <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -1324,8 +1332,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   tiles.push(
                     <label
                       key={`${section.id}-add`}
-                      style={{ width: (240 * 16) / 9, height: 240 }}
-                      className="flex shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 text-white/40 hover:text-white hover:border-white/30 transition-colors cursor-pointer"
+                      style={{ height: 240 }}
+                      className="w-full sm:col-span-2 flex shrink-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 text-white/40 hover:text-white hover:border-white/30 transition-colors cursor-pointer"
                     >
                       {/* 2026-07-18 (Todoist #189): clicking this box now opens
                           the OS file picker directly instead of just creating

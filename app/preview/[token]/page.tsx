@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { VideoTile } from "@/app/components/VideoTile";
+import { VIDEO_GRID, VideoTile, useVideoGridCols } from "@/app/components/VideoTile";
 import { FormatBadge, FormatTabs, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
@@ -120,6 +120,7 @@ function PreviewVideoPageInner() {
   // 2026-11-13, Lino: the client clicks through the languages too (filter only, no assigning)
   const [langTab, setLangTab] = useState<LanguageTab>("all");
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
+  const [gridRef, gridStyle] = useVideoGridCols((data?.videos ?? []).some((v) => ["16:9", "5:4"].includes((data?.video_formats ?? {})[v.id] ?? "16:9")));
   const sectionById = useMemo(() => {
     const map = new Map<string, SharedVideoPreviewData["sections"][number]>();
     data?.sections.forEach((s) => map.set(s.id, s));
@@ -227,7 +228,7 @@ function PreviewVideoPageInner() {
             />
           )}
           <FormatTabs videoIds={data.videos.map((v) => v.id).filter((vid) => matchesTab(vid, langTab, assignments))} formats={formats} tab={fmtTab} onTab={setFmtTab} />
-          <div className="flex flex-wrap gap-4 items-start">
+          <div ref={gridRef} className={VIDEO_GRID} style={gridStyle}>
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);
               const lang = (data.languages ?? []).find((l) => l.id === assignments[video.id]);
@@ -243,6 +244,7 @@ function PreviewVideoPageInner() {
                   onChangeStatus={() => {}}
                   onChangeDeadline={() => {}}
                   showDeadlineLabel
+                  fill
                   languageBadge={
                     lang || formats[video.id] ? (
                       <span className="flex items-center gap-1">
