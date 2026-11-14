@@ -28,7 +28,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
-import { FormatBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { formatOfDims, FormatBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -84,7 +84,18 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
 
   const [data, setData] = useState<ProjectDetail | null>(null);
   // 2026-11-13, Lino: languages — tabs «Alle» / per language / «Nicht zugeordnet», assign (also several at once)
-  const [langs, setLangs] = useState<LanguagesOverview>({ languages: [], assignments: {}, unassigned: 0 });
+  const [langs, setLangsRaw] = useState<LanguagesOverview>({ languages: [], assignments: {}, unassigned: 0 });
+  // 2026-11-14, Lino «wieso sortiert er das Footage nicht automatisch ins richtige Format?»: the server measures the
+  // size in the background after the upload — the browser already knows it from the file, so the format is right
+  // at once (these local values win until the page is reloaded)
+  const localFormats = useRef<Record<string, string>>({});
+  const setLangs = (x: LanguagesOverview) => setLangsRaw({ ...x, formats: { ...(x.formats ?? {}), ...localFormats.current } });
+  function noteFormat(videoId: string, width?: number | null, height?: number | null) {
+    const f = formatOfDims(width, height);
+    if (!f) return;
+    localFormats.current = { ...localFormats.current, [videoId]: f };
+    setLangsRaw((x) => ({ ...x, formats: { ...(x.formats ?? {}), [videoId]: f } }));
+  }
   const [langTab, setLangTab] = useState<LanguageTab>("all");
   // 2026-11-13, Lino: second filter — the format (combinable with the language)
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
@@ -579,6 +590,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       // immediately, overwritten by the real filmstrip values once that
       // background job's own response arrives on a later fetch.
       const dims = await readVideoMetadata(file);
+      noteFormat(created.id, dims.width, dims.height);
       const completed = await api.completeVideoVersion(version.id, file.size, dims.duration);
       setVideosBySection((prev) => ({
         ...prev,
@@ -688,7 +700,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       await api.uploadVideoFile(created.playback_url, file, (fraction) =>
         setVersionUploadProgress((prev) => ({ ...prev, [video.id]: fraction }))
       );
-      const { duration } = await readVideoMetadata(file);
+      const { duration, width, height } = await readVideoMetadata(file);
+      noteFormat(video.id, width, height);
       const completed = await api.completeVideoVersion(created.id, file.size, duration);
       updateVideo(sectionId, { ...video, versions: [...video.versions, completed] });
       pollForFilmstrip(sectionId, video.id, completed.id);

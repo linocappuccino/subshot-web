@@ -317,6 +317,14 @@ export function LanguageMenuItems({
 export const FORMAT_ORDER = ["9:16", "16:9", "1:1", "4:5", "5:4"] as const;
 /** "all" | "9:16" | … | "other" */
 export type FormatTab = string;
+/** the same rounding as the server (app/postpro_languages.format_of): nearest category within ±6 %, else «2.39:1» */
+export function formatOfDims(width?: number | null, height?: number | null): string | null {
+  if (!width || !height) return null;
+  const r = width / height;
+  const cats: [string, number][] = [["9:16", 9 / 16], ["16:9", 16 / 9], ["1:1", 1], ["4:5", 4 / 5], ["5:4", 5 / 4]];
+  const [name, ref] = cats.reduce((best, c) => (Math.abs(Math.log(r / c[1])) < Math.abs(Math.log(r / best[1])) ? c : best));
+  return Math.abs(Math.log(r / ref)) < 0.06 ? name : `${r.toFixed(2)}:1`;
+}
 export function formatKey(f: string | undefined): string {
   return f && (FORMAT_ORDER as readonly string[]).includes(f) ? f : "other";
 }
