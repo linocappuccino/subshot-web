@@ -107,12 +107,12 @@ function DevlogPageInner() {
             <Button variant="ghost" size="sm" onClick={() => setOpen(null)} className="mb-4">
               {t("devlogPage.back")}
             </Button>
-            <h1 className="text-xl font-bold mb-1">{open.title}</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold mb-1 max-w-[70ch] leading-tight">{open.title}</h1>
             <p className="text-xs text-white/40 mb-6">{open.date}</p>
             {/* 2026-10-09, Lino: the feature image is only the thumbnail in the
                 grid, not shown in the post itself */}
             <div
-              className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-a:text-blue-400 [&_video]:w-full [&_video]:rounded-xl [&_video]:bg-black [&_audio]:w-full [&_iframe]:w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_figure]:my-6"
+              className="devlog-article"
               dangerouslySetInnerHTML={{ __html: postHtml }}
               onClick={(e) => {
                 // 2026-11-15 — links between help posts (…/devlog?post=<slug|id>) open in place

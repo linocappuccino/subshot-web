@@ -317,3 +317,38 @@ html {
 .gif-progress {
   animation: subshot-gif-progress 25s cubic-bezier(0.1, 0.6, 0.3, 1) forwards;
 }
+
+
+/* 2026-11-15 — devlog / help articles (Lino: «gut, einfach und übersichtlich lesbar»). No typography plugin
+   in this app, so the article styles live here. */
+.devlog-article { max-width: 70ch; font-size: 16px; line-height: 1.7; color: rgba(255,255,255,.82); }
+.devlog-article > * + * { margin-top: 0.9em; }
+.devlog-article > p:first-child { margin-top: 0; padding: 14px 18px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.09); font-size: 17px; line-height: 1.6; }
+.devlog-article > p:first-child strong { font-weight: 600; color: #fff; }
+.devlog-article h2 { font-size: 22px; line-height: 1.3; font-weight: 700; color: #fff; margin-top: 2.1em; margin-bottom: 0.2em; letter-spacing: -0.01em; }
+.devlog-article h3 { font-size: 18px; line-height: 1.35; font-weight: 650; color: #fff; margin-top: 1.6em; }
+.devlog-article strong, .devlog-article b { font-weight: 650; color: #fff; }
+.devlog-article a { color: #6aa9ff; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(106,169,255,.4); }
+.devlog-article a:hover { text-decoration-color: currentColor; }
+.devlog-article ul, .devlog-article ol { padding-left: 1.5em; }
+.devlog-article ul { list-style: disc; }
+.devlog-article ol { list-style: decimal; }
+.devlog-article li { margin-top: 0.35em; padding-left: 0.2em; }
+.devlog-article li::marker { color: rgba(255,255,255,.5); font-weight: 600; }
+.devlog-article ol + ol { margin-top: 0.5em; }
+.devlog-article ol li::marker { color: #ff5a4f; }
+.devlog-article figure { margin: 1.1em 0 1.6em; }
+.devlog-article figure img, .devlog-article > img { width: 100%; height: auto; border-radius: 12px; border: 1px solid rgba(255,255,255,.1); }
+.devlog-article figcaption { margin-top: 0.5em; font-size: 13px; line-height: 1.45; color: rgba(255,255,255,.5); }
+.devlog-article blockquote { border-left: 3px solid rgba(255,255,255,.25); padding-left: 1em; color: rgba(255,255,255,.7); }
+.devlog-article code { font-size: 0.9em; padding: 0.1em 0.35em; border-radius: 6px; background: rgba(255,255,255,.08); }
+.devlog-article > p:last-child { margin-top: 2.5em; padding-top: 1em; border-top: 1px solid rgba(255,255,255,.08); font-size: 13px; color: rgba(255,255,255,.45); }
+.devlog-article > p:last-child em { font-style: normal; }
+.devlog-article video { width: 100%; border-radius: 12px; background: #000; }
+.devlog-article audio { width: 100%; }
+.devlog-article iframe { width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; }
+@media (max-width: 640px) {
+  .devlog-article { font-size: 15.5px; }
+  .devlog-article h2 { font-size: 20px; margin-top: 1.8em; }
+  .devlog-article > p:first-child { font-size: 16px; padding: 12px 14px; }
+}
