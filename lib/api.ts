@@ -1239,13 +1239,13 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // through this Bearer-token proxy.
 
     // ── Teams (seat billing) ────────────────────────────────────────────────
-    seatPrice: (seatCount: number, storageTierGb: number) =>
-      request<SeatPrice>(`seat-price?seat_count=${seatCount}&storage_tier_gb=${storageTierGb}`),
+    seatPrice: (seatCount: number, storageTierGb: number, interval: "month" | "year" = "month") =>
+      request<SeatPrice>(`seat-price?seat_count=${seatCount}&storage_tier_gb=${storageTierGb}&interval=${interval}`),
     myTeams: () => request<Team[]>("teams/mine"),
-    teamCheckout: (name: string, seatCount: number, storageTierGb: number) =>
+    teamCheckout: (name: string, seatCount: number, storageTierGb: number, interval: "month" | "year" = "month") =>
       request<{ url: string }>("teams/checkout", {
         method: "POST",
-        body: JSON.stringify({ name, seat_count: seatCount, storage_tier_gb: storageTierGb }),
+        body: JSON.stringify({ name, seat_count: seatCount, storage_tier_gb: storageTierGb, interval }),
       }),
     changeTeamSeats: (teamId: string, seatCount: number) =>
       request<Team>(`teams/${teamId}/seats`, { method: "PATCH", body: JSON.stringify({ seat_count: seatCount }) }),

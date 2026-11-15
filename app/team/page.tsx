@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/app/components/AppShell";
 import { Button } from "@/app/components/ui/Button";
 import { Input, Label, FieldGroup } from "@/app/components/ui/Field";
+import { SegmentedControl } from "@/app/components/ui/SegmentedControl";
 import { Slider } from "@/app/components/ui/Slider";
 import { Switch } from "@/app/components/ui/Switch";
 import { Avatar } from "@/app/components/ui/Avatar";
@@ -52,6 +53,8 @@ function TeamPageInner() {
   // Create-team form state
   const [name, setName] = useState(t("teamPage.defaultTeamName"));
   const [newSeats, setNewSeats] = useState(3);
+  // 2026-11-15, Lino: «Jahresabo wäre auch gut» — yearly = 10 monthly prices (2 months free)
+  const [newInterval, setNewInterval] = useState<"month" | "year">("month");
   // 2026-07-27 — storage tariff, chosen once here at creation (no change-
   // tier flow exists afterward, unlike seat_count). Defaults to the
   // smallest tier, same "start minimal, upsell later" reasoning the seat
@@ -135,7 +138,7 @@ function TeamPageInner() {
   async function startCheckout() {
     setCreating(true);
     try {
-      const { url } = await api.teamCheckout(name.trim() || t("teamPage.defaultTeamName"), newSeats, newStorageTierGb);
+      const { url } = await api.teamCheckout(name.trim() || t("teamPage.defaultTeamName"), newSeats, newStorageTierGb, newInterval);
       window.location.href = url;
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("teamPage.checkoutFailed"));
@@ -357,7 +360,14 @@ function TeamPageInner() {
               </div>
             </FieldGroup>
 
-            <SeatPriceSummary seatCount={newSeats} storageTierGb={newStorageTierGb} />
+            <div className="mb-3">
+              <SegmentedControl
+                value={newInterval}
+                onChange={setNewInterval}
+                options={[{ value: "month", label: t("teamPage.monthly") }, { value: "year", label: t("teamPage.yearly") }]}
+              />
+            </div>
+            <SeatPriceSummary seatCount={newSeats} storageTierGb={newStorageTierGb} interval={newInterval} />
 
             <Button variant="primary" className="w-full mt-4" onClick={startCheckout} disabled={creating || !name.trim()}>
               {creating ? t("teamPage.redirecting") : t("teamPage.subscribeTeam")}
@@ -678,23 +688,24 @@ function TeamPageInner() {
 // tier (no picker there, see this file's storage-tier state doc comment) —
 // still queried/shown so the change-seats preview reflects the REAL
 // combined invoice total, not just the seat delta in isolation.
-function SeatPriceSummary({ seatCount, storageTierGb }: { seatCount: number; storageTierGb: number }) {
+function SeatPriceSummary({ seatCount, storageTierGb, interval = "month" }: { seatCount: number; storageTierGb: number; interval?: "month" | "year" }) {
   const api = useApi();
   const { t } = useLanguage();
   const [price, setPrice] = useState<SeatPrice | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    api.seatPrice(seatCount, storageTierGb).then((p) => {
+    api.seatPrice(seatCount, storageTierGb, interval).then((p) => {
       if (!cancelled) setPrice(p);
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seatCount, storageTierGb]);
+  }, [seatCount, storageTierGb, interval]);
 
   if (!price) return null;
+  const yearly = price.interval === "year";
   return (
     <div className="flex flex-col gap-1 text-sm">
       <div className="flex items-baseline justify-between">
@@ -709,8 +720,18 @@ function SeatPriceSummary({ seatCount, storageTierGb }: { seatCount: number; sto
       )}
       <div className="flex items-baseline justify-between border-t border-white/10 pt-1 mt-0.5">
         <span className="text-white/50">{t("common.total")}</span>
-        <span className="font-semibold">{t("teamPage.perMonth", { price: chf(price.monthly_total_rappen) })}</span>
+        <span className="font-semibold">
+          {yearly
+            ? t("teamPage.perYear", { price: chf(price.period_total_rappen ?? price.monthly_total_rappen * 10) })
+            : t("teamPage.perMonth", { price: chf(price.monthly_total_rappen) })}
+        </span>
       </div>
+      {yearly && (
+        <div className="flex items-baseline justify-between text-xs">
+          <span className="text-emerald-300/80">{t("teamPage.yearlySaving", { price: chf(price.monthly_total_rappen * 2) })}</span>
+          <span className="text-white/45">{t("teamPage.perMonthEquiv", { price: chf(Math.round((price.period_total_rappen ?? 0) / 12)) })}</span>
+        </div>
+      )}
     </div>
   );
 }
