@@ -8,13 +8,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
+import { STORAGE_TIERS_GB } from "@/lib/seats";
 
 type Parts = { videos: number; images: number; audio: number; canvas: number; other: number };
 type Row = {
   id: string; name: string; client_name: string | null; emoji: string | null; color: string | null;
   archived: boolean; bytes: number; parts: Parts; role: string; can_archive: boolean; can_delete: boolean;
 };
-export type StorageOverview = { scope: "team" | "personal"; team_name: string | null; used_bytes: number; limit_bytes: number; account_files_bytes?: number; projects: Row[] };
+export type StorageOverview = { scope: "team" | "personal"; team_name: string | null; used_bytes: number; limit_bytes: number; account_files_bytes?: number; projects: Row[]; tier_gb?: number | null; can_buy?: boolean };
 
 const PART_COLORS: Record<keyof Parts, string> = { videos: "#3b82f6", images: "#f59e0b", audio: "#22c55e", canvas: "#a855f7", other: "#94a3b8" };
 
@@ -28,7 +29,7 @@ const TXT = {
     delTitle: "Projekt endgültig löschen?", delText: (n: string, gb: string) => `«${n}» wird mit allen Ideen, Canvas, Shotlisten, Videos und Dateien gelöscht. ${gb} werden frei. Das kann nicht rückgängig gemacht werden.`,
     delType: "Tippe den Projektnamen zur Bestätigung:", cancel: "Abbrechen", delNow: "Endgültig löschen", deleting: "Wird gelöscht …",
     tipArchive: "Aus der aktiven Liste nehmen (bleibt erhalten)", noRight: "Nur der Besitzer kann löschen", failed: "Das hat nicht geklappt.",
-    share: "des Speichers",
+    share: "des Speichers", buy: "Mehr Speicher kaufen", buyNext: (gb: string) => `Nächster Plan: ${gb}`, buyTeam: "Team mit mehr Speicher erstellen", askOwner: "Mehr Speicher kann nur der Besitzer des Teams kaufen.", almostFull: "Speicher fast voll – hol dir mehr Platz, bevor Uploads blockiert werden.", fullMsg: "Speicher voll – neue Uploads sind blockiert.", maxPlan: "Du hast den grössten Plan. Für mehr Speicher melde dich bei uns.",
   },
   en: {
     title: "Storage", of: "of", used: "used", free: "free", refresh: "Measure again", measuring: "Measuring …",
@@ -39,7 +40,7 @@ const TXT = {
     delTitle: "Delete project permanently?", delText: (n: string, gb: string) => `«${n}» will be deleted with all ideas, canvases, shot lists, videos and files. This frees ${gb}. This can't be undone.`,
     delType: "Type the project name to confirm:", cancel: "Cancel", delNow: "Delete permanently", deleting: "Deleting …",
     tipArchive: "Move out of the active list (nothing is deleted)", noRight: "Only the owner can delete", failed: "That didn't work.",
-    share: "of storage",
+    share: "of storage", buy: "Buy more storage", buyNext: (gb: string) => `Next plan: ${gb}`, buyTeam: "Create a team with more storage", askOwner: "Only the team owner can buy more storage.", almostFull: "Storage almost full – get more space before uploads are blocked.", fullMsg: "Storage full – new uploads are blocked.", maxPlan: "You have the largest plan. Contact us for more storage.",
   },
 };
 
@@ -198,6 +199,26 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               ))}
               <span className="ml-auto text-white/35 tabular-nums">{Math.round(pct)} %</span>
             </div>
+            {/* 2026-11-15, Lino: «ein grosser Button: Buy more storage, der direkt zum Kauf-Screen der Speichergrösse bringt» */}
+            {(() => {
+              const cur = data.tier_gb ?? 0;
+              const next = STORAGE_TIERS_GB.find((g) => g > cur);
+              const label = (g: number) => (g >= 1000 ? `${g / 1000} TB` : `${g} GB`);
+              const hot = pct >= 80;
+              if (data.can_buy === false) return <p className="mt-4 rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-white/55">{L.askOwner}</p>;
+              if (data.scope === "team" && !next) return <p className="mt-4 rounded-xl bg-white/[0.04] px-4 py-3 text-sm text-white/55">{L.maxPlan}</p>;
+              const href = data.scope === "team" ? `/team?upgrade=${next}#storage` : `/team?plan=${STORAGE_TIERS_GB[0]}`;
+              return (
+                <div className="mt-4">
+                  {hot && <p className={`mb-2 text-sm ${full ? "text-red-300" : "text-amber-200"}`}>{full ? L.fullMsg : L.almostFull}</p>}
+                  <a href={href} data-buy-storage
+                    className={`flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition-colors ${hot ? "bg-[#ff3b30] hover:bg-[#ff5a4f] shadow-[0_0_0_4px_rgba(255,59,48,.18)]" : "bg-[#1f6feb] hover:bg-[#3a82f0]"}`}>
+                    ＋ {data.scope === "team" ? L.buy : L.buyTeam}
+                    {data.scope === "team" && next && <span className="font-normal text-white/75">· {L.buyNext(label(next))}</span>}
+                  </a>
+                </div>
+              );
+            })()}
           </div>
         )}
 

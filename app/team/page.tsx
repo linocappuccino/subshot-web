@@ -59,7 +59,10 @@ function TeamPageInner() {
   // tier flow exists afterward, unlike seat_count). Defaults to the
   // smallest tier, same "start minimal, upsell later" reasoning the seat
   // slider's own default of 5 (not SEAT_MAX) already follows.
-  const [newStorageTierGb, setNewStorageTierGb] = useState(STORAGE_TIERS_GB[0]);
+  const [newStorageTierGb, setNewStorageTierGb] = useState(() => {
+    const p = Number(searchParams.get("plan"));
+    return STORAGE_TIERS_GB.includes(p) ? p : STORAGE_TIERS_GB[0];
+  });
   const [creating, setCreating] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -122,7 +125,9 @@ function TeamPageInner() {
       setTeam(mine);
       if (mine) {
         setSeatDraft(mine.seat_count);
-        setStorageTierDraft(mine.storage_tier_gb);
+        // 2026-11-15 — «Buy more storage» in the storage overview links here with ?upgrade=<GB>
+        const up = Number(searchParams.get("upgrade"));
+        setStorageTierDraft(STORAGE_TIERS_GB.includes(up) && up > mine.storage_tier_gb ? up : mine.storage_tier_gb);
         setTeamNameDraft(mine.name);
         const [m, usage] = await Promise.all([api.teamMembers(mine.id), api.teamStorageUsage(mine.id).catch(() => null)]);
         setMembers(m);
