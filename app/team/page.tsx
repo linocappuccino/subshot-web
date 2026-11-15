@@ -338,20 +338,22 @@ function TeamPageInner() {
             </FieldGroup>
 
             <FieldGroup>
-              <Label>{t("teamPage.storageTier")}</Label>
-              <div className="grid grid-cols-5 gap-1.5 mt-1.5">
-                {STORAGE_TIERS_GB.map((gb) => (
-                  <button
-                    key={gb}
-                    type="button"
-                    onClick={() => setNewStorageTierGb(gb)}
-                    className={`rounded-lg py-2 text-xs font-semibold transition-colors ${
-                      gb === newStorageTierGb ? "bg-[#3875bd] text-white" : "bg-white/5 text-white/60 hover:bg-white/10"
-                    }`}
-                  >
-                    {formatStorageTierGb(gb)}
-                  </button>
-                ))}
+              {/* 2026-11-15, Lino: «bei team bei der storage tier auch einen ziehbaren regler» — same
+                  slider as the seats and as the existing-team storage picker (drags over the tier index,
+                  steps snap: 10 GB up to 100 GB, then 100 GB up to 1 TB) */}
+              <div className="flex items-baseline justify-between mb-2">
+                <Label>{t("teamPage.storageTier")}</Label>
+                <span className="text-sm font-semibold">{formatStorageTierGb(newStorageTierGb)}</span>
+              </div>
+              <Slider
+                value={STORAGE_TIERS_GB.indexOf(newStorageTierGb)}
+                min={0}
+                max={STORAGE_TIERS_GB.length - 1}
+                onChange={(index) => setNewStorageTierGb(STORAGE_TIERS_GB[index])}
+              />
+              <div className="flex justify-between text-[11px] text-white/30 mt-1">
+                <span>{formatStorageTierGb(STORAGE_TIER_MIN_GB)}</span>
+                <span>{formatStorageTierGb(STORAGE_TIER_MAX_GB)}</span>
               </div>
             </FieldGroup>
 
