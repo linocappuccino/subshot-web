@@ -181,7 +181,7 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
             <div className="flex items-baseline gap-2 flex-wrap">
               <span className="text-3xl font-bold tabular-nums">{fmtBytes(data.used_bytes)}</span>
               <span className="text-white/45">{L.of} {fmtBytes(data.limit_bytes)} {L.used}</span>
-              <span className={`ml-auto text-sm tabular-nums ${full ? "text-red-300" : warn ? "text-amber-200" : "text-white/45"}`}>
+              <span className={`ml-auto text-sm tabular-nums ${full ? "text-orange-300" : warn ? "text-amber-200" : "text-white/45"}`}>
                 {fmtBytes(Math.max(0, data.limit_bytes - data.used_bytes))} {L.free}
               </span>
             </div>
@@ -210,7 +210,7 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               const href = data.scope === "team" ? `/team?upgrade=${next}#storage` : `/team?plan=${STORAGE_TIERS_GB[0]}`;
               return (
                 <div className="mt-4">
-                  {hot && <p className={`mb-2 text-sm ${full ? "text-red-300" : "text-amber-200"}`}>{full ? L.fullMsg : L.almostFull}</p>}
+                  {hot && <p className={`mb-2 text-sm ${full ? "text-orange-300" : "text-amber-200"}`}>{full ? L.fullMsg : L.almostFull}</p>}
                   <a href={href} data-buy-storage
                     className={`flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition-colors ${hot ? "bg-[#1f6feb] hover:bg-[#3a82f0] shadow-[0_0_0_4px_rgba(31,111,235,.28)]" : "bg-[#1f6feb] hover:bg-[#3a82f0]"}`}>
                     ＋ {data.scope === "team" ? L.buy : L.buyTeam}
