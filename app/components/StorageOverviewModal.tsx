@@ -9,19 +9,19 @@ import { createPortal } from "react-dom";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 
-type Parts = { videos: number; images: number; canvas: number };
+type Parts = { videos: number; images: number; audio: number; canvas: number; other: number };
 type Row = {
   id: string; name: string; client_name: string | null; emoji: string | null; color: string | null;
   archived: boolean; bytes: number; parts: Parts; role: string; can_archive: boolean; can_delete: boolean;
 };
-export type StorageOverview = { scope: "team" | "personal"; team_name: string | null; used_bytes: number; limit_bytes: number; projects: Row[] };
+export type StorageOverview = { scope: "team" | "personal"; team_name: string | null; used_bytes: number; limit_bytes: number; account_files_bytes?: number; projects: Row[] };
 
-const PART_COLORS: Record<keyof Parts, string> = { videos: "#3b82f6", images: "#f59e0b", canvas: "#a855f7" };
+const PART_COLORS: Record<keyof Parts, string> = { videos: "#3b82f6", images: "#f59e0b", audio: "#22c55e", canvas: "#a855f7", other: "#94a3b8" };
 
 const TXT = {
   de: {
     title: "Speicher", of: "von", used: "belegt", free: "frei", refresh: "Neu messen", measuring: "Wird gemessen …",
-    videos: "Videos", images: "Bilder", canvas: "Canvas-Dateien", active: "Aktive Projekte", archivedH: "Archiv",
+    videos: "Videos", images: "Bilder", audio: "Audio / Live-Dubbing", canvas: "Canvas-Dateien", other: "Sonstiges", accountFiles: "Team-Dateien (Logos)", active: "Aktive Projekte", archivedH: "Archiv",
     archive: "Archivieren", restore: "Wiederherstellen", del: "Löschen", empty: "Noch keine Projekte.", loading: "Speicher wird berechnet …",
     archiveNote: "Archivierte Projekte verschwinden aus der aktiven Liste, bleiben aber vollständig erhalten und zählen weiter zum Speicher. Speicher frei wird nur durch Löschen.",
     teamScope: (n: string) => `Team «${n}»`, personal: "Deine Projekte (Testphase)",
@@ -32,7 +32,7 @@ const TXT = {
   },
   en: {
     title: "Storage", of: "of", used: "used", free: "free", refresh: "Measure again", measuring: "Measuring …",
-    videos: "Videos", images: "Images", canvas: "Canvas files", active: "Active projects", archivedH: "Archive",
+    videos: "Videos", images: "Images", audio: "Audio / Live-Dubbing", canvas: "Canvas files", other: "Other", accountFiles: "Team files (logos)", active: "Active projects", archivedH: "Archive",
     archive: "Archive", restore: "Restore", del: "Delete", empty: "No projects yet.", loading: "Calculating storage …",
     archiveNote: "Archived projects leave the active list but stay complete and still count toward storage. Only deleting frees space.",
     teamScope: (n: string) => `Team «${n}»`, personal: "Your projects (trial)",
@@ -85,8 +85,8 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
   const archived = useMemo(() => (data?.projects ?? []).filter((p) => p.archived), [data]);
   const max = useMemo(() => Math.max(1, ...(data?.projects ?? []).map((p) => p.bytes)), [data]);
   const totals = useMemo(() => {
-    const t: Parts = { videos: 0, images: 0, canvas: 0 };
-    for (const p of data?.projects ?? []) { t.videos += p.parts.videos; t.images += p.parts.images; t.canvas += p.parts.canvas; }
+    const t: Parts = { videos: 0, images: 0, audio: 0, canvas: 0, other: data?.account_files_bytes ?? 0 };
+    for (const p of data?.projects ?? []) for (const k of Object.keys(t) as (keyof Parts)[]) t[k] += p.parts[k] ?? 0;
     return t;
   }, [data]);
 
@@ -126,10 +126,10 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               {p.client_name && <span className="truncate text-xs text-white/40 hidden sm:inline">{p.client_name}</span>}
             </div>
             <div className="mt-1.5 flex items-center gap-3">
-              <div className="h-2.5 flex-1 rounded-full bg-white/[0.06] overflow-hidden" title={`${L.videos} ${fmtBytes(p.parts.videos)} · ${L.images} ${fmtBytes(p.parts.images)} · ${L.canvas} ${fmtBytes(p.parts.canvas)}`}>
+              <div className="h-2.5 flex-1 rounded-full bg-white/[0.06] overflow-hidden" title={(Object.keys(PART_COLORS) as (keyof Parts)[]).filter((k) => (p.parts[k] ?? 0) > 0).map((k) => `${L[k]} ${fmtBytes(p.parts[k])}`).join(" · ")}>
                 <div className="h-full flex" style={{ width: `${Math.max(p.bytes > 0 ? 1.5 : 0, w)}%` }}>
                   {(Object.keys(PART_COLORS) as (keyof Parts)[]).map((k) =>
-                    p.parts[k] > 0 ? <div key={k} style={{ width: `${(p.parts[k] / Math.max(1, p.bytes)) * 100}%`, background: PART_COLORS[k] }} /> : null
+                    (p.parts[k] ?? 0) > 0 ? <div key={k} style={{ width: `${(p.parts[k] / Math.max(1, p.bytes)) * 100}%`, background: PART_COLORS[k] }} /> : null
                   )}
                 </div>
               </div>
@@ -190,7 +190,7 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               ))}
             </div>
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/55">
-              {(Object.keys(PART_COLORS) as (keyof Parts)[]).map((k) => (
+              {(Object.keys(PART_COLORS) as (keyof Parts)[]).filter((k) => totals[k] > 0 || k === "videos" || k === "images").map((k) => (
                 <span key={k} className="inline-flex items-center gap-1.5">
                   <i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: PART_COLORS[k] }} />
                   {L[k]} <b className="font-semibold text-white/80 tabular-nums">{fmtBytes(totals[k])}</b>
@@ -210,6 +210,9 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               {active.length === 0 ? <p className="px-4 py-3 text-sm text-white/40">{L.empty}</p> : <ul>{active.map((p) => <RowView key={p.id} p={p} />)}</ul>}
               <h3 className="px-4 pt-5 pb-1 text-xs font-semibold uppercase tracking-wider text-white/40">🗄 {L.archivedH} · {archived.length}</h3>
               <p className="px-4 pb-2 text-xs text-white/40 max-w-[60ch]">{L.archiveNote}</p>
+              {(data.account_files_bytes ?? 0) > 0 && (
+                <p className="px-4 pt-3 text-xs text-white/45">{L.accountFiles}: <b className="text-white/70 tabular-nums">{fmtBytes(data.account_files_bytes ?? 0)}</b></p>
+              )}
               {archived.length > 0 && <ul>{archived.map((p) => <RowView key={p.id} p={p} />)}</ul>}
             </>
           )}
