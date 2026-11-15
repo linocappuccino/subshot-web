@@ -1252,6 +1252,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     changeTeamStorageTier: (teamId: string, storageTierGb: number) =>
       request<Team>(`teams/${teamId}/storage-tier`, { method: "PATCH", body: JSON.stringify({ storage_tier_gb: storageTierGb }) }),
     teamStorageUsage: (teamId: string) => request<TeamStorageUsage>(`teams/${teamId}/storage-usage`),
+    myStorageUsage: () => request<TeamStorageUsage | null>(`me/storage-usage`),
+    storageOverview: (refresh = false) =>
+      request<import("@/app/components/StorageOverviewModal").StorageOverview>(`me/storage-overview?${refresh ? "refresh=true&" : ""}t=${Date.now()}`),
     cancelTeam: (teamId: string) => request<Team>(`teams/${teamId}/cancel`, { method: "POST" }),
     patchTeam: (teamId: string, patch: { name?: string; all_members_see_all_projects?: boolean }) =>
       request<Team>(`teams/${teamId}`, { method: "PATCH", body: JSON.stringify(patch) }),

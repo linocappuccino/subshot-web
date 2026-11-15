@@ -8,6 +8,7 @@ import { CreditsNavLink } from "./CreditsNavLink";
 import { LanguageDialog } from "./LanguageDialog";
 import { NotificationSettingsDialog } from "./NotificationSettingsDialog";
 import { McpConnectDialog } from "./McpConnectDialog";
+import { StorageOverviewModal } from "./StorageOverviewModal";
 import { LanguageProvider, useLanguage } from "@/lib/i18n";
 import { useApi } from "@/lib/useApi";
 import type { TeamStorageUsage } from "@/lib/types";
@@ -95,6 +96,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
   // Navigation stehen" — was its own left-aligned row on just /projects
   // (projects/page.tsx), moved here so it's centered in the persistent nav
   // and visible on every signed-in page, not just the project overview.
+  const [storageOpen, setStorageOpen] = useState(false);
   const [storageUsage, setStorageUsage] = useState<TeamStorageUsage | null>(
     teamInfoCache?.storageUsage ?? null
   );
@@ -124,11 +126,14 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
         if (!team) {
           // Kein Team -> Link bleibt sichtbar, siehe Doc-Kommentar oben.
           // Auch kein Speichertarif ohne Team, also keine Anzeige.
-          teamInfoCache = { teamName: null, teamLogoUrl: null, showTeamLink: true, storageUsage: null };
+          // 2026-11-15 — single users see their trial storage line too (opens the storage overview)
+          const mine = await api.myStorageUsage().catch(() => null);
+          if (cancelled) return;
+          teamInfoCache = { teamName: null, teamLogoUrl: null, showTeamLink: true, storageUsage: mine };
           setTeamName(null);
           setTeamLogoUrl(null);
           setShowTeamLink(true);
-          setStorageUsage(null);
+          setStorageUsage(mine);
           return;
         }
         const [members, usage] = await Promise.all([
@@ -199,8 +204,14 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
             )}
           </Link>
           {storageUsage && (
-            <div className="hidden sm:flex items-center justify-center gap-2.5 text-xs text-white/40">
-              <div className="w-[180px] h-1.5 rounded-full bg-white/[0.06] overflow-hidden shrink-0">
+            <button
+              type="button"
+              onClick={() => setStorageOpen(true)}
+              title={t("nav.storageOverview")}
+              data-storage-line
+              className="flex items-center justify-center gap-2.5 text-[11px] sm:text-xs text-white/40 hover:text-white/75 rounded-full px-2 sm:px-3 py-1.5 -my-1.5 hover:bg-white/[0.05] transition-colors whitespace-nowrap"
+            >
+              <div className="hidden sm:block w-[180px] h-1.5 rounded-full bg-white/[0.06] overflow-hidden shrink-0">
                 <div
                   className="h-full rounded-full bg-[#3875bd]"
                   style={{ width: `${Math.min(100, (storageUsage.used_bytes / storageUsage.tier_bytes) * 100)}%` }}
@@ -212,7 +223,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
                   tier: storageUsage.tier_gb,
                 })}
               </span>
-            </div>
+            </button>
           )}
           <div className="flex items-center gap-4 justify-self-end">
             {/* 2026-09-18, Lino: "Feedback und Devlog brauchen wir nicht mehr" —
@@ -316,6 +327,13 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
       <main className="flex-1 flex flex-col">{children}</main>
       <LanguageDialog open={showLanguageDialog} onClose={() => setShowLanguageDialog(false)} />
       <NotificationSettingsDialog open={showNotificationSettings} onClose={() => setShowNotificationSettings(false)} />
+      <StorageOverviewModal
+        open={storageOpen}
+        onClose={() => setStorageOpen(false)}
+        onChanged={() => {
+          (teamInfoCache?.teamName ? Promise.resolve(null) : api.myStorageUsage().catch(() => null)).then((u) => u && setStorageUsage(u));
+        }}
+      />
       <McpConnectDialog open={showMcpDialog} onClose={() => setShowMcpDialog(false)} />
     </div>
   );
