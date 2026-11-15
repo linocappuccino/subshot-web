@@ -1927,6 +1927,7 @@ export function VideoReviewModal({
           open={confirmSubmitFeedback}
           title={t("videoReviewModal.submitFeedbackTitle")}
           message={t("videoReviewModal.submitFeedbackMessage", { count: comments.length })}
+          emphasis={t("videoReviewModal.closeFeedbackEmphasis")}
           confirmLabel={t("videoReviewModal.closeFeedbackConfirm")}
           danger={false}
           onConfirm={submitFeedback}
@@ -2416,6 +2417,7 @@ export function VideoReviewModal({
                         <div className="flex items-center justify-end gap-2 mt-2">
                           <button
                             onClick={() => setConfirmSubmitFeedback(true)}
+                            title={t("videoReviewModal.closeFeedbackEmphasis")}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:text-white hover:bg-white/15"
                           >
                             {t("videoReviewModal.submitFeedbackTitle")}
