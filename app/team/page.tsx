@@ -16,7 +16,7 @@ import { ApiError } from "@/lib/api";
 import { useToast } from "@/app/components/ui/Toast";
 import { useLanguage } from "@/lib/i18n";
 import type { SeatPrice, Team, TeamMember, TeamRole, TeamStorageUsage } from "@/lib/types";
-import { SEAT_MIN, SEAT_MAX, STORAGE_TIERS_GB, STORAGE_TIER_MIN_GB, STORAGE_TIER_MAX_GB, chf, formatStorageTierGb } from "@/lib/seats";
+import { SEAT_MAX, STORAGE_TIERS_GB, STORAGE_TIER_MIN_GB, STORAGE_TIER_MAX_GB, chf, formatStorageTierGb, includedSeats } from "@/lib/seats";
 
 export default function TeamPage() {
   return (
@@ -51,7 +51,7 @@ function TeamPageInner() {
 
   // Create-team form state
   const [name, setName] = useState(t("teamPage.defaultTeamName"));
-  const [newSeats, setNewSeats] = useState(5);
+  const [newSeats, setNewSeats] = useState(3);
   // 2026-07-27 — storage tariff, chosen once here at creation (no change-
   // tier flow exists afterward, unlike seat_count). Defaults to the
   // smallest tier, same "start minimal, upsell later" reasoning the seat
@@ -326,34 +326,34 @@ function TeamPageInner() {
             </FieldGroup>
 
             <FieldGroup>
-              <div className="flex items-baseline justify-between mb-2">
-                <Label>{t("teamPage.seatCount")}</Label>
-                <span className="text-sm font-semibold">{newSeats}</span>
-              </div>
-              <Slider value={newSeats} min={SEAT_MIN} max={SEAT_MAX} onChange={setNewSeats} />
-              <div className="flex justify-between text-[11px] text-white/30 mt-1">
-                <span>{SEAT_MIN}</span>
-                <span>{SEAT_MAX}</span>
-              </div>
-            </FieldGroup>
-
-            <FieldGroup>
               {/* 2026-11-15, Lino: «bei team bei der storage tier auch einen ziehbaren regler» — same
                   slider as the seats and as the existing-team storage picker (drags over the tier index,
                   steps snap: 10 GB up to 100 GB, then 100 GB up to 1 TB) */}
               <div className="flex items-baseline justify-between mb-2">
                 <Label>{t("teamPage.storageTier")}</Label>
-                <span className="text-sm font-semibold">{formatStorageTierGb(newStorageTierGb)}</span>
+                <span className="text-sm font-semibold">{formatStorageTierGb(newStorageTierGb)} · {t("teamPage.seatsIncluded", { count: includedSeats(newStorageTierGb) })}</span>
               </div>
               <Slider
                 value={STORAGE_TIERS_GB.indexOf(newStorageTierGb)}
                 min={0}
                 max={STORAGE_TIERS_GB.length - 1}
-                onChange={(index) => setNewStorageTierGb(STORAGE_TIERS_GB[index])}
+                onChange={(index) => { const gb = STORAGE_TIERS_GB[index]; setNewStorageTierGb(gb); setNewSeats((n) => Math.max(n, includedSeats(gb))); }}
               />
               <div className="flex justify-between text-[11px] text-white/30 mt-1">
                 <span>{formatStorageTierGb(STORAGE_TIER_MIN_GB)}</span>
                 <span>{formatStorageTierGb(STORAGE_TIER_MAX_GB)}</span>
+              </div>
+            </FieldGroup>
+
+            <FieldGroup>
+              <div className="flex items-baseline justify-between mb-2">
+                <Label>{t("teamPage.seatCount")}</Label>
+                <span className="text-sm font-semibold">{newSeats} <span className="text-white/40 font-normal">· {t("teamPage.seatsIncluded", { count: includedSeats(newStorageTierGb) })}</span></span>
+              </div>
+              <Slider value={newSeats} min={includedSeats(newStorageTierGb)} max={SEAT_MAX} onChange={setNewSeats} />
+              <div className="flex justify-between text-[11px] text-white/30 mt-1">
+                <span>{includedSeats(newStorageTierGb)}</span>
+                <span>{SEAT_MAX}</span>
               </div>
             </FieldGroup>
 
@@ -396,9 +396,9 @@ function TeamPageInner() {
                   {seatDraft} ({t("teamPage.seatsOccupied", { used: members.length, total: team.seat_count })})
                 </span>
               </div>
-              <Slider value={seatDraft} min={Math.max(SEAT_MIN, members.length)} max={SEAT_MAX} onChange={setSeatDraft} />
+              <Slider value={seatDraft} min={Math.max(includedSeats(team.storage_tier_gb), members.length)} max={SEAT_MAX} onChange={setSeatDraft} />
               <div className="flex justify-between text-[11px] text-white/30 mt-1 mb-3">
-                <span>{Math.max(SEAT_MIN, members.length)}</span>
+                <span>{Math.max(includedSeats(team.storage_tier_gb), members.length)}</span>
                 <span>{SEAT_MAX}</span>
               </div>
 
@@ -698,13 +698,15 @@ function SeatPriceSummary({ seatCount, storageTierGb }: { seatCount: number; sto
   return (
     <div className="flex flex-col gap-1 text-sm">
       <div className="flex items-baseline justify-between">
-        <span className="text-white/50">{t("teamPage.perSeat", { price: chf(price.unit_price_rappen) })}</span>
-        <span className="text-white/70">{chf(price.seats_price_rappen)}</span>
-      </div>
-      <div className="flex items-baseline justify-between">
-        <span className="text-white/50">{t("teamPage.storageLine", { gb: price.storage_tier_gb })}</span>
+        <span className="text-white/50">{t("teamPage.planLine", { gb: formatStorageTierGb(price.storage_tier_gb), seats: price.included_seats ?? 0 })}</span>
         <span className="text-white/70">{chf(price.storage_tier_price_rappen)}</span>
       </div>
+      {(price.extra_seats ?? 0) > 0 && (
+        <div className="flex items-baseline justify-between">
+          <span className="text-white/50">{t("teamPage.extraSeatsLine", { count: price.extra_seats ?? 0, price: chf(price.unit_price_rappen) })}</span>
+          <span className="text-white/70">{chf(price.seats_price_rappen)}</span>
+        </div>
+      )}
       <div className="flex items-baseline justify-between border-t border-white/10 pt-1 mt-0.5">
         <span className="text-white/50">{t("common.total")}</span>
         <span className="font-semibold">{t("teamPage.perMonth", { price: chf(price.monthly_total_rappen) })}</span>

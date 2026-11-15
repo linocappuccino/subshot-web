@@ -1098,6 +1098,8 @@ export interface SeatPrice {
   seat_count: number;
   unit_price_rappen: number;
   storage_tier_gb: number;
+  included_seats?: number;
+  extra_seats?: number;
   seats_price_rappen: number;
   storage_tier_price_rappen: number;
   monthly_total_rappen: number;
