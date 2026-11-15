@@ -9,17 +9,22 @@ import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 
 type Track = { lang: string; kind: string; cues: number; rev: number; resolve_status: string | null; resolve_rev: number | null; resolve_at: string | null };
-type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; link_source: string | null };
-type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean };
+type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; link_source: string | null; lang_confirmed?: boolean };
+type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean;
+  video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[] };
 type Seen = { resolve_project: string | null; timelines: { id: string; name: string }[] };
 
 const T = {
   de: { tl: "Resolve-Timeline", none: "Keine Timeline verknüpft – das Resolve-Tool verknüpft sie automatisch, sobald die Timeline offen ist.", auto: "automatisch", manual: "manuell",
     track: "Spur", lang: "Sprache", also: "auch verknüpft mit", applied: (t: string) => `In Resolve übernommen um ${t}`, pending: "Wartet auf Resolve", conflict: "Konflikt in Resolve – dort auflösen",
-    never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen" },
+    never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
+    openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
+    subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
     track: "track", lang: "language", also: "also linked with", applied: (t: string) => `Taken over in Resolve at ${t}`, pending: "Waiting for Resolve", conflict: "Conflict in Resolve – resolve it there",
-    never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download" },
+    never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
+    openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
+    subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change" },
 };
 
 export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canEdit: boolean }) {
@@ -28,6 +33,8 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
   const L = T[language === "en" ? "en" : "de"];
   const [info, setInfo] = useState<Info | null>(null);
   const [seen, setSeen] = useState<Seen | null>(null);
+  const [typed, setTyped] = useState("");
+  const [changing, setChanging] = useState(false);
 
   const load = useCallback(() => {
     api.subtitleTracks(versionId).then(setInfo).catch(() => {});
@@ -51,6 +58,7 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
     }
     load();
   };
+  const save = async (body: Record<string, unknown>) => { await api.setResolveLink(versionId, body); setChanging(false); load(); };
   const options = [...(seen?.timelines ?? [])];
   if (link.timeline_id && !options.some((o) => o.id === link.timeline_id)) options.unshift({ id: link.timeline_id, name: link.timeline_name || link.timeline_id });
 
@@ -66,14 +74,51 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
         ) : (
           <span className="text-amber-200/90">{L.none}</span>
         )}
-        {canEdit && options.length > 0 && (
-          <select value={link.timeline_id ?? ""} onChange={(e) => choose(e.target.value)} className="ml-auto rounded-md bg-white/10 px-2 py-1 text-xs outline-none">
-            <option value="" disabled>{L.choose}</option>
-            {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-            {link.timeline_id && <option value="__none">{L.unlink}</option>}
-          </select>
-        )}
       </div>
+      {canEdit && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <select value={link.timeline_id ?? ""} disabled={options.length === 0} onChange={(e) => choose(e.target.value)}
+              className="min-w-0 flex-1 rounded-md bg-white/10 px-2 py-1 text-xs outline-none disabled:opacity-50" data-timeline-select>
+              <option value="" disabled>{L.choose}</option>
+              {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              {link.timeline_id && <option value="__none">{L.unlink}</option>}
+            </select>
+            <select value={link.track_index ?? ""} onChange={(e) => save({ track_index: e.target.value === "" ? null : Number(e.target.value) })}
+              className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none" title={L.track}>
+              <option value="">{L.track} –</option>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{L.track} {n}</option>)}
+            </select>
+          </div>
+          {options.length === 0 && <p className="text-white/45">{L.openResolve}</p>}
+          <div className="flex items-center gap-1.5">
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={L.typeName}
+              className="min-w-0 flex-1 rounded-md bg-white/[0.06] border border-white/10 px-2 py-1 text-xs outline-none focus:border-white/30" />
+            <button type="button" disabled={!typed.trim()} onClick={() => { save({ timeline_name: typed.trim(), timeline_id: null }); setTyped(""); }}
+              className="rounded-md bg-[#1f6feb] px-2.5 py-1 text-xs font-semibold text-white disabled:opacity-40">{L.set}</button>
+          </div>
+        </div>
+      )}
+      {info.lang_mismatch && !changing && (
+        <div className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-amber-100" data-lang-mismatch>
+          <p className="font-semibold">⚠ {L.mismatch(info.link_lang_name || link.lang || "?", info.video_lang_name || info.video_lang || "?")}</p>
+          {canEdit && (
+            <div className="mt-1.5 flex gap-1.5">
+              <button type="button" onClick={() => save({ lang_confirmed: true })} className="rounded-md bg-amber-300/20 px-2.5 py-1 text-xs font-semibold hover:bg-amber-300/30">{L.confirm}</button>
+              <button type="button" onClick={() => setChanging(true)} className="rounded-md bg-white/10 px-2.5 py-1 text-xs hover:bg-white/15">{L.change}</button>
+            </div>
+          )}
+        </div>
+      )}
+      {canEdit && (changing || !link.lang) && (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-white/55">{L.subLang}</span>
+          <select value={link.lang ?? ""} onChange={(e) => save({ lang: e.target.value })} className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none" data-lang-select>
+            <option value="" disabled>–</option>
+            {(info.lang_options ?? []).map((o) => <option key={o.code} value={o.code}>{o.name}</option>)}
+          </select>
+        </div>
+      )}
       {info.also_linked.length > 0 && (
         <p className="mt-1 text-white/45">{L.also}: {info.also_linked.map((a) => (a.lang || "?").toUpperCase()).join(", ")}</p>
       )}
