@@ -222,6 +222,8 @@ export function matchesTab(videoId: string, tab: LanguageTab, assignments: Recor
 }
 
 const CODES: Record<string, string> = {
+  // 2026-11-15 — variants keep their own short label (same as the API's SHORT_LABELS)
+  "deutsch (österreich)": "AT", "englisch (us)": "US", "englisch (usa)": "US", amerikanisch: "US", "schwiizerdütsch": "CH",
   deutsch: "DE", hochdeutsch: "DE", german: "DE", schweizerdeutsch: "CH", mundart: "CH", "swiss german": "CH", "französisch": "FR", franzoesisch: "FR",
   french: "FR", italienisch: "IT", italian: "IT", englisch: "EN", english: "EN", "rätoromanisch": "RM", romanisch: "RM", spanisch: "ES", portugiesisch: "PT",
   "niederländisch": "NL", polnisch: "PL", "türkisch": "TR", albanisch: "SQ", kroatisch: "HR", serbisch: "SR", ukrainisch: "UK", russisch: "RU",
