@@ -17,6 +17,7 @@ export function ConfirmDialog({
   open,
   title,
   message,
+  emphasis,
   confirmLabel,
   cancelLabel,
   danger = true,
@@ -26,6 +27,8 @@ export function ConfirmDialog({
   open: boolean;
   title: string;
   message: string;
+  /** 2026-11-15 — an extra line shown in bold under the message (e.g. what can't be undone) */
+  emphasis?: string;
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
@@ -43,7 +46,8 @@ export function ConfirmDialog({
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
       <div className="relative w-full max-w-sm bg-[#1c1c1e] border border-white/10 rounded-2xl shadow-2xl p-5">
         <h3 className="font-semibold mb-1.5">{title}</h3>
-        <p className="text-sm text-white/60 mb-5">{message}</p>
+        <p className={`text-sm text-white/60 ${emphasis ? "mb-3" : "mb-5"}`}>{message}</p>
+        {emphasis && <p className="text-sm font-bold text-white mb-5">{emphasis}</p>}
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}

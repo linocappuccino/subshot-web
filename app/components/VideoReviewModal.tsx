@@ -1196,6 +1196,7 @@ export function VideoReviewModal({
         versions: video.versions.map((v) => (v.id === currentVersion.id ? { ...v, feedback_locked: true } : v)),
       });
       setConfirmSubmitFeedback(false);
+      toast.showSuccess(t("videoReviewModal.feedbackClosedToast"));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("videoReviewModal.feedbackSendFailed"));
     } finally {
@@ -1925,8 +1926,9 @@ export function VideoReviewModal({
         <ConfirmDialog
           open={confirmSubmitFeedback}
           title={t("videoReviewModal.submitFeedbackTitle")}
-          message={t("videoReviewModal.submitFeedbackMessage")}
-          confirmLabel={t("videoReviewModal.send")}
+          message={t("videoReviewModal.submitFeedbackMessage", { count: comments.length })}
+          emphasis={t("videoReviewModal.closeFeedbackEmphasis")}
+          confirmLabel={t("videoReviewModal.closeFeedbackConfirm")}
           danger={false}
           onConfirm={submitFeedback}
           onCancel={() => setConfirmSubmitFeedback(false)}
@@ -2415,6 +2417,7 @@ export function VideoReviewModal({
                         <div className="flex items-center justify-end gap-2 mt-2">
                           <button
                             onClick={() => setConfirmSubmitFeedback(true)}
+                            title={t("videoReviewModal.closeFeedbackEmphasis")}
                             className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:text-white hover:bg-white/15"
                           >
                             {t("videoReviewModal.submitFeedbackTitle")}
