@@ -60,7 +60,7 @@ function DevlogPageInner() {
         // Direct-link support (2026-07-14): ?post=<ghost-id>
         const wanted = searchParams.get("post");
         if (wanted) {
-          const match = loaded.find((p) => p.id === wanted);
+          const match = loaded.find((p) => p.id === wanted || p.slug === wanted);
           if (match) setOpen(match);
         }
       })
@@ -114,6 +114,20 @@ function DevlogPageInner() {
             <div
               className="prose prose-invert prose-sm max-w-none prose-headings:text-white prose-a:text-blue-400 [&_video]:w-full [&_video]:rounded-xl [&_video]:bg-black [&_audio]:w-full [&_iframe]:w-full [&_iframe]:aspect-video [&_iframe]:rounded-xl [&_figure]:my-6"
               dangerouslySetInnerHTML={{ __html: postHtml }}
+              onClick={(e) => {
+                // 2026-11-15 — links between help posts (…/devlog?post=<slug|id>) open in place
+                const a = (e.target as HTMLElement).closest("a");
+                const href = a?.getAttribute("href") ?? "";
+                const m = href.match(/\/devlog\?(?:.*&)?post=([^&#]+)/);
+                if (!m) return;
+                const key = decodeURIComponent(m[1]);
+                const next = posts.find((p) => p.slug === key || p.id === key);
+                if (!next) return;
+                e.preventDefault();
+                setOpen(next);
+                window.history.pushState(null, "", `/devlog?post=${encodeURIComponent(next.slug || next.id)}`);
+                window.scrollTo({ top: 0 });
+              }}
             />
           </div>
         ) : (
