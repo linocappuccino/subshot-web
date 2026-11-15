@@ -1649,7 +1649,7 @@ const translations = {
     "creditsPage.continueToPayment": "Weiter zur Zahlung",
 
     // devlog/page.tsx
-    "devlogPage.back": "← Zurück",
+    "devlogPage.back": "← Alle Artikel",
     "devlogPage.subtitle": "Was sich gerade bei Subshot tut.",
     "devlogPage.loadFailed": "Devlog konnte nicht geladen werden.",
     "devlogPage.noEntries": "Noch keine Einträge.",
@@ -3280,7 +3280,7 @@ const translations = {
     "creditsPage.continueToPayment": "Continue to payment",
 
     // devlog/page.tsx
-    "devlogPage.back": "← Back",
+    "devlogPage.back": "← All articles",
     "devlogPage.subtitle": "What's happening at Subshot right now.",
     "devlogPage.loadFailed": "Could not load devlog.",
     "devlogPage.noEntries": "No entries yet.",

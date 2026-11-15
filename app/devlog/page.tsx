@@ -69,6 +69,25 @@ function DevlogPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 2026-11-15, Lino: «Devlog» in the navigation must lead back to the overview while an article is open.
+  // The URL decides: ?post= opens that article, no ?post= shows the overview (nav link, browser back/forward).
+  const postParam = searchParams.get("post");
+  useEffect(() => {
+    if (!posts.length) return;
+    const match = postParam ? posts.find((p) => p.id === postParam || p.slug === postParam) ?? null : null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the URL
+    setOpen(match);
+    window.scrollTo({ top: 0 });
+  }, [postParam, posts]);
+  const openPost = (p: DevlogPost | null) => {
+    const url = new URL(window.location.href);
+    if (p) url.searchParams.set("post", p.slug || p.id);
+    else url.searchParams.delete("post");
+    window.history.pushState(null, "", url.toString());
+    setOpen(p);
+    window.scrollTo({ top: 0 });
+  };
+
   const index = useMemo(() => buildDevlogIndex(posts), [posts]);
   const shown = useMemo(() => {
     if (!query.trim()) return posts;
@@ -104,7 +123,7 @@ function DevlogPageInner() {
       <div className={`${open ? "max-w-[948px]" : "max-w-6xl"} mx-auto w-full px-4 sm:px-6 py-8`}>
         {open ? (
           <div>
-            <Button variant="ghost" size="sm" onClick={() => setOpen(null)} className="mb-4">
+            <Button variant="ghost" size="sm" onClick={() => openPost(null)} className="mb-4">
               {t("devlogPage.back")}
             </Button>
             <h1 className="text-2xl sm:text-3xl font-bold mb-1 max-w-[70ch] leading-tight">{open.title}</h1>
@@ -124,9 +143,7 @@ function DevlogPageInner() {
                 const next = posts.find((p) => p.slug === key || p.id === key);
                 if (!next) return;
                 e.preventDefault();
-                setOpen(next);
-                window.history.pushState(null, "", `/devlog?post=${encodeURIComponent(next.slug || next.id)}`);
-                window.scrollTo({ top: 0 });
+                openPost(next);
               }}
             />
           </div>
@@ -187,7 +204,7 @@ function DevlogPageInner() {
                   {shown.map((p) => (
                     <button
                       key={p.id}
-                      onClick={() => setOpen(p)}
+                      onClick={() => openPost(p)}
                       className="group text-left bg-white/[0.035] border border-white/8 hover:border-white/20 rounded-2xl overflow-hidden flex flex-col transition-colors"
                     >
                       <div className="aspect-[16/10] w-full bg-gradient-to-br from-white/[0.07] to-white/[0.02] overflow-hidden">
