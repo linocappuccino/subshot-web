@@ -199,7 +199,7 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
               ))}
               <span className="ml-auto text-white/35 tabular-nums">{Math.round(pct)} %</span>
             </div>
-            {/* 2026-11-15, Lino: «ein grosser Button: Buy more storage, der direkt zum Kauf-Screen der Speichergrösse bringt» */}
+            {/* 2026-11-15, Lino: «ein grosser Button: Buy more storage, der direkt zum Kauf-Screen der Speichergrösse bringt» — always blue (Lino: red reads as delete) */}
             {(() => {
               const cur = data.tier_gb ?? 0;
               const next = STORAGE_TIERS_GB.find((g) => g > cur);
@@ -212,7 +212,7 @@ export function StorageOverviewModal({ open, onClose, onChanged }: { open: boole
                 <div className="mt-4">
                   {hot && <p className={`mb-2 text-sm ${full ? "text-red-300" : "text-amber-200"}`}>{full ? L.fullMsg : L.almostFull}</p>}
                   <a href={href} data-buy-storage
-                    className={`flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition-colors ${hot ? "bg-[#ff3b30] hover:bg-[#ff5a4f] shadow-[0_0_0_4px_rgba(255,59,48,.18)]" : "bg-[#1f6feb] hover:bg-[#3a82f0]"}`}>
+                    className={`flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3.5 text-[15px] font-semibold text-white transition-colors ${hot ? "bg-[#1f6feb] hover:bg-[#3a82f0] shadow-[0_0_0_4px_rgba(31,111,235,.28)]" : "bg-[#1f6feb] hover:bg-[#3a82f0]"}`}>
                     ＋ {data.scope === "team" ? L.buy : L.buyTeam}
                     {data.scope === "team" && next && <span className="font-normal text-white/75">· {L.buyNext(label(next))}</span>}
                   </a>
