@@ -137,7 +137,7 @@ function DevlogPageInner() {
                 // 2026-11-15 — links between help posts (…/devlog?post=<slug|id>) open in place
                 const a = (e.target as HTMLElement).closest("a");
                 const href = a?.getAttribute("href") ?? "";
-                const m = href.match(/\/devlog\?(?:.*&)?post=([^&#]+)/);
+                const m = href.match(/\/(?:devlog|how-to)\?(?:.*&)?post=([^&#]+)/);
                 if (!m) return;
                 const key = decodeURIComponent(m[1]);
                 const next = posts.find((p) => p.slug === key || p.id === key);
@@ -151,7 +151,7 @@ function DevlogPageInner() {
           <>
             <div className="flex flex-col sm:flex-row sm:items-end gap-4 mb-6">
               <div className="flex-1">
-                <h1 className="text-xl font-bold mb-1">Devlog</h1>
+                <h1 className="text-xl font-bold mb-1">{t("devlogPage.title")}</h1>
                 <p className="text-sm text-white/50">{t("devlogPage.subtitle")}</p>
               </div>
               {posts.length > 0 && (

@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
   // link-holder into an unintended click. Nothing in this app is meant to
   // be embedded by a third party, so a blanket same-origin frame policy is
   // safe everywhere, not just on the public routes.
+  // 2026-11-15, Lino: the devlog is now «How to» — old links keep working (?post= etc. are carried over)
+  async redirects() {
+    return [{ source: "/devlog", destination: "/how-to", permanent: true }];
+  },
   async headers() {
     return [
       {

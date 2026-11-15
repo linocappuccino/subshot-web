@@ -112,7 +112,7 @@ const translations = {
     "subtitlePanel.translated": "Übersetzt",
 
     // AppShell.tsx — global nav, present on every authenticated screen
-    "nav.devlog": "Devlog",
+    "nav.devlog": "How to",
     "nav.feedback": "Feedback",
     "nav.team": "Team",
     "nav.projects": "Projekte",
@@ -1650,8 +1650,9 @@ const translations = {
 
     // devlog/page.tsx
     "devlogPage.back": "← Alle Artikel",
-    "devlogPage.subtitle": "Was sich gerade bei Subshot tut.",
-    "devlogPage.loadFailed": "Devlog konnte nicht geladen werden.",
+    "devlogPage.title": "How to use Subshot",
+    "devlogPage.subtitle": "Jede Funktion Schritt für Schritt erklärt – such nach einer Funktion oder Frage.",
+    "devlogPage.loadFailed": "Die Anleitungen konnten nicht geladen werden.",
     "devlogPage.noEntries": "Noch keine Einträge.",
     "devlogPage.searchPlaceholder": "Funktion, Begriff oder Frage suchen …",
     "devlogPage.results": "{count} Beiträge zu «{query}»",
@@ -1770,7 +1771,7 @@ const translations = {
     "subtitlePanel.original": "Original",
     "subtitlePanel.translated": "Translated",
 
-    "nav.devlog": "Devlog",
+    "nav.devlog": "How to",
     "nav.feedback": "Feedback",
     "nav.team": "Team",
     "nav.projects": "Projects",
@@ -3281,8 +3282,9 @@ const translations = {
 
     // devlog/page.tsx
     "devlogPage.back": "← All articles",
-    "devlogPage.subtitle": "What's happening at Subshot right now.",
-    "devlogPage.loadFailed": "Could not load devlog.",
+    "devlogPage.title": "How to use Subshot",
+    "devlogPage.subtitle": "Every feature explained step by step – search for a feature or a question.",
+    "devlogPage.loadFailed": "Could not load the guides.",
     "devlogPage.noEntries": "No entries yet.",
     "devlogPage.searchPlaceholder": "Search a feature, term or question …",
     "devlogPage.results": "{count} posts about “{query}”",
