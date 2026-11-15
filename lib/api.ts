@@ -942,6 +942,27 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       return URL.createObjectURL(blob);
     },
 
+    // ── Subtitle sync with DaVinci Resolve (2026-11-15) ──
+    subtitleTracks: (versionId: string) => request<any>(`video-versions/${versionId}/subtitles/tracks?t=${Date.now()}`),
+    resolveTimelines: () => request<any>(`me/resolve-timelines?t=${Date.now()}`),
+    setResolveLink: (versionId: string, body: Record<string, unknown>) =>
+      request<any>(`video-versions/${versionId}/resolve-link`, { method: "PUT", body: JSON.stringify(body) }),
+    downloadSubtitleTrack: async (versionId: string, lang: string, fmt: "srt" | "vtt") => {
+      const token = await getToken();
+      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      const res = await fetch(`${BASE_URL}/video-versions/${versionId}/subtitles/export?lang=${encodeURIComponent(lang)}&fmt=${fmt}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
+      const cd = res.headers.get("content-disposition") || "";
+      const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = m ? decodeURIComponent(m[1]) : `subtitles-${lang}.${fmt}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    },
+
     // ── Scene Markers (2026-08-30, web port of the iOS "Set Marker"
     // on-set timecode feature — see project memory) ─────────────────────
     sceneMarkers: (sectionId: string) => request<SceneMarker[]>(`sections/${sectionId}/markers`),

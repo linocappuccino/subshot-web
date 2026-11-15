@@ -40,8 +40,10 @@ export function DeliverVideoCard({
   onDownloadMain,
   onDownloadFile,
   onDownloadZip,
+  subtitleHref,
 }: {
   video: DeliverVideo;
+  subtitleHref?: (versionId: string, lang: string, fmt: "srt" | "vtt") => string;
   zipPct: number | null;
   zipBusy: boolean;
   onPlay: () => void;
@@ -60,7 +62,8 @@ export function DeliverVideoCard({
   const [sel, setSel] = useState("main");
   const current = formats.find((f) => f.id === sel) ?? formats[0];
   const licenses = video.licenses ?? [];
-  const extra = formats.length > 1 || licenses.length > 0;
+  const subLangs = video.subtitle_langs ?? [];
+  const extra = formats.length > 1 || licenses.length > 0 || (subLangs.length > 0 && !!subtitleHref);
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-white/[0.04] p-3 ring-1 ring-inset ring-white/[0.06] [font-family:-apple-system,BlinkMacSystemFont,'SF_Pro_Text',system-ui,sans-serif]">
@@ -129,6 +132,15 @@ export function DeliverVideoCard({
             <button type="button" disabled={zipBusy} onClick={onDownloadZip} className="text-[13px] text-[#0a84ff] hover:opacity-80 disabled:opacity-50">
               {zipPct !== null ? `${t("deliverPage.zipping")} ${zipPct}%` : t("deliverPage.allFormatsZip", { n: formats.length })}
             </button>
+          )}
+          {subLangs.length > 0 && subtitleHref && v && (
+            <div className="flex flex-wrap justify-center gap-1.5" data-deliver-subtitles>
+              {subLangs.flatMap((l) => (["srt", "vtt"] as const).map((f) => (
+                <a key={l + f} href={subtitleHref(v.id, l, f)} className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-white/65 hover:bg-white/[0.12] hover:text-white">
+                  💬 {l.toUpperCase()} · {f.toUpperCase()}
+                </a>
+              )))}
+            </div>
           )}
           {licenses.length > 0 && (
             <div className="flex flex-wrap justify-center gap-1.5">

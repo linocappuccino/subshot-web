@@ -824,6 +824,8 @@ export interface DeliverVideo {
   /** 2026-10-12, Lino: "Fassungen pro Video gruppiert" (only uploaded ones) */
   deliverables?: DeliverFile[];
   licenses?: DeliverFile[];
+  /** 2026-11-15 — subtitle languages the client can download as SRT / VTT */
+  subtitle_langs?: string[];
 }
 
 export interface DeliverLink {

@@ -406,6 +406,7 @@ function DeliverPageInner() {
               onDownloadMain={() => downloadOne(video)}
               onDownloadFile={(kind, id) => downloadExtra(kind, id)}
               onDownloadZip={() => downloadVideoZip(video)}
+              subtitleHref={(versionId, lang, fmt) => `${process.env.NEXT_PUBLIC_API_BASE_URL}/share/${token}/video-versions/${versionId}/subtitles/export?lang=${encodeURIComponent(lang)}&fmt=${fmt}`}
             />
           ))}
         </div>

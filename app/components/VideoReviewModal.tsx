@@ -8,6 +8,7 @@ import { Avatar } from "./ui/Avatar";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { SubtitlePanel, SUBTITLE_COL_WIDTH, SUBTITLE_LANGUAGES } from "./SubtitlePanel";
 import { useApi } from "@/lib/useApi";
+import { ResolveSyncBar } from "./ResolveSyncBar";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
 import type { Member, Video, VideoComment, VideoVersion, SubtitlesData, SubtitleSegment, SubtitleTranslationCue } from "@/lib/types";
@@ -1990,12 +1991,13 @@ export function VideoReviewModal({
               className="hidden lg:flex flex-col p-5 border-r border-white/8 shrink-0 overflow-hidden"
               style={{ width: subtitleColWidth }}
             >
+              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} canEdit={canEdit} />}
               <SubtitlePanel
                 cues={activeSubtitleCues}
                 hasOriginal={hasOriginalSubtitles}
                 originalLang={subtitles.original_lang}
                 loading={subtitlesLoading}
-                onEditText={handleEditSubtitleCueText}
+                onEditText={publicMode && currentVersion?.feedback_locked ? () => toast.showError(t("videoReviewModal.feedbackDone")) : handleEditSubtitleCueText}
                 canManage={canEdit}
                 uploading={uploadingSubtitles}
                 onUpload={onUploadSubtitles ? handleUploadSubtitles : undefined}
@@ -2011,6 +2013,16 @@ export function VideoReviewModal({
           {/* Links: Video + Timeline */}
           <div className="flex-1 flex flex-col p-5 gap-3 min-w-0">
             <div ref={videoWrapRef} className="flex-1 relative rounded-xl overflow-hidden flex items-center justify-center min-h-0 max-sm:-mx-5">
+              {/* 2026-11-15 — subtitle overlay (WebVTT-style) of the active track while the subtitle panel is open */}
+              {showSubtitles && (() => {
+                const ms = currentTime * 1000;
+                const cue = activeSubtitleCues.find((c) => c.start_ms <= ms && ms < c.end_ms);
+                return cue ? (
+                  <div data-subtitle-overlay className="pointer-events-none absolute inset-x-0 bottom-[12%] z-[5] flex justify-center px-6">
+                    <span className="max-w-[85%] whitespace-pre-line rounded-md bg-black/70 px-3 py-1.5 text-center text-[clamp(14px,2.2vw,22px)] font-medium leading-snug text-white shadow-lg">{cue.text}</span>
+                  </div>
+                ) : null;
+              })()}
               {currentVersion?.playback_url ? (
                 <video
                   ref={videoRef}
