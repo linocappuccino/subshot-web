@@ -25,7 +25,8 @@ const T = {
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
-    waiting: "Warte auf DaVinci …", connected: "DaVinci verbunden", notConnected: "DaVinci nicht verbunden",
+    waiting: "Warte auf DaVinci …", relink: "Neu verknüpfen", searching: "Suche in Resolve …",
+    notFound: "In Resolve nichts Passendes gefunden – bitte die Timeline unten selbst wählen.", offlineManual: "DaVinci ist nicht verbunden – bitte die Timeline unten selbst wählen.", connected: "DaVinci verbunden", notConnected: "DaVinci nicht verbunden",
     requested: "DaVinci ist verbunden – die Spur wurde angefragt. Kommt nichts: Plugin auf 1.8.3 aktualisieren oder Timeline / Spur prüfen.", again: "Erneut anfragen", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Timeline «${tl ?? "?"}» in Resolve öffnen` : r === "project_not_open" ? "Projekt in Resolve öffnen" : r === "track_missing" ? `Spur ST${n ?? "?"} fehlt in der Timeline` : r === "track_empty" ? `Spur ST${n ?? "?"} ist leer` : r,
     noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
@@ -34,7 +35,8 @@ const T = {
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
-    waiting: "Waiting for DaVinci …", connected: "DaVinci connected", notConnected: "DaVinci not connected",
+    waiting: "Waiting for DaVinci …", relink: "Relink", searching: "Searching in Resolve …",
+    notFound: "Nothing matching found in Resolve – please choose the timeline below.", offlineManual: "DaVinci isn't connected – please choose the timeline below.", connected: "DaVinci connected", notConnected: "DaVinci not connected",
     requested: "DaVinci is connected – the track was requested. Nothing arriving? Update the plugin to 1.8.3 or check timeline / track.", again: "Ask again", noAnswer: "DaVinci isn't answering – update the plugin or open Resolve.", offline: "DaVinci isn't connected – open the project in Resolve with SUBSHOT running.",
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Open the timeline «${tl ?? "?"}» in Resolve` : r === "project_not_open" ? "Open the project in Resolve" : r === "track_missing" ? `Track ST${n ?? "?"} is missing in the timeline` : r === "track_empty" ? `Track ST${n ?? "?"} is empty` : r,
     noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
@@ -51,12 +53,13 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
   const [failed, setFailed] = useState(false);
   // 2026-11-16 (v1.8) — after picking a timeline / track the plugin uploads at once; wait ~20 s, then say so
   const [waitSince, setWaitSince] = useState<number | null>(null);
+  const [relinkSince, setRelinkSince] = useState<number | null>(null);
   const [, setTick] = useState(0);
   useEffect(() => {
-    if (waitSince == null) return;
+    if (waitSince == null && relinkSince == null) return;
     const iv = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(iv);
-  }, [waitSince]);
+  }, [waitSince, relinkSince]);
   const revKey = useRef<string | null>(null);
 
   // 2026-11-16 — never hide the bar: errors show a retry; polls every 15 s so plugin uploads show up without reload
@@ -116,6 +119,11 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
     <div data-resolve-sync className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/70">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-semibold text-white/85">🎬 {L.tl}</span>
+        {canEdit && videoId && (
+          <button type="button" data-relink
+            onClick={async () => { await api.relinkVideo(videoId); setRelinkSince(Date.now()); setWaitSince(null); load(); }}
+            className="ml-auto rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white/80 hover:bg-white/15">↻ {L.relink}</button>
+        )}
         {info.resolve_online != null && (
           <span data-resolve-online={info.resolve_online ? "1" : "0"} title={info.resolve_client || undefined}
             className={`rounded-full px-2 py-0.5 text-[11px] ${info.resolve_online ? "bg-emerald-500/15 text-emerald-300" : "bg-white/[0.06] text-white/45"}`}>
@@ -182,6 +190,12 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
       )}
       {(() => {
         const linked = !!(link.timeline_id || link.timeline_name);
+        if (!linked && relinkSince != null) {
+          const ms = Date.now() - relinkSince;
+          if (info.resolve_online === false) return <p data-relink-offline className="mt-2 text-amber-200/90">{L.offlineManual}</p>;
+          if (ms < 20000) return <p data-relink-searching className="mt-2 flex items-center gap-2 text-white/70"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />{L.searching}</p>;
+          return <p data-relink-notfound className="mt-2 text-amber-200/90">{L.notFound}</p>;
+        }
         if (!linked) return null;
         if (link.resolve_reason) {
           return <p data-resolve-reason className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-amber-100">⚠ {L.reason(link.resolve_reason, link.resolve_timeline_name ?? link.timeline_name, link.track_index)}</p>;

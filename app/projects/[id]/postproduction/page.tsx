@@ -1044,6 +1044,19 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 </Button>
               )
             )}
+            {canEditStatus && !manualOrder && (
+              // 2026-11-16 (v1.12) — redo the automatic DaVinci links (manual links stay)
+              <Button variant="secondary" size="sm" data-relink-all onClick={async () => {
+                try {
+                  const r = await api.relinkProject(id);
+                  toast.showSuccess(t("postproduction.relinkAllDone", { n: r.removed_links }));
+                } catch (e) {
+                  toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+                }
+              }}>
+                ↻ {t("postproduction.relinkAll")}
+              </Button>
+            )}
           </div>
         </div>
 
