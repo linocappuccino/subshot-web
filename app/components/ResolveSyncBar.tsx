@@ -9,22 +9,26 @@ import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 
 type Track = { lang: string; kind: string; cues: number; rev: number; resolve_status: string | null; resolve_rev: number | null; resolve_at: string | null };
-type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; link_source: string | null; lang_confirmed?: boolean };
+type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; track_name?: string | null; link_source: string | null; lang_confirmed?: boolean };
 type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean;
   video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[] };
-type Seen = { resolve_project: string | null; timelines: { id: string; name: string }[] };
+type SeenTrack = { index: number; name: string | null };
+type Seen = { resolve_project: string | null; timelines: { id: string; name: string; subtitle_tracks?: SeenTrack[] }[] };
+const trackLabel = (index: number, name: string | null | undefined) => `ST${index}${name ? ` · ${name}` : ""}`;
 
 const T = {
   de: { tl: "Resolve-Timeline", none: "Keine Timeline verknüpft – das Resolve-Tool verknüpft sie automatisch, sobald die Timeline offen ist.", auto: "automatisch", manual: "manuell",
     track: "Spur", lang: "Sprache", also: "auch verknüpft mit", applied: (t: string) => `In Resolve übernommen um ${t}`, pending: "Wartet auf Resolve", conflict: "Konflikt in Resolve – dort auflösen",
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
-    subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern" },
+    subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
+    noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
     track: "track", lang: "language", also: "also linked with", applied: (t: string) => `Taken over in Resolve at ${t}`, pending: "Waiting for Resolve", conflict: "Conflict in Resolve – resolve it there",
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
-    subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change" },
+    subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
+    noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …" },
 };
 
 export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canEdit: boolean }) {
@@ -60,6 +64,9 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
   };
   const save = async (body: Record<string, unknown>) => { await api.setResolveLink(versionId, body); setChanging(false); load(); };
   const options = [...(seen?.timelines ?? [])];
+  // 2026-11-16 — only the subtitle tracks the plugin reported for THIS timeline, labelled with Resolve's track name
+  const tracks: SeenTrack[] = [...((link.timeline_id && seen?.timelines.find((x) => x.id === link.timeline_id)?.subtitle_tracks) || [])].sort((a, b) => a.index - b.index);
+  if (link.track_index != null && !tracks.some((t) => t.index === link.track_index)) tracks.unshift({ index: link.track_index, name: link.track_name ?? null });
   if (link.timeline_id && !options.some((o) => o.id === link.timeline_id)) options.unshift({ id: link.timeline_id, name: link.timeline_name || link.timeline_id });
 
   return (
@@ -68,7 +75,7 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
         <span className="font-semibold text-white/85">🎬 {L.tl}</span>
         {link.timeline_id ? (
           <span className="text-white/80">
-            «{link.timeline_name || link.timeline_id}»{link.track_index != null && ` · ${L.track} ${link.track_index}`}{link.lang && ` · ${link.lang.toUpperCase()}`}
+            «{link.timeline_name || link.timeline_id}»{link.track_index != null && ` · ${trackLabel(link.track_index, link.track_name)}`}{link.lang && ` · ${link.lang.toUpperCase()}`}
             {link.link_source && <span className="ml-1 text-white/40">({link.link_source === "auto" ? L.auto : L.manual})</span>}
           </span>
         ) : (
@@ -84,12 +91,14 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
               {options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
               {link.timeline_id && <option value="__none">{L.unlink}</option>}
             </select>
-            <select value={link.track_index ?? ""} onChange={(e) => save({ track_index: e.target.value === "" ? null : Number(e.target.value) })}
-              className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none" title={L.track}>
-              <option value="">{L.track} –</option>
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{L.track} {n}</option>)}
+            <select value={link.track_index ?? ""} disabled={tracks.length === 0} data-track-select
+              onChange={(e) => { const n = e.target.value === "" ? null : Number(e.target.value); save({ track_index: n, track_name: tracks.find((t) => t.index === n)?.name ?? null }); }}
+              className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none disabled:opacity-50" title={L.track}>
+              <option value="">{tracks.length ? L.trackNone : `${L.track} –`}</option>
+              {tracks.map((t) => <option key={t.index} value={t.index}>{trackLabel(t.index, t.name)}</option>)}
             </select>
           </div>
+          {link.timeline_id && tracks.length === 0 && <p className="text-white/45" data-no-tracks>{L.noTracks}</p>}
           {options.length === 0 && <p className="text-white/45">{L.openResolve}</p>}
           <div className="flex items-center gap-1.5">
             <input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={L.typeName}
