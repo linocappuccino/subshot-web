@@ -10,9 +10,11 @@ import { useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
 
 type Track = { lang: string; kind: string; cues: number; rev: number; resolve_status: string | null; resolve_rev: number | null; resolve_at: string | null };
-type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; track_name?: string | null; link_source: string | null; lang_confirmed?: boolean };
+type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; track_name?: string | null; link_source: string | null; lang_confirmed?: boolean;
+  resolve_reason?: string | null; resolve_timeline_name?: string | null };
 type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean;
-  video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[] };
+  video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[];
+  resolve_online?: boolean | null };
 type SeenTrack = { index: number; name: string | null };
 type Seen = { resolve_project: string | null; timelines: { id: string; name: string; subtitle_tracks?: SeenTrack[] }[] };
 const trackLabel = (index: number, name: string | null | undefined) => `ST${index}${name ? ` · ${name}` : ""}`;
@@ -23,12 +25,16 @@ const T = {
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
+    waiting: "Warte auf DaVinci …", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
+    reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Timeline «${tl ?? "?"}» in Resolve öffnen` : r === "project_not_open" ? "Projekt in Resolve öffnen" : r === "track_missing" ? `Spur ST${n ?? "?"} fehlt in der Timeline` : r === "track_empty" ? `Spur ST${n ?? "?"} ist leer` : r,
     noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
     track: "track", lang: "language", also: "also linked with", applied: (t: string) => `Taken over in Resolve at ${t}`, pending: "Waiting for Resolve", conflict: "Conflict in Resolve – resolve it there",
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
+    waiting: "Waiting for DaVinci …", noAnswer: "DaVinci isn't answering – update the plugin or open Resolve.", offline: "DaVinci isn't connected – open the project in Resolve with SUBSHOT running.",
+    reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Open the timeline «${tl ?? "?"}» in Resolve` : r === "project_not_open" ? "Open the project in Resolve" : r === "track_missing" ? `Track ST${n ?? "?"} is missing in the timeline` : r === "track_empty" ? `Track ST${n ?? "?"} is empty` : r,
     noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
 };
 
@@ -41,6 +47,14 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
   const [typed, setTyped] = useState("");
   const [changing, setChanging] = useState(false);
   const [failed, setFailed] = useState(false);
+  // 2026-11-16 (v1.8) — after picking a timeline / track the plugin uploads at once; wait ~20 s, then say so
+  const [waitSince, setWaitSince] = useState<number | null>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (waitSince == null) return;
+    const iv = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(iv);
+  }, [waitSince]);
   const revKey = useRef<string | null>(null);
 
   // 2026-11-16 — never hide the bar: errors show a retry; polls every 15 s so plugin uploads show up without reload
@@ -85,10 +99,11 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
     else {
       const tl = seen?.timelines.find((x) => x.id === id);
       await api.setResolveLink(versionId, { timeline_id: id, timeline_name: tl?.name ?? null, resolve_project: seen?.resolve_project ?? null });
+      setWaitSince(Date.now());
     }
     load();
   };
-  const save = async (body: Record<string, unknown>) => { await api.setResolveLink(versionId, body); setChanging(false); load(); };
+  const save = async (body: Record<string, unknown>) => { await api.setResolveLink(versionId, body); setChanging(false); setWaitSince(Date.now()); load(); };
   const options = [...(seen?.timelines ?? [])];
   // 2026-11-16 — only the subtitle tracks the plugin reported for THIS timeline, labelled with Resolve's track name
   const tracks: SeenTrack[] = [...((link.timeline_id && seen?.timelines.find((x) => x.id === link.timeline_id)?.subtitle_tracks) || [])].sort((a, b) => a.index - b.index);
@@ -155,8 +170,21 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
         </div>
       )}
       {info.also_linked.length > 0 && (
-        <p className="mt-1 text-white/45">{L.also}: {info.also_linked.map((a) => (a.lang || "?").toUpperCase()).join(", ")}</p>
+        <p className="mt-1 text-white/45">{L.also}: {info.also_linked.map((a) => `${a.video_title}${a.lang ? ` (${a.lang.toUpperCase()})` : ""}`).join(", ")}</p>
       )}
+      {(() => {
+        const linked = !!(link.timeline_id || link.timeline_name);
+        if (!linked) return null;
+        if (link.resolve_reason) {
+          return <p data-resolve-reason className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-amber-100">⚠ {L.reason(link.resolve_reason, link.resolve_timeline_name ?? link.timeline_name, link.track_index)}</p>;
+        }
+        if (info.languages.length > 0) return null;
+        if (info.resolve_online === false) return <p data-resolve-offline className="mt-2 text-amber-200/90">{L.offline}</p>;
+        const waited = waitSince != null ? Date.now() - waitSince : null;
+        if (waited != null && waited < 20000) return <p data-resolve-waiting className="mt-2 flex items-center gap-2 text-white/70"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />{L.waiting}</p>;
+        if (waited != null) return <p data-resolve-noanswer className="mt-2 text-amber-200/90">{L.noAnswer}</p>;
+        return null;
+      })()}
       {info.languages.length > 0 && (
         <div className="mt-2 flex flex-col gap-1">
           {info.languages.map((t) => {
