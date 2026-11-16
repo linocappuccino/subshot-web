@@ -588,7 +588,7 @@ export function VideoTile({
             transparent background in /public/platforms; editors pick it from a small menu (hover shows «+» when empty).
             Guests (share view, read-only): top LEFT of the tile (Lino 2026-11-16) — there is no ⋯ menu there */}
         {(video.platform || (onChangePlatform && hovering)) && (
-          <div className={`absolute z-[2] ${onChangePlatform ? "top-8 right-2" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
+          <div className={`absolute z-[2] ${onChangePlatform ? "top-10 right-2.5" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
             {onChangePlatform ? (
               <Menu
                 portal
