@@ -4,6 +4,7 @@
    which Resolve timeline / subtitle track / language a version belongs to (auto-linked by the plugin, correctable
    here) and per language whether Resolve has taken the latest revision. */
 
+import { DavinciDownload } from "./DavinciDownload";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
@@ -244,6 +245,7 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
           })}
         </div>
       )}
+      <DavinciDownload variant="inline" />
     </div>
   );
 }

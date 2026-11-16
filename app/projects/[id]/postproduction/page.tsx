@@ -1,5 +1,6 @@
 "use client";
 
+import { DavinciDownload } from "@/app/components/DavinciDownload";
 import { Suspense, useEffect, useRef, useState, use as usePromise } from "react";
 import {
   DndContext, type DragEndEvent, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors,
@@ -1065,6 +1066,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 ↻ {t("postproduction.relinkAll")}
               </Button>
             )}
+            {canEditStatus && !manualOrder && <DavinciDownload variant="button" />}
           </div>
         </div>
 

@@ -3,6 +3,7 @@
 /* 2026-11-16 (contract v1.9) — the seat's connected Macs for DaVinci Resolve: max. 2, one online at a time.
    «Mac ersetzen/freigeben» once per 30 days (the admin can reset any time). manage_url of the plugin errors points here. */
 
+import { DavinciDownload } from "@/app/components/DavinciDownload";
 import { useEffect, useState } from "react";
 import { AppShell } from "@/app/components/AppShell";
 import { useApi } from "@/lib/useApi";
@@ -54,6 +55,7 @@ export default function AccountPage() {
       <div className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-10">
         <h1 className="text-2xl font-semibold">Account</h1>
         <MacsSection />
+        <DavinciDownload />
       </div>
     </AppShell>
   );
