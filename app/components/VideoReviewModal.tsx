@@ -2483,7 +2483,7 @@ export function VideoReviewModal({
 function isSystemNotice(comment: VideoComment): boolean {
   return comment.system_kind === "subtitle_edited" || comment.system_kind === "subtitle_translation_edited";
 }
-/** 2026-11-16, Lino — automatic, already resolved comment at the cue's time when someone corrects a subtitle */
+/** 2026-11-16, Lino — automatic, open comment at the cue (open feedback, ticked off by the editor)'s time when someone corrects a subtitle */
 function isCorrection(comment: VideoComment): boolean {
   return comment.system_kind === "subtitle_correction";
 }
@@ -2586,7 +2586,7 @@ function CommentRow({
           )}
           <span className="text-sm font-semibold">{isSystem ? t("videoReviewModal.systemNoticeLabel") : comment.author_name}</span>
         </div>
-        <p className={`text-sm text-white/80 break-words mt-1 ${resolved && !isCorrection(comment) ? "line-through decoration-white/30" : ""}`}>
+        <p className={`text-sm text-white/80 break-words mt-1 ${resolved ? "line-through decoration-white/30" : ""}`}>
           {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
         </p>
         {/* 2026-08-05, Lino: "bestätigung wer es gemacht hat, soll rechts
@@ -2662,7 +2662,7 @@ function PresentationFeedbackRow({
           </span>
           {!isSystem && <span className="text-base font-mono font-semibold text-blue-400">{formatTime(comment.timestamp_seconds ?? 0)}</span>}
         </div>
-        <p className={`text-xl leading-snug break-words ${resolved && !isCorrection(comment) ? "line-through decoration-white/30 text-white/35" : "text-white/90"}`}>
+        <p className={`text-xl leading-snug break-words ${resolved ? "line-through decoration-white/30 text-white/35" : "text-white/90"}`}>
           {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
         </p>
       </button>
