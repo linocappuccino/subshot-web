@@ -345,7 +345,7 @@ function DeliverPageInner() {
             ×
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 URL */}
-          <img src={data.client_logo_url} alt={data.client_name ?? "Logo"} className="h-14 w-auto max-w-[160px] object-contain sm:h-16" />
+          <img src={data.client_logo_url} alt={data.client_name ?? "Logo"} className="h-14 w-auto max-w-[160px] object-contain sm:h-16 rounded-[20%] overflow-hidden" />
         </>
       )}
       </div>

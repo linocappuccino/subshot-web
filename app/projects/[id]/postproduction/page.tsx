@@ -302,6 +302,23 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   }
   async function uploadMany(files: File[]) {
     if (!data || !files.length) return;
+    // 2026-11-16 (duplicates «V3 FR … Portemonnaie», «V3 IT … Zügeln schlimmste»): a file named like an existing video
+    // in this project becomes a NEW VERSION of it (after one question, default yes) instead of a silent duplicate
+    const norm = (x: string) => x.replace(/\.[^.]+$/, "").trim().toLowerCase();
+    const existing = new Map<string, { sectionId: string; video: Video }>();
+    for (const [sid, vs] of Object.entries(videosBySection)) for (const v of vs) existing.set(norm(v.title), { sectionId: sid, video: v });
+    const matches = files.map((f) => ({ f, hit: existing.get(norm(f.name)) })).filter((x) => x.hit);
+    if (matches.length) {
+      const names = matches.slice(0, 5).map((m) => `«${m.hit!.video.title}»`).join(", ") + (matches.length > 5 ? " …" : "");
+      const asVersion = window.confirm(
+        `${matches.length === 1 ? "Diese Datei heisst" : `${matches.length} Dateien heissen`} wie ein bestehendes Video: ${names}.\n\n` +
+        "OK = als neue Version hochladen (empfohlen)\nAbbrechen = als eigenes, neues Video hochladen");
+      if (asVersion) {
+        for (const m of matches) void uploadVersionFromTile(m.hit!.sectionId, m.hit!.video, m.f);
+        files = files.filter((f) => !existing.has(norm(f.name)));
+        if (!files.length) return;
+      }
+    }
     const items = files.map((f, i) => ({ file: f, item: { id: `${Date.now()}-${i}-${f.name}`, name: f.name, progress: 0, status: "wait" as const } }));
     setUploads((prev) => [...prev.filter((u) => u.status === "up" || u.status === "wait"), ...items.map((x) => x.item)]);
     const set = (id: string, patch: Partial<UploadItem>) => setUploads((prev) => prev.map((u) => (u.id === id ? { ...u, ...patch } : u)));
