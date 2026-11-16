@@ -15,7 +15,7 @@ export function usePostStageLabels(): Record<PostStage, string> {
   return {
     rohschnitt: t("postStage.rohschnitt"),
     feinschnitt: t("postStage.feinschnitt"),
-    color_grading: t("postStage.colorGrading"),
+    untertitel: t("postStage.untertitel"),
     abgenommen: t("postStage.abgenommen"),
   };
 }
