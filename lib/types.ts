@@ -833,6 +833,12 @@ export interface DeliverVideo {
   licenses?: DeliverFile[];
   /** 2026-11-15 — subtitle languages the client can download as SRT / VTT */
   subtitle_langs?: string[];
+  /** 2026-11-16 — Deliver filters (same as Postproduction) */
+  language_id?: string | null;
+  language_name?: string | null;
+  language_flag?: string | null;
+  format?: string | null;
+  platform?: string | null;
 }
 
 export interface DeliverLink {

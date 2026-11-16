@@ -61,8 +61,8 @@ export const publicDeliverApi = {
   // Used by the "Alles herunterladen (ZIP)" button — one presigned URL per
   // eligible video in a single round trip, so the client can fetch+zip
   // (client-zip) without ever routing the video bytes through this API.
-  getDownloadAllUrls: (token: string, unlockToken: string | null) =>
+  getDownloadAllUrls: (token: string, unlockToken: string | null, videoIds?: string[]) =>
     handle<{ files: { filename: string; url: string }[] }>(
-      fetch(`${BASE_URL}/share/${token}/deliver/download-all-urls`, { headers: unlockHeaders(unlockToken) })
+      fetch(`${BASE_URL}/share/${token}/deliver/download-all-urls${videoIds ? `?video_ids=${encodeURIComponent(videoIds.join(","))}` : ""}`, { headers: unlockHeaders(unlockToken) })
     ),
 };

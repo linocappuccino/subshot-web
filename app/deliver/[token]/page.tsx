@@ -9,6 +9,7 @@ import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import type { DeliverPreviewData, DeliverVideo, DeliverMiscGroup } from "@/lib/types";
 import { DeliverVideoCard } from "@/app/components/DeliverVideoCard";
+import { FormatTabs, PlatformTabs, matchesFormat, matchesPlatform, type FormatTab, type PlatformTab } from "@/app/components/PostproLanguages";
 
 // 2026-09-06, Lino: "genau dieses Deliver-System möchte ich für Subshot nun
 // auch haben... nach der Postproduction-Seite kommt die Deliver-Page, jedes
@@ -53,6 +54,14 @@ function DeliverPageInner() {
   const [videoZip, setVideoZip] = useState<{ id: string; pct: number } | null>(null);
   const [zipProgress, setZipProgress] = useState(0);
   const [countdown, setCountdown] = useState("");
+  // 2026-11-16, Lino — same filters as on Postproduction: language, format, platform (combinable)
+  const [langTab, setLangTab] = useState<string>("all");
+  const [fmtTab, setFmtTab] = useState<FormatTab>("all");
+  const [plTab, setPlTab] = useState<PlatformTab>("all");
+  const _fmtMap = Object.fromEntries((data?.videos ?? []).map((v) => [v.id, v.format ?? ""]));
+  const shownVideos = (data?.videos ?? []).filter((v) =>
+    (langTab === "all" || (langTab === "none" ? !v.language_id : v.language_id === langTab)) &&
+    matchesFormat(v.id, fmtTab, _fmtMap) && matchesPlatform(v.platform, plTab));
 
   function load(unlock: string | null) {
     publicDeliverApi
@@ -184,7 +193,8 @@ function DeliverPageInner() {
     setZipping(true);
     setZipProgress(0);
     try {
-      const { files } = await publicDeliverApi.getDownloadAllUrls(token, unlockToken);
+      const filtered = langTab !== "all" || fmtTab !== "all" || plTab !== "all";
+      const { files } = await publicDeliverApi.getDownloadAllUrls(token, unlockToken, filtered ? shownVideos.map((v) => v.id) : undefined);
       await zipFiles(files, `${data?.project_name || "download"}.zip`, setZipProgress);
     } catch {
       alert(t("deliverPage.zipFailed"));
@@ -388,15 +398,46 @@ function DeliverPageInner() {
           onClick={downloadAll}
           className="flex w-fit cursor-pointer items-center gap-2 self-center rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:opacity-60 sm:self-start"
         >
-          {zipping ? `${t("deliverPage.zipping")} ${zipProgress}%` : `⬇ ${t("deliverPage.downloadAll")}`}
+          {zipping ? `${t("deliverPage.zipping")} ${zipProgress}%` : (langTab !== "all" || fmtTab !== "all" || plTab !== "all")
+            ? `⬇ ${t("deliverPage.downloadFiltered", { n: shownVideos.length })}` : `⬇ ${t("deliverPage.downloadAll")}`}
         </button>
+
+        {(() => {
+          const vids = data.videos;
+          const langs = new Map<string, { name: string; flag: string | null; n: number }>();
+          let none = 0;
+          for (const v of vids) {
+            if (v.language_id) {
+              const x = langs.get(v.language_id) ?? { name: v.language_name ?? "?", flag: v.language_flag ?? null, n: 0 };
+              x.n += 1; langs.set(v.language_id, x);
+            } else none += 1;
+          }
+          const pill = (active: boolean) => `inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/75 hover:bg-white/10"}`;
+          const byLang = vids.filter((v) => langTab === "all" || (langTab === "none" ? !v.language_id : v.language_id === langTab));
+          const formats = Object.fromEntries(vids.map((v) => [v.id, v.format ?? ""]));
+          return (
+            <div data-deliver-filters className="flex flex-col gap-1">
+              {langs.size > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={() => setLangTab("all")} className={pill(langTab === "all")}>{t("deliverPage.filterAll")} <span className="opacity-50">{vids.length}</span></button>
+                  {[...langs.entries()].map(([id, l]) => (
+                    <button key={id} type="button" onClick={() => setLangTab(id)} className={pill(langTab === id)}>{l.flag} {l.name} <span className="opacity-50">{l.n}</span></button>
+                  ))}
+                  {none > 0 && <button type="button" onClick={() => setLangTab("none")} className={pill(langTab === "none")}>{t("deliverPage.filterNoLang")} <span className="opacity-50">{none}</span></button>}
+                </div>
+              )}
+              <FormatTabs videoIds={byLang.map((v) => v.id)} formats={formats} tab={fmtTab} onTab={setFmtTab} />
+              <PlatformTabs platforms={byLang.filter((v) => matchesFormat(v.id, fmtTab, formats)).map((v) => v.platform)} tab={plTab} onTab={setPlTab} />
+            </div>
+          );
+        })()}
 
         {/* 2026-10-12, Lino: "das mit den versch. fassungen ist so viel zu kompliziert und versteckt ...
             auch für den kunden muss das viel einfacher ersichtlich und übersichtlicher sein" — one card
             per video: an Apple-style format switch (16:9 | 9:16 | …), the preview in that format, one
             big download button for it, "Alle Fassungen (ZIP)" + licences underneath. */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {data.videos.map((video) => (
+          {shownVideos.map((video) => (
             <DeliverVideoCard
               key={video.id}
               video={video}
