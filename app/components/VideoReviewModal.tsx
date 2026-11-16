@@ -355,6 +355,10 @@ export function VideoReviewModal({
   }, [versions]);
   const [versionIndex, setVersionIndex] = useState(initialVersionIndex);
   const currentVersion: VideoVersion | undefined = versions[versionIndex];
+  // 2026-11-16, Lino: once a newer version is uploaded the older one is «closed» — watch / play / download only,
+  // no new comments or subtitle changes (the API answers 409); ticking existing comments off still works
+  const latestVersion = versions[initialVersionIndex];
+  const versionClosed = !!currentVersion && versions.some((v) => v.status === "ready" && v.version_number > currentVersion.version_number);
 
   // 2026-07-28 — laedt die Untertitel-Segmente neu, sobald sich die
   // Version aendert (SRT ist pro VideoVersion gescoped, siehe
@@ -2020,7 +2024,7 @@ export function VideoReviewModal({
                 hasOriginal={hasOriginalSubtitles}
                 originalLang={subtitles.original_lang}
                 loading={subtitlesLoading}
-                onEditText={publicMode && currentVersion?.feedback_locked ? () => toast.showError(t("videoReviewModal.feedbackDone")) : handleEditSubtitleCueText}
+                onEditText={versionClosed ? () => toast.showError(t("videoReviewModal.versionClosedShort")) : publicMode && currentVersion?.feedback_locked ? () => toast.showError(t("videoReviewModal.feedbackDone")) : handleEditSubtitleCueText}
                 canManage={canEdit}
                 uploading={uploadingSubtitles}
                 onUpload={onUploadSubtitles ? handleUploadSubtitles : undefined}
@@ -2390,7 +2394,17 @@ export function VideoReviewModal({
                 </div>
 
                 <div className="border-t border-white/10 p-3 shrink-0">
-                  {publicMode && currentVersion?.feedback_locked ? (
+                  {versionClosed ? (
+                    <div data-version-closed className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-sm text-amber-100">
+                      <p>{t("videoReviewModal.versionClosed", { label: currentVersion ? formatVersionLabel(currentVersion) : "" })}</p>
+                      {latestVersion && (
+                        <button type="button" onClick={() => setVersionIndex(initialVersionIndex)}
+                          className="mt-2 rounded-md bg-[#1f6feb] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#388bfd]">
+                          {t("videoReviewModal.toLatestVersion", { label: formatVersionLabel(latestVersion) })}
+                        </button>
+                      )}
+                    </div>
+                  ) : publicMode && currentVersion?.feedback_locked ? (
                     <p className="text-sm text-white/40 text-center py-2">
                       ✓ {t("videoReviewModal.feedbackDone")}
                     </p>
