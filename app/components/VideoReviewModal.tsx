@@ -389,6 +389,18 @@ export function VideoReviewModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVersion?.id, subtitlesReload]);
 
+  // 2026-11-16, Lino: «wenn untertitel in einem video sind muss das video IMMER mit den geöffneten untertiteln
+  // öffnen» — the load above opens the panel as soon as a track exists; while a version has none yet, look again
+  // every 20 s so subtitles pushed from Resolve (or uploaded elsewhere) open the panel without a reload
+  const hasSubtitleData = subtitles.original.length > 0 || Object.keys(subtitles.translations).length > 0;
+  useEffect(() => {
+    if (!currentVersion || hasSubtitleData) return;
+    const iv = setInterval(() => {
+      if (document.visibilityState === "visible") setSubtitlesReload((n) => n + 1);
+    }, 20000);
+    return () => clearInterval(iv);
+  }, [currentVersion, hasSubtitleData]);
+
   // Live-Sync (Pusher) — dieselbe video-<id> Channel wie Kommentare/
   // Notification-Broadcast (siehe app/realtime.py), aber eine EIGENE
   // Subscription: Untertitel sind kein Teil des `video`-Objekts (anders als
