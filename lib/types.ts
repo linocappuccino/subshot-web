@@ -416,6 +416,10 @@ export interface VideoVersion {
   id: string;
   video_id: string;
   version_number: number;
+  /** 2026-11-16 — processing job of a version still without thumbnail: queued | running | done | failed */
+  processing?: string | null;
+  processing_started_at?: string | null;
+  preview_status?: string | null;
   /** Optionale manuelle Ueberschreibung der angezeigten Versionsnummer
    * (siehe VideoVersion.display_version_label im Backend). null = zeig
    * weiterhin "V{version_number}" wie bisher; gesetzt = zeig diesen Text

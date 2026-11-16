@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { Pill } from "./ui/Badge";
 import { Menu, MenuItem } from "./ui/Menu";
@@ -238,9 +238,21 @@ export function VideoTile({
   // 2026-11-16 (Lino: «warum braucht er ewig um zu processing?») — never an endless spinner: failed, or still nothing
   // after 6 minutes (a typical video takes 1–3), shows a clear note with «Erneut versuchen»
   const [retrying, setRetrying] = useState(false);
+  // 2026-11-16 (Lino: «Verarbeitung hat nicht geklappt» obwohl fertig) — the job state decides: waiting in the queue is
+  // never an error; «nicht geklappt» only when the job failed, or 15 min after the job STARTED without a thumbnail.
+  // No job info at all (old API answer / job gone) → 15 min after upload.
+  const job = latest?.processing ?? null;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!stillProcessing) return;
+    const iv = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(iv);
+  }, [stillProcessing]);
+  const since = (iso?: string | null) => (iso ? Date.now() - new Date(iso).getTime() : 0);
   const processingStuck = stillProcessing && !retrying && (
-    (latest as (VideoVersion & { preview_status?: string | null }) | undefined)?.preview_status === "failed" ||
-    (latest?.created_at ? Date.now() - new Date(latest.created_at).getTime() > 6 * 60 * 1000 : false));
+    job === "failed" ||
+    (job === "running" && since(latest?.processing_started_at) > 15 * 60 * 1000) ||
+    ((job === null || job === "done") && since(latest?.created_at) > 15 * 60 * 1000));
   const tileRef = useRef<HTMLDivElement>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [hovering, setHovering] = useState(false);
@@ -756,7 +768,7 @@ export function VideoTile({
         {stillProcessing && !processingStuck && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-white/70 bg-black/50">
             <div className="w-3.5 h-3.5 border-2 border-white/25 border-t-white/70 rounded-full animate-spin" />
-            {t("videoTile.processing")}
+            <span data-processing-state={job ?? ""}>{job === "queued" ? t("videoTile.queued") : job === "running" ? t("videoTile.processingRunning") : t("videoTile.processing")}</span>
           </div>
         )}
         {processingStuck && (
