@@ -90,6 +90,9 @@ const translations = {
 
     // SubtitlePanel.tsx (2026-07-28) — SRT-Untertitel-Spalte im VideoReviewModal
     "subtitlePanel.show": "Untertitel anzeigen",
+    "subtitlePanel.loadError": "Untertitel konnten nicht geladen werden.",
+    "videoTile.openFeedback": "{n} offene Kommentare",
+    "subtitlePanel.retry": "Erneut versuchen",
     "subtitlePanel.hide": "Untertitel ausblenden",
     "subtitlePanel.upload": "SRT hochladen",
     "subtitlePanel.uploading": "Wird hochgeladen…",
@@ -1761,6 +1764,9 @@ const translations = {
     "notificationSettings.saveError": "Couldn't save this setting.",
 
     "subtitlePanel.show": "Show subtitles",
+    "subtitlePanel.loadError": "Subtitles couldn't be loaded.",
+    "videoTile.openFeedback": "{n} open comments",
+    "subtitlePanel.retry": "Try again",
     "subtitlePanel.hide": "Hide subtitles",
     "subtitlePanel.upload": "Upload SRT",
     "subtitlePanel.uploading": "Uploading…",

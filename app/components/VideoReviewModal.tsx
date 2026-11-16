@@ -326,6 +326,9 @@ export function VideoReviewModal({
   const [showSubtitles, setShowSubtitles] = useState(false);
   const [subtitles, setSubtitles] = useState<SubtitlesData>({ original: [], original_lang: null, translations: {} });
   const [subtitlesLoading, setSubtitlesLoading] = useState(false);
+  // 2026-11-16 (bug: endless «Loading…» / empty panel after an API restart) — a failed load shows an error + retry
+  const [subtitlesError, setSubtitlesError] = useState(false);
+  const [subtitlesReload, setSubtitlesReload] = useState(0);
   const [uploadingSubtitles, setUploadingSubtitles] = useState(false);
   // 2026-07-29, Lino: Übersetzungs-Button — welche Sprache die Spalte gerade
   // anzeigt/exportiert (nicht persistiert, rein lokale UI-Wahl, jeder
@@ -366,14 +369,16 @@ export function VideoReviewModal({
     }
     let cancelled = false;
     setSubtitlesLoading(true);
-    listSubtitles(currentVersion.id)
+    setSubtitlesError(false);
+    const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000));
+    Promise.race([listSubtitles(currentVersion.id), timeout])
       .then((data) => {
         if (cancelled) return;
         setSubtitles(data);
         if (data.original.length > 0 || Object.keys(data.translations).length > 0) setShowSubtitles(true);
       })
       .catch(() => {
-        if (!cancelled) setSubtitles({ original: [], original_lang: null, translations: {} });
+        if (!cancelled) setSubtitlesError(true);
       })
       .finally(() => {
         if (!cancelled) setSubtitlesLoading(false);
@@ -382,7 +387,7 @@ export function VideoReviewModal({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentVersion?.id]);
+  }, [currentVersion?.id, subtitlesReload]);
 
   // Live-Sync (Pusher) — dieselbe video-<id> Channel wie Kommentare/
   // Notification-Broadcast (siehe app/realtime.py), aber eine EIGENE
@@ -1991,7 +1996,13 @@ export function VideoReviewModal({
               className="hidden lg:flex flex-col p-5 border-r border-white/8 shrink-0 overflow-hidden"
               style={{ width: subtitleColWidth }}
             >
-              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} canEdit={canEdit} />}
+              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} canEdit={canEdit} onTracksChanged={() => setSubtitlesReload((n) => n + 1)} />}
+              {subtitlesError && (
+                <div data-subtitles-error className="mb-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                  <p>{t("subtitlePanel.loadError")}</p>
+                  <button type="button" onClick={() => setSubtitlesReload((n) => n + 1)} className="mt-1.5 rounded-md bg-white/10 px-2.5 py-1 font-semibold hover:bg-white/15">{t("subtitlePanel.retry")}</button>
+                </div>
+              )}
               <SubtitlePanel
                 cues={activeSubtitleCues}
                 hasOriginal={hasOriginalSubtitles}

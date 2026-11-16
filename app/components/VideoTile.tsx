@@ -252,6 +252,7 @@ export function VideoTile({
   const bgPositionXPercent = filmstripColumns > 1 ? (filmstripCol / (filmstripColumns - 1)) * 100 : 0;
   const bgPositionYPercent = filmstripRows > 1 ? (filmstripRow / (filmstripRows - 1)) * 100 : 0;
   const commentCount = latest?.comments.filter((c) => c.status === "open").length ?? 0;
+  const commentTotal = latest?.comments.length ?? 0;
 
   // 2026-07-17, Lino: "9:16 videos werden beim scrubben verzogen... kacheln
   // die ein 9:16 video drin haben, können auch im 9:16 format dargestellt
@@ -499,11 +500,16 @@ export function VideoTile({
               {formatVersionLabel(latest)}
             </span>
           )}
-          {commentCount > 0 && (
-            <span className="flex items-center gap-1 text-xs text-white/80 bg-black/50 rounded-full px-2 py-0.5">
+          {/* 2026-11-16, Lino: red while the video has open (unresolved) feedback, neutral otherwise */}
+          {commentCount > 0 ? (
+            <span data-comment-badge="open" title={t("videoTile.openFeedback", { n: commentCount })} className="flex items-center gap-1 text-xs font-semibold text-white bg-red-600/90 rounded-full px-2 py-0.5">
               💬 {commentCount}
             </span>
-          )}
+          ) : commentTotal > 0 ? (
+            <span data-comment-badge="done" className="flex items-center gap-1 text-xs text-white/80 bg-black/50 rounded-full px-2 py-0.5">
+              💬 {commentTotal}
+            </span>
+          ) : null}
           {roundsBadge && (roundsBadge.used > 0 || roundsBadge.limit !== null) && (
             <button
               type="button"
@@ -537,7 +543,7 @@ export function VideoTile({
                 qcBadge.status === "done" && !qcBadge.failed
                   ? "bg-emerald-500/85 text-[#0f1f17] hover:bg-emerald-400"
                   : qcBadge.status === "done" || qcBadge.status === "error"
-                    ? "bg-red-600/90 text-white hover:bg-red-500"
+                    ? "bg-amber-400/90 text-[#241a00] hover:bg-amber-300"
                     : "bg-black/50 text-white/70 animate-pulse"
               }`}
             >

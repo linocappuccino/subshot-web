@@ -4,7 +4,7 @@
    which Resolve timeline / subtitle track / language a version belongs to (auto-linked by the plugin, correctable
    here) and per language whether Resolve has taken the latest revision. */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
 
@@ -22,16 +22,16 @@ const T = {
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
-    noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …" },
+    noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
     track: "track", lang: "language", also: "also linked with", applied: (t: string) => `Taken over in Resolve at ${t}`, pending: "Waiting for Resolve", conflict: "Conflict in Resolve – resolve it there",
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
-    noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …" },
+    noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
 };
 
-export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canEdit: boolean }) {
+export function ResolveSyncBar({ versionId, canEdit, onTracksChanged }: { versionId: string; canEdit: boolean; onTracksChanged?: () => void }) {
   const api = useApi();
   const { language } = useLanguage();
   const L = T[language === "en" ? "en" : "de"];
@@ -39,19 +39,41 @@ export function ResolveSyncBar({ versionId, canEdit }: { versionId: string; canE
   const [seen, setSeen] = useState<Seen | null>(null);
   const [typed, setTyped] = useState("");
   const [changing, setChanging] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const revKey = useRef<string | null>(null);
 
+  // 2026-11-16 — never hide the bar: errors show a retry; polls every 15 s so plugin uploads show up without reload
   const load = useCallback(() => {
-    api.subtitleTracks(versionId).then(setInfo).catch(() => {});
+    api.subtitleTracks(versionId).then((d: Info) => {
+      setInfo(d); setFailed(false);
+      const key = d.languages.map((t) => `${t.lang}:${t.rev}`).sort().join(",");
+      if (revKey.current !== null && revKey.current !== key) onTracksChanged?.();
+      revKey.current = key;
+    }).catch(() => setFailed(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [versionId]);
   useEffect(() => {
+    revKey.current = null;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on open
     load();
     api.resolveTimelines().then(setSeen).catch(() => {});
+    const iv = setInterval(() => { if (document.visibilityState === "visible") load(); }, 15000);
+    return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
-  if (!info) return null;
+  if (!info) {
+    return (
+      <div data-resolve-sync className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/70">
+        <span className="font-semibold text-white/85">🎬 {L.tl}</span>
+        {failed ? (
+          <span className="ml-2 text-amber-200/90">{L.failed} <button type="button" onClick={load} className="ml-1 underline">{L.retry}</button></span>
+        ) : (
+          <span className="ml-2 text-white/40">…</span>
+        )}
+      </div>
+    );
+  }
   const link = info.link;
   const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString(language === "en" ? "en-GB" : "de-CH", { hour: "2-digit", minute: "2-digit" }) : "");
   const choose = async (id: string) => {
