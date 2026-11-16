@@ -360,6 +360,40 @@ export function FormatTabs({ videoIds, formats, tab, onTab }: { videoIds: string
   );
 }
 
+/** 2026-11-16, Lino: «nach diesen Plattformen filtern, wie bei den Sprachen» — same row style as the format filter,
+ * only shown when at least one video has a platform icon; «Ohne» = videos without one */
+export type PlatformTab = "all" | "youtube" | "instagram" | "meta" | "tiktok" | "none";
+const PLATFORM_ORDER = ["youtube", "instagram", "meta", "tiktok"] as const;
+const PLATFORM_LABEL: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
+
+export function matchesPlatform(platform: string | null | undefined, tab: PlatformTab): boolean {
+  return tab === "all" || (tab === "none" ? !platform : platform === tab);
+}
+
+export function PlatformTabs({ platforms, tab, onTab }: { platforms: (string | null | undefined)[]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+  const counts: Record<string, number> = {};
+  for (const p of platforms) counts[p || "none"] = (counts[p || "none"] ?? 0) + 1;
+  const used = PLATFORM_ORDER.filter((p) => counts[p]);
+  if (used.length === 0 && tab === "all") return null;
+  const pill = (active: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
+  const n = (k: string) => <span className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
+  return (
+    <div data-platform-tabs className="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 text-xs text-white/40">Plattform</span>
+      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>Alle</button>
+      {used.map((p) => (
+        <button key={p} type="button" data-platform-tab={p} onClick={() => onTab(p)} className={pill(tab === p)}>
+          <img src={`/platforms/${p}.png`} alt="" className="h-3.5 w-3.5 object-contain" /> {PLATFORM_LABEL[p]} {n(p)}
+        </button>
+      ))}
+      {(counts.none ?? 0) > 0 && (
+        <button type="button" data-platform-tab="none" onClick={() => onTab("none")} className={pill(tab === "none")}>Ohne {n("none")}</button>
+      )}
+    </div>
+  );
+}
+
 /** a tiny frame in the format's shape */
 export function FormatIcon({ f }: { f: string }) {
   const [w, h] = f === "9:16" ? [7, 12] : f === "16:9" ? [13, 7.5] : f === "1:1" ? [10, 10] : f === "4:5" ? [8.5, 10.5] : f === "5:4" ? [10.5, 8.5] : [12, 6];

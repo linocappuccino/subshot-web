@@ -28,7 +28,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
-import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -99,6 +99,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   const [langTab, setLangTab] = useState<LanguageTab>("all");
   // 2026-11-13, Lino: second filter — the format (combinable with the language)
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
+  const [plTab, setPlTab] = useState<PlatformTab>("all");
   // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -923,7 +924,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // own nesting, so it needs a video's owning section resolved by id.
   const landscapeShown = Object.values(videosBySection)
     .flat()
-    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
+    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
   const [gridRef, gridStyle] = useVideoGridCols(landscapeShown);
   const videoById: Record<string, Video> = {};
   const sectionByVideoId: Record<string, Section> = {};
@@ -1102,9 +1103,19 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             }}
           />
         )}
-        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}))) && (
+        {!manualOrder && !loading && (
+          <PlatformTabs
+            platforms={Object.values(videosBySection).flat().filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {})).map((v) => v.platform)}
+            tab={plTab}
+            onTab={(t) => {
+              setPlTab(t);
+              setPicked(new Set());
+            }}
+          />
+        )}
+        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab))) && (
           <p data-lang-empty className="mb-4 text-sm text-white/40">
-            {fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
+            {plTab !== "all" ? "Keine Videos für diese Plattform." : fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
           </p>
         )}
         {canEditStatus && !manualOrder && !loading && (
@@ -1243,9 +1254,9 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           >
             {sections.flatMap((section) => {
               const all = videosBySection[section.id] ?? [];
-              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}));
+              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab));
               // a filter shows only its videos (no empty «+ Video» boxes of other sections)
-              if ((langTab !== "all" || fmtTab !== "all") && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
+              if ((langTab !== "all" || fmtTab !== "all" || plTab !== "all") && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
               const tiles = videos.map((video) => {
                 const lang = langs.languages.find((l) => l.id === langs.assignments[video.id]);
                 return (

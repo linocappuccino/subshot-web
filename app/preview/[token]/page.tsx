@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { VIDEO_GRID, VideoTile, useVideoGridCols } from "@/app/components/VideoTile";
-import { FormatBadge, ResolutionBadge, FormatTabs, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
+import { FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, type PlatformTab, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
@@ -120,6 +120,7 @@ function PreviewVideoPageInner() {
   // 2026-11-13, Lino: the client clicks through the languages too (filter only, no assigning)
   const [langTab, setLangTab] = useState<LanguageTab>("all");
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
+  const [plTab, setPlTab] = useState<PlatformTab>("all");
   const [gridRef, gridStyle] = useVideoGridCols((data?.videos ?? []).some((v) => ["16:9", "5:4"].includes((data?.video_formats ?? {})[v.id] ?? "16:9")));
   const sectionById = useMemo(() => {
     const map = new Map<string, SharedVideoPreviewData["sections"][number]>();
@@ -142,7 +143,7 @@ function PreviewVideoPageInner() {
   // rendered in the order the backend already sends it, unsorted.
   const assignments = data?.video_languages ?? {};
   const formats = data?.video_formats ?? {};
-  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats));
+  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats) && matchesPlatform(v.platform, plTab));
 
   if (needsPassword) {
     return (
@@ -228,6 +229,7 @@ function PreviewVideoPageInner() {
             />
           )}
           <FormatTabs videoIds={data.videos.map((v) => v.id).filter((vid) => matchesTab(vid, langTab, assignments))} formats={formats} tab={fmtTab} onTab={setFmtTab} />
+          <PlatformTabs platforms={data.videos.filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats)).map((v) => v.platform)} tab={plTab} onTab={setPlTab} />
           <div ref={gridRef} className={VIDEO_GRID} style={gridStyle}>
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);
