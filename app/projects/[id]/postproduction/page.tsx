@@ -1202,7 +1202,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (
           <FormatTabs
-            counts={fc.fmt}
+            counts={fc.fmt} present={fc.present.fmt}
             tab={fmtTab}
             onTab={(t) => {
               setFmtTab(t);
@@ -1212,7 +1212,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (
           <PlatformTabs
-            counts={fc.plat}
+            counts={fc.plat} present={fc.present.plat}
             tab={plTab}
             onTab={(t) => {
               setPlTab(t);

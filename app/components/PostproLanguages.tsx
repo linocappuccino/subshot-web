@@ -338,24 +338,28 @@ export function matchesFormat(videoId: string, tab: FormatTab, formats: Record<s
 
 /** 2026-11-16 — counts come from lib/postproFilter.facetCounts (the same function that filters), so a chip always
  * shows exactly as many videos as it says. A chip with 0 is hidden unless it is the active one. */
-export function FormatTabs({ counts, tab, onTab }: { counts: Record<string, number>; tab: FormatTab; onTab: (t: FormatTab) => void }) {
-  const keys = [...FORMAT_ORDER.filter((f) => counts[f] || tab === f), ...(counts.other || tab === "other" ? ["other"] : [])];
-  // 2026-11-13, Lino «wo ist der Formatfilter?»: always shown as soon as there are videos (also with one format only)
-  if (!counts.all && tab === "all") return null;
-  const pill = (active: boolean) =>
-    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
+export function FormatTabs({ counts, present, tab, onTab }: { counts: Record<string, number>; present: string[]; tab: FormatTab; onTab: (t: FormatTab) => void }) {
+  // 2026-11-16, Lino: chips never disappear — every format of the project stays, greyed out with 0 when the other
+  // filters exclude it (a 0 chip can't be clicked; the active one always can)
+  const keys = present.includes(tab) || tab === "all" ? present : [...present, tab];
+  if (present.length === 0 && tab === "all") return null;
+  const pill = (active: boolean, zero: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : zero ? "bg-white/[0.03] text-white/25 cursor-default" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
   const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-format-tabs className="mb-4 -mt-1 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-xs text-white/40">Format</span>
-      <button type="button" data-format-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>
+      <button type="button" data-format-tab="all" onClick={() => onTab("all")} className={pill(tab === "all", false)}>
         Alle {n("all")}
       </button>
-      {keys.map((k) => (
-        <button key={k} type="button" data-format-tab={k} onClick={() => onTab(k)} className={pill(tab === k)}>
-          <FormatIcon f={k} /> {k === "other" ? "Andere" : k} {n(k)}
-        </button>
-      ))}
+      {keys.map((k) => {
+        const zero = !counts[k] && tab !== k;
+        return (
+          <button key={k} type="button" data-format-tab={k} data-zero={zero ? "1" : undefined} disabled={zero} onClick={() => onTab(k)} className={pill(tab === k, zero)}>
+            <FormatIcon f={k} /> {k === "other" ? "Andere" : k} {n(k)}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -374,24 +378,25 @@ export function matchesPlatform(v: { platform?: string | null; platforms?: strin
   return matchesAll({ id: "", ...v }, { lang: "all", fmt: "all", plat: tab }, { assignments: {}, formats: {} });
 }
 
-export function PlatformTabs({ counts, tab, onTab }: { counts: Record<string, number>; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
-  const used = PLATFORM_ORDER.filter((p) => counts[p] || tab === p);
-  if (used.length === 0 && tab === "all") return null;
-  const pill = (active: boolean) =>
-    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
+export function PlatformTabs({ counts, present, tab, onTab }: { counts: Record<string, number>; present: string[]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+  // 2026-11-16, Lino: chips never disappear (see FormatTabs) — every platform of the project + «Ohne» if it occurs
+  const keys = present.includes(tab) || tab === "all" ? present : [...present, tab];
+  if (!keys.some((k) => k !== "none") && tab === "all") return null;
+  const pill = (active: boolean, zero: boolean) =>
+    `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : zero ? "bg-white/[0.03] text-white/25 cursor-default" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
   const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-platform-tabs className="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-xs text-white/40">Plattform</span>
-      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>Alle {n("all")}</button>
-      {used.map((p) => (
-        <button key={p} type="button" data-platform-tab={p} onClick={() => onTab(p)} className={pill(tab === p)}>
-          <img src={`/platforms/${p}.png`} alt="" className="h-3.5 w-3.5 object-contain" /> {PLATFORM_LABEL[p]} {n(p)}
-        </button>
-      ))}
-      {((counts.none ?? 0) > 0 || tab === "none") && (
-        <button type="button" data-platform-tab="none" onClick={() => onTab("none")} className={pill(tab === "none")}>Ohne {n("none")}</button>
-      )}
+      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all", false)}>Alle {n("all")}</button>
+      {keys.map((p) => {
+        const zero = !counts[p] && tab !== p;
+        return (
+          <button key={p} type="button" data-platform-tab={p} data-zero={zero ? "1" : undefined} disabled={zero} onClick={() => onTab(p as PlatformTab)} className={pill(tab === p, zero)}>
+            {p === "none" ? <>Ohne {n(p)}</> : <><img src={`/platforms/${p}.png`} alt="" className={`h-3.5 w-3.5 object-contain ${zero ? "opacity-30" : ""}`} /> {PLATFORM_LABEL[p]} {n(p)}</>}
+          </button>
+        );
+      })}
     </div>
   );
 }

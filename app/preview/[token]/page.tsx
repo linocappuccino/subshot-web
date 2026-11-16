@@ -234,8 +234,8 @@ function PreviewVideoPageInner() {
               hideEmptyUnassigned
             />
           )}
-          <FormatTabs counts={fc.fmt} tab={fmtTab} onTab={setFmtTab} />
-          <PlatformTabs counts={fc.plat} tab={plTab} onTab={setPlTab} />
+          <FormatTabs counts={fc.fmt} present={fc.present.fmt} tab={fmtTab} onTab={setFmtTab} />
+          <PlatformTabs counts={fc.plat} present={fc.present.plat} tab={plTab} onTab={setPlTab} />
           <div ref={gridRef} className={VIDEO_GRID} style={gridStyle}>
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);

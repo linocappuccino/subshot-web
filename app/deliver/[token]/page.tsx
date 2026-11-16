@@ -424,8 +424,8 @@ function DeliverPageInner() {
                   {(none > 0 || langTab === "none") && <button type="button" onClick={() => setLangTab("none")} className={pill(langTab === "none")}>{t("deliverPage.filterNoLang")} <span className="opacity-50">{none}</span></button>}
                 </div>
               )}
-              <FormatTabs counts={fc.fmt} tab={fmtTab} onTab={setFmtTab} />
-              <PlatformTabs counts={fc.plat} tab={plTab} onTab={setPlTab} />
+              <FormatTabs counts={fc.fmt} present={fc.present.fmt} tab={fmtTab} onTab={setFmtTab} />
+              <PlatformTabs counts={fc.plat} present={fc.present.plat} tab={plTab} onTab={setPlTab} />
             </div>
           );
         })()}

@@ -45,7 +45,8 @@ export function filterVideos<T extends PVideo>(videos: T[], f: PFilter, ctx: PCt
   return videos.filter((v) => matchesAll(v, f, ctx));
 }
 
-export type FacetCounts = { lang: Record<string, number>; fmt: Record<string, number>; plat: Record<string, number> };
+/** `present` = every format / platform that occurs in the whole list (chips stay visible with 0 when filtered out) */
+export type FacetCounts = { lang: Record<string, number>; fmt: Record<string, number>; plat: Record<string, number>; present: { fmt: string[]; plat: string[] } };
 
 /** counters for every chip; key «all» = the «Alle» chip of that row */
 export function facetCounts(videos: PVideo[], f: PFilter, ctx: PCtx): FacetCounts {
@@ -53,7 +54,12 @@ export function facetCounts(videos: PVideo[], f: PFilter, ctx: PCtx): FacetCount
   const fmt: Record<string, number> = { all: 0 };
   const plat: Record<string, number> = { all: 0 };
   const inc = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
+  const pf = new Set<string>(), pp = new Set<string>();
   for (const v of videos) {
+    pf.add(fmtKeyOf(v, ctx));
+    const all = platformsOf(v);
+    if (all.length === 0) pp.add("none");
+    for (const k of all) pp.add(k);
     const l = langOk(v, f, ctx), fo = fmtOk(v, f, ctx), p = platOk(v, f);
     if (fo && p) { inc(lang, "all"); inc(lang, langKeyOf(v, ctx)); }
     if (l && p) { inc(fmt, "all"); inc(fmt, fmtKeyOf(v, ctx)); }
@@ -64,5 +70,9 @@ export function facetCounts(videos: PVideo[], f: PFilter, ctx: PCtx): FacetCount
       for (const k of ps) inc(plat, k);
     }
   }
-  return { lang, fmt, plat };
+  const present = {
+    fmt: [...FORMAT_KEYS.filter((k) => pf.has(k)), ...(pf.has("other") ? ["other"] : [])],
+    plat: [...PLATFORM_KEYS.filter((k) => pp.has(k)), ...(pp.has("none") ? ["none"] : [])],
+  };
+  return { lang, fmt, plat, present };
 }
