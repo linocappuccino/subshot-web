@@ -1,5 +1,6 @@
 "use client";
 
+import { SeatGuard } from "./SeatGuard";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
@@ -324,6 +325,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
           </div>
         </div>
       </header>
+      <SeatGuard />
       <main className="flex-1 flex flex-col">{children}</main>
       <LanguageDialog open={showLanguageDialog} onClose={() => setShowLanguageDialog(false)} />
       <NotificationSettingsDialog open={showNotificationSettings} onClose={() => setShowNotificationSettings(false)} />

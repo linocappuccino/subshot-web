@@ -739,6 +739,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // that page's own doc comment on videosBySection).
     listProjectVideos: (projectId: string) => request<Video[]>(`projects/${projectId}/videos`),
     reprocessVersion: (versionId: string) => request<{ ok: boolean }>(`video-versions/${versionId}/reprocess`, { method: "POST" }),
+    // 2026-11-16 — seat guard (sharing hint + connected Macs)
+    seatStatus: () => request<{ sharing_suspected: boolean; reasons: string[]; macs: { max: number; machines: { id: string; machine_name: string | null; since: string | null; last_seen: string | null; online: boolean }[]; can_release: boolean; next_release: string | null } }>(`me/seat-status?t=${Date.now()}`),
+    releaseMac: (id: string) => request<{ max: number; machines: { id: string; machine_name: string | null; since: string | null; last_seen: string | null; online: boolean }[]; can_release: boolean; next_release: string | null }>(`me/resolve-machines/${id}/release`, { method: "POST" }),
     // 2026-11-13, Lino: languages on the Post-Production page
     projectLanguages: (projectId: string) => request<LanguagesOverview>(`projects/${projectId}/languages?t=${Date.now()}`),
     createProjectLanguage: (projectId: string, name: string, flag: string) =>
