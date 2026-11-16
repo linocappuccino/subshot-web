@@ -324,6 +324,17 @@ export function VideoReviewModal({
   // nichts zu zeigen), automatisch true gesetzt sobald das erste Segment
   // eintrifft (siehe der Segmente-Fetch-Effect unten).
   const [showSubtitles, setShowSubtitles] = useState(false);
+  const [subtitleOverlayOn, setSubtitleOverlayOn] = useState(false);
+  // keyboard «C» toggles the overlay (not while typing a comment / correcting a line)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)))) return;
+      if (e.key === "c" || e.key === "C") setSubtitleOverlayOn((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [subtitles, setSubtitles] = useState<SubtitlesData>({ original: [], original_lang: null, translations: {} });
   const [subtitlesLoading, setSubtitlesLoading] = useState(false);
   // 2026-11-16 (bug: endless «Loading…» / empty panel after an API restart) — a failed load shows an error + retry
@@ -2042,7 +2053,19 @@ export function VideoReviewModal({
           <div className="flex-1 flex flex-col p-5 gap-3 min-w-0">
             <div ref={videoWrapRef} className="flex-1 relative rounded-xl overflow-hidden flex items-center justify-center min-h-0 max-sm:-mx-5">
               {/* 2026-11-15 — subtitle overlay (WebVTT-style) of the active track while the subtitle panel is open */}
-              {showSubtitles && (() => {
+              {/* 2026-11-16, Lino: subtitles on the picture start OFF; one click on «CC» (bottom right of the video) turns
+                  them on / off — for the team and for guests on the share link */}
+              {hasAnySubtitles && (
+                <button type="button" data-subtitle-toggle aria-pressed={subtitleOverlayOn}
+                  onClick={(e) => { e.stopPropagation(); setSubtitleOverlayOn((v) => !v); }}
+                  title={`${subtitleOverlayOn ? t("videoReviewModal.subtitlesOnVideoOff") : t("videoReviewModal.subtitlesOnVideoOn")} (C)`}
+                  className={`absolute right-3 top-3 z-[6] rounded-md px-2 py-1 text-xs font-bold tracking-wide shadow transition-colors ${
+                    subtitleOverlayOn ? "bg-white text-black" : "bg-black/60 text-white/85 hover:bg-black/75"
+                  }`}>
+                  CC
+                </button>
+              )}
+              {subtitleOverlayOn && (() => {
                 const ms = currentTime * 1000;
                 const cue = activeSubtitleCues.find((c) => c.start_ms <= ms && ms < c.end_ms);
                 return cue ? (
