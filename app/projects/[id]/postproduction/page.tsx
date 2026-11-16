@@ -493,6 +493,24 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // Re-lists just this video's section (not the whole project) and reuses
   // `updateVideo` so both `videosBySection` and an open `reviewingVideo`
   // stay in sync, same as every other mutation in this file already does.
+  // 2026-11-16 — tile changes by others (platform icon, title, editor …) arrive live: the API fires project-<id>
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = subscribeToChanges("project", id, () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        invalidateGetCache(`projects/${id}/videos`);
+        api.listProjectVideos(id).then((allVideos) => {
+          const bySection: Record<string, Video[]> = {};
+          for (const video of allVideos) (bySection[video.section_id] ??= []).push(video);
+          setVideosBySection(bySection);
+        }).catch(() => {});
+      }, 400);
+    });
+    return () => { if (timer) clearTimeout(timer); unsub(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
   useEffect(() => {
     if (!reviewingVideo) return;
     return subscribeToChanges("video", reviewingVideo.id, () => {
@@ -763,6 +781,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
 
   // 2026-08-06, Lino: "auf den kacheln muss man auch auswählen können wer
   // verantwortlich ist für das video" — same shape as renameVideo above.
+  async function updateVideoPlatform(sectionId: string, video: Video, platform: string | null) {
+    try {
+      updateVideo(sectionId, await api.patchVideo(video.id, { platform: platform ?? "none" }));
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+    }
+  }
+
   async function updateVideoAssignee(sectionId: string, video: Video, userId: string | null) {
     try {
       updateVideo(sectionId, await api.patchVideo(video.id, { assignee_id: userId }));
@@ -1239,6 +1265,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   uploadFraction={versionUploadProgress[video.id]}
                   members={members}
                   onChangeAssignee={(userId) => updateVideoAssignee(section.id, video, userId)}
+                  onChangePlatform={canEditStatus ? (p) => updateVideoPlatform(section.id, video, p) : undefined}
                   extrasBadge={(() => {
                     const x = extrasOf(video.id);
                     return { done: x.deliverables.filter((d) => d.status === "ready").length, total: x.deliverables.length, licenses: x.licenses.length };

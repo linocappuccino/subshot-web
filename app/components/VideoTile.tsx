@@ -13,6 +13,9 @@ import { VideoFassungenChips, formatOfRatio } from "./VideoFassungenChips";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 
+// 2026-11-16, Lino — selectable platform icon on the tile
+const PLATFORM_NAMES: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
+
 // 2026-11-16 — the version/format chip row («✓ 9:16», «+ Version») under the title is hidden on the tiles
 const SHOW_FASSUNGEN_CHIPS = false;
 
@@ -109,7 +112,7 @@ export function useVideoGridCols(landscape: boolean): [React.RefCallback<HTMLDiv
 
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
   languageBadge, selectBox, dragVideoIds, onDropRejected, fill,
 }: {
   /** 2026-11-14, Lino: inside the even grid (VIDEO_GRID) — the tile fills its cell(s), height from the format */
@@ -139,6 +142,8 @@ export function VideoTile({
    * status (canEditStatus) — patch_video's own role gate matches. */
   members?: Member[];
   onChangeAssignee?: (userId: string | null) => void;
+  /** 2026-11-16, Lino — platform icon (top right, below QC); undefined = read-only (share view) */
+  onChangePlatform?: (platform: string | null) => void;
   /** Undefined = kein 3-Punkte-Menü (nur canEditStatus-Nutzer). */
   onUploadVersion?: (file: File) => void;
   /** 2026-10-12 — Fassungen-Checkliste: "{done}/{total}" badge on the tile (internal pages only) */
@@ -570,6 +575,42 @@ export function VideoTile({
             </button>
           )}
         </div>
+
+        {/* 2026-11-16, Lino: «ein youtube, instagram, meta, tiktok icon … oben rechts unter QC» — PNG icons with a
+            transparent background in /public/platforms; editors pick it from a small menu (hover shows «+» when empty) */}
+        {(video.platform || (onChangePlatform && hovering)) && (
+          <div className="absolute top-9 right-2 z-[2]" onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
+            {onChangePlatform ? (
+              <Menu
+                portal
+                trigger={
+                  video.platform ? (
+                    <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
+                      className="h-7 w-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                  ) : (
+                    <span title={t("videoTile.platform")} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white/80 text-sm hover:bg-black/70">+</span>
+                  )
+                }
+              >
+                {(close) => (
+                  <>
+                    {Object.entries(PLATFORM_NAMES).map(([key, name]) => (
+                      <MenuItem key={key} onClick={() => { onChangePlatform(key); close(); }}>
+                        <span className="flex items-center gap-2"><img src={`/platforms/${key}.png`} alt="" className="h-4 w-4 object-contain" />{name}</span>
+                      </MenuItem>
+                    ))}
+                    {video.platform && (
+                      <MenuItem onClick={() => { onChangePlatform(null); close(); }}>{t("videoTile.platformNone")}</MenuItem>
+                    )}
+                  </>
+                )}
+              </Menu>
+            ) : (
+              video.platform && <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
+                className="h-7 w-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+            )}
+          </div>
+        )}
 
         {/* Drag handle for the postproduction page's manual-order mode —
             top corners are both already taken (version/comment badges

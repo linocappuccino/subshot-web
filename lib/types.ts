@@ -494,6 +494,8 @@ export interface Video {
    * fuer alle Versionen dieses Videos, wirkt nur auf den Download ueber den
    * oeffentlichen Preview-Link. */
   watermark_enabled: boolean;
+  /** 2026-11-16 — platform icon on the Postpro tile: youtube | instagram | meta | tiktok */
+  platform?: string | null;
   /** 2026-08-06, Lino: "wer verantwortlich ist für das video: da soll
    * Editor stehen" — one Team member, nullable until picked. Resolved to a
    * display name/avatar client-side via the already-fetched `members` list
