@@ -2027,13 +2027,13 @@ export function VideoReviewModal({
                 onEditText={versionClosed ? () => toast.showError(t("videoReviewModal.versionClosedShort")) : publicMode && currentVersion?.feedback_locked ? () => toast.showError(t("videoReviewModal.feedbackDone")) : handleEditSubtitleCueText}
                 canManage={canEdit}
                 uploading={uploadingSubtitles}
-                onUpload={onUploadSubtitles ? handleUploadSubtitles : undefined}
+                onUpload={onUploadSubtitles && !versionClosed ? handleUploadSubtitles : undefined}
                 onDownload={onDownloadSubtitles ? handleDownloadSubtitles : undefined}
                 lang={subtitleLang}
                 availableLangs={availableSubtitleLangs}
                 onChangeLang={setSubtitleLang}
                 translating={translatingSubtitles}
-                onTranslate={onTranslateSubtitles ? handleTranslateSubtitles : undefined}
+                onTranslate={onTranslateSubtitles && !versionClosed ? handleTranslateSubtitles : undefined}
               />
             </div>
           )}
