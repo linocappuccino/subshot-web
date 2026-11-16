@@ -112,6 +112,7 @@ export function Menu({
 
   const dropdown = (
     <div
+      data-menu-dropdown
       ref={portal ? dropdownRef : undefined}
       style={
         portal && rect

@@ -144,6 +144,40 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  // 2026-11-16, Lino: «alle markierungen demarkieren wenn man einfach ins leere auf der seite klickt» — a click on empty
+  // page space (background, gaps between tiles, next to the grid) or Escape clears the selection. Not on tiles, the
+  // selection bar + its menus, filter chips, buttons, the upload zone, dialogs or fields; never after a drag or while
+  // text is selected; with a menu / dialog open the first click / Escape only closes that.
+  useEffect(() => {
+    if (picked.size === 0) return;
+    const KEEP = "[data-video-lang],[data-lang-selection],[data-menu-dropdown],[data-language-tabs],[data-format-tabs],[data-platform-tabs],[data-upload-zone],button,a,input,select,textarea,label,[role=dialog],[contenteditable=true],.fixed";
+    let down: { x: number; y: number; overlay: boolean } | null = null;
+    const overlayOpen = () => Boolean(document.querySelector("[data-menu-dropdown], [role=dialog], .fixed.inset-0"));
+    const onDown = (e: MouseEvent) => { down = { x: e.clientX, y: e.clientY, overlay: overlayOpen() }; };
+    const onClick = (e: MouseEvent) => {
+      const d = down; down = null;
+      if (!d || d.overlay || e.button !== 0) return;
+      if (Math.abs(e.clientX - d.x) > 5 || Math.abs(e.clientY - d.y) > 5) return; // a drag, not a click
+      if ((window.getSelection()?.toString() ?? "").length > 0) return;
+      const t = e.target as HTMLElement | null;
+      if (!t || t.closest(KEEP)) return;
+      setPicked(new Set());
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || overlayOpen()) return;
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest("input,textarea,select,[contenteditable=true]")) return;
+      setPicked(new Set());
+    };
+    document.addEventListener("mousedown", onDown, true);
+    document.addEventListener("click", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+      document.removeEventListener("click", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [picked.size]);
   // «+ Neue Sprache» from a video's badge / the action bar: open the form, then assign these videos to it
   const [newLangRequest, setNewLangRequest] = useState(0);
   const pendingAssign = useRef<string[] | null>(null);
@@ -1239,6 +1273,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               setDropActive(false);
               void uploadMany([...e.dataTransfer.files]);
             }}
+            data-upload-zone
             className={`mb-6 rounded-xl border border-dashed px-4 py-4 transition-colors ${dropActive ? "border-blue-400 bg-blue-500/10" : "border-white/15 bg-white/[0.02]"}`}
           >
             <div className="flex flex-wrap items-center gap-3 text-sm text-white/60">
