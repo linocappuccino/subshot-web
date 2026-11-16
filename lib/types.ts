@@ -498,6 +498,8 @@ export interface Video {
   watermark_enabled: boolean;
   /** 2026-11-16 — platform icon on the Postpro tile: youtube | instagram | meta | tiktok */
   platform?: string | null;
+  /** 2026-11-16 — all platform icons (several per video possible) */
+  platforms?: string[];
   /** 2026-08-06, Lino: "wer verantwortlich ist für das video: da soll
    * Editor stehen" — one Team member, nullable until picked. Resolved to a
    * display name/avatar client-side via the already-fetched `members` list
@@ -841,6 +843,8 @@ export interface DeliverVideo {
   language_flag?: string | null;
   format?: string | null;
   platform?: string | null;
+  /** 2026-11-16 — all platform icons (several per video possible) */
+  platforms?: string[];
 }
 
 export interface DeliverLink {

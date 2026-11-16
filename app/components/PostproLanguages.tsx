@@ -366,13 +366,23 @@ export type PlatformTab = "all" | "youtube" | "instagram" | "meta" | "tiktok" | 
 const PLATFORM_ORDER = ["youtube", "instagram", "meta", "tiktok"] as const;
 const PLATFORM_LABEL: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
 
-export function matchesPlatform(platform: string | null | undefined, tab: PlatformTab): boolean {
-  return tab === "all" || (tab === "none" ? !platform : platform === tab);
+/** 2026-11-16 — all platform icons of a video (several possible), fixed order; old answers only had `platform` */
+export function videoPlatforms(v: { platform?: string | null; platforms?: string[] | null }): string[] {
+  const ps = v.platforms && v.platforms.length ? v.platforms : v.platform ? [v.platform] : [];
+  return PLATFORM_ORDER.filter((k) => ps.includes(k));
 }
 
-export function PlatformTabs({ platforms, tab, onTab }: { platforms: (string | null | undefined)[]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+/** a video matches a platform tab when ANY of its icons is that platform */
+export function matchesPlatform(v: { platform?: string | null; platforms?: string[] | null }, tab: PlatformTab): boolean {
+  if (tab === "all") return true;
+  const ps = videoPlatforms(v);
+  return tab === "none" ? ps.length === 0 : ps.includes(tab);
+}
+
+export function PlatformTabs({ platforms, tab, onTab }: { platforms: string[][]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+  // one entry per video (its icons) — a video with Instagram + TikTok counts for both
   const counts: Record<string, number> = {};
-  for (const p of platforms) counts[p || "none"] = (counts[p || "none"] ?? 0) + 1;
+  for (const ps of platforms) for (const p of ps.length ? ps : ["none"]) counts[p] = (counts[p] ?? 0) + 1;
   const used = PLATFORM_ORDER.filter((p) => counts[p]);
   if (used.length === 0 && tab === "all") return null;
   const pill = (active: boolean) =>

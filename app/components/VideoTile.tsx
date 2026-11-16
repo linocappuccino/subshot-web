@@ -12,9 +12,14 @@ import { PostStageLabel } from "./PostStageTimeline";
 import { VideoFassungenChips, formatOfRatio } from "./VideoFassungenChips";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
+import { videoPlatforms } from "./PostproLanguages";
 
 // 2026-11-16, Lino — selectable platform icon on the tile
 const PLATFORM_NAMES: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
+const platIcon = (p: string) => (
+  <img key={p} src={`/platforms/${p}.png`} alt={PLATFORM_NAMES[p] ?? p} title={PLATFORM_NAMES[p]}
+    className="h-[22px] w-[22px] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+);
 
 // 2026-11-16 — the version/format chip row («✓ 9:16», «+ Version») under the title is hidden on the tiles
 const SHOW_FASSUNGEN_CHIPS = false;
@@ -142,8 +147,8 @@ export function VideoTile({
    * status (canEditStatus) — patch_video's own role gate matches. */
   members?: Member[];
   onChangeAssignee?: (userId: string | null) => void;
-  /** 2026-11-16, Lino — platform icon (top right, below QC); undefined = read-only (share view) */
-  onChangePlatform?: (platform: string | null) => void;
+  /** 2026-11-16, Lino — platform icons (stacked, top right below QC); undefined = read-only (share view) */
+  onChangePlatform?: (platforms: string[]) => void;
   /** 2026-11-16 — «Erneut versuchen» when processing failed or hangs (team only) */
   onReprocess?: () => Promise<void> | void;
   /** Undefined = kein 3-Punkte-Menü (nur canEditStatus-Nutzer). */
@@ -193,6 +198,7 @@ export function VideoTile({
   };
 }) {
   const { t } = useLanguage();
+  const plats = videoPlatforms(video);
   const statusLabels: Record<PostproductionStatus, string> = {
     wartend: t("postproductionStatus.wartend"),
     in_bearbeitung: t("postproductionStatus.inBearbeitung"),
@@ -587,36 +593,39 @@ export function VideoTile({
         {/* 2026-11-16, Lino: «ein youtube, instagram, meta, tiktok icon … oben rechts unter QC» — PNG icons with a
             transparent background in /public/platforms; editors pick it from a small menu (hover shows «+» when empty).
             Guests (share view, read-only): top LEFT of the tile (Lino 2026-11-16) — there is no ⋯ menu there */}
-        {(video.platform || (onChangePlatform && hovering)) && (
-          <div className={`absolute z-[2] ${onChangePlatform ? "top-10 right-2" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
+        {/* 2026-11-16, Lino: several platforms per video — icons stacked vertically (team: right, below QC;
+            guests: top left). Editors open a check menu (click toggles, menu stays open). */}
+        {(plats.length > 0 || (onChangePlatform && hovering)) && (
+          <div className={`absolute z-[2] ${onChangePlatform ? "top-10 right-2" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={plats.join(",")}>
             {onChangePlatform ? (
               <Menu
                 portal
                 trigger={
-                  video.platform ? (
-                    <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
-                      className="h-[22px] w-[22px] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                  plats.length ? (
+                    <span title={t("videoTile.platform")} className="flex flex-col gap-1">{plats.map((p) => platIcon(p))}</span>
                   ) : (
                     <span title={t("videoTile.platform")} className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-black/50 text-white/80 text-xs hover:bg-black/70">+</span>
                   )
                 }
               >
-                {(close) => (
+                {() => (
                   <>
                     {Object.entries(PLATFORM_NAMES).map(([key, name]) => (
-                      <MenuItem key={key} onClick={() => { onChangePlatform(key); close(); }}>
-                        <span className="flex items-center gap-2"><img src={`/platforms/${key}.png`} alt="" className="h-4 w-4 object-contain" />{name}</span>
+                      <MenuItem key={key} onClick={() => onChangePlatform(plats.includes(key) ? plats.filter((p) => p !== key) : [...plats, key])}>
+                        <span data-platform-option={key} className="flex w-full items-center gap-2">
+                          <img src={`/platforms/${key}.png`} alt="" className="h-4 w-4 object-contain" />{name}
+                          <span className={`ml-auto pl-4 ${plats.includes(key) ? "text-white" : "text-transparent"}`}>✓</span>
+                        </span>
                       </MenuItem>
                     ))}
-                    {video.platform && (
-                      <MenuItem onClick={() => { onChangePlatform(null); close(); }}>{t("videoTile.platformNone")}</MenuItem>
+                    {plats.length > 0 && (
+                      <MenuItem onClick={() => onChangePlatform([])}>{t("videoTile.platformNone")}</MenuItem>
                     )}
                   </>
                 )}
               </Menu>
             ) : (
-              video.platform && <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
-                className="h-[22px] w-[22px] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+              <span className="flex flex-col gap-1">{plats.map((p) => platIcon(p))}</span>
             )}
           </div>
         )}

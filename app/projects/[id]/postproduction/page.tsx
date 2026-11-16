@@ -29,7 +29,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
-import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, videoPlatforms, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -801,9 +801,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
 
   // 2026-08-06, Lino: "auf den kacheln muss man auch auswählen können wer
   // verantwortlich ist für das video" — same shape as renameVideo above.
-  async function updateVideoPlatform(sectionId: string, video: Video, platform: string | null) {
+  async function updateVideoPlatform(sectionId: string, video: Video, platforms: string[]) {
+    // 2026-11-16 — several icons; optimistic so quick ticks in the open check menu build on each other
+    updateVideo(sectionId, { ...video, platforms, platform: platforms[0] ?? null });
     try {
-      updateVideo(sectionId, await api.patchVideo(video.id, { platform: platform ?? "none" }));
+      updateVideo(sectionId, await api.patchVideo(video.id, { platforms }));
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
     }
@@ -943,7 +945,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // own nesting, so it needs a video's owning section resolved by id.
   const landscapeShown = Object.values(videosBySection)
     .flat()
-    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
+    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
   const [gridRef, gridStyle] = useVideoGridCols(landscapeShown);
   const videoById: Record<string, Video> = {};
   const sectionByVideoId: Record<string, Section> = {};
@@ -1137,7 +1139,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (
           <PlatformTabs
-            platforms={Object.values(videosBySection).flat().filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {})).map((v) => v.platform)}
+            platforms={Object.values(videosBySection).flat().filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {})).map(videoPlatforms)}
             tab={plTab}
             onTab={(t) => {
               setPlTab(t);
@@ -1145,7 +1147,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             }}
           />
         )}
-        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab))) && (
+        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab))) && (
           <p data-lang-empty className="mb-4 text-sm text-white/40">
             {plTab !== "all" ? "Keine Videos für diese Plattform." : fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
           </p>
@@ -1286,7 +1288,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           >
             {sections.flatMap((section) => {
               const all = videosBySection[section.id] ?? [];
-              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v.platform, plTab));
+              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab));
               // a filter shows only its videos (no empty «+ Video» boxes of other sections)
               if ((langTab !== "all" || fmtTab !== "all" || plTab !== "all") && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
               const tiles = videos.map((video) => {

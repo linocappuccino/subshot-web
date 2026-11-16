@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import type { DeliverPreviewData, DeliverVideo, DeliverMiscGroup } from "@/lib/types";
 import { DeliverVideoCard } from "@/app/components/DeliverVideoCard";
-import { FormatTabs, PlatformTabs, matchesFormat, matchesPlatform, type FormatTab, type PlatformTab } from "@/app/components/PostproLanguages";
+import { FormatTabs, PlatformTabs, matchesFormat, matchesPlatform, videoPlatforms, type FormatTab, type PlatformTab } from "@/app/components/PostproLanguages";
 
 // 2026-09-06, Lino: "genau dieses Deliver-System möchte ich für Subshot nun
 // auch haben... nach der Postproduction-Seite kommt die Deliver-Page, jedes
@@ -61,7 +61,7 @@ function DeliverPageInner() {
   const _fmtMap = Object.fromEntries((data?.videos ?? []).map((v) => [v.id, v.format ?? ""]));
   const shownVideos = (data?.videos ?? []).filter((v) =>
     (langTab === "all" || (langTab === "none" ? !v.language_id : v.language_id === langTab)) &&
-    matchesFormat(v.id, fmtTab, _fmtMap) && matchesPlatform(v.platform, plTab));
+    matchesFormat(v.id, fmtTab, _fmtMap) && matchesPlatform(v, plTab));
 
   function load(unlock: string | null) {
     publicDeliverApi
@@ -427,7 +427,7 @@ function DeliverPageInner() {
                 </div>
               )}
               <FormatTabs videoIds={byLang.map((v) => v.id)} formats={formats} tab={fmtTab} onTab={setFmtTab} />
-              <PlatformTabs platforms={byLang.filter((v) => matchesFormat(v.id, fmtTab, formats)).map((v) => v.platform)} tab={plTab} onTab={setPlTab} />
+              <PlatformTabs platforms={byLang.filter((v) => matchesFormat(v.id, fmtTab, formats)).map(videoPlatforms)} tab={plTab} onTab={setPlTab} />
             </div>
           );
         })()}
