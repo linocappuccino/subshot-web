@@ -881,7 +881,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     deleteVideoComment: (id: string) => request<void>(`video-comments/${id}`, { method: "DELETE" }),
 
     // ── Untertitel/SRT (2026-07-28) ──────────────────────────────────────
-    listSubtitles: (versionId: string) => request<SubtitlesData>(`video-versions/${versionId}/subtitles`),
+    // 2026-11-16 — never from the 4 s GET cache: a Pusher refetch right after opening returned the stale empty list
+    listSubtitles: (versionId: string) => request<SubtitlesData>(`video-versions/${versionId}/subtitles?t=${Date.now()}`),
     // 2026-08-08, Lino (2nd pass — "der button soll einfach nur SRT
     // hochladen sein, das Tool soll bei SRT hochladen die Sprachen auch
     // checken"): EIN Upload-Weg für beliebig viele Files auf einmal — das
