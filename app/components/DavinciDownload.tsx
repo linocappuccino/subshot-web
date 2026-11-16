@@ -25,10 +25,28 @@ export function usePluginRelease(): PluginRelease | null {
 
 const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 
-/** variant «full» = card (account page), «button» = toolbar button, «inline» = one small line (Resolve box) */
-export function DavinciDownload({ variant = "full" }: { variant?: "full" | "button" | "inline" }) {
+/** variant «full» = card (account page), «button» = toolbar button, «inline» = one small line (Resolve box),
+ *  «line» = subtle row on the projects overview */
+export function DavinciDownload({ variant = "full" }: { variant?: "full" | "button" | "inline" | "line" }) {
   const r = usePluginRelease();
   if (!r) return null;
+  if (variant === "line") {
+    return (
+      <div data-davinci-download className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3 text-sm">
+        <span className="text-base" aria-hidden>🎬</span>
+        <span className="font-medium text-white/85">DaVinci-Plugin</span>
+        <span className="text-white/45">
+          {r.available ? `Version ${r.version} · ${fmtDate(r.released_at)} · Für DaVinci Resolve · macOS` : "Bald verfügbar · Für DaVinci Resolve · macOS"}
+        </span>
+        <span className="ml-auto flex items-center gap-3">
+          <a href={DAVINCI_HOWTO_URL} className="text-white/45 underline hover:text-white/75">How to</a>
+          {r.available && (
+            <a href={DAVINCI_DOWNLOAD_URL} className="rounded-lg bg-blue-600 px-3 py-1.5 font-medium text-white hover:bg-blue-500">⬇ Herunterladen</a>
+          )}
+        </span>
+      </div>
+    );
+  }
   if (variant === "button") {
     if (!r.available) return null;
     return (

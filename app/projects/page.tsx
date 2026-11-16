@@ -1,5 +1,6 @@
 "use client";
 
+import { DavinciDownload } from "@/app/components/DavinciDownload";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
@@ -773,6 +774,8 @@ function ProjectsPageContent() {
           </DndContext>
           </div>
         )}
+        {/* 2026-11-16, Lino: DaVinci plugin download also on the start page (subtle line, live from latest.json) */}
+        {!folderId && <div className="mt-10"><DavinciDownload variant="line" /></div>}
       </ProjectMetaContext.Provider>
       </div>
       <TodoSidebar />
