@@ -17,6 +17,7 @@ import { EdgeNavButton } from "@/app/components/EdgeNavButton";
 import { NotionImportModal } from "@/app/components/NotionImportModal";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
+import { ConfirmDialog } from "@/app/components/ui/ConfirmDialog";
 import { useLanguage } from "@/lib/i18n";
 import { ApiError, invalidateGetCache } from "@/lib/api";
 import { setNavCache, takeNavCache } from "@/lib/navCache";
@@ -100,6 +101,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-11-13, Lino: second filter — the format (combinable with the language)
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
   const [plTab, setPlTab] = useState<PlatformTab>("all");
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -1492,11 +1494,37 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               />
             )}
           </Menu>
+          {/* 2026-11-16, Lino — delete several videos at once (red = delete only) */}
+          <button type="button" data-bulk-delete onClick={() => setBulkDeleteOpen(true)}
+            className="rounded-full bg-red-600 hover:bg-red-500 px-3 py-1 font-semibold text-white">
+            Löschen ({picked.size})
+          </button>
           <button type="button" onClick={() => setPicked(new Set())} className="text-white/55 hover:text-white">
             Abbrechen
           </button>
         </div>
       )}
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        title={`${picked.size} ${picked.size === 1 ? "Video" : "Videos"} löschen?`}
+        message={Object.values(videosBySection).flat().filter((v) => picked.has(v.id)).map((v) => `• ${v.title}`).join("\n")}
+        emphasis="Alle Versionen, Untertitel, Kommentare und Dateien dieser Videos werden endgültig entfernt."
+        confirmLabel={`Endgültig löschen (${picked.size})`}
+        onCancel={() => setBulkDeleteOpen(false)}
+        onConfirm={async () => {
+          setBulkDeleteOpen(false);
+          try {
+            const r = await api.bulkDeleteVideos(id, [...picked]);
+            const gone = new Set(r.deleted.map((d) => d.video_id));
+            setVideosBySection((prev) => Object.fromEntries(Object.entries(prev).map(([k, vs]) => [k, vs.filter((v) => !gone.has(v.id))])));
+            setPicked(new Set());
+            if (r.failed.length) toast.showError(`${r.deleted.length} gelöscht, ${r.failed.length} nicht gelöscht.`);
+            else toast.showSuccess(`${r.deleted.length} ${r.deleted.length === 1 ? "Video" : "Videos"} gelöscht.`);
+          } catch (e) {
+            toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+          }
+        }}
+      />
       <ShareLinkModal
         open={showShareModal}
         onClose={() => setShowShareModal(false)}
