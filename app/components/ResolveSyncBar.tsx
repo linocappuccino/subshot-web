@@ -14,7 +14,7 @@ type Link = { timeline_id: string | null; timeline_name: string | null; resolve_
   resolve_reason?: string | null; resolve_timeline_name?: string | null };
 type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean;
   video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[];
-  resolve_online?: boolean | null };
+  resolve_online?: boolean | null; resolve_client?: string | null };
 type SeenTrack = { index: number; name: string | null };
 type Seen = { resolve_project: string | null; timelines: { id: string; name: string; subtitle_tracks?: SeenTrack[] }[] };
 const trackLabel = (index: number, name: string | null | undefined) => `ST${index}${name ? ` · ${name}` : ""}`;
@@ -25,7 +25,8 @@ const T = {
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
-    waiting: "Warte auf DaVinci …", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
+    waiting: "Warte auf DaVinci …", connected: "DaVinci verbunden", notConnected: "DaVinci nicht verbunden",
+    requested: "DaVinci ist verbunden – die Spur wurde angefragt. Kommt nichts: Plugin auf 1.8.3 aktualisieren oder Timeline / Spur prüfen.", again: "Erneut anfragen", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Timeline «${tl ?? "?"}» in Resolve öffnen` : r === "project_not_open" ? "Projekt in Resolve öffnen" : r === "track_missing" ? `Spur ST${n ?? "?"} fehlt in der Timeline` : r === "track_empty" ? `Spur ST${n ?? "?"} ist leer` : r,
     noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
@@ -33,7 +34,8 @@ const T = {
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
-    waiting: "Waiting for DaVinci …", noAnswer: "DaVinci isn't answering – update the plugin or open Resolve.", offline: "DaVinci isn't connected – open the project in Resolve with SUBSHOT running.",
+    waiting: "Waiting for DaVinci …", connected: "DaVinci connected", notConnected: "DaVinci not connected",
+    requested: "DaVinci is connected – the track was requested. Nothing arriving? Update the plugin to 1.8.3 or check timeline / track.", again: "Ask again", noAnswer: "DaVinci isn't answering – update the plugin or open Resolve.", offline: "DaVinci isn't connected – open the project in Resolve with SUBSHOT running.",
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Open the timeline «${tl ?? "?"}» in Resolve` : r === "project_not_open" ? "Open the project in Resolve" : r === "track_missing" ? `Track ST${n ?? "?"} is missing in the timeline` : r === "track_empty" ? `Track ST${n ?? "?"} is empty` : r,
     noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
 };
@@ -114,6 +116,12 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
     <div data-resolve-sync className="mb-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-xs text-white/70">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="font-semibold text-white/85">🎬 {L.tl}</span>
+        {info.resolve_online != null && (
+          <span data-resolve-online={info.resolve_online ? "1" : "0"} title={info.resolve_client || undefined}
+            className={`rounded-full px-2 py-0.5 text-[11px] ${info.resolve_online ? "bg-emerald-500/15 text-emerald-300" : "bg-white/[0.06] text-white/45"}`}>
+            ● {info.resolve_online ? L.connected : L.notConnected}
+          </span>
+        )}
         {link.timeline_id ? (
           <span className="text-white/80">
             «{link.timeline_name || link.timeline_id}»{link.track_index != null && ` · ${trackLabel(link.track_index, link.track_name)}`}{link.lang && ` · ${link.lang.toUpperCase()}`}
@@ -183,7 +191,13 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
         const waited = waitSince != null ? Date.now() - waitSince : null;
         if (waited != null && waited < 20000) return <p data-resolve-waiting className="mt-2 flex items-center gap-2 text-white/70"><span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />{L.waiting}</p>;
         if (waited != null) return <p data-resolve-noanswer className="mt-2 text-amber-200/90">{L.noAnswer}</p>;
-        return null;
+        return (
+          <div data-resolve-requested className="mt-2 flex items-center gap-2 flex-wrap text-white/70">
+            <span>{L.requested}</span>
+            {canEdit && <button type="button" onClick={() => save({ track_index: link.track_index, track_name: link.track_name ?? null })}
+              className="rounded-md bg-white/10 px-2 py-0.5 text-xs hover:bg-white/15">{L.again}</button>}
+          </div>
+        );
       })()}
       {info.languages.length > 0 && (
         <div className="mt-2 flex flex-col gap-1">
