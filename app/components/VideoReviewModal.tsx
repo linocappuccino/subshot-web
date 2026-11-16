@@ -401,7 +401,7 @@ export function VideoReviewModal({
     if (!currentVersion || hasSubtitleData) return;
     const iv = setInterval(() => {
       if (document.visibilityState === "visible") setSubtitlesReload((n) => n + 1);
-    }, 20000);
+    }, 60000);  // fallback only — Pusher announces new subtitles at once
     return () => clearInterval(iv);
   }, [currentVersion, hasSubtitleData]);
 
@@ -413,9 +413,10 @@ export function VideoReviewModal({
   useEffect(() => {
     if (!currentVersion) return;
     const versionId = currentVersion.id;
-    return subscribeToChanges("video", video.id, () => {
-      listSubtitles(versionId).then(setSubtitles).catch(() => {});
-    });
+    // 2026-11-16 — the API now also fires this for subtitle revisions (web, client, MCP, Resolve), Resolve links and
+    // new versions: reload through the normal path, which also opens the panel when the first track arrives
+    void versionId;
+    return subscribeToChanges("video", video.id, () => setSubtitlesReload((n) => n + 1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.id, currentVersion?.id]);
 
@@ -2012,7 +2013,7 @@ export function VideoReviewModal({
               className="hidden lg:flex flex-col p-5 border-r border-white/8 shrink-0 overflow-hidden"
               style={{ width: subtitleColWidth }}
             >
-              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} canEdit={canEdit} onTracksChanged={() => setSubtitlesReload((n) => n + 1)} />}
+              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} videoId={video.id} canEdit={canEdit} onTracksChanged={() => setSubtitlesReload((n) => n + 1)} />}
               {subtitlesError && (
                 <div data-subtitles-error className="mb-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
                   <p>{t("subtitlePanel.loadError")}</p>

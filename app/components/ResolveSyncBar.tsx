@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "@/lib/useApi";
 import { useLanguage } from "@/lib/i18n";
+import { subscribeToChanges } from "@/lib/realtime";
 
 type Track = { lang: string; kind: string; cues: number; rev: number; resolve_status: string | null; resolve_rev: number | null; resolve_at: string | null };
 type Link = { timeline_id: string | null; timeline_name: string | null; resolve_project: string | null; lang: string | null; track_index: number | null; track_name?: string | null; link_source: string | null; lang_confirmed?: boolean };
@@ -31,7 +32,7 @@ const T = {
     noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
 };
 
-export function ResolveSyncBar({ versionId, canEdit, onTracksChanged }: { versionId: string; canEdit: boolean; onTracksChanged?: () => void }) {
+export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }: { versionId: string; videoId?: string; canEdit: boolean; onTracksChanged?: () => void }) {
   const api = useApi();
   const { language } = useLanguage();
   const L = T[language === "en" ? "en" : "de"];
@@ -57,8 +58,11 @@ export function ResolveSyncBar({ versionId, canEdit, onTracksChanged }: { versio
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on open
     load();
     api.resolveTimelines().then(setSeen).catch(() => {});
-    const iv = setInterval(() => { if (document.visibilityState === "visible") load(); }, 15000);
-    return () => clearInterval(iv);
+    // 2026-11-16 — instant via Pusher (video-<id> «changed»: subtitle revisions, «taken over in Resolve», links);
+    // the 60 s poll is only the fallback when Pusher is unavailable
+    const unsub = videoId ? subscribeToChanges("video", videoId, () => { load(); api.resolveTimelines().then(setSeen).catch(() => {}); }) : () => {};
+    const iv = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
+    return () => { clearInterval(iv); unsub(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load]);
 
