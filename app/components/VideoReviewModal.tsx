@@ -1689,11 +1689,15 @@ export function VideoReviewModal({
                 // canEdit=false) sehen nur den reinen Text, ohne Bearbeiten-Affordanz —
                 // der PATCH-Endpoint verlangt ohnehin editor-Rolle, aber ein
                 // funktionsloser Stift-Button waere hier nur verwirrend.
+                // 2026-11-16, Lino — guests of a «Completed» video get only the newest version (API) and see no
+                // version hint at all
+                !(publicMode && versions.length <= 1) && (
                 <div className="text-xs text-white/40">
                   {currentVersion?.display_version_label
                     ? formatVersionLabel(currentVersion)
                     : t("videoReviewModal.versionOf", { number: currentVersion?.version_number ?? "–", total: versions.length })}
                 </div>
+                )
               )}
             </div>
             <button

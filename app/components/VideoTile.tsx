@@ -510,7 +510,7 @@ export function VideoTile({
             statt übereinander gestapelt, Kommentarzähler als äusserstes
             (rechtestes) Element. */}
         <div className="absolute top-2 right-2 flex items-center gap-1">
-          {latest && (
+          {latest && !(status === "abgeschlossen" && !onUploadVersion) && (
             <span className="text-[11px] font-mono text-white/80 bg-black/50 rounded-full px-2 py-0.5">
               {formatVersionLabel(latest)}
             </span>
