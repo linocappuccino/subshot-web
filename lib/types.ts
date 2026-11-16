@@ -382,7 +382,8 @@ export interface SubtitlesData {
  * — timeline order. Only the first three are stored per version (backend
  * VIDEO_POST_STAGES); "abgenommen" comes automatically from the section's
  * postproduction_status. */
-export const POST_STAGES = ["rohschnitt", "feinschnitt", "color_grading", "abgenommen"] as const;
+// 2026-11-16, Lino: «Color grading» replaced by «Untertitel» (old stored value color_grading is read as untertitel)
+export const POST_STAGES = ["rohschnitt", "feinschnitt", "untertitel", "abgenommen"] as const;
 export type PostStage = (typeof POST_STAGES)[number];
 export type StoredPostStage = Exclude<PostStage, "abgenommen">;
 
@@ -399,7 +400,8 @@ export function effectivePostStage(
     const ready = video.versions.filter((v) => v.status === "ready");
     if (ready[ready.length - 1]?.id === version.id) return "abgenommen";
   }
-  return version.post_stage ?? null;
+  const st = version.post_stage as string | null | undefined;
+  return (st === "color_grading" ? "untertitel" : st ?? null) as PostStage | null;
 }
 
 export function formatVersionLabel(version: Pick<VideoVersion, "display_version_label" | "version_number">): string {
