@@ -738,6 +738,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // to fetch every video in one request instead of one per section (see
     // that page's own doc comment on videosBySection).
     listProjectVideos: (projectId: string) => request<Video[]>(`projects/${projectId}/videos`),
+    reprocessVersion: (versionId: string) => request<{ ok: boolean }>(`video-versions/${versionId}/reprocess`, { method: "POST" }),
     // 2026-11-13, Lino: languages on the Post-Production page
     projectLanguages: (projectId: string) => request<LanguagesOverview>(`projects/${projectId}/languages?t=${Date.now()}`),
     createProjectLanguage: (projectId: string, name: string, flag: string) =>

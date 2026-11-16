@@ -112,7 +112,7 @@ export function useVideoGridCols(landscape: boolean): [React.RefCallback<HTMLDiv
 
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, onReprocess, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
   languageBadge, selectBox, dragVideoIds, onDropRejected, fill,
 }: {
   /** 2026-11-14, Lino: inside the even grid (VIDEO_GRID) — the tile fills its cell(s), height from the format */
@@ -144,6 +144,8 @@ export function VideoTile({
   onChangeAssignee?: (userId: string | null) => void;
   /** 2026-11-16, Lino — platform icon (top right, below QC); undefined = read-only (share view) */
   onChangePlatform?: (platform: string | null) => void;
+  /** 2026-11-16 — «Erneut versuchen» when processing failed or hangs (team only) */
+  onReprocess?: () => Promise<void> | void;
   /** Undefined = kein 3-Punkte-Menü (nur canEditStatus-Nutzer). */
   onUploadVersion?: (file: File) => void;
   /** 2026-10-12 — Fassungen-Checkliste: "{done}/{total}" badge on the tile (internal pages only) */
@@ -217,6 +219,12 @@ export function VideoTile({
   const mostRecentVersion = video.versions[video.versions.length - 1] as VideoVersion | undefined;
   const stillUploading = mostRecentVersion?.status === "uploading";
   const stillProcessing = !stillUploading && Boolean(latest) && !latest?.thumbnail_url;
+  // 2026-11-16 (Lino: «warum braucht er ewig um zu processing?») — never an endless spinner: failed, or still nothing
+  // after 6 minutes (a typical video takes 1–3), shows a clear note with «Erneut versuchen»
+  const [retrying, setRetrying] = useState(false);
+  const processingStuck = stillProcessing && !retrying && (
+    (latest as (VideoVersion & { preview_status?: string | null }) | undefined)?.preview_status === "failed" ||
+    (latest?.created_at ? Date.now() - new Date(latest.created_at).getTime() > 6 * 60 * 1000 : false));
   const tileRef = useRef<HTMLDivElement>(null);
   const [frameIndex, setFrameIndex] = useState(0);
   const [hovering, setHovering] = useState(false);
@@ -726,10 +734,19 @@ export function VideoTile({
             )}
           </div>
         )}
-        {stillProcessing && (
+        {stillProcessing && !processingStuck && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs text-white/70 bg-black/50">
             <div className="w-3.5 h-3.5 border-2 border-white/25 border-t-white/70 rounded-full animate-spin" />
             {t("videoTile.processing")}
+          </div>
+        )}
+        {processingStuck && (
+          <div data-processing-stuck className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-amber-100 bg-black/60" onClick={(e) => e.stopPropagation()}>
+            <span>{t("videoTile.processingFailed")}</span>
+            {onReprocess && (
+              <button type="button" onClick={async () => { setRetrying(true); try { await onReprocess(); } finally { setTimeout(() => setRetrying(false), 6 * 60 * 1000); } }}
+                className="rounded-md bg-[#1f6feb] px-3 py-1 font-semibold text-white hover:bg-[#388bfd]">{t("videoTile.retry")}</button>
+            )}
           </div>
         )}
 

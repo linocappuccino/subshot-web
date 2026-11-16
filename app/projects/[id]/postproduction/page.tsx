@@ -1272,6 +1272,10 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   onChangeStatus={(status) => updateStatus(section, status)}
                   onChangeDeadline={(date) => updateDeadline(section, date)}
                   onUploadVersion={canEditStatus ? (file) => uploadVersionFromTile(section.id, video, file) : undefined}
+                  onReprocess={canEditStatus ? async () => {
+                    const lv = [...video.versions].filter((x) => x.status === "ready").sort((a, b) => a.version_number - b.version_number).pop();
+                    if (lv) await api.reprocessVersion(lv.id);
+                  } : undefined}
                   onRename={canEditStatus ? (title) => renameVideo(section.id, video, title) : undefined}
                   uploadFraction={versionUploadProgress[video.id]}
                   members={members}
