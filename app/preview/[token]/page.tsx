@@ -3,12 +3,13 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { VIDEO_GRID, VideoTile, useVideoGridCols } from "@/app/components/VideoTile";
-import { FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, videoPlatforms, type PlatformTab, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
+import { FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, type PlatformTab, LanguageBadge, LanguageTabs, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
+import { facetCounts, filterVideos } from "@/lib/postproFilter";
 import type { SharedVideoPreviewData, Video } from "@/lib/types";
 
 // 2026-07-20 (#254, corrected scope) — public no-login "viewer" counterpart
@@ -143,7 +144,11 @@ function PreviewVideoPageInner() {
   // rendered in the order the backend already sends it, unsorted.
   const assignments = data?.video_languages ?? {};
   const formats = data?.video_formats ?? {};
-  const sortedVideos = (data?.videos ?? []).filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats) && matchesPlatform(v, plTab));
+  // 2026-11-16 — counters and tiles from the same function (lib/postproFilter)
+  const pfCtx = { assignments, formats };
+  const pfFilter = { lang: langTab, fmt: fmtTab, plat: plTab };
+  const sortedVideos = filterVideos(data?.videos ?? [], pfFilter, pfCtx);
+  const fc = facetCounts(data?.videos ?? [], pfFilter, pfCtx);
 
   if (needsPassword) {
     return (
@@ -225,11 +230,12 @@ function PreviewVideoPageInner() {
               tab={langTab}
               onTab={setLangTab}
               total={data.videos.length}
+              counts={fc.lang}
               hideEmptyUnassigned
             />
           )}
-          <FormatTabs videoIds={data.videos.map((v) => v.id).filter((vid) => matchesTab(vid, langTab, assignments))} formats={formats} tab={fmtTab} onTab={setFmtTab} />
-          <PlatformTabs platforms={data.videos.filter((v) => matchesTab(v.id, langTab, assignments) && matchesFormat(v.id, fmtTab, formats)).map(videoPlatforms)} tab={plTab} onTab={setPlTab} />
+          <FormatTabs counts={fc.fmt} tab={fmtTab} onTab={setFmtTab} />
+          <PlatformTabs counts={fc.plat} tab={plTab} onTab={setPlTab} />
           <div ref={gridRef} className={VIDEO_GRID} style={gridStyle}>
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);

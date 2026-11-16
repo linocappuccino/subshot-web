@@ -32,6 +32,7 @@ import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, videoPlatforms, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
+import { facetCounts, filterVideos } from "@/lib/postproFilter";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -127,6 +128,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // at once (these local values win until the page is reloaded)
   const localFormats = useRef<Record<string, string>>({});
   const platformChain = useRef<Promise<unknown>>(Promise.resolve()); // 2026-11-16 — serial platform PATCHes
+  const sectionIdsRef = useRef<Set<string>>(new Set()); // 2026-11-16 — known sections (see the live refresh)
   const setLangs = (x: LanguagesOverview) => setLangsRaw({ ...x, formats: { ...(x.formats ?? {}), ...localFormats.current } });
   function noteFormat(videoId: string, width?: number | null, height?: number | null) {
     const f = formatOfDims(width, height);
@@ -561,6 +563,13 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           const bySection: Record<string, Video[]> = {};
           for (const video of allVideos) (bySection[video.section_id] ??= []).push(video);
           setVideosBySection(bySection);
+          reloadLangs(); // 2026-11-16 — languages / formats of new or changed videos → filter counters stay exact
+          // 2026-11-16 — sections created elsewhere (plugin, MCP, another browser) must show up too, else their videos
+          // were counted in the filters but had no place to render («Ohne 3» showed nothing)
+          if (allVideos.some((v) => !sectionIdsRef.current.has(v.section_id))) {
+            invalidateGetCache(`projects/${id}`);
+            api.projectDetail(id).then((fresh) => setData((prev) => (prev ? { ...prev, sections: fresh.sections } : fresh))).catch(() => {});
+          }
         }).catch(() => {});
       }, 400);
     });
@@ -987,6 +996,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // sortiert also automatisch auch die Kacheln unten (sections.flatMap).
   // Sections ohne Deadline ans Ende, nicht einfach nach oben sortiert (ein
   // fehlender Wert ist kein "dringendster" Wert).
+  useEffect(() => { sectionIdsRef.current = new Set((data?.sections ?? []).map((s) => s.id)); }, [data]);
   const sections = (data?.sections ?? [])
     .filter((s) => s.in_postproduction)
     .slice()
@@ -1000,9 +1010,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // Lookup maps for the manual-order grid below — that one renders from
   // the flat `manualOrder` id list, not from `sections`/`videosBySection`'s
   // own nesting, so it needs a video's owning section resolved by id.
-  const landscapeShown = Object.values(videosBySection)
-    .flat()
-    .some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab) && ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
+  // 2026-11-16 (Lino: «Filter und Zähler müssen zu 100 % stimmen») — ONE universe (the videos of the sections this
+  // page renders) and ONE function (lib/postproFilter) for the chip counters AND the tiles shown
+  const pfCtx = { assignments: langs.assignments, formats: langs.formats ?? {} };
+  const pfFilter = { lang: langTab, fmt: fmtTab, plat: plTab };
+  const shownVideos = sections.flatMap((s) => videosBySection[s.id] ?? []);
+  const fc = facetCounts(shownVideos, pfFilter, pfCtx);
+  const filteredCount = filterVideos(shownVideos, pfFilter, pfCtx).length;
+  const landscapeShown = filterVideos(shownVideos, pfFilter, pfCtx).some((v) => ["16:9", "5:4"].includes(langs.formats?.[v.id] ?? "16:9"));
   const [gridRef, gridStyle] = useVideoGridCols(landscapeShown);
   const videoById: Record<string, Video> = {};
   const sectionByVideoId: Record<string, Section> = {};
@@ -1147,7 +1162,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               setLangTab(t);
               setPicked(new Set());
             }}
-            total={Object.values(videosBySection).reduce((n, v) => n + v.length, 0)}
+            total={shownVideos.length}
+            counts={fc.lang}
             editable={canEditStatus}
             onCreate={async (name, flag) => {
               try {
@@ -1186,8 +1202,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (
           <FormatTabs
-            videoIds={Object.values(videosBySection).flat().map((v) => v.id).filter((vid) => matchesTab(vid, langTab, langs.assignments))}
-            formats={langs.formats ?? {}}
+            counts={fc.fmt}
             tab={fmtTab}
             onTab={(t) => {
               setFmtTab(t);
@@ -1197,7 +1212,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (
           <PlatformTabs
-            platforms={Object.values(videosBySection).flat().filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {})).map(videoPlatforms)}
+            counts={fc.plat}
             tab={plTab}
             onTab={(t) => {
               setPlTab(t);
@@ -1205,7 +1220,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             }}
           />
         )}
-        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && !Object.values(videosBySection).some((vs) => vs.some((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab))) && (
+        {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && filteredCount === 0 && (
           <p data-lang-empty className="mb-4 text-sm text-white/40">
             {plTab !== "all" ? "Keine Videos für diese Plattform." : fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
           </p>
@@ -1346,7 +1361,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           >
             {sections.flatMap((section) => {
               const all = videosBySection[section.id] ?? [];
-              const videos = all.filter((v) => matchesTab(v.id, langTab, langs.assignments) && matchesFormat(v.id, fmtTab, langs.formats ?? {}) && matchesPlatform(v, plTab));
+              const videos = filterVideos(all, pfFilter, pfCtx);
               // a filter shows only its videos (no empty «+ Video» boxes of other sections)
               if ((langTab !== "all" || fmtTab !== "all" || plTab !== "all") && videos.length === 0 && uploadProgress[section.id] === undefined) return [];
               const tiles = videos.map((video) => {

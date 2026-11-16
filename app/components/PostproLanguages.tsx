@@ -5,6 +5,7 @@
  * become «Nicht zugeordnet»). The client's preview link shows the same tabs read-only. */
 import { useEffect, useState } from "react";
 import { Menu } from "./ui/Menu";
+import { PLATFORM_KEYS, matchesAll, platformsOf } from "@/lib/postproFilter";
 
 export interface ProjectLanguage {
   id: string;
@@ -73,6 +74,7 @@ export function LanguageTabs({
   hideEmptyUnassigned,
   newRequest,
   onDropVideos,
+  counts,
 }: {
   data: LanguagesOverview;
   tab: LanguageTab;
@@ -87,6 +89,8 @@ export function LanguageTabs({
   newRequest?: number;
   /** a video dragged onto a tab (language id, or null = «Nicht zugeordnet») */
   onDropVideos?: (languageId: string | null, videoIds: string[]) => void;
+  /** 2026-11-16 — chip counters from lib/postproFilter.facetCounts (key «all», «none», language id) */
+  counts?: Record<string, number>;
 }) {
   const [form, setForm] = useState<{ id: string | null; name: string; flag: string; flagTouched: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -136,12 +140,12 @@ export function LanguageTabs({
     <div data-language-tabs className="mb-4 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" data-lang-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>
-          Alle {count(total, tab === "all")}
+          Alle {count(counts ? counts.all ?? 0 : total, tab === "all")}
         </button>
         {data.languages.map((l) => (
           <span key={l.id} className="group relative inline-flex">
             <button type="button" data-lang-tab={l.id} onClick={() => onTab(l.id)} className={pill(tab === l.id, l.id)} {...drop(l.id, l.id)}>
-              <span className="text-base leading-none">{l.flag}</span> {l.name} {count(l.count, tab === l.id)}
+              <span className="text-base leading-none">{l.flag}</span> {l.name} {count(counts ? counts[l.id] ?? 0 : l.count, tab === l.id)}
             </button>
             {editable && (
               <button
@@ -156,9 +160,9 @@ export function LanguageTabs({
             )}
           </span>
         ))}
-        {(!hideEmptyUnassigned || data.unassigned > 0) && data.languages.length > 0 && (
+        {(!hideEmptyUnassigned || (counts ? (counts.none ?? 0) : data.unassigned) > 0 || tab === "none") && data.languages.length > 0 && (
           <button type="button" data-lang-tab="none" onClick={() => onTab("none")} className={pill(tab === "none", "none")} {...drop("none", null)}>
-            Nicht zugeordnet {count(data.unassigned, tab === "none")}
+            Nicht zugeordnet {count(counts ? counts.none ?? 0 : data.unassigned, tab === "none")}
           </button>
         )}
         {editable && (
@@ -216,9 +220,7 @@ export function LanguageTabs({
 }
 
 export function matchesTab(videoId: string, tab: LanguageTab, assignments: Record<string, string>): boolean {
-  if (tab === "all") return true;
-  if (tab === "none") return !assignments[videoId];
-  return assignments[videoId] === tab;
+  return matchesAll({ id: videoId }, { lang: tab, fmt: "all", plat: "all" }, { assignments, formats: {} });
 }
 
 const CODES: Record<string, string> = {
@@ -331,29 +333,27 @@ export function formatKey(f: string | undefined): string {
   return f && (FORMAT_ORDER as readonly string[]).includes(f) ? f : "other";
 }
 export function matchesFormat(videoId: string, tab: FormatTab, formats: Record<string, string>): boolean {
-  return tab === "all" || formatKey(formats[videoId]) === tab;
+  return matchesAll({ id: videoId }, { lang: "all", fmt: tab, plat: "all" }, { assignments: {}, formats });
 }
 
-export function FormatTabs({ videoIds, formats, tab, onTab }: { videoIds: string[]; formats: Record<string, string>; tab: FormatTab; onTab: (t: FormatTab) => void }) {
-  const counts: Record<string, number> = {};
-  for (const id of videoIds) {
-    const k = formatKey(formats[id]);
-    counts[k] = (counts[k] ?? 0) + 1;
-  }
-  const keys = [...FORMAT_ORDER.filter((f) => counts[f]), ...(counts.other ? ["other"] : [])];
+/** 2026-11-16 — counts come from lib/postproFilter.facetCounts (the same function that filters), so a chip always
+ * shows exactly as many videos as it says. A chip with 0 is hidden unless it is the active one. */
+export function FormatTabs({ counts, tab, onTab }: { counts: Record<string, number>; tab: FormatTab; onTab: (t: FormatTab) => void }) {
+  const keys = [...FORMAT_ORDER.filter((f) => counts[f] || tab === f), ...(counts.other || tab === "other" ? ["other"] : [])];
   // 2026-11-13, Lino «wo ist der Formatfilter?»: always shown as soon as there are videos (also with one format only)
-  if (videoIds.length === 0 && tab === "all") return null;
+  if (!counts.all && tab === "all") return null;
   const pill = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
+  const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-format-tabs className="mb-4 -mt-1 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-xs text-white/40">Format</span>
       <button type="button" data-format-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>
-        Alle
+        Alle {n("all")}
       </button>
       {keys.map((k) => (
         <button key={k} type="button" data-format-tab={k} onClick={() => onTab(k)} className={pill(tab === k)}>
-          <FormatIcon f={k} /> {k === "other" ? "Andere" : k} <span className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>
+          <FormatIcon f={k} /> {k === "other" ? "Andere" : k} {n(k)}
         </button>
       ))}
     </div>
@@ -363,41 +363,33 @@ export function FormatTabs({ videoIds, formats, tab, onTab }: { videoIds: string
 /** 2026-11-16, Lino: «nach diesen Plattformen filtern, wie bei den Sprachen» — same row style as the format filter,
  * only shown when at least one video has a platform icon; «Ohne» = videos without one */
 export type PlatformTab = "all" | "youtube" | "instagram" | "meta" | "tiktok" | "none";
-const PLATFORM_ORDER = ["youtube", "instagram", "meta", "tiktok"] as const;
+const PLATFORM_ORDER = PLATFORM_KEYS;
 const PLATFORM_LABEL: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
 
 /** 2026-11-16 — all platform icons of a video (several possible), fixed order; old answers only had `platform` */
-export function videoPlatforms(v: { platform?: string | null; platforms?: string[] | null }): string[] {
-  const ps = v.platforms && v.platforms.length ? v.platforms : v.platform ? [v.platform] : [];
-  return PLATFORM_ORDER.filter((k) => ps.includes(k));
-}
+export const videoPlatforms = platformsOf;
 
-/** a video matches a platform tab when ANY of its icons is that platform */
+/** a video matches a platform tab when ANY of its icons is that platform (same rule as lib/postproFilter) */
 export function matchesPlatform(v: { platform?: string | null; platforms?: string[] | null }, tab: PlatformTab): boolean {
-  if (tab === "all") return true;
-  const ps = videoPlatforms(v);
-  return tab === "none" ? ps.length === 0 : ps.includes(tab);
+  return matchesAll({ id: "", ...v }, { lang: "all", fmt: "all", plat: tab }, { assignments: {}, formats: {} });
 }
 
-export function PlatformTabs({ platforms, tab, onTab }: { platforms: string[][]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
-  // one entry per video (its icons) — a video with Instagram + TikTok counts for both
-  const counts: Record<string, number> = {};
-  for (const ps of platforms) for (const p of ps.length ? ps : ["none"]) counts[p] = (counts[p] ?? 0) + 1;
-  const used = PLATFORM_ORDER.filter((p) => counts[p]);
+export function PlatformTabs({ counts, tab, onTab }: { counts: Record<string, number>; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+  const used = PLATFORM_ORDER.filter((p) => counts[p] || tab === p);
   if (used.length === 0 && tab === "all") return null;
   const pill = (active: boolean) =>
     `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10 hover:text-white"}`;
-  const n = (k: string) => <span className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
+  const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-platform-tabs className="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
       <span className="mr-1 text-xs text-white/40">Plattform</span>
-      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>Alle</button>
+      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>Alle {n("all")}</button>
       {used.map((p) => (
         <button key={p} type="button" data-platform-tab={p} onClick={() => onTab(p)} className={pill(tab === p)}>
           <img src={`/platforms/${p}.png`} alt="" className="h-3.5 w-3.5 object-contain" /> {PLATFORM_LABEL[p]} {n(p)}
         </button>
       ))}
-      {(counts.none ?? 0) > 0 && (
+      {((counts.none ?? 0) > 0 || tab === "none") && (
         <button type="button" data-platform-tab="none" onClick={() => onTab("none")} className={pill(tab === "none")}>Ohne {n("none")}</button>
       )}
     </div>

@@ -1,0 +1,68 @@
+/* 2026-11-16, Lino (harte Regel): «Filter und Zähler müssen zu 100 Prozent stimmen». ONE function for counting and
+   filtering — Post-Production page, client preview and Deliver all use it, the server (app/postpro_filter.py, MCP)
+   mirrors it 1:1 and tests/test_postpro_filter.py checks every project and every filter combination.
+
+   Faceted rule: the counter of a chip = the number of videos that match the OTHER two active filters AND this chip.
+   So clicking a chip shows exactly the number it showed. «none» = no language / no platform icon. */
+
+export type PFilter = { lang: string; fmt: string; plat: string };
+export type PCtx = { assignments: Record<string, string>; formats: Record<string, string> };
+export type PVideo = { id: string; platform?: string | null; platforms?: string[] | null };
+
+export const PLATFORM_KEYS = ["youtube", "instagram", "meta", "tiktok"] as const;
+export const FORMAT_KEYS = ["9:16", "16:9", "1:1", "4:5", "5:4"] as const;
+
+/** all platform icons of a video (several possible), fixed order; old answers only had `platform` */
+export function platformsOf(v: PVideo): string[] {
+  const ps = v.platforms && v.platforms.length ? v.platforms : v.platform ? [v.platform] : [];
+  return PLATFORM_KEYS.filter((k) => ps.includes(k));
+}
+export function langKeyOf(v: PVideo, ctx: PCtx): string {
+  return ctx.assignments[v.id] || "none";
+}
+export function fmtKeyOf(v: PVideo, ctx: PCtx): string {
+  const f = ctx.formats[v.id];
+  return f && (FORMAT_KEYS as readonly string[]).includes(f) ? f : "other";
+}
+
+function langOk(v: PVideo, f: PFilter, ctx: PCtx) {
+  return f.lang === "all" || langKeyOf(v, ctx) === f.lang;
+}
+function fmtOk(v: PVideo, f: PFilter, ctx: PCtx) {
+  return f.fmt === "all" || fmtKeyOf(v, ctx) === f.fmt;
+}
+function platOk(v: PVideo, f: PFilter) {
+  if (f.plat === "all") return true;
+  const ps = platformsOf(v);
+  return f.plat === "none" ? ps.length === 0 : ps.includes(f.plat);
+}
+
+export function matchesAll(v: PVideo, f: PFilter, ctx: PCtx): boolean {
+  return langOk(v, f, ctx) && fmtOk(v, f, ctx) && platOk(v, f);
+}
+
+export function filterVideos<T extends PVideo>(videos: T[], f: PFilter, ctx: PCtx): T[] {
+  return videos.filter((v) => matchesAll(v, f, ctx));
+}
+
+export type FacetCounts = { lang: Record<string, number>; fmt: Record<string, number>; plat: Record<string, number> };
+
+/** counters for every chip; key «all» = the «Alle» chip of that row */
+export function facetCounts(videos: PVideo[], f: PFilter, ctx: PCtx): FacetCounts {
+  const lang: Record<string, number> = { all: 0 };
+  const fmt: Record<string, number> = { all: 0 };
+  const plat: Record<string, number> = { all: 0 };
+  const inc = (m: Record<string, number>, k: string) => (m[k] = (m[k] ?? 0) + 1);
+  for (const v of videos) {
+    const l = langOk(v, f, ctx), fo = fmtOk(v, f, ctx), p = platOk(v, f);
+    if (fo && p) { inc(lang, "all"); inc(lang, langKeyOf(v, ctx)); }
+    if (l && p) { inc(fmt, "all"); inc(fmt, fmtKeyOf(v, ctx)); }
+    if (l && fo) {
+      inc(plat, "all");
+      const ps = platformsOf(v);
+      if (ps.length === 0) inc(plat, "none");
+      for (const k of ps) inc(plat, k);
+    }
+  }
+  return { lang, fmt, plat };
+}

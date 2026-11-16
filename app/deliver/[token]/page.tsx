@@ -9,7 +9,8 @@ import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import type { DeliverPreviewData, DeliverVideo, DeliverMiscGroup } from "@/lib/types";
 import { DeliverVideoCard } from "@/app/components/DeliverVideoCard";
-import { FormatTabs, PlatformTabs, matchesFormat, matchesPlatform, videoPlatforms, type FormatTab, type PlatformTab } from "@/app/components/PostproLanguages";
+import { FormatTabs, PlatformTabs, type FormatTab, type PlatformTab } from "@/app/components/PostproLanguages";
+import { facetCounts, filterVideos } from "@/lib/postproFilter";
 
 // 2026-09-06, Lino: "genau dieses Deliver-System möchte ich für Subshot nun
 // auch haben... nach der Postproduction-Seite kommt die Deliver-Page, jedes
@@ -58,10 +59,14 @@ function DeliverPageInner() {
   const [langTab, setLangTab] = useState<string>("all");
   const [fmtTab, setFmtTab] = useState<FormatTab>("all");
   const [plTab, setPlTab] = useState<PlatformTab>("all");
-  const _fmtMap = Object.fromEntries((data?.videos ?? []).map((v) => [v.id, v.format ?? ""]));
-  const shownVideos = (data?.videos ?? []).filter((v) =>
-    (langTab === "all" || (langTab === "none" ? !v.language_id : v.language_id === langTab)) &&
-    matchesFormat(v.id, fmtTab, _fmtMap) && matchesPlatform(v, plTab));
+  // 2026-11-16 — counters and tiles from the same function (lib/postproFilter)
+  const pfCtx = {
+    assignments: Object.fromEntries((data?.videos ?? []).filter((v) => v.language_id).map((v) => [v.id, v.language_id as string])),
+    formats: Object.fromEntries((data?.videos ?? []).map((v) => [v.id, v.format ?? ""])),
+  };
+  const pfFilter = { lang: langTab, fmt: fmtTab, plat: plTab };
+  const shownVideos = filterVideos(data?.videos ?? [], pfFilter, pfCtx);
+  const fc = facetCounts(data?.videos ?? [], pfFilter, pfCtx);
 
   function load(unlock: string | null) {
     publicDeliverApi
@@ -404,30 +409,23 @@ function DeliverPageInner() {
 
         {(() => {
           const vids = data.videos;
-          const langs = new Map<string, { name: string; flag: string | null; n: number }>();
-          let none = 0;
-          for (const v of vids) {
-            if (v.language_id) {
-              const x = langs.get(v.language_id) ?? { name: v.language_name ?? "?", flag: v.language_flag ?? null, n: 0 };
-              x.n += 1; langs.set(v.language_id, x);
-            } else none += 1;
-          }
+          const langs = new Map<string, { name: string; flag: string | null }>();
+          for (const v of vids) if (v.language_id && !langs.has(v.language_id)) langs.set(v.language_id, { name: v.language_name ?? "?", flag: v.language_flag ?? null });
+          const none = fc.lang.none ?? 0;
           const pill = (active: boolean) => `inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-colors ${active ? "bg-white text-black" : "bg-white/[0.06] text-white/75 hover:bg-white/10"}`;
-          const byLang = vids.filter((v) => langTab === "all" || (langTab === "none" ? !v.language_id : v.language_id === langTab));
-          const formats = Object.fromEntries(vids.map((v) => [v.id, v.format ?? ""]));
           return (
             <div data-deliver-filters className="flex flex-col gap-1">
               {langs.size > 0 && (
                 <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <button type="button" onClick={() => setLangTab("all")} className={pill(langTab === "all")}>{t("deliverPage.filterAll")} <span className="opacity-50">{vids.length}</span></button>
+                  <button type="button" onClick={() => setLangTab("all")} className={pill(langTab === "all")}>{t("deliverPage.filterAll")} <span className="opacity-50">{fc.lang.all ?? 0}</span></button>
                   {[...langs.entries()].map(([id, l]) => (
-                    <button key={id} type="button" onClick={() => setLangTab(id)} className={pill(langTab === id)}>{l.flag} {l.name} <span className="opacity-50">{l.n}</span></button>
+                    <button key={id} type="button" onClick={() => setLangTab(id)} className={pill(langTab === id)}>{l.flag} {l.name} <span className="opacity-50">{fc.lang[id] ?? 0}</span></button>
                   ))}
-                  {none > 0 && <button type="button" onClick={() => setLangTab("none")} className={pill(langTab === "none")}>{t("deliverPage.filterNoLang")} <span className="opacity-50">{none}</span></button>}
+                  {(none > 0 || langTab === "none") && <button type="button" onClick={() => setLangTab("none")} className={pill(langTab === "none")}>{t("deliverPage.filterNoLang")} <span className="opacity-50">{none}</span></button>}
                 </div>
               )}
-              <FormatTabs videoIds={byLang.map((v) => v.id)} formats={formats} tab={fmtTab} onTab={setFmtTab} />
-              <PlatformTabs platforms={byLang.filter((v) => matchesFormat(v.id, fmtTab, formats)).map(videoPlatforms)} tab={plTab} onTab={setPlTab} />
+              <FormatTabs counts={fc.fmt} tab={fmtTab} onTab={setFmtTab} />
+              <PlatformTabs counts={fc.plat} tab={plTab} onTab={setPlTab} />
             </div>
           );
         })()}
