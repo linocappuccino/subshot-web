@@ -14,7 +14,8 @@ type Link = { timeline_id: string | null; timeline_name: string | null; resolve_
   resolve_reason?: string | null; resolve_timeline_name?: string | null };
 type Info = { languages: Track[]; link: Link; also_linked: { lang: string | null; video_title: string }[]; feedback_locked: boolean;
   video_lang?: string | null; video_lang_name?: string | null; link_lang_name?: string | null; lang_mismatch?: boolean; lang_options?: { code: string; name: string }[];
-  resolve_online?: boolean | null; resolve_client?: string | null };
+  resolve_online?: boolean | null; resolve_client?: string | null;
+  duplicate_links?: { video_id: string; video_title: string; section_name: string; version_number: number; is_latest: boolean; latest_version_number: number | null }[] };
 type SeenTrack = { index: number; name: string | null };
 type Seen = { resolve_project: string | null; timelines: { id: string; name: string; subtitle_tracks?: SeenTrack[] }[] };
 const trackLabel = (index: number, name: string | null | undefined) => `ST${index}${name ? ` · ${name}` : ""}`;
@@ -25,6 +26,8 @@ const T = {
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
+    dup: (title: string, sec: string, v: number, latest: number | null, isLatest: boolean) =>
+      `Doppelt verknüpft – das andere Video «${title}» (${sec}) V${v} hängt auch an dieser Timeline und Spur${isLatest ? "" : ` (ältere Version, neueste ist V${latest})`}. Resolve zeigt die Marker nur für eines davon.`,
     waiting: "Warte auf DaVinci …", relink: "Neu verknüpfen", searching: "Suche in Resolve …",
     notFound: "In Resolve nichts Passendes gefunden – bitte die Timeline unten selbst wählen.", offlineManual: "DaVinci ist nicht verbunden – bitte die Timeline unten selbst wählen.", connected: "DaVinci verbunden", notConnected: "DaVinci nicht verbunden",
     requested: "DaVinci ist verbunden – die Spur wurde angefragt. Kommt nichts: Plugin auf 1.8.3 aktualisieren oder Timeline / Spur prüfen.", again: "Erneut anfragen", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
@@ -35,6 +38,8 @@ const T = {
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
+    dup: (title: string, sec: string, v: number, latest: number | null, isLatest: boolean) =>
+      `Linked twice – the other video «${title}» (${sec}) V${v} is also linked to this timeline and track${isLatest ? "" : ` (older version, newest is V${latest})`}. Resolve shows the markers for only one of them.`,
     waiting: "Waiting for DaVinci …", relink: "Relink", searching: "Searching in Resolve …",
     notFound: "Nothing matching found in Resolve – please choose the timeline below.", offlineManual: "DaVinci isn't connected – please choose the timeline below.", connected: "DaVinci connected", notConnected: "DaVinci not connected",
     requested: "DaVinci is connected – the track was requested. Nothing arriving? Update the plugin to 1.8.3 or check timeline / track.", again: "Ask again", noAnswer: "DaVinci isn't answering – update the plugin or open Resolve.", offline: "DaVinci isn't connected – open the project in Resolve with SUBSHOT running.",
@@ -185,6 +190,11 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
           </select>
         </div>
       )}
+      {(info.duplicate_links ?? []).map((d) => (
+        <p key={d.video_id} data-duplicate-link className="mt-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-amber-100">
+          ⚠ {L.dup(d.video_title, d.section_name, d.version_number, d.latest_version_number, d.is_latest)}
+        </p>
+      ))}
       {info.also_linked.length > 0 && (
         <p className="mt-1 text-white/45">{L.also}: {info.also_linked.map((a) => `${a.video_title}${a.lang ? ` (${a.lang.toUpperCase()})` : ""}`).join(", ")}</p>
       )}
