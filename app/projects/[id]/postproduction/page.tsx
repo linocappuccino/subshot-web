@@ -90,6 +90,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // size in the background after the upload — the browser already knows it from the file, so the format is right
   // at once (these local values win until the page is reloaded)
   const localFormats = useRef<Record<string, string>>({});
+  const platformChain = useRef<Promise<unknown>>(Promise.resolve()); // 2026-11-16 — serial platform PATCHes
   const setLangs = (x: LanguagesOverview) => setLangsRaw({ ...x, formats: { ...(x.formats ?? {}), ...localFormats.current } });
   function noteFormat(videoId: string, width?: number | null, height?: number | null) {
     const f = formatOfDims(width, height);
@@ -804,8 +805,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   async function updateVideoPlatform(sectionId: string, video: Video, platforms: string[]) {
     // 2026-11-16 — several icons; optimistic so quick ticks in the open check menu build on each other
     updateVideo(sectionId, { ...video, platforms, platform: platforms[0] ?? null });
+    // one PATCH after the other, so the server always ends with the last tick
+    const run = platformChain.current.then(() => api.patchVideo(video.id, { platforms }));
+    platformChain.current = run.catch(() => undefined);
     try {
-      updateVideo(sectionId, await api.patchVideo(video.id, { platforms }));
+      updateVideo(sectionId, await run);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
     }

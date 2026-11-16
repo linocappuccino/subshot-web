@@ -198,7 +198,17 @@ export function VideoTile({
   };
 }) {
   const { t } = useLanguage();
-  const plats = videoPlatforms(video);
+  // 2026-11-16 — while ticking in the open check menu, the local choice wins over live reloads that may
+  // still carry the previous state (else a quick 2nd tick builds on stale data); cleared 4 s after the last tick
+  const [pendingPlats, setPendingPlats] = useState<string[] | null>(null);
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const plats = pendingPlats ?? videoPlatforms(video);
+  const setPlats = (next: string[]) => {
+    setPendingPlats(next);
+    if (pendingTimer.current) clearTimeout(pendingTimer.current);
+    pendingTimer.current = setTimeout(() => setPendingPlats(null), 4000);
+    onChangePlatform?.(next);
+  };
   const statusLabels: Record<PostproductionStatus, string> = {
     wartend: t("postproductionStatus.wartend"),
     in_bearbeitung: t("postproductionStatus.inBearbeitung"),
@@ -611,7 +621,7 @@ export function VideoTile({
                 {() => (
                   <>
                     {Object.entries(PLATFORM_NAMES).map(([key, name]) => (
-                      <MenuItem key={key} onClick={() => onChangePlatform(plats.includes(key) ? plats.filter((p) => p !== key) : [...plats, key])}>
+                      <MenuItem key={key} onClick={() => setPlats(plats.includes(key) ? plats.filter((p) => p !== key) : [...plats, key])}>
                         <span data-platform-option={key} className="flex w-full items-center gap-2">
                           <img src={`/platforms/${key}.png`} alt="" className="h-4 w-4 object-contain" />{name}
                           <span className={`ml-auto pl-4 ${plats.includes(key) ? "text-white" : "text-transparent"}`}>✓</span>
@@ -619,7 +629,7 @@ export function VideoTile({
                       </MenuItem>
                     ))}
                     {plats.length > 0 && (
-                      <MenuItem onClick={() => onChangePlatform([])}>{t("videoTile.platformNone")}</MenuItem>
+                      <MenuItem onClick={() => setPlats([])}>{t("videoTile.platformNone")}</MenuItem>
                     )}
                   </>
                 )}
