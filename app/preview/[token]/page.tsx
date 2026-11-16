@@ -279,9 +279,9 @@ function PreviewVideoPageInner() {
           onDeleteComment={(commentId) => publicPreviewApi.deleteComment(token, unlockToken, commentId)}
           getDownloadUrl={(versionId) => publicPreviewApi.getDownloadUrl(token, unlockToken, versionId)}
           listSubtitles={(versionId) => publicPreviewApi.listSubtitles(token, unlockToken, versionId)}
-          onEditSubtitleText={(segmentId, text) => publicPreviewApi.patchSubtitleSegment(token, unlockToken, segmentId, text)}
-          onEditSubtitleTranslation={(translationId, text) =>
-            publicPreviewApi.patchSubtitleTranslation(token, unlockToken, translationId, text)
+          onEditSubtitleText={(segmentId, text, authorName) => publicPreviewApi.patchSubtitleSegment(token, unlockToken, segmentId, text, authorName)}
+          onEditSubtitleTranslation={(translationId, text, authorName) =>
+            publicPreviewApi.patchSubtitleTranslation(token, unlockToken, translationId, text, authorName)
           }
         />
       )}

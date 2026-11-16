@@ -109,12 +109,12 @@ export const publicPreviewApi = {
 
   // Korrigiert eine Original-Zeile (text-only, siehe api.ts's eigenes
   // patchSubtitleSegment).
-  patchSubtitleSegment: (token: string, unlockToken: string | null, segmentId: string, text: string) =>
+  patchSubtitleSegment: (token: string, unlockToken: string | null, segmentId: string, text: string, authorName?: string | null) =>
     handle<SubtitleSegment>(
       fetch(`${BASE_URL}/share/${token}/subtitle-segments/${segmentId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, author_name: authorName || undefined }),
       })
     ),
 
@@ -122,12 +122,12 @@ export const publicPreviewApi = {
   // api.ts's eigenes patchSubtitleTranslation) — Preview-Besucher können so
   // jede bereits vorhandene Sprache einzeln korrigieren, ohne andere
   // Sprachen zu berühren.
-  patchSubtitleTranslation: (token: string, unlockToken: string | null, translationId: string, text: string) =>
+  patchSubtitleTranslation: (token: string, unlockToken: string | null, translationId: string, text: string, authorName?: string | null) =>
     handle<SubtitleTranslationCue>(
       fetch(`${BASE_URL}/share/${token}/subtitle-translations/${translationId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, author_name: authorName || undefined }),
       })
     ),
 };

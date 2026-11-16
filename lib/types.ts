@@ -319,7 +319,7 @@ export interface VideoComment {
    * des Betrachters erscheint. 2026-08-07: `subtitle_translation_edited`
    * dazugekommen — ein separater Hinweis pro Sprache, sobald jemand (App
    * oder Preview-Seite) eine Übersetzung korrigiert. */
-  system_kind: "subtitle_edited" | "subtitle_translation_edited" | null;
+  system_kind: "subtitle_edited" | "subtitle_translation_edited" | "subtitle_correction" | null;
   /** Nur gesetzt bei system_kind === "subtitle_translation_edited" — ISO
    * 639-1 Code (z.B. "fr") der korrigierten Sprache. */
   system_kind_lang: string | null;

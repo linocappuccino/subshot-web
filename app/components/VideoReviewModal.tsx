@@ -185,14 +185,14 @@ export function VideoReviewModal({
    * Download bleiben optional — nur die authentifizierte Seite reicht sie
    * durch, canManage in SubtitlePanel blendet die UI sonst komplett aus. */
   listSubtitles: (versionId: string) => Promise<SubtitlesData>;
-  onEditSubtitleText: (segmentId: string, text: string) => Promise<SubtitleSegment>;
+  onEditSubtitleText: (segmentId: string, text: string, authorName?: string | null) => Promise<SubtitleSegment>;
   /** 2026-08-08 — Korrektur EINES Cues in EINER Sprache, über dessen
    * eigene id (siehe SubtitleTranslationCue/patchSubtitleTranslation) —
    * ein Sprach-Track ist nicht mehr 1:1 mit dem Original verknüpft, siehe
    * SubtitleTranslation's Doc-Kommentar in models.py. Genauso immer
    * gesetzt (nicht optional) wie onEditSubtitleText oben, gleiche
    * Begründung. */
-  onEditSubtitleTranslation: (translationId: string, text: string) => Promise<SubtitleTranslationCue>;
+  onEditSubtitleTranslation: (translationId: string, text: string, authorName?: string | null) => Promise<SubtitleTranslationCue>;
   /** 2026-08-08 (2nd pass — "der button soll einfach nur SRT hochladen
    * sein, das Tool soll bei SRT hochladen die Sprachen auch checken"):
    * EIN Upload-Weg für beliebig viele Files (Mehrfachauswahl), das
@@ -1046,7 +1046,7 @@ export function VideoReviewModal({
         ...prev,
         original: prev.original.map((s) => (s.id === cueId ? { ...s, text } : s)),
       }));
-      onEditSubtitleText(cueId, text)
+      onEditSubtitleText(cueId, text, publicMode ? visitorName : null)
         // 2026-08-07, Lino: "es funktioniert, aber man muss die seite immer
         // noch reloaden damit man die statusänderung sieht" — a subtitle
         // correction can create/reopen the subtitle-notice comment, which
@@ -1071,7 +1071,7 @@ export function VideoReviewModal({
         [lang]: (prev.translations[lang] ?? []).map((c) => (c.id === cueId ? { ...c, text, edited: true } : c)),
       },
     }));
-    onEditSubtitleTranslation(cueId, text)
+    onEditSubtitleTranslation(cueId, text, publicMode ? visitorName : null)
       .then(() => onCommentsChanged?.())
       .catch((e) => {
         toast.showError(e instanceof ApiError ? e.message : t("subtitlePanel.saveFailed"));
@@ -2483,6 +2483,19 @@ export function VideoReviewModal({
 function isSystemNotice(comment: VideoComment): boolean {
   return comment.system_kind === "subtitle_edited" || comment.system_kind === "subtitle_translation_edited";
 }
+/** 2026-11-16, Lino — automatic, already resolved comment at the cue's time when someone corrects a subtitle */
+function isCorrection(comment: VideoComment): boolean {
+  return comment.system_kind === "subtitle_correction";
+}
+function CorrectionText({ comment }: { comment: VideoComment }) {
+  const { t } = useLanguage();
+  return (
+    <>
+      <span>{t("videoReviewModal.subtitleCorrectedHere", { name: comment.author_name })}</span>
+      <span className="block text-white/55 text-[0.9em] mt-0.5">{comment.comment}</span>
+    </>
+  );
+}
 function systemNoticeText(comment: VideoComment, t: ReturnType<typeof useLanguage>["t"]): string {
   if (comment.system_kind === "subtitle_translation_edited") {
     const lang = comment.system_kind_lang ?? "";
@@ -2573,8 +2586,8 @@ function CommentRow({
           )}
           <span className="text-sm font-semibold">{isSystem ? t("videoReviewModal.systemNoticeLabel") : comment.author_name}</span>
         </div>
-        <p className={`text-sm text-white/80 break-words mt-1 ${resolved ? "line-through decoration-white/30" : ""}`}>
-          {isSystem ? systemNoticeText(comment, t) : comment.comment}
+        <p className={`text-sm text-white/80 break-words mt-1 ${resolved && !isCorrection(comment) ? "line-through decoration-white/30" : ""}`}>
+          {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
         </p>
         {/* 2026-08-05, Lino: "bestätigung wer es gemacht hat, soll rechts
             neben Löschen auftauchen" — war eine eigene Zeile ueber der
@@ -2649,8 +2662,8 @@ function PresentationFeedbackRow({
           </span>
           {!isSystem && <span className="text-base font-mono font-semibold text-blue-400">{formatTime(comment.timestamp_seconds ?? 0)}</span>}
         </div>
-        <p className={`text-xl leading-snug break-words ${resolved ? "line-through decoration-white/30 text-white/35" : "text-white/90"}`}>
-          {isSystem ? systemNoticeText(comment, t) : comment.comment}
+        <p className={`text-xl leading-snug break-words ${resolved && !isCorrection(comment) ? "line-through decoration-white/30 text-white/35" : "text-white/90"}`}>
+          {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
         </p>
       </button>
     </div>
