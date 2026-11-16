@@ -13,6 +13,9 @@ import { VideoFassungenChips, formatOfRatio } from "./VideoFassungenChips";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 
+// 2026-11-16 — the version/format chip row («✓ 9:16», «+ Version») under the title is hidden on the tiles
+const SHOW_FASSUNGEN_CHIPS = false;
+
 // 2026-07-18 (Todoist #192, Lino: "jeder Status eine eigene Farbe") — all
 // three non-final statuses used to share the same grey "default" tone,
 // making them indistinguishable at a glance.
@@ -770,7 +773,9 @@ export function VideoTile({
             </div>
           )}
         </div>
-        {fassungen && (
+        {/* 2026-11-16, Lino: «diese anzeige auf den kacheln (9:16 + Version) brauchen wir nicht mehr» — hidden;
+            new versions still by dropping a file on the tile, the ⋯ menu or «New version» in the review */}
+        {SHOW_FASSUNGEN_CHIPS && fassungen && (
           <VideoFassungenChips
             videoId={video.id}
             mainFormat={versionWithKnownAspect ? formatOfRatio(aspectRatio) : null}
