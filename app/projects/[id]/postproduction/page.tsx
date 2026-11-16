@@ -1540,7 +1540,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         }}
       />
       {canEditStatus && picked.size > 0 && (
-        <div data-lang-selection className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex items-center gap-3 rounded-full bg-[#2a2b31] border border-white/10 shadow-2xl px-4 py-2 text-sm">
+        <div data-lang-selection className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 whitespace-nowrap rounded-3xl bg-[#2a2b31] border border-white/10 shadow-2xl px-4 py-2 text-sm [&>*]:shrink-0">
           <span className="font-semibold tabular-nums">{picked.size} ausgewählt</span>
           <span className="h-4 w-px bg-white/15" />
           <Menu
