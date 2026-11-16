@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { VIDEO_GRID, VideoTile, useVideoGridCols } from "@/app/components/VideoTile";
-import { FormatBadge, FormatTabs, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
+import { FormatBadge, ResolutionBadge, FormatTabs, LanguageBadge, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab } from "@/app/components/PostproLanguages";
 import { VideoReviewModal } from "@/app/components/VideoReviewModal";
 import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
@@ -250,6 +250,7 @@ function PreviewVideoPageInner() {
                       <span className="flex items-center gap-1">
                         <LanguageBadge current={lang ?? null} languages={[]} />
                         <FormatBadge f={formats[video.id]} />
+                        <ResolutionBadge versions={video.versions} />
                       </span>
                     ) : undefined
                   }

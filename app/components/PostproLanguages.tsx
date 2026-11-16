@@ -366,6 +366,18 @@ export function FormatIcon({ f }: { f: string }) {
   return <span aria-hidden className="inline-block rounded-[2px] border-[1.5px] border-current opacity-70" style={{ width: w, height: h }} />;
 }
 
+/** 2026-11-16, Lino: the original resolution in pixels next to the format, e.g. «1080 × 1920» (newest ready version) */
+export function ResolutionBadge({ versions }: { versions?: { status: string; version_number: number; width?: number | null; height?: number | null }[] }) {
+  const ready = (versions ?? []).filter((v) => v.status === "ready").sort((a, b) => a.version_number - b.version_number);
+  const v = ready[ready.length - 1];
+  if (!v?.width || !v?.height) return null;
+  return (
+    <span data-resolution-badge className={`${BADGE} bg-black/60 text-white/90 ring-white/15 tabular-nums`}>
+      {v.width} × {v.height}
+    </span>
+  );
+}
+
 export function FormatBadge({ f }: { f?: string }) {
   if (!f) return null;
   return (

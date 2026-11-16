@@ -420,6 +420,9 @@ export interface VideoVersion {
    * stattdessen (immer mit "V"-Praefix, siehe formatVersionLabel). Reihenfolge/
    * version_number bleiben davon unberuehrt. */
   display_version_label: string | null;
+  /** 2026-11-16 — original pixel size (null until measured) */
+  width?: number | null;
+  height?: number | null;
   /** 2026-09-25 — Postproduction-Stadium dieser Version (Zeitstrahl im
    * Player). "abgenommen" wird nie gespeichert, sondern abgeleitet — siehe
    * effectivePostStage. null = Alt-Version ohne Angabe. */

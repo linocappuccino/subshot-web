@@ -28,7 +28,7 @@ import { PipelineTimeline } from "@/app/components/PipelineTimeline";
 import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
-import { formatOfDims, FormatBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
+import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
@@ -1272,6 +1272,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                       }
                     />
                     <FormatBadge f={langs.formats?.[video.id]} />
+                    <ResolutionBadge versions={video.versions} />
                     </span>
                   }
                   // drag onto a language tab = assign (all ticked ones, if this one is among them)
