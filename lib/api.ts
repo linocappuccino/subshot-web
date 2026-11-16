@@ -742,6 +742,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     bulkDeleteVideos: (projectId: string, videoIds: string[]) =>
       request<{ deleted: { video_id: string; title: string }[]; failed: { video_id: string; error: string }[]; files_removed: number }>(
         `projects/${projectId}/videos/bulk-delete`, { method: "POST", body: JSON.stringify({ video_ids: videoIds }) }),
+    // 2026-11-16, Lino — editor / status / platform icons for several videos at once
+    bulkUpdateVideos: (projectId: string, body: { video_ids: string[]; editor_id?: string | null; status?: string; platforms?: string[]; platforms_mode?: "add" | "replace" }) =>
+      request<{ updated: string[]; failed: { video_id: string; error: string }[]; sections_status_changed: number }>(
+        `projects/${projectId}/videos/bulk`, { method: "PATCH", body: JSON.stringify(body) }),
     // 2026-11-16 (v1.12) — «Neu verknüpfen» (Resolve timelines)
     relinkVideo: (videoId: string) => request<{ removed_links: number }>(`videos/${videoId}/resolve-relink`, { method: "POST" }),
     relinkProject: (projectId: string) => request<{ removed_links: number }>(`projects/${projectId}/resolve-relink`, { method: "POST" }),

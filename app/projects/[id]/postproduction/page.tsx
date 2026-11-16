@@ -31,7 +31,7 @@ import { VideoExtrasModal } from "@/app/components/VideoExtrasModal";
 import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, videoPlatforms, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
-import { Menu } from "@/app/components/ui/Menu";
+import { Menu, MenuItem } from "@/app/components/ui/Menu";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -77,6 +77,41 @@ function NotificationParamsWatcher({
  * Szenenübersicht) explizit dorthin geschickt wurden — Status von jeder
  * Rolle änderbar, Deadline nur ab 'projektleiter', siehe
  * SectionPostproductionPatch-Backend-Kommentar. */
+// 2026-11-16 — bulk actions in the selection bar
+const BULK_STATUSES: [PostproductionStatus, "postproductionStatus.wartend" | "postproductionStatus.inBearbeitung" | "postproductionStatus.wartetAufFeedback" | "postproductionStatus.abgeschlossen" | "postproductionStatus.abgelehnt"][] = [
+  ["wartend", "postproductionStatus.wartend"], ["in_bearbeitung", "postproductionStatus.inBearbeitung"],
+  ["wartet_auf_feedback", "postproductionStatus.wartetAufFeedback"], ["abgeschlossen", "postproductionStatus.abgeschlossen"],
+  ["abgelehnt", "postproductionStatus.abgelehnt"],
+];
+const BULK_PLATFORM_NAMES: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
+
+function BulkPlatformMenu({ onApply }: { onApply: (platforms: string[], mode: "add" | "replace") => void }) {
+  const [sel, setSel] = useState<string[]>([]);
+  const [mode, setMode] = useState<"add" | "replace">("add");
+  const pill = (on: boolean) => `flex-1 rounded-full px-2 py-1 text-xs font-semibold ${on ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10"}`;
+  return (
+    <div data-bulk-platform-menu className="w-60 p-2" onClick={(e) => e.stopPropagation()}>
+      <div className="mb-2 flex gap-1">
+        <button type="button" data-bulk-platform-mode="add" className={pill(mode === "add")} onClick={() => setMode("add")}>Hinzufügen</button>
+        <button type="button" data-bulk-platform-mode="replace" className={pill(mode === "replace")} onClick={() => setMode("replace")}>Ersetzen</button>
+      </div>
+      {Object.entries(BULK_PLATFORM_NAMES).map(([key, name]) => (
+        <button key={key} type="button" data-bulk-platform-option={key}
+          onClick={() => setSel((s) => (s.includes(key) ? s.filter((x) => x !== key) : [...s, key]))}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-white/85 hover:bg-white/8">
+          <img src={`/platforms/${key}.png`} alt="" className="h-4 w-4 object-contain" />{name}
+          <span className={`ml-auto ${sel.includes(key) ? "text-white" : "text-transparent"}`}>✓</span>
+        </button>
+      ))}
+      <div className="mt-2 flex items-center gap-2 border-t border-white/10 pt-2">
+        <button type="button" data-bulk-platform-none onClick={() => onApply([], "replace")} className="text-xs text-white/55 hover:text-white">Kein Icon</button>
+        <button type="button" data-bulk-platform-apply disabled={sel.length === 0} onClick={() => onApply(sel, mode)}
+          className="ml-auto rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40">Anwenden</button>
+      </div>
+    </div>
+  );
+}
+
 export default function PostproductionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
   const api = useApi();
@@ -816,6 +851,23 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  async function bulkUpdate(body: { editor_id?: string | null; status?: string; platforms?: string[]; platforms_mode?: "add" | "replace" }, what: string) {
+    try {
+      const r = await api.bulkUpdateVideos(id, { video_ids: [...picked], ...body });
+      // tiles + statuses fresh from the server (no page reload, the selection stays)
+      invalidateGetCache(`projects/${id}/videos`);
+      const [allVideos, detail] = await Promise.all([api.listProjectVideos(id), body.status ? api.projectDetail(id) : Promise.resolve(null)]);
+      const bySection: Record<string, Video[]> = {};
+      for (const video of allVideos) (bySection[video.section_id] ??= []).push(video);
+      setVideosBySection(bySection);
+      if (detail) setData((prev) => (prev ? { ...prev, sections: detail.sections.map((s) => prev.sections.find((p) => p.id === s.id) ? { ...prev.sections.find((p) => p.id === s.id)!, ...s } : s).filter((s) => prev.sections.some((p) => p.id === s.id)) } : prev));
+      if (r.failed.length) toast.showError(`${what}: ${r.updated.length} geändert, ${r.failed.length} nicht geändert (${r.failed[0].error}).`);
+      else toast.showSuccess(`${what} · ${r.updated.length} ${r.updated.length === 1 ? "Video" : "Videos"}`);
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+    }
+  }
+
   async function updateVideoAssignee(sectionId: string, video: Video, userId: string | null) {
     try {
       updateVideo(sectionId, await api.patchVideo(video.id, { assignee_id: userId }));
@@ -1501,6 +1553,35 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 }}
               />
             )}
+          </Menu>
+          {/* 2026-11-16, Lino: «mehrere videos auswählen … den editor, oder status ändern … oder plattform icon» —
+              same rules as on the tiles (server: PATCH /projects/{id}/videos/bulk); the selection stays for the next action */}
+          <Menu portal align="start" direction="up"
+            trigger={<span data-bulk-editor className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 font-semibold text-white">Editor <span className="text-xs">▾</span></span>}>
+            {(close) => (
+              <>
+                {members.map((m) => (
+                  <MenuItem key={m.user_id} onClick={() => { close(); void bulkUpdate({ editor_id: m.user_id }, `Editor: ${m.name || m.email}`); }}>{m.name || m.email}</MenuItem>
+                ))}
+                <MenuItem onClick={() => { close(); void bulkUpdate({ editor_id: null }, "Kein Editor"); }}>Kein Editor</MenuItem>
+              </>
+            )}
+          </Menu>
+          <Menu portal align="start" direction="up"
+            trigger={<span data-bulk-status className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 font-semibold text-white">Status <span className="text-xs">▾</span></span>}>
+            {(close) => (
+              <>
+                {BULK_STATUSES.map(([key, label]) => (
+                  <MenuItem key={key} onClick={() => { close(); void bulkUpdate({ status: key }, `Status: ${t(label)}`); }}>
+                    <span data-bulk-status-option={key}>{t(label)}</span>
+                  </MenuItem>
+                ))}
+              </>
+            )}
+          </Menu>
+          <Menu portal align="start" direction="up"
+            trigger={<span data-bulk-platform className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 font-semibold text-white">Plattform <span className="text-xs">▾</span></span>}>
+            {(close) => <BulkPlatformMenu onApply={(platforms, mode) => { close(); void bulkUpdate({ platforms, platforms_mode: mode }, platforms.length ? `Plattform: ${platforms.map((p) => BULK_PLATFORM_NAMES[p]).join(", ")}` : "Keine Icons"); }} />}
           </Menu>
           {/* 2026-11-16, Lino — delete several videos at once (red = delete only) */}
           <button type="button" data-bulk-delete onClick={() => setBulkDeleteOpen(true)}
