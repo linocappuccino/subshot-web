@@ -320,6 +320,8 @@ export interface VideoComment {
    * dazugekommen — ein separater Hinweis pro Sprache, sobald jemand (App
    * oder Preview-Seite) eine Übersetzung korrigiert. */
   system_kind: "subtitle_edited" | "subtitle_translation_edited" | "subtitle_correction" | null;
+  /** 2026-11-16 — "import": imported in the DaVinci plugin from a client e-mail / document / screenshot */
+  source?: string | null;
   /** Nur gesetzt bei system_kind === "subtitle_translation_edited" — ISO
    * 639-1 Code (z.B. "fr") der korrigierten Sprache. */
   system_kind_lang: string | null;

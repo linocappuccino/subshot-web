@@ -2627,6 +2627,9 @@ function CommentRow({
             <Avatar name={comment.author_name} avatarUrl={comment.avatar_url} size={22} />
           )}
           <span className="text-sm font-semibold">{isSystem ? t("videoReviewModal.systemNoticeLabel") : comment.author_name}</span>
+          {comment.source === "import" && (
+            <span data-import-badge className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/60">{t("videoReviewModal.imported")}</span>
+          )}
         </div>
         <p className={`text-sm text-white/80 break-words mt-1 ${resolved ? "line-through decoration-white/30" : ""}`}>
           {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
