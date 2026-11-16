@@ -20,7 +20,7 @@ type Seen = { resolve_project: string | null; timelines: { id: string; name: str
 const trackLabel = (index: number, name: string | null | undefined) => `ST${index}${name ? ` · ${name}` : ""}`;
 
 const T = {
-  de: { tl: "Resolve-Timeline", none: "Keine Timeline verknüpft – das Resolve-Tool verknüpft sie automatisch, sobald die Timeline offen ist.", auto: "automatisch", manual: "manuell",
+  de: { tl: "Resolve-Timeline", none: "Noch nicht verknüpft – SUBSHOT verknüpft die Timeline automatisch, sobald das Resolve-Projekt offen ist.", auto: "automatisch", manual: "manuell",
     track: "Spur", lang: "Sprache", also: "auch verknüpft mit", applied: (t: string) => `✓ In Resolve (synchron${t ? `, ${t}` : ""})`, pending: "⏳ Korrektur noch nicht in Resolve", conflict: "Konflikt in Resolve – dort auflösen",
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
@@ -29,7 +29,7 @@ const T = {
     requested: "DaVinci ist verbunden – die Spur wurde angefragt. Kommt nichts: Plugin auf 1.8.3 aktualisieren oder Timeline / Spur prüfen.", again: "Erneut anfragen", noAnswer: "DaVinci antwortet nicht – Plugin aktualisieren oder Resolve öffnen.", offline: "DaVinci ist nicht verbunden – öffne das Projekt in Resolve mit SUBSHOT.",
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Timeline «${tl ?? "?"}» in Resolve öffnen` : r === "project_not_open" ? "Projekt in Resolve öffnen" : r === "track_missing" ? `Spur ST${n ?? "?"} fehlt in der Timeline` : r === "track_empty" ? `Spur ST${n ?? "?"} ist leer` : r,
     noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
-  en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
+  en: { tl: "Resolve timeline", none: "Not linked yet – SUBSHOT links it automatically as soon as the Resolve project is open.", auto: "auto", manual: "manual",
     track: "track", lang: "language", also: "also linked with", applied: (t: string) => `✓ In Resolve (in sync${t ? `, ${t}` : ""})`, pending: "⏳ Correction not in Resolve yet", conflict: "Conflict in Resolve – resolve it there",
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
