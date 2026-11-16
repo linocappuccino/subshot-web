@@ -151,16 +151,21 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     if (picked.size === 0) return;
     const KEEP = "[data-video-lang],[data-lang-selection],[data-menu-dropdown],[data-language-tabs],[data-format-tabs],[data-platform-tabs],[data-upload-zone],button,a,input,select,textarea,label,[role=dialog],[contenteditable=true],.fixed";
-    let down: { x: number; y: number; overlay: boolean } | null = null;
+    // decided on mousedown: the clicked element may already be gone (or re-rendered) by the time «click» fires
+    let down: { x: number; y: number; overlay: boolean; keep: boolean } | null = null;
     const overlayOpen = () => Boolean(document.querySelector("[data-menu-dropdown], [role=dialog], .fixed.inset-0"));
-    const onDown = (e: MouseEvent) => { down = { x: e.clientX, y: e.clientY, overlay: overlayOpen() }; };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      down = { x: e.clientX, y: e.clientY, overlay: overlayOpen(), keep: !t || !t.isConnected || Boolean(t.closest(KEEP)) };
+    };
     const onClick = (e: MouseEvent) => {
       const d = down; down = null;
       if (!d || d.overlay || e.button !== 0) return;
       if (Math.abs(e.clientX - d.x) > 5 || Math.abs(e.clientY - d.y) > 5) return; // a drag, not a click
       if ((window.getSelection()?.toString() ?? "").length > 0) return;
+      if (d.keep) return;
       const t = e.target as HTMLElement | null;
-      if (!t || t.closest(KEEP)) return;
+      if (!t || (t.isConnected && t.closest(KEEP))) return;
       setPicked(new Set());
     };
     const onKey = (e: KeyboardEvent) => {
