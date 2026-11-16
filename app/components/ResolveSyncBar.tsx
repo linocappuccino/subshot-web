@@ -21,7 +21,7 @@ const trackLabel = (index: number, name: string | null | undefined) => `ST${inde
 
 const T = {
   de: { tl: "Resolve-Timeline", none: "Keine Timeline verknüpft – das Resolve-Tool verknüpft sie automatisch, sobald die Timeline offen ist.", auto: "automatisch", manual: "manuell",
-    track: "Spur", lang: "Sprache", also: "auch verknüpft mit", applied: (t: string) => `In Resolve übernommen um ${t}`, pending: "Wartet auf Resolve", conflict: "Konflikt in Resolve – dort auflösen",
+    track: "Spur", lang: "Sprache", also: "auch verknüpft mit", applied: (t: string) => `✓ In Resolve (synchron${t ? `, ${t}` : ""})`, pending: "⏳ Korrektur noch nicht in Resolve", conflict: "Konflikt in Resolve – dort auflösen",
     never: "Noch nicht in Resolve", choose: "Timeline wählen …", unlink: "Verknüpfung lösen", dl: "Herunterladen",
     openResolve: "Öffne das Projekt in Resolve, während SUBSHOT läuft – dann erscheinen die Timelines hier.", typeName: "oder Timeline-Name eingeben", set: "Setzen",
     subLang: "Untertitelsprache", mismatch: (a: string, b: string) => `Untertitelsprache ${a} ≠ Videosprache ${b}`, confirm: "Bestätigen", change: "Ändern",
@@ -30,7 +30,7 @@ const T = {
     reason: (r: string, tl: string | null, n: number | null) => r === "timeline_not_open" ? `Timeline «${tl ?? "?"}» in Resolve öffnen` : r === "project_not_open" ? "Projekt in Resolve öffnen" : r === "track_missing" ? `Spur ST${n ?? "?"} fehlt in der Timeline` : r === "track_empty" ? `Spur ST${n ?? "?"} ist leer` : r,
     noTracks: "Keine Untertitelspuren gemeldet – in Resolve eine Untertitelspur anlegen und das Projekt mit laufendem SUBSHOT öffnen.", trackNone: "Spur wählen …", failed: "Konnte nicht geladen werden.", retry: "Erneut versuchen" },
   en: { tl: "Resolve timeline", none: "No timeline linked – the Resolve tool links it automatically once the timeline is open.", auto: "auto", manual: "manual",
-    track: "track", lang: "language", also: "also linked with", applied: (t: string) => `Taken over in Resolve at ${t}`, pending: "Waiting for Resolve", conflict: "Conflict in Resolve – resolve it there",
+    track: "track", lang: "language", also: "also linked with", applied: (t: string) => `✓ In Resolve (in sync${t ? `, ${t}` : ""})`, pending: "⏳ Correction not in Resolve yet", conflict: "Conflict in Resolve – resolve it there",
     never: "Not in Resolve yet", choose: "Choose timeline …", unlink: "Unlink", dl: "Download",
     openResolve: "Open the project in Resolve with SUBSHOT running – its timelines then show up here.", typeName: "or type the timeline name", set: "Set",
     subLang: "Subtitle language", mismatch: (a: string, b: string) => `Subtitle language ${a} ≠ video language ${b}`, confirm: "Confirm", change: "Change",
@@ -124,7 +124,7 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
         )}
         {link.timeline_id ? (
           <span className="text-white/80">
-            «{link.timeline_name || link.timeline_id}»{link.track_index != null && ` · ${trackLabel(link.track_index, link.track_name)}`}{link.lang && ` · ${link.lang.toUpperCase()}`}
+            «{link.timeline_name || link.timeline_id}»{link.track_index != null && ` · ${trackLabel(link.track_index, link.track_name)}`}{link.lang && link.lang.toUpperCase() !== (link.track_name ?? "").toUpperCase() && ` · ${link.lang.toUpperCase()}`}
             {link.link_source && <span className="ml-1 text-white/40">({link.link_source === "auto" ? L.auto : L.manual})</span>}
           </span>
         ) : (
@@ -208,7 +208,7 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
             return (
               <div key={t.lang} className="flex items-center gap-2">
                 <span className="w-8 font-semibold text-white/80">{t.lang.toUpperCase()}</span>
-                <span className={color}>● {label}</span>
+                <span className={color}>{label}</span>
                 <span className="ml-auto flex gap-1.5">
                   {(["srt", "vtt"] as const).map((f) => (
                     <a key={f} href="#" onClick={(e) => { e.preventDefault(); api.downloadSubtitleTrack(versionId, t.lang, f); }}
