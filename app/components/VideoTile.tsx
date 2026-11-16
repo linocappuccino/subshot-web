@@ -588,16 +588,16 @@ export function VideoTile({
             transparent background in /public/platforms; editors pick it from a small menu (hover shows «+» when empty).
             Guests (share view, read-only): top LEFT of the tile (Lino 2026-11-16) — there is no ⋯ menu there */}
         {(video.platform || (onChangePlatform && hovering)) && (
-          <div className={`absolute z-[2] ${onChangePlatform ? "top-9 right-2" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
+          <div className={`absolute z-[2] ${onChangePlatform ? "top-8 right-2" : "top-2 left-2"}`} onClick={(e) => e.stopPropagation()} data-platform={video.platform ?? ""}>
             {onChangePlatform ? (
               <Menu
                 portal
                 trigger={
                   video.platform ? (
                     <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
-                      className="h-7 w-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                      className="h-[22px] w-[22px] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
                   ) : (
-                    <span title={t("videoTile.platform")} className="flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white/80 text-sm hover:bg-black/70">+</span>
+                    <span title={t("videoTile.platform")} className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-black/50 text-white/80 text-xs hover:bg-black/70">+</span>
                   )
                 }
               >
@@ -616,7 +616,7 @@ export function VideoTile({
               </Menu>
             ) : (
               video.platform && <img src={`/platforms/${video.platform}.png`} alt={PLATFORM_NAMES[video.platform] ?? video.platform} title={PLATFORM_NAMES[video.platform]}
-                className="h-7 w-7 object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
+                className="h-[22px] w-[22px] object-contain drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]" />
             )}
           </div>
         )}
