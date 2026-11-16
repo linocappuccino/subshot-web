@@ -771,6 +771,14 @@ export function VideoTile({
             <span data-processing-state={job ?? ""}>{job === "queued" ? t("videoTile.queued") : job === "running" ? t("videoTile.processingRunning") : t("videoTile.processing")}</span>
           </div>
         )}
+        {/* 2026-11-16 — tile is done after the light stage; the player preview is still being optimised in the
+            background (the player plays the original meanwhile) */}
+        {!stillUploading && !stillProcessing && latest?.preview_status === "pending" && (
+          <span data-preview-optimizing className="pointer-events-none absolute bottom-9 left-2 z-[2] flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-0.5 text-[10px] text-white/75">
+            <span className="h-2.5 w-2.5 animate-spin rounded-full border border-white/25 border-t-white/70" />
+            {t("videoTile.previewOptimizing")}
+          </span>
+        )}
         {processingStuck && (
           <div data-processing-stuck className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-amber-100 bg-black/60" onClick={(e) => e.stopPropagation()}>
             <span>{t("videoTile.processingFailed")}</span>
