@@ -433,11 +433,19 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     if (!autoOpenVideoId) return;
     const video = Object.values(videosBySection).flat().find((v) => v.id === autoOpenVideoId);
-    if (!video) return;
+    if (!video) {
+      // 2026-11-17 — a direct link to a video that no longer exists (deleted): say so instead of doing nothing
+      if (!loading && Object.keys(videosBySection).length > 0) {
+        toast.showError("Dieses Video gibt es nicht mehr (gelöscht oder verschoben).");
+        setAutoOpenVideoId(null);
+        setUrlParams({ video: null, openVideo: null, openComment: null }, "replace");
+      }
+      return;
+    }
     setReviewingVideo(video);
     setAutoOpenVideoId(null);
     setUrlParams({ openVideo: null, openComment: null });
-  }, [autoOpenVideoId, videosBySection]);
+  }, [autoOpenVideoId, videosBySection, loading]);
   // 2026-11-09, Lino: "lade ich die Seite neu, lande ich irgendwo anders" — the open video review lives in
   // ?video=<id>: opening is its own history step, closing one that was opened here goes back one step
   const videoUrlReady = useRef(false);
@@ -914,6 +922,34 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
     }
+  }
+
+  // 2026-11-17, Lino — «Link kopieren»: client guest link to exactly this video (editors+, same link as «Teilen»,
+  // valid 7 days) and the internal team link (?video=<id> on this page)
+  async function copyText(text: string, msg: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.showSuccess(msg);
+    } catch {
+      window.prompt("Link kopieren:", text);
+    }
+  }
+  function videoLinkActions(video: Video) {
+    return {
+      internal: () => void copyText(`${window.location.origin}/projects/${id}/postproduction?video=${video.id}`, "Interner Link kopiert (nur für Teammitglieder)."),
+      client: canEditStatus
+        ? async () => {
+            try {
+              const r = await api.shareLink(id, undefined, undefined, "video");
+              const token = r.url.replace(/\/+$/, "").split("/").pop();
+              const until = new Date(r.expires_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
+              await copyText(`${window.location.origin}/preview/${token}?video=${video.id}`, `Kunden-Link kopiert – gültig bis ${until}${r.has_password ? " (mit Passwort)" : ""}.`);
+            } catch (e) {
+              toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+            }
+          }
+        : undefined,
+    };
   }
 
   async function updateVideoAssignee(sectionId: string, video: Video, userId: string | null) {
@@ -1444,6 +1480,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   onOpenQc={canEditStatus && newestVersion(video) ? () => setQcFor(video) : undefined}
                   roundsBadge={rounds?.videos[video.id] ? { used: rounds.videos[video.id].used, limit: rounds.videos[video.id].limit } : null}
                   onOpenRounds={canEditStatus ? () => setRoundsFor(video) : undefined}
+                  onCopyLink={videoLinkActions(video)}
                   languageBadge={
                     <span className="flex items-center gap-1">
                     <LanguageBadge
@@ -1756,6 +1793,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       {reviewingVideo && (
         <VideoReviewModal
           video={reviewingVideo}
+          onCopyLink={videoLinkActions(reviewingVideo)}
           sectionStatus={data?.sections.find((s) => s.id === reviewingVideo.section_id)?.postproduction_status ?? null}
           canEdit={canEditStatus}
           currentUserId={currentUserId}

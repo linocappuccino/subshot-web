@@ -8,6 +8,7 @@ import { Avatar } from "./ui/Avatar";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { SubtitlePanel, SUBTITLE_COL_WIDTH, SUBTITLE_LANGUAGES } from "./SubtitlePanel";
 import { useApi } from "@/lib/useApi";
+import { Menu, MenuItem } from "./ui/Menu";
 import { ResolveSyncBar } from "./ResolveSyncBar";
 import { ApiError } from "@/lib/api";
 import { useToast } from "./ui/Toast";
@@ -90,6 +91,7 @@ export function VideoReviewModal({
   onClose,
   onVideoUpdated,
   onDeleteVideo,
+  onCopyLink,
   onDeleteVersion,
   publicMode,
   postComment,
@@ -138,6 +140,8 @@ export function VideoReviewModal({
   /** Undefined = kein Lösch-Button (nur canEdit-Nutzer bekommen ihn — siehe
    * postproduction/page.tsx). */
   onDeleteVideo?: () => void;
+  /** 2026-11-17 — «Link kopieren» in the header (client guest link / internal team link) */
+  onCopyLink?: { client?: () => void; internal?: () => void };
   /** 2026-07-26, Lino: "Wenn man löschen drückt kann man wählen zwischen
    * alle videos (versionen) löschen, oder eine Version auswählen die
    * gelöscht werden soll" — deletes only the currently-open version
@@ -1865,6 +1869,23 @@ export function VideoReviewModal({
                 <path d="M12 16v2" />
               </svg>
             </button>
+            {onCopyLink && (onCopyLink.client || onCopyLink.internal) && (
+              <Menu
+                portal
+                trigger={
+                  <span data-copy-link-menu title="Link kopieren" className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
+                  </span>
+                }
+              >
+                {(close) => (
+                  <>
+                    {onCopyLink.client && <MenuItem onClick={() => { onCopyLink.client!(); close(); }}><span data-copy-link="client">Kunden-Link kopieren</span></MenuItem>}
+                    {onCopyLink.internal && <MenuItem onClick={() => { onCopyLink.internal!(); close(); }}><span data-copy-link="internal">Interner Link kopieren</span></MenuItem>}
+                  </>
+                )}
+              </Menu>
+            )}
             {onDeleteVideo && (
               <button
                 onClick={() => (onDeleteVersion && versions.length > 1 ? setShowDeleteChoice(true) : setConfirmDeleteVideo(true))}

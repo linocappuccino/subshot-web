@@ -117,7 +117,7 @@ export function useVideoGridCols(landscape: boolean): [React.RefCallback<HTMLDiv
 
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, onReprocess, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, onReprocess, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds, onCopyLink,
   languageBadge, selectBox, dragVideoIds, onDropRejected, fill,
 }: {
   /** 2026-11-14, Lino: inside the even grid (VIDEO_GRID) — the tile fills its cell(s), height from the format */
@@ -165,6 +165,8 @@ export function VideoTile({
   /** 2026-10-12 — feedback rounds "Runde 2/3" (internal pages ONLY — never pass this on client pages) */
   roundsBadge?: { used: number; limit: number | null } | null;
   onOpenRounds?: () => void;
+  /** 2026-11-17 — «Link kopieren»: client guest link (editors) and/or internal team link */
+  onCopyLink?: { client?: () => void; internal?: () => void };
   /** Undefined = kein Stift-Icon zum Umbenennen (nur canEditStatus-Nutzer). */
   onRename?: (title: string) => void;
   /** 2026-07-20, Lino (öffentliche Preview-Seite): "Deadline: ..." / bei
@@ -739,6 +741,16 @@ export function VideoTile({
                       }}
                     >
                       {t("rounds.menu")}
+                    </MenuItem>
+                  )}
+                  {onCopyLink?.client && (
+                    <MenuItem onClick={() => { onCopyLink.client!(); close(); }}>
+                      <span data-copy-link="client">🔗 Kunden-Link kopieren</span>
+                    </MenuItem>
+                  )}
+                  {onCopyLink?.internal && (
+                    <MenuItem onClick={() => { onCopyLink.internal!(); close(); }}>
+                      <span data-copy-link="internal">🔗 Interner Link kopieren</span>
                     </MenuItem>
                   )}
                 </>
