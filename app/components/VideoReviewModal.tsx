@@ -8,6 +8,7 @@ import { Avatar } from "./ui/Avatar";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { SubtitlePanel, SUBTITLE_COL_WIDTH, SUBTITLE_LANGUAGES } from "./SubtitlePanel";
 import { useApi } from "@/lib/useApi";
+import { isOpenFeedback } from "@/lib/commentRules";
 import { Menu, MenuItem } from "./ui/Menu";
 import { ResolveSyncBar } from "./ResolveSyncBar";
 import { ApiError } from "@/lib/api";
@@ -1434,6 +1435,35 @@ export function VideoReviewModal({
   );
   // Scrubber markers only make sense for comments pinned to a real moment.
   const timelineComments = useMemo(() => rootComments.filter((c) => c.timestamp_seconds !== null), [rootComments]);
+  // 2026-11-17, Lino — all OPEN subtitle corrections of this version bundled in one card on top of the list (the
+  // ✏️ markers stay on the timeline; in the list they fold away under the card, so nothing shows twice). Counting
+  // is unchanged (lib/commentRules).
+  const openCorrections = useMemo(
+    () => rootComments.filter((c) => c.system_kind === "subtitle_correction" && isOpenFeedback(c)),
+    [rootComments],
+  );
+  // one block per subtitle language / track
+  const correctionGroups = useMemo(() => {
+    const m = new Map<string, VideoComment[]>();
+    for (const c of openCorrections) (m.get(c.system_kind_lang ?? "") ?? m.set(c.system_kind_lang ?? "", []).get(c.system_kind_lang ?? "")!).push(c);
+    return [...m.entries()];
+  }, [openCorrections]);
+  const [showCorrectionRows, setShowCorrectionRows] = useState(false);
+  const [resolvingLang, setResolvingLang] = useState<string | null>(null);
+  async function resolveAllCorrections(lang: string, list: VideoComment[]) {
+    setResolvingLang(lang);
+    try {
+      const done = await Promise.all(list.map((c) => api.updateVideoCommentStatus(c.id, "resolved").catch(() => null)));
+      const byId = new Map(done.filter(Boolean).map((u) => [u!.id, u!]));
+      updateComments((prev) => prev.map((c) => byId.get(c.id) ?? c));
+      onCommentsChanged?.();
+      const failed = done.filter((d) => !d).length;
+      if (failed) toast.showError(t("videoReviewModal.correctionsResolvePartial", { n: failed }));
+      else toast.showSuccess(t("videoReviewModal.correctionsResolved", { n: done.length }));
+    } finally {
+      setResolvingLang(null);
+    }
+  }
   const repliesByParent = useMemo(() => {
     const map = new Map<string, VideoComment[]>();
     for (const c of comments) {
@@ -2514,7 +2544,35 @@ export function VideoReviewModal({
                   {rootComments.length === 0 && (
                     <p className="text-sm text-white/30">{t("videoReviewModal.noCommentsYet")}</p>
                   )}
-                  {rootComments.map((c) => (
+                  {correctionGroups.map(([lang, list]) => (
+                    <div key={lang || "orig"} data-subtitle-feedback-card={lang} className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                      <div className="mb-2 flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white/90">✏️ {t("videoReviewModal.subtitleFeedback", { n: list.length })}{lang ? ` · ${lang.toUpperCase()}` : ""}</span>
+                        {canEdit && !publicMode && (
+                          <button type="button" data-resolve-all-corrections={lang} disabled={resolvingLang !== null} onClick={() => resolveAllCorrections(lang, list)}
+                            className="ml-auto rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium text-white/85 hover:bg-white/15 disabled:opacity-50">
+                            {t("videoReviewModal.resolveAllCorrections")}
+                          </button>
+                        )}
+                      </div>
+                      <ul className="flex flex-col gap-1">
+                        {list.map((c) => (
+                          <li key={c.id}>
+                            <button type="button" data-correction-item={c.id} onClick={() => seekTo(c.timestamp_seconds ?? 0)}
+                              className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-white/[0.06]">
+                              <span className="shrink-0 tabular-nums text-white/45">{fmtTc(c.timestamp_seconds ?? 0)}</span>
+                              <span className="min-w-0 flex-1 break-words text-white/80">{c.comment}</span>
+                              <span className="shrink-0 text-white/35">{c.author_name}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <button type="button" onClick={() => setShowCorrectionRows((v) => !v)} className="mt-1.5 text-[11px] text-white/40 hover:text-white/70">
+                        {showCorrectionRows ? t("videoReviewModal.hideCorrectionRows") : t("videoReviewModal.showCorrectionRows")}
+                      </button>
+                    </div>
+                  ))}
+                  {rootComments.filter((c) => showCorrectionRows || !openCorrections.includes(c)).map((c) => (
                     <div key={c.id} className="flex flex-col gap-2">
                       <CommentRow
                         rowRef={(el) => {
@@ -2890,4 +2948,11 @@ function SubtitleHistoryDialog({ versionId, lang, cues, onRestore, onClose }: {
       </div>
     </div>
   );
+}
+
+
+/** m:ss for the subtitle-feedback card */
+function fmtTc(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
