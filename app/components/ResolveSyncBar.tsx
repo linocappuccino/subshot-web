@@ -48,7 +48,7 @@ const T = {
     noTracks: "No subtitle tracks reported – add a subtitle track in Resolve and open the project with SUBSHOT running.", trackNone: "Choose track …", failed: "Couldn't be loaded.", retry: "Try again" },
 };
 
-export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }: { versionId: string; videoId?: string; canEdit: boolean; onTracksChanged?: () => void }) {
+export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged, frozen }: { versionId: string; videoId?: string; canEdit: boolean; onTracksChanged?: () => void; frozen?: boolean }) {
   const api = useApi();
   const { language } = useLanguage();
   const L = T[language === "en" ? "en" : "de"];
@@ -67,9 +67,18 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
     return () => clearInterval(iv);
   }, [waitSince, relinkSince]);
   const revKey = useRef<string | null>(null);
+  useEffect(() => {
+    frozenRef.current = !!frozen;
+    if (!frozen && missed.current) { missed.current = false; setTimeout(() => loadRef.current(), 400); }
+  }, [frozen]);
+  const loadRef = useRef<() => void>(() => {});
 
   // 2026-11-16 — never hide the bar: errors show a retry; polls every 15 s so plugin uploads show up without reload
+  // 2026-11-17 — while a subtitle line is being typed in, the bar doesn't change (no layout shift above the text)
+  const frozenRef = useRef(false);
+  const missed = useRef(false);
   const load = useCallback(() => {
+    if (frozenRef.current) { missed.current = true; return; }
     api.subtitleTracks(versionId).then((d: Info) => {
       setInfo(d); setFailed(false);
       const key = d.languages.map((t) => `${t.lang}:${t.rev}`).sort().join(",");
@@ -78,6 +87,7 @@ export function ResolveSyncBar({ versionId, videoId, canEdit, onTracksChanged }:
     }).catch(() => setFailed(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [versionId]);
+  loadRef.current = load;
   useEffect(() => {
     revKey.current = null;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on open

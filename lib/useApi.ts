@@ -25,3 +25,10 @@ export function useApi() {
   // client keyed to the new identity, same as the existing getToken dep.
   return useMemo(() => createApiClient(() => getToken(), userId), [getToken, userId]);
 }
+
+
+/** 2026-11-17 — the Clerk session token getter (null on guest pages), e.g. for a keepalive save while the tab closes */
+export function useAuthToken(): () => Promise<string | null> {
+  const { getToken } = useAuthOrGuest();
+  return getToken;
+}

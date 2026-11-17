@@ -7,7 +7,7 @@ import { useLanguage, type TranslationKey } from "@/lib/i18n";
  * SubtitleSegment (original) or a SubtitleTranslationCue (an alternate
  * language), both share exactly this shape (see lib/types.ts). The parent
  * (VideoReviewModal) picks WHICH track's list this is based on `lang`. */
-type SubtitleCue = { id: string; text: string; edited: boolean };
+type SubtitleCue = { id: string; text: string; edited: boolean; start_ms?: number };
 
 // 2026-07-21-style width constant, same shape as VideoReviewModal's own
 // COMMENT_COL_WIDTH. 2026-07-28, Lino: "die Spalte soll breiter sein für
@@ -100,6 +100,9 @@ export function SubtitlePanel({
   onEditText,
   canManage,
   undo,
+  draftScope,
+  onUnloadSave,
+  onEditingChange,
   uploading,
   onUpload,
   onDownload,
@@ -127,6 +130,12 @@ export function SubtitlePanel({
   loading: boolean;
   onEditText: (cueId: string, text: string) => void;
   canManage: boolean;
+  /** 2026-11-17 — local drafts (crash safety net) are stored per scope (version id) + language + cue */
+  draftScope?: string;
+  /** called while the page is being closed with the line's unsaved text (keepalive request) */
+  onUnloadSave?: (cueId: string, text: string) => void;
+  /** a line got / lost focus — the parent holds back live reloads meanwhile */
+  onEditingChange?: (editing: boolean) => void;
   /** 2026-11-17 (Rückgängig) — undo / redo of this session's own line edits + the server text history */
   undo?: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void; onHistory?: () => void };
   uploading?: boolean;
@@ -194,11 +203,88 @@ export function SubtitlePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cues, lang]);
 
+  // 2026-11-17 (Lino: «die Speicherung hat jedes Mal einen störenden Effekt beim Schreiben») — nothing is saved while
+  // typing: only on Enter, leaving the line, switching line / video, closing the page, or after 30 s without a key.
+  // The line being edited is never touched by live updates (parent freezes them via onEditingChange).
+  const IDLE_SAVE_MS = 30000;
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftKey = (cueId: string) => `subshot:subdraft:${draftScope}:${lang}:${cueId}`;
+  function writeDraft(cueId: string, text: string) {
+    if (!draftScope) return;
+    const cue = cues.find((c) => c.id === cueId);
+    try { localStorage.setItem(draftKey(cueId), JSON.stringify({ text, base: cue?.text ?? "", at: Date.now() })); } catch { /* storage off */ }
+  }
+  function clearDraft(cueId: string) {
+    if (!draftScope) return;
+    try { localStorage.removeItem(draftKey(cueId)); } catch { /* storage off */ }
+  }
+  function focusedText(): [string, string] | null {
+    const id = focusedIdRef.current;
+    const el = id ? spanRefs.current[id] : null;
+    return id && el ? [id, el.textContent ?? ""] : null;
+  }
+  // close / reload the tab: send the open line with a keepalive request; switching tabs: normal save
+  const unloadRef = useRef<() => void>(() => {});
+  unloadRef.current = () => {
+    const f = focusedText();
+    if (!f) return;
+    const cue = cues.find((c) => c.id === f[0]);
+    if (cue && normalize(f[1]) !== cue.text) onUnloadSave?.(f[0], normalize(f[1]));
+  };
+  const commitFocusedRef = useRef<() => void>(() => {});
+  commitFocusedRef.current = () => {
+    const f = focusedText();
+    if (f) commit(f[0], f[1]);
+  };
+  useEffect(() => {
+    const onHide = () => { if (document.visibilityState === "hidden") commitFocusedRef.current(); };
+    const onPageHide = () => unloadRef.current();
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+      commitFocusedRef.current(); // video switch / modal closed while a line was being edited
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
+  }, []);
+  // crash safety net: drafts from an earlier session — re-save when the server still has the old text, else ask
+  const [draftConflicts, setDraftConflicts] = useState<{ cueId: string; text: string; start: number }[]>([]);
+  const draftsChecked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draftScope || cues.length === 0) return;
+    const scopeKey = `${draftScope}:${lang}`;
+    if (draftsChecked.current === scopeKey) return;
+    draftsChecked.current = scopeKey;
+    const prefix = `subshot:subdraft:${draftScope}:${lang}:`;
+    const conflicts: { cueId: string; text: string; start: number }[] = [];
+    try {
+      for (const k of Object.keys(localStorage)) {
+        if (!k.startsWith(prefix)) continue;
+        const cueId = k.slice(prefix.length);
+        const d = JSON.parse(localStorage.getItem(k) || "{}") as { text?: string; base?: string };
+        const cue = cues.find((c) => c.id === cueId);
+        if (!cue || d.text === undefined || d.text === cue.text) { localStorage.removeItem(k); continue; }
+        if (cue.text === d.base) { onEditText(cueId, d.text); localStorage.removeItem(k); }
+        else conflicts.push({ cueId, text: d.text, start: cue.start_ms ?? 0 });
+      }
+    } catch { /* storage off */ }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time draft check per track
+    if (conflicts.length) setDraftConflicts(conflicts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftScope, lang, cues]);
+
+  function normalize(raw: string): string {
+    return raw.replace(/\r/g, "").replace(/\n{2,}/g, "\n").replace(/^\s+|\s+$/g, "");
+  }
+
   function commit(cueId: string, raw: string) {
     const cue = cues.find((c) => c.id === cueId);
     if (!cue) return;
     // 2026-11-17 — no stray blank lines from the editable span (a cue may keep ONE inner line break)
-    const text = raw.replace(/\r/g, "").replace(/\n{2,}/g, "\n").replace(/^\s+|\s+$/g, "");
+    const text = normalize(raw);
+    if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; }
+    clearDraft(cueId);
     if (text === cue.text) return;
     onEditText(cueId, text);
   }
@@ -308,6 +394,19 @@ export function SubtitlePanel({
       {cues.length > 0 && (
         <p className="text-[11px] text-white/30 px-1 pb-2 shrink-0">{t("subtitlePanel.editableHint")}</p>
       )}
+      {draftConflicts.length > 0 && (
+        <div data-subtitle-drafts className="mx-1 mb-2 flex flex-col gap-1 rounded-lg border border-white/10 bg-white/[0.04] p-2 text-[11px] text-white/70 shrink-0">
+          {draftConflicts.map((d) => (
+            <div key={d.cueId} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate">{t("subtitlePanel.draftFound")} {Math.floor(d.start / 60000)}:{String(Math.floor((d.start % 60000) / 1000)).padStart(2, "0")}: «{d.text}»</span>
+              <button type="button" onClick={() => { onEditText(d.cueId, d.text); clearDraft(d.cueId); setDraftConflicts((x) => x.filter((y) => y.cueId !== d.cueId)); }}
+                className="rounded bg-white/10 px-2 py-0.5 font-medium hover:bg-white/15">{t("subtitlePanel.draftUse")}</button>
+              <button type="button" onClick={() => { clearDraft(d.cueId); setDraftConflicts((x) => x.filter((y) => y.cueId !== d.cueId)); }}
+                className="text-white/45 hover:text-white/75">{t("subtitlePanel.draftDiscard")}</button>
+            </div>
+          ))}
+        </div>
+      )}
       {cues.length > 0 && undo && (
         <div data-subtitle-undo className="flex flex-wrap items-center gap-1.5 px-1 pb-2 shrink-0">
           <button type="button" data-subtitle-undo-btn disabled={!undo.canUndo} onClick={undo.onUndo} title={`${t("subtitlePanel.undo")} (⌘Z / Ctrl+Z)`}
@@ -365,6 +464,17 @@ export function SubtitlePanel({
                   className={cue.edited ? "outline-none text-amber-300/90" : "outline-none"}
                   onFocus={() => {
                     focusedIdRef.current = cue.id;
+                    onEditingChange?.(true);
+                  }}
+                  onInput={(e) => {
+                    // no save while typing — only a local draft + the 30 s idle safety net
+                    const id = cue.id, txt = e.currentTarget.textContent ?? "";
+                    writeDraft(id, txt);
+                    if (idleTimer.current) clearTimeout(idleTimer.current);
+                    idleTimer.current = setTimeout(() => {
+                      const el = spanRefs.current[id];
+                      if (el && focusedIdRef.current === id) commit(id, el.textContent ?? "");
+                    }, IDLE_SAVE_MS);
                   }}
                   onKeyDown={(e) => {
                     // 2026-11-17 — Enter saves the line (blur); Shift+Enter is a line break inside the cue
@@ -376,6 +486,7 @@ export function SubtitlePanel({
                   onBlur={(e) => {
                     focusedIdRef.current = null;
                     commit(cue.id, e.currentTarget.textContent ?? "");
+                    onEditingChange?.(false);
                   }}
                 />
                 {i < cues.length - 1 ? (

@@ -7,7 +7,7 @@ import confetti from "canvas-confetti";
 import { Avatar } from "./ui/Avatar";
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { SubtitlePanel, SUBTITLE_COL_WIDTH, SUBTITLE_LANGUAGES } from "./SubtitlePanel";
-import { useApi } from "@/lib/useApi";
+import { useApi, useAuthToken } from "@/lib/useApi";
 import { isOpenFeedback } from "@/lib/commentRules";
 import { Menu, MenuItem } from "./ui/Menu";
 import { ResolveSyncBar } from "./ResolveSyncBar";
@@ -398,7 +398,46 @@ export function VideoReviewModal({
       ])),
     };
   }
+  // 2026-11-17 — while a subtitle line is being edited, live reloads are held back (applied right after)
+  const subEditingRef = useRef(false);
+  const deferredSubReload = useRef(false);
+  const [resolveBarFrozen, setResolveBarFrozen] = useState(false);
+  function setSubEditing(editing: boolean) {
+    subEditingRef.current = editing;
+    setResolveBarFrozen(editing);
+    if (!editing && deferredSubReload.current) {
+      deferredSubReload.current = false;
+      setTimeout(() => setSubtitlesReload((n) => n + 1), 300);  // after the blur save has gone out
+    }
+  }
+  const getAuthToken = useAuthToken();
+  const tokenCache = useRef<string | null>(null);
   useEffect(() => {
+    if (publicMode) return;
+    let alive = true;
+    const refresh = () => getAuthToken().then((tk) => { if (alive) tokenCache.current = tk; }).catch(() => {});
+    refresh();
+    const iv = setInterval(refresh, 40000);  // Clerk tokens live ~60 s: always a fresh one for a keepalive save
+    return () => { alive = false; clearInterval(iv); };
+  }, [publicMode, getAuthToken]);
+  function unloadSaveCue(cueId: string, text: string) {
+    // tab / browser is closing: keepalive request with the cached session token (team only; guests keep the local draft)
+    if (publicMode || !tokenCache.current) return;
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL;
+    const path = subtitleLang === "original" ? `subtitle-segments/${cueId}` : `subtitle-translations/${cueId}`;
+    try {
+      void fetch(`${base}/${path}`, {
+        method: "PATCH", keepalive: true,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokenCache.current}` },
+        body: JSON.stringify({ text }),
+      });
+    } catch { /* the local draft stays as the safety net */ }
+  }
+  useEffect(() => {
+    if (currentVersion && loadedVersionRef.current === currentVersion.id && subEditingRef.current) {
+      deferredSubReload.current = true;  // a line is being typed in: reload after the edit
+      return;
+    }
     if (!currentVersion) {
       setSubtitleLang("original");
       loadedVersionRef.current = null;
@@ -2170,7 +2209,7 @@ export function VideoReviewModal({
               className="hidden lg:flex flex-col p-5 border-r border-white/8 shrink-0 overflow-hidden"
               style={{ width: subtitleColWidth }}
             >
-              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} videoId={video.id} canEdit={canEdit} onTracksChanged={() => setSubtitlesReload((n) => n + 1)} />}
+              {!publicMode && currentVersion && <ResolveSyncBar versionId={currentVersion.id} videoId={video.id} canEdit={canEdit} frozen={resolveBarFrozen} onTracksChanged={() => setSubtitlesReload((n) => n + 1)} />}
               {subtitlesError && (
                 <div data-subtitles-error className="mb-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
                   <p>{t("subtitlePanel.loadError")}</p>
@@ -2192,6 +2231,9 @@ export function VideoReviewModal({
                 onChangeLang={setSubtitleLang}
                 translating={translatingSubtitles}
                 onTranslate={onTranslateSubtitles && !versionClosed ? handleTranslateSubtitles : undefined}
+                draftScope={currentVersion?.id}
+                onUnloadSave={unloadSaveCue}
+                onEditingChange={setSubEditing}
                 undo={versionClosed || (publicMode && currentVersion?.feedback_locked) ? undefined : {
                   canUndo: subUndo.some((x) => x.lang === subtitleLang),
                   canRedo: subRedo.some((x) => x.lang === subtitleLang),
