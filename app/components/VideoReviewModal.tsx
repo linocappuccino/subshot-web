@@ -1880,8 +1880,8 @@ export function VideoReviewModal({
               >
                 {(close) => (
                   <>
-                    {onCopyLink.client && <MenuItem onClick={() => { onCopyLink.client!(); close(); }}><span data-copy-link="client">Kunden-Link kopieren</span></MenuItem>}
-                    {onCopyLink.internal && <MenuItem onClick={() => { onCopyLink.internal!(); close(); }}><span data-copy-link="internal">Interner Link kopieren</span></MenuItem>}
+                    {onCopyLink.client && <MenuItem onClick={() => { onCopyLink.client!(); close(); }}><span data-copy-link="client">{t("videoTile.copyClientLink")}</span></MenuItem>}
+                    {onCopyLink.internal && <MenuItem onClick={() => { onCopyLink.internal!(); close(); }}><span data-copy-link="internal">{t("videoTile.copyInternalLink")}</span></MenuItem>}
                   </>
                 )}
               </Menu>
