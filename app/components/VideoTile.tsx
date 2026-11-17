@@ -41,7 +41,7 @@ export const STATUS_TONE: Record<PostproductionStatus, "default" | "good" | "dan
 // values as Badge.tsx's tone color classes (bg-emerald-500/bg-red-500/
 // bg-blue-500/bg-amber-500), read off manually since the glow needs a raw
 // CSS color for backgroundColor, not a Tailwind class name.
-const STATUS_GLOW_COLOR: Record<PostproductionStatus, string> = {
+export const STATUS_GLOW_COLOR: Record<PostproductionStatus, string> = {
   wartend: "#9ca3af",
   in_bearbeitung: "#3b82f6",
   wartet_auf_feedback: "#f59e0b",

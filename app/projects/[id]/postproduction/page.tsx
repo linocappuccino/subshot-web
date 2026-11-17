@@ -32,7 +32,8 @@ import { VideoQcModal, LOUDNESS_TARGETS } from "@/app/components/VideoQcModal";
 import { FeedbackRoundsModal } from "@/app/components/FeedbackRoundsModal";
 import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, matchesPlatform, videoPlatforms, type PlatformTab, LanguageBadge, LanguageMenuItems, LanguageTabs, matchesFormat, matchesTab, type FormatTab, type LanguageTab, type LanguagesOverview } from "@/app/components/PostproLanguages";
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
-import { facetCounts, filterVideos } from "@/lib/postproFilter";
+import { facetCounts, filterVideos, listGroups, matrixOf } from "@/lib/postproFilter";
+import { PostproListView, PostproMatrixView, ViewSwitch, usePostproView } from "@/app/components/PostproViews";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -144,13 +145,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [ppView, setPpView] = usePostproView();  // 2026-11-17 — Kacheln / Liste / Matrix
   // 2026-11-16, Lino: «alle markierungen demarkieren wenn man einfach ins leere auf der seite klickt» — a click on empty
   // page space (background, gaps between tiles, next to the grid) or Escape clears the selection. Not on tiles, the
   // selection bar + its menus, filter chips, buttons, the upload zone, dialogs or fields; never after a drag or while
   // text is selected; with a menu / dialog open the first click / Escape only closes that.
   useEffect(() => {
     if (picked.size === 0) return;
-    const KEEP = "[data-video-lang],[data-lang-selection],[data-menu-dropdown],[data-language-tabs],[data-format-tabs],[data-platform-tabs],[data-upload-zone],button,a,input,select,textarea,label,[role=dialog],[contenteditable=true],.fixed";
+    const KEEP = "[data-pp-row],[data-view-switch],[data-matrix-video],[data-sort],[data-group-toggle],[data-video-lang],[data-lang-selection],[data-menu-dropdown],[data-language-tabs],[data-format-tabs],[data-platform-tabs],[data-upload-zone],button,a,input,select,textarea,label,[role=dialog],[contenteditable=true],.fixed";
     // decided on mousedown: the clicked element may already be gone (or re-rendered) by the time «click» fires
     let down: { x: number; y: number; overlay: boolean; keep: boolean } | null = null;
     const overlayOpen = () => Boolean(document.querySelector("[data-menu-dropdown], [role=dialog], .fixed.inset-0"));
@@ -1150,7 +1152,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             </svg>
             {t("workflow.backToProjects")}
           </button>
-          <div className="relative z-10 flex flex-wrap justify-end gap-2">
+          <div className="relative z-10 flex flex-wrap items-center justify-end gap-2">
+            {!manualOrder && sections.length > 0 && <ViewSwitch view={ppView} onView={setPpView} />}
             {/* 2026-07-17, Lino: "Notion Import brauchen wir auch nicht (nur
                 den button ausblenden)" — showNotion-State + Modal bewusst
                 nicht entfernt, siehe page.tsx (Ideen/Szenen) fuer denselben
@@ -1360,6 +1363,43 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               <>Noch kein Video. Über „+ Video“ oben eines hochladen.</>
             )}
           </p>
+        ) : !manualOrder && ppView !== "tiles" ? (
+          (() => {
+            // 2026-11-17 — list / matrix: the SAME filtered videos as the tiles (lib/postproFilter, tested 1:1 with the server)
+            const shown = filterVideos(shownVideos, pfFilter, pfCtx);
+            const sectionOf: Record<string, string> = {};
+            for (const s of sections) for (const v of videosBySection[s.id] ?? []) sectionOf[v.id] = s.id;
+            const order = sections.map((s) => s.id);
+            const secInfo: Record<string, { name: string; status: PostproductionStatus | null }> = {};
+            for (const s of sections) secInfo[s.id] = { name: s.name, status: s.postproduction_status ?? null };
+            const statusLabel = (s: PostproductionStatus) => t(BULK_STATUSES.find(([k]) => k === s)![1]);
+            if (shown.length === 0) return <p className="text-sm text-white/40">{t("postproViews.nothing")}</p>;
+            if (ppView === "matrix") {
+              const byId: Record<string, Video> = {};
+              for (const v of shown) byId[v.id] = v;
+              const langOrder = [...langs.languages].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id);
+              return (
+                <PostproMatrixView
+                  matrix={matrixOf(shown, pfCtx, langs.spots ?? {}, sectionOf, order, langOrder)}
+                  videosById={byId} sectionById={secInfo} languages={langs.languages}
+                  onOpen={(v) => setReviewingVideo(v)} statusLabel={statusLabel}
+                />
+              );
+            }
+            const byId: Record<string, Video> = {};
+            for (const v of shown) byId[v.id] = v;
+            return (
+              <PostproListView
+                groups={listGroups(shown, sectionOf, order).map((g) => ({ id: g.section, name: secInfo[g.section]?.name ?? "", status: secInfo[g.section]?.status ?? null, videos: g.ids.map((i) => byId[i]) }))}
+                languages={langs.languages} assignments={langs.assignments} formats={langs.formats ?? {}}
+                onOpen={(v) => setReviewingVideo(v)} statusLabel={statusLabel}
+                qc={qc} members={members}
+                picked={canEditStatus ? picked : undefined}
+                onTogglePick={canEditStatus ? (vid) => setPicked((p) => { const n = new Set(p); if (n.has(vid)) n.delete(vid); else n.add(vid); return n; }) : undefined}
+                onDropVersion={canEditStatus ? (v, f) => void uploadVersionFromTile(sectionOf[v.id], v, f) : undefined}
+              />
+            );
+          })()
         ) : manualOrder ? (
           // 2026-09-16, Lino: "ich kann die reihenfolge der videos... noch
           // nicht ändern" — a separate flat, drag-sortable grid (adding/

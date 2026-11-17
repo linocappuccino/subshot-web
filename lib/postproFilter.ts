@@ -76,3 +76,50 @@ export function facetCounts(videos: PVideo[], f: PFilter, ctx: PCtx): FacetCount
   };
   return { lang, fmt, plat, present };
 }
+
+// ── 2026-11-17, Lino: list + matrix views — twin of app/postpro_filter.py matrix() / list_groups() (tests compare) ──
+export type Spot = { key: string; label: string };
+export type MatrixRow = { section: string; key: string; label: string; cells: Record<string, string[]> };
+export type Matrix = { columns: string[]; rows: MatrixRow[] };
+
+export function columnKeyOf(v: PVideo, ctx: PCtx): string {
+  return `${langKeyOf(v, ctx)}|${fmtKeyOf(v, ctx)}`;
+}
+
+/** videos = the FILTERED videos in page order; every video lands in exactly one cell, duplicates are all kept */
+export function matrixOf(
+  videos: PVideo[], ctx: PCtx, spots: Record<string, Spot>, sectionOf: Record<string, string>, sectionOrder: string[], langOrder: string[],
+): Matrix {
+  const lo = new Map(langOrder.map((k, i) => [k, i]));
+  const fo = new Map<string, number>(FORMAT_KEYS.map((k, i) => [k, i]));
+  const so = new Map(sectionOrder.map((k, i) => [k, i]));
+  const cols = new Set(videos.map((v) => columnKeyOf(v, ctx)));
+  const colSort = (c: string): [number, number] => {
+    const [l, f] = c.split("|");
+    return [lo.get(l) ?? lo.size + (l === "none" ? 1 : 0), fo.get(f) ?? fo.size];
+  };
+  const rows = new Map<string, MatrixRow>();
+  const first = new Map<string, number>();
+  videos.forEach((v, i) => {
+    const sp = spots[v.id] ?? { key: v.id, label: "" };
+    const sec = sectionOf[v.id] ?? "";
+    const rk = JSON.stringify([sec, sp.key]);
+    if (!rows.has(rk)) { rows.set(rk, { section: sec, key: sp.key, label: sp.label, cells: {} }); first.set(rk, i); }
+    const cells = rows.get(rk)!.cells; const ck = columnKeyOf(v, ctx);
+    (cells[ck] ??= []).push(v.id);
+  });
+  const cmp = (a: [number, number], b: [number, number]) => a[0] - b[0] || a[1] - b[1];
+  const order = [...rows.keys()].sort((a, b) => {
+    const sa = so.get(rows.get(a)!.section) ?? so.size, sb = so.get(rows.get(b)!.section) ?? so.size;
+    return sa - sb || first.get(a)! - first.get(b)!;
+  });
+  return { columns: [...cols].sort((a, b) => cmp(colSort(a), colSort(b))), rows: order.map((k) => rows.get(k)!) };
+}
+
+/** the list view's groups: section order, ids in page order (filtered videos only) */
+export function listGroups(videos: PVideo[], sectionOf: Record<string, string>, sectionOrder: string[]): { section: string; ids: string[] }[] {
+  const so = new Map(sectionOrder.map((k, i) => [k, i]));
+  const g = new Map<string, string[]>();
+  for (const v of videos) { const s = sectionOf[v.id] ?? ""; if (!g.has(s)) g.set(s, []); g.get(s)!.push(v.id); }
+  return [...g.keys()].sort((a, b) => (so.get(a) ?? so.size) - (so.get(b) ?? so.size)).map((s) => ({ section: s, ids: g.get(s)! }));
+}

@@ -9,7 +9,9 @@ import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
-import { facetCounts, filterVideos } from "@/lib/postproFilter";
+import { facetCounts, filterVideos, listGroups, matrixOf } from "@/lib/postproFilter";
+import { PostproListView, PostproMatrixView, ViewSwitch, usePostproView } from "@/app/components/PostproViews";
+import type { PostproductionStatus } from "@/lib/types";
 import type { SharedVideoPreviewData, Video } from "@/lib/types";
 
 // 2026-07-20 (#254, corrected scope) — public no-login "viewer" counterpart
@@ -49,6 +51,7 @@ function PreviewVideoPageInner() {
   const [reviewingVideo, setReviewingVideo] = useState<Video | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openedFromParam, setOpenedFromParam] = useState(false);
+  const [ppView, setPpView] = usePostproView();  // 2026-11-17 — overview link only (read-only list / matrix)
 
   function load(unlock: string | null) {
     setLoading(true);
@@ -244,6 +247,37 @@ function PreviewVideoPageInner() {
           )}
           <FormatTabs counts={fc.fmt} present={fc.present.fmt} tab={fmtTab} onTab={setFmtTab} />
           <PlatformTabs counts={fc.plat} present={fc.present.plat} tab={plTab} onTab={setPlTab} />
+          <div className="mb-3 flex justify-end"><ViewSwitch view={ppView} onView={setPpView} /></div>
+          {ppView !== "tiles" ? (() => {
+            const sectionOf: Record<string, string> = {};
+            for (const v of data.videos) sectionOf[v.id] = v.section_id;
+            const order = data.sections.map((s) => s.id);
+            const secInfo: Record<string, { name: string; status: PostproductionStatus | null }> = {};
+            for (const s of data.sections) secInfo[s.id] = { name: s.name, status: s.postproduction_status };
+            const labels: Record<PostproductionStatus, string> = {
+              wartend: t("postproductionStatus.wartend"), in_bearbeitung: t("postproductionStatus.inBearbeitung"),
+              wartet_auf_feedback: t("postproductionStatus.wartetAufFeedback"), abgeschlossen: t("postproductionStatus.abgeschlossen"),
+              abgelehnt: t("postproductionStatus.abgelehnt"),
+            };
+            const byId: Record<string, Video> = {};
+            for (const v of sortedVideos) byId[v.id] = v;
+            const langsList = data.languages ?? [];
+            if (sortedVideos.length === 0) return <p className="text-sm text-white/40">{t("postproViews.nothing")}</p>;
+            return ppView === "matrix" ? (
+              <PostproMatrixView
+                matrix={matrixOf(sortedVideos, pfCtx, data.video_spots ?? {}, sectionOf, order, [...langsList].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id))}
+                videosById={byId} sectionById={secInfo} languages={langsList}
+                onOpen={(v) => setReviewingVideo(v)} statusLabel={(s) => labels[s]}
+              />
+            ) : (
+              <PostproListView
+                readOnly
+                groups={listGroups(sortedVideos, sectionOf, order).map((g) => ({ id: g.section, name: secInfo[g.section]?.name ?? "", status: secInfo[g.section]?.status ?? null, videos: g.ids.map((i) => byId[i]) }))}
+                languages={langsList} assignments={assignments} formats={formats}
+                onOpen={(v) => setReviewingVideo(v)} statusLabel={(s) => labels[s]}
+              />
+            );
+          })() : (
           <div ref={gridRef} className={VIDEO_GRID} style={gridStyle}>
             {sortedVideos.map((video) => {
               const section = sectionById.get(video.section_id);
@@ -275,6 +309,7 @@ function PreviewVideoPageInner() {
               );
             })}
           </div>
+          )}
           </>
         )}
       </div>
