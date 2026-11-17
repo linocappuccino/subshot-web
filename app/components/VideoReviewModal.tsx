@@ -2215,16 +2215,18 @@ export function VideoReviewModal({
           <div className="flex-1 flex flex-col p-5 gap-3 min-w-0">
             <div ref={videoWrapRef} className="flex-1 relative rounded-xl overflow-hidden flex items-center justify-center min-h-0 max-sm:-mx-5">
               {/* 2026-11-15 — subtitle overlay (WebVTT-style) of the active track while the subtitle panel is open */}
-              {/* 2026-11-16, Lino: subtitles on the picture start OFF; one click on «CC» (bottom right of the video) turns
+              {/* 2026-11-16, Lino: subtitles on the picture start OFF; one click on «Untertitel einblenden» (top right of the video, formerly «CC») turns
                   them on / off — for the team and for guests on the share link */}
               {hasAnySubtitles && (
                 <button type="button" data-subtitle-toggle aria-pressed={subtitleOverlayOn}
                   onClick={(e) => { e.stopPropagation(); setSubtitleOverlayOn((v) => !v); }}
-                  title={`${subtitleOverlayOn ? t("videoReviewModal.subtitlesOnVideoOff") : t("videoReviewModal.subtitlesOnVideoOn")} (C)`}
-                  className={`absolute right-3 top-3 z-[6] rounded-md px-2 py-1 text-xs font-bold tracking-wide shadow transition-colors ${
+                  title={`${subtitleOverlayOn ? t("videoReviewModal.subtitlesHide") : t("videoReviewModal.subtitlesShow")} (${t("videoReviewModal.keyHint")} C)`}
+                  className={`absolute right-3 top-3 z-[6] rounded-md px-2.5 py-1 text-xs font-semibold shadow transition-colors ${
                     subtitleOverlayOn ? "bg-white text-black" : "bg-black/60 text-white/85 hover:bg-black/75"
                   }`}>
-                  CC
+                  {/* 2026-11-17, Lino: text instead of «CC»; compact on narrow screens, still with text */}
+                  <span className="max-sm:hidden">{subtitleOverlayOn ? t("videoReviewModal.subtitlesHide") : t("videoReviewModal.subtitlesShow")}</span>
+                  <span className="sm:hidden">{subtitleOverlayOn ? t("videoReviewModal.subtitlesHideShort") : t("videoReviewModal.subtitlesShowShort")}</span>
                 </button>
               )}
               {subtitleOverlayOn && (() => {
