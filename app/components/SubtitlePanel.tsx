@@ -229,8 +229,13 @@ export function SubtitlePanel({
     const f = focusedText();
     if (!f) return;
     const cue = cues.find((c) => c.id === f[0]);
-    if (cue && normalize(f[1]) !== cue.text) onUnloadSave?.(f[0], normalize(f[1]));
+    const t = normalize(f[1]);
+    if (cue && t !== cue.text && !justSent(f[0], t)) { markSent(f[0], t); onUnloadSave?.(f[0], t); }
   };
+  // text already sent per line: closing the tab fires visibilitychange AND pagehide — only one request may go out
+  const sentRef = useRef<Record<string, { t: string; at: number }>>({});
+  const justSent = (id: string, t: string) => { const x = sentRef.current[id]; return !!x && x.t === t && Date.now() - x.at < 5000; };
+  const markSent = (id: string, t: string) => { sentRef.current[id] = { t, at: Date.now() }; };
   const commitFocusedRef = useRef<() => void>(() => {});
   commitFocusedRef.current = () => {
     const f = focusedText();
@@ -285,7 +290,8 @@ export function SubtitlePanel({
     const text = normalize(raw);
     if (idleTimer.current) { clearTimeout(idleTimer.current); idleTimer.current = null; }
     clearDraft(cueId);
-    if (text === cue.text) return;
+    if (text === cue.text || justSent(cueId, text)) return;
+    markSent(cueId, text);
     onEditText(cueId, text);
   }
 
