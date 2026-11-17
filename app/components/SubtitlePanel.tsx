@@ -191,9 +191,11 @@ export function SubtitlePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cues, lang]);
 
-  function commit(cueId: string, text: string) {
+  function commit(cueId: string, raw: string) {
     const cue = cues.find((c) => c.id === cueId);
     if (!cue) return;
+    // 2026-11-17 — no stray blank lines from the editable span (a cue may keep ONE inner line break)
+    const text = raw.replace(/\r/g, "").replace(/\n{2,}/g, "\n").replace(/^\s+|\s+$/g, "");
     if (text === cue.text) return;
     onEditText(cueId, text);
   }
@@ -348,6 +350,13 @@ export function SubtitlePanel({
                   className={cue.edited ? "outline-none text-amber-300/90" : "outline-none"}
                   onFocus={() => {
                     focusedIdRef.current = cue.id;
+                  }}
+                  onKeyDown={(e) => {
+                    // 2026-11-17 — Enter saves the line (blur); Shift+Enter is a line break inside the cue
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      e.currentTarget.blur();
+                    }
                   }}
                   onBlur={(e) => {
                     focusedIdRef.current = null;

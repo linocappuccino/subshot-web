@@ -380,24 +380,49 @@ export function VideoReviewModal({
   // SubtitleSegment's Doc-Kommentar — ein Versionswechsel muss die Liste
   // komplett ersetzen, nicht mergen). `false` bei fehlendem currentVersion
   // (z.B. waehrend eines Uploads, bevor die erste Version 'ready' ist).
+  // 2026-11-17 (Lino: «beim Ergänzen eines Wortes verschwindet die ganze Zeile») — a live reload (Pusher / plugin
+  // sync / the echo of our own save) used to flip the panel to «Laden …», which unmounted every line incl. the one
+  // being typed in and rebuilt it from the server's (older) text. Now: «Laden …» only on the first load of a version,
+  // later reloads swap the data silently, and lines with unsaved / unconfirmed edits keep the local text.
+  const loadedVersionRef = useRef<string | null>(null);
+  const pendingSubEdits = useRef<Record<string, string>>({}); // `${lang}:${cueId}` → text not yet confirmed by the server
+  function withPendingEdits(data: typeof subtitles): typeof subtitles {
+    const p = pendingSubEdits.current;
+    if (!Object.keys(p).length) return data;
+    return {
+      ...data,
+      original: data.original.map((s) => (p[`original:${s.id}`] !== undefined ? { ...s, text: p[`original:${s.id}`] } : s)),
+      translations: Object.fromEntries(Object.entries(data.translations).map(([lang, cues]) => [
+        lang, cues.map((c) => (p[`${lang}:${c.id}`] !== undefined ? { ...c, text: p[`${lang}:${c.id}`] } : c)),
+      ])),
+    };
+  }
   useEffect(() => {
-    setSubtitleLang("original");
     if (!currentVersion) {
+      setSubtitleLang("original");
+      loadedVersionRef.current = null;
       setSubtitles({ original: [], original_lang: null, translations: {} });
       return;
     }
     let cancelled = false;
-    setSubtitlesLoading(true);
+    const firstLoad = loadedVersionRef.current !== currentVersion.id;
+    if (firstLoad) {
+      setSubtitleLang("original");
+      pendingSubEdits.current = {};
+      setSubtitlesLoading(true);
+    }
     setSubtitlesError(false);
     const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 20000));
     Promise.race([listSubtitles(currentVersion.id), timeout])
       .then((data) => {
         if (cancelled) return;
-        setSubtitles(data);
+        loadedVersionRef.current = currentVersion.id;
+        setSubtitles(withPendingEdits(data));
         if (data.original.length > 0 || Object.keys(data.translations).length > 0) setShowSubtitles(true);
       })
       .catch(() => {
-        if (!cancelled) setSubtitlesError(true);
+        // a failed background reload keeps the text on screen; only a failed first load shows the error
+        if (!cancelled && firstLoad) setSubtitlesError(true);
       })
       .finally(() => {
         if (!cancelled) setSubtitlesLoading(false);
@@ -1061,12 +1086,18 @@ export function VideoReviewModal({
   // uebereinstimmen, sonst zeigt ein Live-Sync-Refetch kurz den alten Text
   // bevor die echte Antwort zurueckkommt).
   function handleEditSubtitleCueText(cueId: string, text: string) {
+    const pkey = `${subtitleLang === "original" ? "original" : subtitleLang}:${cueId}`;
+    pendingSubEdits.current[pkey] = text;
+    const settle = () => {
+      if (pendingSubEdits.current[pkey] === text) delete pendingSubEdits.current[pkey];
+    };
     if (subtitleLang === "original") {
       setSubtitles((prev) => ({
         ...prev,
         original: prev.original.map((s) => (s.id === cueId ? { ...s, text } : s)),
       }));
       onEditSubtitleText(cueId, text, publicMode ? visitorName : null)
+        .finally(settle)
         // 2026-08-07, Lino: "es funktioniert, aber man muss die seite immer
         // noch reloaden damit man die statusänderung sieht" — a subtitle
         // correction can create/reopen the subtitle-notice comment, which
@@ -1092,6 +1123,7 @@ export function VideoReviewModal({
       },
     }));
     onEditSubtitleTranslation(cueId, text, publicMode ? visitorName : null)
+      .finally(settle)
       .then(() => onCommentsChanged?.())
       .catch((e) => {
         toast.showError(e instanceof ApiError ? e.message : t("subtitlePanel.saveFailed"));
