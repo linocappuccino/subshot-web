@@ -99,6 +99,7 @@ export function SubtitlePanel({
   loading,
   onEditText,
   canManage,
+  undo,
   uploading,
   onUpload,
   onDownload,
@@ -126,6 +127,8 @@ export function SubtitlePanel({
   loading: boolean;
   onEditText: (cueId: string, text: string) => void;
   canManage: boolean;
+  /** 2026-11-17 (Rückgängig) — undo / redo of this session's own line edits + the server text history */
+  undo?: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void; onHistory?: () => void };
   uploading?: boolean;
   /** 2026-08-08, Lino (2nd pass — "der button soll einfach nur SRT
    * hochladen sein... das Tool soll bei SRT hochladen die Sprachen auch
@@ -304,6 +307,18 @@ export function SubtitlePanel({
           there's actually something to correct. */}
       {cues.length > 0 && (
         <p className="text-[11px] text-white/30 px-1 pb-2 shrink-0">{t("subtitlePanel.editableHint")}</p>
+      )}
+      {cues.length > 0 && undo && (
+        <div data-subtitle-undo className="flex flex-wrap items-center gap-1.5 px-1 pb-2 shrink-0">
+          <button type="button" data-subtitle-undo-btn disabled={!undo.canUndo} onClick={undo.onUndo} title={`${t("subtitlePanel.undo")} (⌘Z / Ctrl+Z)`}
+            className="rounded-md bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/75 hover:bg-white/10 disabled:opacity-35">↶ {t("subtitlePanel.undo")}</button>
+          <button type="button" data-subtitle-redo-btn disabled={!undo.canRedo} onClick={undo.onRedo} title={`${t("subtitlePanel.redo")} (⇧⌘Z / Ctrl+Shift+Z)`}
+            className="rounded-md bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/75 hover:bg-white/10 disabled:opacity-35">↷ {t("subtitlePanel.redo")}</button>
+          {undo.onHistory && (
+            <button type="button" data-subtitle-history-btn onClick={undo.onHistory}
+              className="ml-auto rounded-md bg-white/[0.06] px-2.5 py-1 text-[11px] font-medium text-white/75 hover:bg-white/10">🕘 {t("subtitlePanel.history")}</button>
+          )}
+        </div>
       )}
       <div className="flex-1 overflow-y-auto min-h-0 pr-1">
         {loading ? (

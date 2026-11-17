@@ -897,6 +897,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // ── Untertitel/SRT (2026-07-28) ──────────────────────────────────────
     // 2026-11-16 — never from the 4 s GET cache: a Pusher refetch right after opening returned the stale empty list
     listSubtitles: (versionId: string) => request<SubtitlesData>(`video-versions/${versionId}/subtitles?t=${Date.now()}`),
+    // 2026-11-17 (Rückgängig) — text history of the cues (newest first)
+    subtitleHistory: (versionId: string, lang?: string) =>
+      request<{ entries: { id: string; cue_id: string; lang: string; start_ms: number | null; old_text: string | null; new_text: string | null; by: string | null; source: string | null; at: string }[] }>(
+        `video-versions/${versionId}/subtitles/history?${lang ? `lang=${encodeURIComponent(lang)}&` : ""}t=${Date.now()}`),
     // 2026-08-08, Lino (2nd pass — "der button soll einfach nur SRT
     // hochladen sein, das Tool soll bei SRT hochladen die Sprachen auch
     // checken"): EIN Upload-Weg für beliebig viele Files auf einmal — das

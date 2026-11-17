@@ -1085,7 +1085,66 @@ export function VideoReviewModal({
   // zwar schon einen eigenen Entwurf, aber der State hier muss auch
   // uebereinstimmen, sonst zeigt ein Live-Sync-Refetch kurz den alten Text
   // bevor die echte Antwort zurueckkommt).
+  // 2026-11-17 (Lino: «Rückgängig») — own line edits of this session, per track; undo / redo re-save through the
+  // normal path (history, correction-comment rules, live updates), timing is never touched
+  type SubEdit = { lang: string; cueId: string; before: string; after: string };
+  const [subUndo, setSubUndo] = useState<SubEdit[]>([]);
+  const [subRedo, setSubRedo] = useState<SubEdit[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  useEffect(() => {
+    setSubUndo([]);
+    setSubRedo([]);
+  }, [currentVersion?.id]);
+  function cueText(lang: string, cueId: string): string | undefined {
+    const list = lang === "original" ? subtitles.original : subtitles.translations[lang] ?? [];
+    return list.find((c) => c.id === cueId)?.text;
+  }
   function handleEditSubtitleCueText(cueId: string, text: string) {
+    const before = cueText(subtitleLang, cueId);
+    if (before !== undefined && before !== text) {
+      setSubUndo((u) => [...u.slice(-99), { lang: subtitleLang, cueId, before, after: text }]);
+      setSubRedo([]);
+    }
+    saveSubtitleCue(subtitleLang, cueId, text);
+  }
+  function subtitleUndo() {
+    const e = [...subUndo].reverse().find((x) => x.lang === subtitleLang);
+    if (!e) return;
+    setSubUndo((u) => { const i = u.lastIndexOf(e); return u.filter((_, j) => j !== i); });
+    setSubRedo((r) => [...r, e]);
+    saveSubtitleCue(e.lang, e.cueId, e.before);
+  }
+  function subtitleRedo() {
+    const e = [...subRedo].reverse().find((x) => x.lang === subtitleLang);
+    if (!e) return;
+    setSubRedo((r) => { const i = r.lastIndexOf(e); return r.filter((_, j) => j !== i); });
+    setSubUndo((u) => [...u, e]);
+    saveSubtitleCue(e.lang, e.cueId, e.after);
+  }
+  function restoreSubtitleCue(cueId: string, text: string) {
+    const before = cueText(subtitleLang, cueId);
+    if (before === undefined || before === text) return;
+    setSubUndo((u) => [...u.slice(-99), { lang: subtitleLang, cueId, before, after: text }]);
+    setSubRedo([]);
+    saveSubtitleCue(subtitleLang, cueId, text);
+    toast.showSuccess(t("subtitlePanel.restored"));
+  }
+  // ⌘Z / Ctrl+Z and ⇧⌘Z / Ctrl+Shift+Z while no text field has focus (inside a line the browser's own undo stays)
+  const undoKeysRef = useRef({ undo: subtitleUndo, redo: subtitleRedo });
+  undoKeysRef.current = { undo: subtitleUndo, redo: subtitleRedo };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const a = document.activeElement as HTMLElement | null;
+      if (a && (a.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(a.tagName))) return;
+      e.preventDefault();
+      if (e.shiftKey) undoKeysRef.current.redo();
+      else undoKeysRef.current.undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  function saveSubtitleCue(subtitleLang: string, cueId: string, text: string) {
     const pkey = `${subtitleLang === "original" ? "original" : subtitleLang}:${cueId}`;
     pendingSubEdits.current[pkey] = text;
     const settle = () => {
@@ -2103,7 +2162,23 @@ export function VideoReviewModal({
                 onChangeLang={setSubtitleLang}
                 translating={translatingSubtitles}
                 onTranslate={onTranslateSubtitles && !versionClosed ? handleTranslateSubtitles : undefined}
+                undo={versionClosed || (publicMode && currentVersion?.feedback_locked) ? undefined : {
+                  canUndo: subUndo.some((x) => x.lang === subtitleLang),
+                  canRedo: subRedo.some((x) => x.lang === subtitleLang),
+                  onUndo: subtitleUndo,
+                  onRedo: subtitleRedo,
+                  onHistory: publicMode ? undefined : () => setHistoryOpen(true),
+                }}
               />
+              {historyOpen && currentVersion && !publicMode && (
+                <SubtitleHistoryDialog
+                  versionId={currentVersion.id}
+                  lang={subtitleLang === "original" ? "original" : subtitleLang}
+                  cues={activeSubtitleCues}
+                  onRestore={(cueId, text) => restoreSubtitleCue(cueId, text)}
+                  onClose={() => setHistoryOpen(false)}
+                />
+              )}
             </div>
           )}
           {/* Links: Video + Timeline */}
@@ -2764,6 +2839,55 @@ function PresentationFeedbackRow({
           {isSystem ? systemNoticeText(comment, t) : isCorrection(comment) ? <CorrectionText comment={comment} /> : comment.comment}
         </p>
       </button>
+    </div>
+  );
+}
+
+
+/* 2026-11-17 (Lino: «Rückgängig») — «Frühere Versionen»: the server's text history of the current track, grouped per
+   line (newest first); «Wiederherstellen» sets that text again through the normal save path */
+function SubtitleHistoryDialog({ versionId, lang, cues, onRestore, onClose }: {
+  versionId: string; lang: string; cues: { id: string; start_ms: number; text: string }[];
+  onRestore: (cueId: string, text: string) => void; onClose: () => void;
+}) {
+  const api = useApi();
+  const { t } = useLanguage();
+  const [entries, setEntries] = useState<Awaited<ReturnType<typeof api.subtitleHistory>>["entries"] | null>(null);
+  useEffect(() => {
+    api.subtitleHistory(versionId, lang).then((r) => setEntries(r.entries)).catch(() => setEntries([]));
+  }, [api, versionId, lang]);
+  const byCue = new Map<string, NonNullable<typeof entries>>();
+  for (const e of entries ?? []) (byCue.get(e.cue_id) ?? byCue.set(e.cue_id, []).get(e.cue_id)!).push(e);
+  const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}.${Math.floor((ms % 1000) / 100)}`;
+  const when = (iso: string) => new Date(iso).toLocaleString("de-CH", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const lines = cues.filter((c) => byCue.has(c.id));
+  return (
+    <div data-subtitle-history className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="max-h-[80vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/10 bg-[#1c1c1e] p-5 text-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold">{t("subtitlePanel.historyTitle")}</h3>
+          <button type="button" onClick={onClose} className="text-white/50 hover:text-white">✕</button>
+        </div>
+        {entries === null ? <p className="text-white/40">{t("common.loading")}</p> : lines.length === 0 ? (
+          <p className="text-white/40">{t("subtitlePanel.historyEmpty")}</p>
+        ) : lines.map((c) => (
+          <div key={c.id} data-history-line={c.id} className="mb-4 rounded-xl bg-white/[0.03] p-3">
+            <div className="mb-2 text-xs text-white/50"><span className="tabular-nums">{fmt(c.start_ms)}</span> · jetzt: <span className="text-white/85">«{c.text}»</span></div>
+            {(byCue.get(c.id) ?? []).map((e) => (
+              <div key={e.id} className="flex items-start gap-2 border-t border-white/[0.05] py-1.5 text-xs">
+                <div className="min-w-0 flex-1">
+                  <div className="text-white/70 break-words">«{e.old_text ?? ""}» → «{e.new_text ?? ""}»</div>
+                  <div className="text-white/35">{when(e.at)} · {e.by ?? "?"} · {e.source}</div>
+                </div>
+                {e.old_text !== null && e.old_text !== c.text && (
+                  <button type="button" data-history-restore={e.id} onClick={() => onRestore(c.id, e.old_text ?? "")}
+                    className="shrink-0 rounded-md bg-white/[0.08] px-2 py-1 font-medium text-white/80 hover:bg-white/15">{t("subtitlePanel.restore")}</button>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
