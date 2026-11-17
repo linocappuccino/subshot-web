@@ -13,6 +13,7 @@ import { VideoFassungenChips, formatOfRatio } from "./VideoFassungenChips";
 import { useLanguage } from "@/lib/i18n";
 import { usePinnedUrl } from "./ReferenceVideoBlock";
 import { videoPlatforms } from "./PostproLanguages";
+import { openFeedbackCount } from "@/lib/commentRules";
 
 // 2026-11-16, Lino — selectable platform icon on the tile
 const PLATFORM_NAMES: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
@@ -297,7 +298,8 @@ export function VideoTile({
   const filmstripRow = Math.floor(frameIndex / filmstripColumns);
   const bgPositionXPercent = filmstripColumns > 1 ? (filmstripCol / (filmstripColumns - 1)) * 100 : 0;
   const bgPositionYPercent = filmstripRows > 1 ? (filmstripRow / (filmstripRows - 1)) * 100 : 0;
-  const commentCount = latest?.comments.filter((c) => c.status === "open").length ?? 0;
+  // 2026-11-17 — the shared «open feedback» rule (lib/commentRules ⇄ app/comment_rules.py, same as the plugin)
+  const commentCount = openFeedbackCount(latest?.comments);
 
   // 2026-07-17, Lino: "9:16 videos werden beim scrubben verzogen... kacheln
   // die ein 9:16 video drin haben, können auch im 9:16 format dargestellt
