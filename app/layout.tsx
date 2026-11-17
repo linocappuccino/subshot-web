@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Geist, Geist_Mono, Anton, Bebas_Neue, Kalam } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { deDE, enUS } from "@clerk/localizations";
@@ -8,6 +8,7 @@ import { ToastProvider } from "@/app/components/ui/Toast";
 import { TrialExpiredDialog } from "@/app/components/ui/TrialExpiredDialog";
 import { InsufficientCreditsDialog } from "@/app/components/ui/InsufficientCreditsDialog";
 import { StorageLimitDialog } from "@/app/components/ui/StorageLimitDialog";
+import { NoClerk } from "@/lib/noClerk";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -80,19 +81,34 @@ export default async function RootLayout({
   const isEnglish = cookieStore.get(LANGUAGE_COOKIE)?.value === "en";
   const clerkLocalization = isEnglish ? enUS : deDE;
 
-  return (
-    <ClerkProvider localization={clerkLocalization}>
-      <html
-        lang={isEnglish ? "en" : "de"}
-        className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} ${bebas.variable} ${kalam.variable} h-full antialiased dark`}
-      >
-        <body className="min-h-full flex flex-col bg-[#161616] text-[#f0f0f0]">
-          <ToastProvider>{children}</ToastProvider>
-          <TrialExpiredDialog />
-          <InsufficientCreditsDialog />
-          <StorageLimitDialog />
-        </body>
-      </html>
-    </ClerkProvider>
+  // 2026-11-17 (PostFinance-Webfilter) — guest pages load no Clerk script at all (no clerk.subshot.ch request);
+  // proxy.ts marks them with x-subshot-guest and skips Clerk's middleware for them
+  const guest = (await headers()).get("x-subshot-guest") === "1";
+  const page = (
+    <html
+      lang={isEnglish ? "en" : "de"}
+      className={`${geistSans.variable} ${geistMono.variable} ${anton.variable} ${bebas.variable} ${kalam.variable} h-full antialiased dark`}
+    >
+      <body className="min-h-full flex flex-col bg-[#161616] text-[#f0f0f0]">
+        {guest ? (
+          <NoClerk>
+            <ToastProvider>{children}</ToastProvider>
+            {/* 2026-11-17 — legal links on every guest page */}
+            <footer data-guest-legal className="mt-auto flex justify-center gap-4 px-4 py-6 text-[11px] text-white/35">
+              <a href="https://subshot.ch/impressum" className="hover:text-white/70">Impressum</a>
+              <a href="https://subshot.ch/datenschutz" className="hover:text-white/70">Datenschutz</a>
+            </footer>
+          </NoClerk>
+        ) : (
+          <>
+            <ToastProvider>{children}</ToastProvider>
+            <TrialExpiredDialog />
+            <InsufficientCreditsDialog />
+            <StorageLimitDialog />
+          </>
+        )}
+      </body>
+    </html>
   );
+  return guest ? page : <ClerkProvider localization={clerkLocalization}>{page}</ClerkProvider>;
 }

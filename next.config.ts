@@ -13,7 +13,13 @@ const nextConfig: NextConfig = {
   // safe everywhere, not just on the public routes.
   // 2026-11-15, Lino: the devlog is now «How to» — old links keep working (?post= etc. are carried over)
   async redirects() {
-    return [{ source: "/devlog", destination: "/how-to", permanent: true }];
+    return [
+      { source: "/devlog", destination: "/how-to", permanent: true },
+      // 2026-11-17 (PostFinance-Webfilter) — legal pages live on subshot.ch
+      { source: "/impressum", destination: "https://subshot.ch/impressum", permanent: true },
+      { source: "/datenschutz", destination: "https://subshot.ch/datenschutz", permanent: true },
+      { source: "/agb", destination: "https://subshot.ch/agb", permanent: true },
+    ];
   },
   async headers() {
     return [

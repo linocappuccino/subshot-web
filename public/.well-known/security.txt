@@ -1,0 +1,5 @@
+Contact: mailto:lino@linocappuccino.com
+Expires: 2027-11-17T00:00:00.000Z
+Preferred-Languages: de, en
+Canonical: https://app.subshot.ch/.well-known/security.txt
+Policy: https://subshot.ch/datenschutz

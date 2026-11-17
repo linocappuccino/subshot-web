@@ -1,4 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 
 // "/" itself is public too — it's not a real page, just a signed-in?/projects
 // :/sign-in redirect (see app/page.tsx). Without this, auth.protect() 404s
@@ -44,14 +45,26 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // who may not be signed in on app.subshot.ch yet; auth.protect() would 404 them (no sign-in
 // URL configured), so the page itself sends signed-out visitors to /sign-in and back.
 const isPublicRoute = createRouteMatcher([
-  "/", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/how-to(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/dubbing(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
+  "/", "/.well-known(.*)", "/impressum", "/datenschutz", "/agb", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/how-to(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/dubbing(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
 ]);
 
-export default clerkMiddleware(async (auth, req) => {
+// 2026-11-17 (PostFinance-Webfilter) — guest pages never touch Clerk: no middleware handshake, and the root
+// layout (x-subshot-guest) renders them without <ClerkProvider>, so no clerk.subshot.ch script is loaded
+const isGuestRoute = createRouteMatcher(["/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/dubbing(.*)"]);
+const withClerk = clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
     await auth.protect();
   }
 });
+
+export default function proxy(req: NextRequest, ev: NextFetchEvent) {
+  if (isGuestRoute(req)) {
+    const h = new Headers(req.headers);
+    h.set("x-subshot-guest", "1");
+    return NextResponse.next({ request: { headers: h } });
+  }
+  return withClerk(req, ev);
+}
 
 export const config = {
   matcher: [
