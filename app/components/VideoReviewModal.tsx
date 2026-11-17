@@ -95,6 +95,7 @@ export function VideoReviewModal({
   onCopyLink,
   onDeleteVersion,
   publicMode,
+  lockedOpen,
   postComment,
   onSubmitFeedback,
   onDeleteComment,
@@ -162,6 +163,8 @@ export function VideoReviewModal({
    * see this component's own canEdit/isOwn gates below — no other change
    * needed for viewer mode. */
   publicMode?: boolean;
+  /** 2026-11-17 — single-video guest link: the review can't be closed (there is nothing behind it) */
+  lockedOpen?: boolean;
   postComment?: (
     versionId: string, timestampSeconds: number, comment: string, parentCommentId: string | null, authorName: string
   ) => Promise<VideoComment>;
@@ -827,7 +830,7 @@ export function VideoReviewModal({
       // erst ein zweites Escape schliesst das ganze Modal.
       if (e.key === "Escape") {
         if (presenting) setPresenting(false);
-        else onClose();
+        else if (!lockedOpen) onClose();
         return;
       }
       // Nur wenn kein Textfeld fokussiert ist — sonst würde Pfeil-links/
@@ -1697,7 +1700,7 @@ export function VideoReviewModal({
       // comment textarea. No-op (0) on desktop / no visualViewport support.
       style={keyboardShiftY ? { transform: `translateY(${keyboardShiftY}px)` } : undefined}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !lockedOpen) onClose();
       }}
     >
       <div
@@ -2055,14 +2058,14 @@ export function VideoReviewModal({
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6" /></svg>
               </button>
             )}
-            <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-white/10" />
-            <button
+            {!lockedOpen && <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-white/10" />}
+            {!lockedOpen && <button
               onClick={onClose}
               aria-label={t("common.close")}
               className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
-            </button>
+            </button>}
           </div>
         </div>
         </div>

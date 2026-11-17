@@ -541,10 +541,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // AND, separately, one live "ideas" link (Planungssektor) at once —
     // see backend ShareLink.kind.
     // 2026-11-09 — kind "board": one idea's canvas, the client can't leave it (ideaId required)
-    shareLink: (projectId: string, password?: string, clearPassword?: boolean, kind: "storyboard" | "ideas" | "video" | "board" = "storyboard", ideaId?: string) =>
+    shareLink: (projectId: string, password?: string, clearPassword?: boolean, kind: "storyboard" | "ideas" | "video" | "board" = "storyboard", ideaId?: string, videoId?: string) =>
       request<{ url: string; expires_at: string; has_password: boolean }>(`projects/${projectId}/share-link`, {
         method: "POST",
-        body: JSON.stringify({ password: password || null, clear_password: !!clearPassword, kind, idea_id: ideaId ?? null }),
+        body: JSON.stringify({ password: password || null, clear_password: !!clearPassword, kind, idea_id: ideaId ?? null, video_id: videoId ?? null }),
       }),
 
     // ── Deliver (2026-09-06) ─────────────────────────────────────────────

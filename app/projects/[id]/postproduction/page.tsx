@@ -940,10 +940,11 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       client: canEditStatus
         ? async () => {
             try {
-              const r = await api.shareLink(id, undefined, undefined, "video");
+              // 2026-11-17, Lino: a link from a video shows the client ONLY this video (single-video token, server-enforced)
+              const r = await api.shareLink(id, undefined, undefined, "video", undefined, video.id);
               const token = r.url.replace(/\/+$/, "").split("/").pop();
               const until = new Date(r.expires_at).toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit", year: "numeric" });
-              await copyText(`${window.location.origin}/preview/${token}?video=${video.id}`, `Kunden-Link kopiert – gültig bis ${until}${r.has_password ? " (mit Passwort)" : ""}.`);
+              await copyText(`${window.location.origin}/preview/${token}`, t("videoTile.singleLinkCopied", { until, pw: r.has_password ? t("videoTile.withPassword") : "" }));
             } catch (e) {
               toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
             }
@@ -1168,7 +1169,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             )}
             {canEditStatus && (
               <Button variant="secondary" size="sm" onClick={() => setShowShareModal(true)}>
-                <ShareIcon /> {t("workflow.share")}
+                <ShareIcon /> {t("postproduction.shareOverview")}
               </Button>
             )}
             {/* 2026-10-12, Lino: "auf der postproduction seite braucht es den deliver button oben nicht

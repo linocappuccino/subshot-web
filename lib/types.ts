@@ -544,6 +544,8 @@ export interface SharedVideoPreviewData {
   languages?: { id: string; name: string; flag: string; sort_order: number; count: number }[];
   video_languages?: Record<string, string>;
   video_formats?: Record<string, string>;
+  /** 2026-11-17 — single-video link: only this video, no overview */
+  single_video_id?: string | null;
 }
 
 /** Up to 10 images per Idea (2026-07-16) — uploaded or AI-generated (Gemini/

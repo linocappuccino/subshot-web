@@ -59,8 +59,13 @@ function PreviewVideoPageInner() {
         setPreviewLanguage(d.language);
         setNeedsPassword(false);
         setError(null);
-        if (openVideoId && !openedFromParam) {
-          const v = d.videos.find((video) => video.id === openVideoId);
+        const wanted = d.single_video_id || openVideoId;
+        if (d.single_video_id) {
+          const v = d.videos.find((video) => video.id === d.single_video_id);
+          if (v) setReviewingVideo(v);
+          setOpenedFromParam(true);
+        } else if (wanted && !openedFromParam) {
+          const v = d.videos.find((video) => video.id === wanted);
           if (v) setReviewingVideo(v);
           setOpenedFromParam(true);
         }
@@ -222,6 +227,9 @@ function PreviewVideoPageInner() {
           <p className="text-sm text-red-400">{error}</p>
         ) : !data || data.videos.length === 0 ? (
           <p className="text-sm text-white/40">{t("previewVideoPage.noVideos")}</p>
+        ) : data.single_video_id ? (
+          // 2026-11-17 — single-video link: no overview behind the (not closable) review
+          null
         ) : (
           <>
           {(data.languages ?? []).length > 0 && (
@@ -278,9 +286,10 @@ function PreviewVideoPageInner() {
           canEdit={false}
           currentUserId={null}
           members={[]}
-          onClose={() => setReviewingVideo(null)}
+          onClose={() => { if (!data?.single_video_id) setReviewingVideo(null); }}
           onVideoUpdated={updateVideo}
           publicMode
+          lockedOpen={!!data?.single_video_id}
           postComment={(versionId, timestampSeconds, comment, parentCommentId, authorName) =>
             publicPreviewApi.postComment(token, unlockToken, versionId, timestampSeconds, comment, parentCommentId, authorName)
           }
