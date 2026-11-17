@@ -2872,7 +2872,7 @@ function SubtitleHistoryDialog({ versionId, lang, cues, onRestore, onClose }: {
           <p className="text-white/40">{t("subtitlePanel.historyEmpty")}</p>
         ) : lines.map((c) => (
           <div key={c.id} data-history-line={c.id} className="mb-4 rounded-xl bg-white/[0.03] p-3">
-            <div className="mb-2 text-xs text-white/50"><span className="tabular-nums">{fmt(c.start_ms)}</span> · jetzt: <span className="text-white/85">«{c.text}»</span></div>
+            <div className="mb-2 text-xs text-white/50"><span className="tabular-nums">{fmt(c.start_ms)}</span> · {t("subtitlePanel.now")} <span className="text-white/85">«{c.text}»</span></div>
             {(byCue.get(c.id) ?? []).map((e) => (
               <div key={e.id} className="flex items-start gap-2 border-t border-white/[0.05] py-1.5 text-xs">
                 <div className="min-w-0 flex-1">
