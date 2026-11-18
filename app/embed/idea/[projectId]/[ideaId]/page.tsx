@@ -31,9 +31,10 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
     boardImageConfig.densityCap = 1;
     boardImageConfig.thumbOnly = on;
     boardImageConfig.cull = true; // only nodes in / near the visible area are rendered
-    // 2026-11-18 — videos / GIFs as stills (one player at a time); ?media=off = placeholders only
+    // 2026-11-18 — opt-in (Lino's OK, deployed as opt-in): ?media=still = videos / GIFs as stills (one player at a
+    // time), ?media=off = placeholders only; without the parameter everything stays as before («full»)
     const media = new URLSearchParams(window.location.search).get("media");
-    boardImageConfig.media = media === "off" ? "off" : media === "full" ? "full" : "still";
+    boardImageConfig.media = media === "off" ? "off" : media === "still" ? "still" : "full";
     return on;
   });
   const [liteNote, setLiteNote] = useState(lite);
