@@ -1,18 +1,18 @@
 "use client";
-// 2026-11-17, Lino: two more views for the Post-Production overview next to the tiles — «Liste» (one row per video)
-// and «Matrix» (spot × language/format). Both get the SAME filtered videos as the tiles (lib/postproFilter
-// filterVideos / listGroups / matrixOf ⇄ app/postpro_filter.py, checked by tests/test_postpro_filter.py).
+// 2026-11-17, Lino: a «Liste» view (one row per video) next to the tiles — the SAME filtered videos as the tiles
+// (lib/postproFilter filterVideos / listGroups ⇄ app/postpro_filter.py, checked by tests/test_postpro_filter.py).
 import { useEffect, useState } from "react";
 import type { Member, PostproductionStatus, Video, VideoQc } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 import { openFeedbackCount } from "@/lib/commentRules";
-import { platformsOf, type Matrix } from "@/lib/postproFilter";
+import { platformsOf } from "@/lib/postproFilter";
 import { STATUS_GLOW_COLOR } from "./VideoTile";
 import { useLanguage } from "@/lib/i18n";
 import type { ProjectLanguage } from "./PostproLanguages";
 
-export type PostproView = "tiles" | "list" | "matrix";
-const VIEWS: PostproView[] = ["tiles", "list", "matrix"];
+// 2026-11-18, Lino: «die matrix ansicht brauchen wir nicht» — only tiles + list (an old ?view=matrix falls back to tiles)
+export type PostproView = "tiles" | "list";
+const VIEWS: PostproView[] = ["tiles", "list"];
 const STORE = "subshot:postpro-view";
 
 /** view from ?view= (reload keeps it), else the person's last choice (this browser), else tiles */
@@ -39,11 +39,10 @@ export function usePostproView(): [PostproView, (v: PostproView) => void] {
 
 export function ViewSwitch({ view, onView }: { view: PostproView; onView: (v: PostproView) => void }) {
   const { t } = useLanguage();
-  const label: Record<PostproView, string> = { tiles: t("postproViews.tiles"), list: t("postproViews.list"), matrix: t("postproViews.matrix") };
+  const label: Record<PostproView, string> = { tiles: t("postproViews.tiles"), list: t("postproViews.list") };
   const icon: Record<PostproView, React.ReactNode> = {
     tiles: <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" />,
     list: <path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01" />,
-    matrix: <path d="M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18" />,
   };
   return (
     <div data-view-switch className="inline-flex rounded-full bg-white/[0.06] p-0.5">
@@ -209,73 +208,6 @@ export function PostproListView({
             </tbody>
           );
         })}
-      </table>
-    </div>
-  );
-}
-
-export function PostproMatrixView({
-  matrix, videosById, sectionById, languages, onOpen, statusLabel,
-}: Omit<Common, "assignments" | "formats"> & {
-  matrix: Matrix;
-  videosById: Record<string, Video>;
-  sectionById: Record<string, { name: string; status: PostproductionStatus | null }>;
-}) {
-  const { t } = useLanguage();
-  const colLabel = (c: string) => {
-    const [l, f] = c.split("|");
-    const lang = languages.find((x) => x.id === l);
-    return (
-      <span className="flex flex-col items-center leading-tight">
-        <span className="whitespace-nowrap">{lang ? `${lang.flag} ${lang.name.slice(0, 2).toUpperCase()}` : t("postproViews.noLanguage")}</span>
-        <span className="text-white/40">{f === "other" ? t("postproViews.otherFormat") : f}</span>
-      </span>
-    );
-  };
-  return (
-    <div data-pp-matrix className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-      <table className="text-sm">
-        <thead className="text-xs text-white/50">
-          <tr className="border-b border-white/[0.06]">
-            <th className="sticky left-0 z-10 min-w-[11rem] bg-[#161616] px-3 py-2 text-left font-medium">{t("postproViews.spot")}</th>
-            {matrix.columns.map((c) => <th key={c} data-col={c} className="min-w-[6.5rem] px-2 py-2 font-medium">{colLabel(c)}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {matrix.rows.map((r) => (
-            <tr key={r.key} data-matrix-row={r.key} className="border-b border-white/[0.04]">
-              <td className="sticky left-0 z-10 max-w-[16rem] truncate bg-[#161616] px-3 py-2 font-medium text-white" title={r.label}>{r.label}</td>
-              {matrix.columns.map((c) => {
-                const ids = r.cells[c] ?? [];
-                return (
-                  <td key={c} data-cell={c} className="px-1.5 py-1.5 align-top">
-                    {ids.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-white/[0.08] px-2 py-2 text-center text-[11px] text-white/25">{t("postproViews.missing")}</div>
-                    ) : (
-                      <div className="flex flex-col gap-1">
-                        {ids.map((id) => {
-                          const v = videosById[id];
-                          if (!v) return null;
-                          const nv = newest(v);
-                          const st = sectionById[v.section_id]?.status ?? null;
-                          const n = openFeedbackCount(nv?.comments);
-                          return (
-                            <button key={id} type="button" data-matrix-video={id} title={`${v.title} · ${statusLabel(st ?? "wartend")}`} onClick={() => onOpen(v)}
-                              className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-left hover:bg-white/10"
-                              style={{ boxShadow: `inset 3px 0 0 ${STATUS_GLOW_COLOR[st ?? "wartend"]}` }}>
-                              <span className="tabular-nums text-white/80">{nv ? formatVersionLabel(nv) : "–"}</span>
-                              <FeedbackCount n={n} />
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
       </table>
     </div>
   );

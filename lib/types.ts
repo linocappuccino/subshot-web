@@ -546,8 +546,6 @@ export interface SharedVideoPreviewData {
   video_formats?: Record<string, string>;
   /** 2026-11-17 — single-video link: only this video, no overview */
   single_video_id?: string | null;
-  /** 2026-11-17 — matrix rows per video */
-  video_spots?: Record<string, { key: string; label: string }>;
 }
 
 /** Up to 10 images per Idea (2026-07-16) — uploaded or AI-generated (Gemini/

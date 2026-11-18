@@ -20,8 +20,6 @@ export interface LanguagesOverview {
   unassigned: number;
   /** video id → «9:16» / «16:9» / … (real size, rounded) */
   formats?: Record<string, string>;
-  /** 2026-11-17 — video id → matrix row (spot key + label, server rule app/postpro_filter.spot_of) */
-  spots?: Record<string, { key: string; label: string }>;
 }
 /** "all" | "none" | language id */
 export type LanguageTab = string;

@@ -9,8 +9,8 @@ import { publicPreviewApi } from "@/lib/publicPreviewApi";
 import { ApiError } from "@/lib/api";
 import { setPreviewLanguage, useLanguage } from "@/lib/i18n";
 import { subscribeToChanges } from "@/lib/realtime";
-import { facetCounts, filterVideos, listGroups, matrixOf } from "@/lib/postproFilter";
-import { PostproListView, PostproMatrixView, ViewSwitch, usePostproView } from "@/app/components/PostproViews";
+import { facetCounts, filterVideos, listGroups } from "@/lib/postproFilter";
+import { PostproListView, ViewSwitch, usePostproView } from "@/app/components/PostproViews";
 import type { PostproductionStatus } from "@/lib/types";
 import type { SharedVideoPreviewData, Video } from "@/lib/types";
 
@@ -263,13 +263,7 @@ function PreviewVideoPageInner() {
             for (const v of sortedVideos) byId[v.id] = v;
             const langsList = data.languages ?? [];
             if (sortedVideos.length === 0) return <p className="text-sm text-white/40">{t("postproViews.nothing")}</p>;
-            return ppView === "matrix" ? (
-              <PostproMatrixView
-                matrix={matrixOf(sortedVideos, pfCtx, data.video_spots ?? {}, [...langsList].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id))}
-                videosById={byId} sectionById={secInfo} languages={langsList}
-                onOpen={(v) => setReviewingVideo(v)} statusLabel={(s) => labels[s]}
-              />
-            ) : (
+            return (
               <PostproListView
                 readOnly
                 groups={listGroups(sortedVideos, sectionOf, order).map((g) => ({ id: g.section, name: secInfo[g.section]?.name ?? "", status: secInfo[g.section]?.status ?? null, videos: g.ids.map((i) => byId[i]) }))}
