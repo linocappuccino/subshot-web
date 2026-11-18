@@ -96,6 +96,7 @@ export function VideoReviewModal({
   onDeleteVersion,
   publicMode,
   lockedOpen,
+  guestKeepalive,
   postComment,
   onSubmitFeedback,
   onDeleteComment,
@@ -165,6 +166,8 @@ export function VideoReviewModal({
   publicMode?: boolean;
   /** 2026-11-17 — single-video guest link: the review can't be closed (there is nothing behind it) */
   lockedOpen?: boolean;
+  /** 2026-11-17 — guest link: send the open subtitle correction with keepalive when the tab closes */
+  guestKeepalive?: (kind: "segment" | "translation", id: string, text: string, authorName?: string | null) => void;
   postComment?: (
     versionId: string, timestampSeconds: number, comment: string, parentCommentId: string | null, authorName: string
   ) => Promise<VideoComment>;
@@ -424,8 +427,12 @@ export function VideoReviewModal({
     return () => { alive = false; clearInterval(iv); };
   }, [publicMode, getAuthToken]);
   function unloadSaveCue(cueId: string, text: string) {
-    // tab / browser is closing: keepalive request with the cached session token (team only; guests keep the local draft)
-    if (publicMode || !tokenCache.current) return;
+    // tab / browser is closing: keepalive request — guests via the share token (URL), the team with the cached session token
+    if (publicMode) {
+      guestKeepalive?.(subtitleLang === "original" ? "segment" : "translation", cueId, text, visitorName || null);
+      return;
+    }
+    if (!tokenCache.current) return;
     const base = process.env.NEXT_PUBLIC_API_BASE_URL;
     const path = subtitleLang === "original" ? `subtitle-segments/${cueId}` : `subtitle-translations/${cueId}`;
     try {

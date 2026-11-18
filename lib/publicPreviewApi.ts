@@ -130,4 +130,16 @@ export const publicPreviewApi = {
         body: JSON.stringify({ text, author_name: authorName || undefined }),
       })
     ),
+
+  // 2026-11-17 — tab / browser closing: the open correction goes out with keepalive (same endpoint + rules as above;
+  // the share token is in the URL, no login needed). Fire-and-forget; the local draft stays as the fallback.
+  keepaliveSubtitle: (token: string, unlockToken: string | null, kind: "segment" | "translation", id: string, text: string, authorName?: string | null) => {
+    try {
+      void fetch(`${BASE_URL}/share/${token}/${kind === "segment" ? "subtitle-segments" : "subtitle-translations"}/${id}`, {
+        method: "PATCH", keepalive: true,
+        headers: { "Content-Type": "application/json", ...unlockHeaders(unlockToken) },
+        body: JSON.stringify({ text, author_name: authorName || undefined }),
+      });
+    } catch { /* draft fallback */ }
+  },
 };

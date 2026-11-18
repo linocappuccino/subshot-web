@@ -325,6 +325,7 @@ function PreviewVideoPageInner() {
           onVideoUpdated={updateVideo}
           publicMode
           lockedOpen={!!data?.single_video_id}
+          guestKeepalive={(kind, id, text, author) => publicPreviewApi.keepaliveSubtitle(token, unlockToken, kind, id, text, author)}
           postComment={(versionId, timestampSeconds, comment, parentCommentId, authorName) =>
             publicPreviewApi.postComment(token, unlockToken, versionId, timestampSeconds, comment, parentCommentId, authorName)
           }
