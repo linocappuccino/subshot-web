@@ -75,6 +75,8 @@ export type ScenePatch = {
   /** one time field edited — the board derives the rest (lib/timetable.ts editSceneTime) */
   timeEdit?: { field: TimeField; value: string | number | null };
   time_fixed?: boolean;
+  /** 2026-11-18 — the card's shooting day "YYYY-MM-DD", null = none (then the group title's date / Tag 1) */
+  date?: string | null;
 };
 
 export interface ElementViewLabels extends TodoLabels {
@@ -100,6 +102,7 @@ export interface ElementViewLabels extends TodoLabels {
   sceneTimeFrom: string;
   sceneTimeTo: string;
   sceneDuration: string;
+  sceneDate: string;
   sceneDurationPlaceholder: string;
   sceneFix: string;
   sceneUnfix: string;
@@ -571,6 +574,7 @@ function SceneTimePill({ el }: { el: SceneElement }) {
     <div className="px-3 pb-2">
       <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] border border-white/10 px-2 py-[3px] text-[11px] font-semibold tabular-nums text-white/80">
         <ClockGlyph />
+        {el.date && /^\d{4}-\d{2}-\d{2}$/.test(el.date) && <span className="font-medium text-white/60">{`${el.date.slice(8, 10)}.${el.date.slice(5, 7)}.`}</span>}
         {range}
         {t.duration !== null && <span className="font-medium text-white/50">{range ? "· " : ""}{formatDuration(t.duration)}</span>}
         {el.time_fixed && <LockGlyph locked />}
@@ -603,6 +607,18 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
   const input = "w-full min-w-0 rounded-md bg-white/[0.07] border border-white/10 px-1.5 py-1 text-[12px] tabular-nums text-white/90 outline-none focus:border-blue-400/60 [color-scheme:dark] select-text";
   const head = "flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider text-white/45";
   return (
+    <>
+    {/* 2026-11-18, Lino: shooting day of the card — the Timetable shows one block per day */}
+    <label className="px-3 pb-1.5 flex items-center gap-2">
+      <span className={head}>{labels.sceneDate}</span>
+      <input
+        type="date"
+        data-scene-date
+        value={el.date ?? ""}
+        onChange={(e) => onCommit({ date: e.target.value || null })}
+        className={`${input} w-auto flex-1`}
+      />
+    </label>
     <div className="px-3 pb-2 flex items-end gap-1.5">
       {(["time", "time_end"] as const).map((f) => (
         <label key={f} className="flex min-w-0 flex-1 flex-col gap-1">
@@ -650,6 +666,7 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
         <LockGlyph locked={!!el.time_fixed} />
       </button>
     </div>
+    </>
   );
 }
 

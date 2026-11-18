@@ -2319,6 +2319,8 @@ export function IdeaBoard({
     // 🔒 on = true, off = the field is removed
     const fields: Record<string, unknown> = { ...next };
     if (patch.time_fixed !== undefined && patch.time_fixed !== !!el.time_fixed) fields.time_fixed = patch.time_fixed || undefined;
+    // 2026-11-18 — the card's shooting day ("" / null removes it → group title date / Tag 1)
+    if (patch.date !== undefined && (patch.date || undefined) !== el.date) fields.date = patch.date || undefined;
     // 2026-10-29, Lino: Drehzeit — one field edited, the third derived; with "Zeiten verketten"
     // the following cards move along (same minutes) — all in one undoable, atomic change
     let blocked: number | null = null;
@@ -2333,7 +2335,7 @@ export function IdeaBoard({
         blocked = chain.blocked;
       }
     }
-    if (patch.timeEdit || "time_fixed" in fields) {
+    if (patch.timeEdit || "time_fixed" in fields || "date" in fields) {
       patches.set(id, fields);
       patchElements(patches);
       if (blocked !== null) onNotice?.(t("ideaBoard.chainMidnight", { number: blocked }));
@@ -3543,6 +3545,7 @@ export function IdeaBoard({
     sceneTime: t("ideaBoard.sceneTime"),
     sceneTimeFrom: t("ideaBoard.sceneTimeFrom"),
     sceneTimeTo: t("ideaBoard.sceneTimeTo"),
+    sceneDate: t("ideaBoard.sceneDate"),
     sceneDuration: t("ideaBoard.sceneDuration"),
     sceneDurationPlaceholder: t("ideaBoard.sceneDurationPlaceholder"),
     sceneFix: t("ideaBoard.sceneFix"),
