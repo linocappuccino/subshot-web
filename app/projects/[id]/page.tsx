@@ -1793,9 +1793,17 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // from the Scenes overview too, so they leaked through here as an empty,
   // functionless "0/0" section box. Filtered out same as the Postproduction
   // page already filters its OWN empty-state placeholder for these.
+  // 2026-11-18, Lino: «wieso kann ich diese shotlisten nicht löschen?? und warum sind sie da????» — sections the DaVinci
+  // plugin created for exported videos (post-production groups without any scene) showed here as empty «nothing
+  // yet» shot lists. A section in post-production without scenes is a post-production group, not a shot list.
   const sections = useMemo(
-    () => [...(data?.sections ?? [])].filter((s) => !s.is_unplanned).sort((a, b) => a.sort_order - b.sort_order),
-    [data?.sections]
+    () => {
+      const withScenes = new Set((data?.scenes ?? []).map((sc) => sc.section_id));
+      return [...(data?.sections ?? [])]
+        .filter((s) => !s.is_unplanned && !(s.in_postproduction && !withScenes.has(s.id)))
+        .sort((a, b) => a.sort_order - b.sort_order);
+    },
+    [data?.sections, data?.scenes]
   );
   const unsectioned = scenesIn(null);
   const lastScene = useMemo(
