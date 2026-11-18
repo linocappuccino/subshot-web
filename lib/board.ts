@@ -124,6 +124,9 @@ export interface SceneElement extends BaseElement {
   time?: string;
   time_end?: string;
   duration?: number;
+  /** 2026-11-18, Lino: «er unterscheidet die tage nicht» — the shooting day "YYYY-MM-DD" (optional; without it the
+   * day comes from a date in the card's group title, e.g. «Drehtag 26.11. · …», else the card is on «Tag 1») */
+  date?: string;
   /** 🔒 the start stays put when "Zeiten verketten" moves the cards before it */
   time_fixed?: boolean;
 }

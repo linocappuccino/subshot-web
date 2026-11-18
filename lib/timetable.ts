@@ -44,6 +44,51 @@ export interface TimetableRow {
   priority: NonNullable<SceneElement["priority"]> | null;
   tags: string[];
   image: string | null;
+  /** 2026-11-18 — shooting day "YYYY-MM-DD" ("" = no date known → Tag 1) */
+  day: string;
+}
+
+// ── shooting days (2026-11-18, Lino: «er unterscheidet die tage nicht!! drehs am nächsten tag sollten doch unten sein») ──
+/* A card's day: its own `date`, else a date in its group's title («Drehtag 26.11. · Young Boss DE», «27.11.2026»),
+ * else "" (= Tag 1, before all dated days). A title date without a year takes `year`. Mirrored in
+ * app/idea_board.py card_day — the Timetable node, the chain, the Drehplan, the PDF and MCP all use it. */
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+export function dayFromTitle(title: string, year: number): string {
+  const m = /(?:^|[^\d])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})?(?!\d)/.exec(title || "");
+  if (!m) return "";
+  const d = Number(m[1]), mo = Number(m[2]);
+  let y = m[3] ? Number(m[3]) : year;
+  if (y < 100) y += 2000;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCMonth() !== mo - 1) return "";
+  return `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+export function cardDay(el: { date?: unknown }, groupTitle: string, year: number): string {
+  if (typeof el.date === "string" && ISO_DAY.test(el.date)) return el.date;
+  return dayFromTitle(groupTitle, year);
+}
+/** the year for title dates without one: the current year (Europe/Zurich) */
+export function currentYear(): number {
+  return Number(new Intl.DateTimeFormat("en", { year: "numeric", timeZone: "Europe/Zurich" }).format(new Date()));
+}
+/** rows → [{day, rows}] in row order (rows are already sorted by day) */
+export function rowsByDay<R extends { day: string }>(rows: R[]): { day: string; rows: R[] }[] {
+  const out: { day: string; rows: R[] }[] = [];
+  for (const r of rows) {
+    const last = out[out.length - 1];
+    if (last && last.day === r.day) last.rows.push(r);
+    else out.push({ day: r.day, rows: [r] });
+  }
+  return out;
+}
+/** «Tag 2 · Do 27.11.2026» / «Tag 1» */
+export function dayLabel(day: string, index: number, lang: "de" | "en" = "de"): string {
+  const n = lang === "en" ? `Day ${index + 1}` : `Tag ${index + 1}`;
+  if (!ISO_DAY.test(day)) return n;
+  const [y, m, d] = day.split("-").map(Number);
+  const wd = new Intl.DateTimeFormat(lang === "en" ? "en-GB" : "de-CH", { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(y, m - 1, d))).replace(".", "");
+  return `${n} · ${wd} ${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
 }
 
 /** Lino 2026-10-29: Nr., Szene, Beginn, Ende, Dauer, Location, Beschreibung,
@@ -197,7 +242,10 @@ export function cascadeTimes(
   if (endOf(a) !== null && endOf(b) !== null) delta = endOf(b)! - endOf(a)!;
   else if (a.start !== null && b.start !== null) delta = b.start - a.start;
   if (!delta) return { patches, blocked: null, delta: 0 };
-  const order = timetableRows(elements, sort).map((r) => r.id);
+  // 2026-11-18 — the chain never crosses into another shooting day
+  const rowsAll = timetableRows(elements, sort);
+  const myDay = rowsAll.find((r) => r.id === id)?.day ?? "";
+  const order = rowsAll.filter((r) => r.day === myDay).map((r) => r.id);
   const at = order.indexOf(id);
   if (at < 0) return { patches, blocked: null, delta };
   const byId = new Map(elements.map((el) => [el.id, el]));
@@ -246,18 +294,23 @@ export function timetableColumns(el: Pick<TimetableElement, "columns">, rows: Ti
   return DEFAULT_TIMETABLE_COLUMNS;
 }
 
-export function timetableRows(elements: BoardElement[], sort: TimetableElement["sort"] = "time"): TimetableRow[] {
+export function timetableRows(elements: BoardElement[], sort: TimetableElement["sort"] = "time", year: number = currentYear()): TimetableRow[] {
   const scenes = elements.filter((el): el is SceneElement => el.type === "scene");
   const groupOf = new Map<string, string>();
   for (const el of elements) {
     if (el.type === "group" && text(el.title)) for (const c of el.children ?? []) groupOf.set(c, text(el.title));
   }
   const times = new Map(scenes.map((el) => [el.id, sceneTimes(el)]));
+  const dayOf = new Map(scenes.map((el) => [el.id, cardDay(el, groupOf.get(el.id) ?? "", year)]));
   const byNumber = (a: SceneElement, b: SceneElement) => a.number - b.number || a.y - b.y || a.x - b.x;
+  // days first (no date = Tag 1, before the dated days), then the chosen order inside the day
+  const byDay = (a: SceneElement, b: SceneElement) => (dayOf.get(a.id)! < dayOf.get(b.id)! ? -1 : dayOf.get(a.id)! > dayOf.get(b.id)! ? 1 : 0);
   const sorted =
     sort === "number"
-      ? [...scenes].sort(byNumber)
+      ? [...scenes].sort((a, b) => byDay(a, b) || byNumber(a, b))
       : [...scenes].sort((a, b) => {
+          const dd = byDay(a, b);
+          if (dd) return dd;
           // by start; a card with only an end sorts by that; untimed after all timed ones
           const ta = times.get(a.id)!;
           const tb = times.get(b.id)!;
@@ -286,6 +339,7 @@ export function timetableRows(elements: BoardElement[], sort: TimetableElement["
       priority: el.priority ?? null,
       tags: Array.isArray(el.tags) ? el.tags.map(text).filter(Boolean) : [],
       image: el.image_thumb_src || el.image_src || null,
+      day: dayOf.get(el.id) ?? "",
     };
   });
 }
@@ -328,6 +382,17 @@ export interface ScheduleScene {
   no_end?: boolean;
   /** 2026-11-02 — storyboard image (small R2 display version) */
   image?: string | null;
+  /** 2026-11-18 — shooting day "YYYY-MM-DD" ("" = Tag 1) */
+  day?: string;
+}
+
+/** 2026-11-18 — a day header of the Drehplan (only when the scenes span more than one day) */
+export interface ScheduleDay {
+  kind: "day";
+  day: string;
+  index: number;
+  label?: string;
+  totals?: { scenes: number; first_start: string; last_end: string; span: number | null; shooting: number };
 }
 
 export interface SchedulePause {
@@ -338,7 +403,7 @@ export interface SchedulePause {
 }
 
 export interface BoardSchedule {
-  items: (ScheduleScene | SchedulePause)[];
+  items: (ScheduleScene | SchedulePause | ScheduleDay)[];
   untimed: ScheduleScene[];
   warnings: string[];
   totals: {
@@ -403,6 +468,7 @@ export function scheduleRow(s: ScheduleScene, index: number): TimetableRow {
     priority: s.priority ?? null,
     tags: [],
     image: s.image ?? null, // small R2 display version (t-… WebP), see project_schedule.compute
+    day: s.day ?? "",
   };
 }
 

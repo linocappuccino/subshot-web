@@ -8,11 +8,11 @@
  * live one from another person — shows up here at once, with exactly the
  * card's number. Empty fields stay empty cells. */
 
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import { PRIORITY_COLORS } from "@/lib/types";
 import { TIMETABLE_COLUMNS, type BoardElement, type TimetableColumn, type TimetableElement } from "@/lib/board";
-import { formatDuration, timetableColumns, timetableRows, type TimetableRow } from "@/lib/timetable";
+import { dayLabel, formatDuration, fromMin, rowsByDay, timetableColumns, timetableRows, toMin, type TimetableRow } from "@/lib/timetable";
 import { mapsUrlForAddress } from "../PlacePill";
 
 export const BoardTimetableContext = createContext<{
@@ -88,6 +88,24 @@ export function TimetableNode({
   const [pdfBusy, setPdfBusy] = useState(false);
   const rows = useMemo(() => timetableRows(elements, el.sort ?? "time"), [elements, el.sort]);
   const columns = timetableColumns(el, rows);
+  // 2026-11-18, Lino: «er unterscheidet die tage nicht!!» — one block per shooting day, the next day below
+  const { language } = useLanguage();
+  const days = useMemo(() => rowsByDay(rows), [rows]);
+  const dayStarts = useMemo(() => new Set(days.map((d) => d.rows[0].id)), [days]);
+  const dayInfo = useMemo(() => {
+    const m = new Map<string, { label: string; range: string; count: string }>();
+    days.forEach((d, i) => {
+      const starts = d.rows.map((r) => toMin(r.start)).filter((x): x is number => x !== null);
+      const ends = d.rows.map((r) => (r.start && r.duration !== null ? (toMin(r.start) ?? 0) + r.duration : toMin(r.end))).filter((x): x is number => x !== null);
+      const range = starts.length ? `${fromMin(Math.min(...starts))}–${ends.length ? fromMin(Math.max(...ends) % 1440) : ""}` : "";
+      m.set(d.day, {
+        label: dayLabel(d.day, i, language === "en" ? "en" : "de"),
+        range,
+        count: d.rows.length === 1 ? t("ideaBoard.timetable.countOne") : t("ideaBoard.timetable.count", { count: d.rows.length }),
+      });
+    });
+    return m;
+  }, [days, language, t]);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [width, setWidth] = useState(el.w);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -245,6 +263,8 @@ export function TimetableNode({
       ) : compact ? (
         <div className="px-2 pb-2 overflow-hidden">
           {rows.map((r, i) => (
+            <Fragment key={r.id}>
+            {days.length > 1 && dayStarts.has(r.id) && <DayHeader info={dayInfo.get(r.day)!} />}
             <CompactRow
               key={r.id}
               row={r}
@@ -255,6 +275,7 @@ export function TimetableNode({
               goToLabel={t("ideaBoard.timetable.goTo")}
               priorityLabel={r.priority ? t(`priority.${r.priority}` as TranslationKey) : ""}
             />
+            </Fragment>
           ))}
         </div>
       ) : (
@@ -268,8 +289,9 @@ export function TimetableNode({
             ))}
           </div>
           {rows.map((r, i) => (
+            <Fragment key={r.id}>
+            {days.length > 1 && dayStarts.has(r.id) && <DayHeader info={dayInfo.get(r.day)!} />}
             <div
-              key={r.id}
               className={`grid gap-x-3 items-start rounded-lg px-2 py-2.5 ${i % 2 ? "bg-white/[0.025]" : ""} border-t border-white/[0.06] first:border-t-0`}
               style={grid}
             >
@@ -277,9 +299,20 @@ export function TimetableNode({
                 <Cell key={c} col={c} row={r} placeColor={placeColorOf?.(r.location) ?? null} onGoTo={onGoTo} goToLabel={t("ideaBoard.timetable.goTo")} priorityLabel={r.priority ? t(`priority.${r.priority}` as TranslationKey) : ""} />
               ))}
             </div>
+            </Fragment>
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function DayHeader({ info }: { info: { label: string; range: string; count: string } }) {
+  return (
+    <div data-timetable-day className="mt-3 first:mt-0 mb-1 flex flex-wrap items-baseline gap-x-3 rounded-lg bg-white/[0.07] px-3 py-2">
+      <span className="text-[13px] font-bold text-white">{info.label}</span>
+      {info.range && <span className="text-[12px] font-semibold tabular-nums text-white/70">{info.range}</span>}
+      <span className="text-[11px] text-white/45">{info.count}</span>
     </div>
   );
 }

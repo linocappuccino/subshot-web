@@ -12,8 +12,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { createPortal } from "react-dom";
 import { useLanguage, type TranslationKey } from "@/lib/i18n";
 import type { TimetableColumn } from "@/lib/board";
-import {
-  SCHEDULE_COLUMNS,
+import { dayLabel, SCHEDULE_COLUMNS,
   formatDuration,
   isLogistics,
   moveInOrder,
@@ -28,6 +27,7 @@ import {
   type ScheduleScene,
   type TimeField,
   type TimetableRow,
+  type ScheduleDay,
 } from "@/lib/timetable";
 import { COL_MIN, COL_WIDTH, Cell, CompactRow } from "./board/BoardTimetable";
 import { fmtCountdown, liveModel, type LiveModel } from "@/lib/liveClock";
@@ -87,7 +87,8 @@ function LiveBanner({ model }: { model: LiveModel }) {
 
 type Line =
   | { kind: "scene"; row: TimetableRow; scene: ScheduleScene }
-  | { kind: "pause"; start: string; end: string; duration: number };
+  | { kind: "pause"; start: string; end: string; duration: number }
+  | ScheduleDay;
 
 export function ProjectScheduleView({
   load,
@@ -223,7 +224,7 @@ export function ProjectScheduleView({
   const lines = useMemo<Line[]>(
     () =>
       (shown?.items ?? []).map((it, i) =>
-        it.kind === "pause" ? it : { kind: "scene", row: scheduleRow(it, i), scene: it }
+        it.kind === "pause" || it.kind === "day" ? it : { kind: "scene", row: scheduleRow(it, i), scene: it }
       ),
     [shown]
   );
@@ -432,6 +433,14 @@ export function ProjectScheduleView({
     );
   };
 
+  // 2026-11-18 — one block per shooting day (only when the scenes span more than one day)
+  const dayRow = (d: ScheduleDay, i: number) => (
+    <div key={`day-${i}`} data-schedule-day className="mt-4 first:mt-0 mb-1 flex flex-wrap items-baseline gap-x-3 rounded-lg bg-white/[0.08] px-3 py-2">
+      <span className="text-[14px] font-bold text-white">{dayLabel(d.day, d.index, language === "en" ? "en" : "de")}</span>
+      {d.totals?.first_start && <span className="text-[12px] font-semibold tabular-nums text-white/70">{d.totals.first_start}–{d.totals.last_end}</span>}
+      {d.totals && <span className="text-[11px] text-white/45">{t("projectSchedule.dayScenes", { count: d.totals.scenes })}</span>}
+    </div>
+  );
   const pauseRow = (p: Extract<Line, { kind: "pause" }>, i: number) => (
     <div
       key={`pause-${i}`}
@@ -560,7 +569,7 @@ export function ProjectScheduleView({
                     </div>
                   )}
                   {lines.length === 0 && <div className="px-3 py-6 text-center text-[13px] text-white/40">{t("projectSchedule.noTimes")}</div>}
-                  {lines.map((l, i) => (l.kind === "pause" ? pauseRow(l, i) : sceneRow(l.row, l.scene, i)))}
+                  {lines.map((l, i) => (l.kind === "pause" ? pauseRow(l, i) : l.kind === "day" ? dayRow(l, i) : sceneRow(l.row, l.scene, i)))}
                 </div>
               )}
 
