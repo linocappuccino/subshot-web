@@ -609,14 +609,14 @@ function SceneTimeFields({ el, labels, onCommit }: { el: SceneElement; labels: E
   return (
     <>
     {/* 2026-11-18, Lino: shooting day of the card — the Timetable shows one block per day */}
-    <label className="px-3 pb-1.5 flex items-center gap-2">
+    <label className="px-3 pb-2 flex flex-col gap-1">
       <span className={head}>{labels.sceneDate}</span>
       <input
         type="date"
         data-scene-date
         value={el.date ?? ""}
         onChange={(e) => onCommit({ date: e.target.value || null })}
-        className={`${input} w-auto flex-1`}
+        className={input}
       />
     </label>
     <div className="px-3 pb-2 flex items-end gap-1.5">
