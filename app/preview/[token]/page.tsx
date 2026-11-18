@@ -265,7 +265,7 @@ function PreviewVideoPageInner() {
             if (sortedVideos.length === 0) return <p className="text-sm text-white/40">{t("postproViews.nothing")}</p>;
             return ppView === "matrix" ? (
               <PostproMatrixView
-                matrix={matrixOf(sortedVideos, pfCtx, data.video_spots ?? {}, sectionOf, order, [...langsList].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id))}
+                matrix={matrixOf(sortedVideos, pfCtx, data.video_spots ?? {}, [...langsList].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id))}
                 videosById={byId} sectionById={secInfo} languages={langsList}
                 onOpen={(v) => setReviewingVideo(v)} statusLabel={(s) => labels[s]}
               />

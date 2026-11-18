@@ -173,7 +173,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || overlayOpen()) return;
       const t = e.target as HTMLElement | null;
-      if (t && t.closest("input,textarea,select,[contenteditable=true]")) return;
+      if (t && t.closest("input:not([type=checkbox]),textarea,select,[contenteditable=true]")) return;
       setPicked(new Set());
     };
     document.addEventListener("mousedown", onDown, true);
@@ -1380,7 +1380,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
               const langOrder = [...langs.languages].sort((a, b) => a.sort_order - b.sort_order).map((l) => l.id);
               return (
                 <PostproMatrixView
-                  matrix={matrixOf(shown, pfCtx, langs.spots ?? {}, sectionOf, order, langOrder)}
+                  matrix={matrixOf(shown, pfCtx, langs.spots ?? {}, langOrder)}
                   videosById={byId} sectionById={secInfo} languages={langs.languages}
                   onOpen={(v) => setReviewingVideo(v)} statusLabel={statusLabel}
                 />

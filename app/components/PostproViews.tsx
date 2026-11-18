@@ -2,7 +2,7 @@
 // 2026-11-17, Lino: two more views for the Post-Production overview next to the tiles — «Liste» (one row per video)
 // and «Matrix» (spot × language/format). Both get the SAME filtered videos as the tiles (lib/postproFilter
 // filterVideos / listGroups / matrixOf ⇄ app/postpro_filter.py, checked by tests/test_postpro_filter.py).
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { Member, PostproductionStatus, Video, VideoQc } from "@/lib/types";
 import { formatVersionLabel } from "@/lib/types";
 import { openFeedbackCount } from "@/lib/commentRules";
@@ -232,14 +232,6 @@ export function PostproMatrixView({
       </span>
     );
   };
-  const bySection = useMemo(() => {
-    const out: { section: string; rows: Matrix["rows"] }[] = [];
-    for (const r of matrix.rows) {
-      const last = out[out.length - 1];
-      if (last && last.section === r.section) last.rows.push(r); else out.push({ section: r.section, rows: [r] });
-    }
-    return out;
-  }, [matrix]);
   return (
     <div data-pp-matrix className="overflow-x-auto rounded-2xl border border-white/[0.06]">
       <table className="text-sm">
@@ -249,48 +241,41 @@ export function PostproMatrixView({
             {matrix.columns.map((c) => <th key={c} data-col={c} className="min-w-[6.5rem] px-2 py-2 font-medium">{colLabel(c)}</th>)}
           </tr>
         </thead>
-        {bySection.map((g) => (
-          <tbody key={g.section} data-pp-group={g.section}>
-            <tr className="bg-white/[0.03]">
-              <td colSpan={matrix.columns.length + 1} className="sticky left-0 px-3 py-1.5 text-xs font-semibold text-white/70">
-                <span className="inline-flex items-center gap-2"><StatusDot s={sectionById[g.section]?.status ?? null} />{sectionById[g.section]?.name ?? ""}</span>
-              </td>
+        <tbody>
+          {matrix.rows.map((r) => (
+            <tr key={r.key} data-matrix-row={r.key} className="border-b border-white/[0.04]">
+              <td className="sticky left-0 z-10 max-w-[16rem] truncate bg-[#161616] px-3 py-2 font-medium text-white" title={r.label}>{r.label}</td>
+              {matrix.columns.map((c) => {
+                const ids = r.cells[c] ?? [];
+                return (
+                  <td key={c} data-cell={c} className="px-1.5 py-1.5 align-top">
+                    {ids.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-white/[0.08] px-2 py-2 text-center text-[11px] text-white/25">{t("postproViews.missing")}</div>
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {ids.map((id) => {
+                          const v = videosById[id];
+                          if (!v) return null;
+                          const nv = newest(v);
+                          const st = sectionById[v.section_id]?.status ?? null;
+                          const n = openFeedbackCount(nv?.comments);
+                          return (
+                            <button key={id} type="button" data-matrix-video={id} title={`${v.title} · ${statusLabel(st ?? "wartend")}`} onClick={() => onOpen(v)}
+                              className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-left hover:bg-white/10"
+                              style={{ boxShadow: `inset 3px 0 0 ${STATUS_GLOW_COLOR[st ?? "wartend"]}` }}>
+                              <span className="tabular-nums text-white/80">{nv ? formatVersionLabel(nv) : "–"}</span>
+                              <FeedbackCount n={n} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
+                );
+              })}
             </tr>
-            {g.rows.map((r) => (
-              <tr key={r.key} data-matrix-row={r.key} className="border-b border-white/[0.04]">
-                <td className="sticky left-0 z-10 max-w-[16rem] truncate bg-[#161616] px-3 py-2 font-medium text-white">{r.label}</td>
-                {matrix.columns.map((c) => {
-                  const ids = r.cells[c] ?? [];
-                  return (
-                    <td key={c} data-cell={c} className="px-1.5 py-1.5 align-top">
-                      {ids.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-white/[0.08] px-2 py-2 text-center text-[11px] text-white/25">{t("postproViews.missing")}</div>
-                      ) : (
-                        <div className="flex flex-col gap-1">
-                          {ids.map((id) => {
-                            const v = videosById[id];
-                            if (!v) return null;
-                            const nv = newest(v);
-                            const st = sectionById[r.section]?.status ?? null;
-                            const n = openFeedbackCount(nv?.comments);
-                            return (
-                              <button key={id} type="button" data-matrix-video={id} title={`${v.title} · ${statusLabel(st ?? "wartend")}`} onClick={() => onOpen(v)}
-                                className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-left hover:bg-white/10"
-                                style={{ boxShadow: `inset 3px 0 0 ${STATUS_GLOW_COLOR[st ?? "wartend"]}` }}>
-                                <span className="tabular-nums text-white/80">{nv ? formatVersionLabel(nv) : "–"}</span>
-                                <FeedbackCount n={n} />
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        ))}
+          ))}
+        </tbody>
       </table>
     </div>
   );
