@@ -34,6 +34,7 @@ import { formatOfDims, FormatBadge, ResolutionBadge, FormatTabs, PlatformTabs, m
 import { Menu, MenuItem } from "@/app/components/ui/Menu";
 import { facetCounts, filterVideos, listGroups } from "@/lib/postproFilter";
 import { PostproListView, ViewSwitch, usePostproView } from "@/app/components/PostproViews";
+import { useAppMode } from "@/lib/appMode";
 
 /** sessionStorage statt eines URL-Query-Params (2026-07-17) — die
  * Hauptseite (app/projects/[id]/page.tsx) hat keinen Suspense-Wrapper um
@@ -145,7 +146,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
   // 2026-11-14, Lino: even grid over the full width — even column count while landscape tiles are visible
   const langTabRef = useRef<LanguageTab>("all");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [ppView, setPpView] = usePostproView();  // 2026-11-17 — Kacheln / Liste
+  const [ppView, setPpView] = usePostproView();
+  const appMode = useAppMode();  // 2026-11-18 — iOS app: no desktop-only buttons  // 2026-11-17 — Kacheln / Liste
   // 2026-11-16, Lino: «alle markierungen demarkieren wenn man einfach ins leere auf der seite klickt» — a click on empty
   // page space (background, gaps between tiles, next to the grid) or Escape clears the selection. Not on tiles, the
   // selection bar + its menus, filter chips, buttons, the upload zone, dialogs or fields; never after a drag or while
@@ -1183,7 +1185,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 seite die reihenfolge vorgeben kann" — separate mode
                 instead of making the deadline-sorted grid itself always
                 draggable, see manualOrder's own doc comment above. */}
-            {canEditStatus && (
+            {canEditStatus && !appMode && (
               manualOrder ? (
                 <>
                   <Button variant="secondary" size="sm" onClick={cancelReorder} disabled={savingOrder}>
@@ -1199,7 +1201,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 </Button>
               )
             )}
-            {canEditStatus && !manualOrder && (
+            {canEditStatus && !manualOrder && !appMode && (
               // 2026-11-16 (v1.12) — redo the automatic DaVinci links (manual links stay)
               <Button variant="secondary" size="sm" data-relink-all onClick={async () => {
                 try {
@@ -1212,7 +1214,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 ↻ {t("postproduction.relinkAll")}
               </Button>
             )}
-            {canEditStatus && !manualOrder && <DavinciDownload variant="button" />}
+            {canEditStatus && !manualOrder && !appMode && <DavinciDownload variant="button" />}
           </div>
         </div>
 

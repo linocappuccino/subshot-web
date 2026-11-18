@@ -1,4 +1,5 @@
 "use client";
+import { useLanguage } from "@/lib/i18n";
 
 /** 2026-11-13, Lino: languages on the Post-Production page — tabs «Alle» / per language (flag + name + count) /
  * «Nicht zugeordnet»; «+ Sprache» with a flag that suits the name (changeable), rename / delete (videos then
@@ -92,6 +93,7 @@ export function LanguageTabs({
   /** 2026-11-16 — chip counters from lib/postproFilter.facetCounts (key «all», «none», language id) */
   counts?: Record<string, number>;
 }) {
+  const { t } = useLanguage();
   const [form, setForm] = useState<{ id: string | null; name: string; flag: string; flagTouched: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -140,7 +142,7 @@ export function LanguageTabs({
     <div data-language-tabs className="mb-4 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" data-lang-tab="all" onClick={() => onTab("all")} className={pill(tab === "all")}>
-          Alle {count(counts ? counts.all ?? 0 : total, tab === "all")}
+          {t("ppChips.all")} {count(counts ? counts.all ?? 0 : total, tab === "all")}
         </button>
         {data.languages.map((l) => (
           <span key={l.id} className="group relative inline-flex">
@@ -162,12 +164,12 @@ export function LanguageTabs({
         ))}
         {(!hideEmptyUnassigned || (counts ? (counts.none ?? 0) : data.unassigned) > 0 || tab === "none") && data.languages.length > 0 && (
           <button type="button" data-lang-tab="none" onClick={() => onTab("none")} className={pill(tab === "none", "none")} {...drop("none", null)}>
-            Nicht zugeordnet {count(counts ? counts.none ?? 0 : data.unassigned, tab === "none")}
+            {t("ppChips.unassigned")} {count(counts ? counts.none ?? 0 : data.unassigned, tab === "none")}
           </button>
         )}
         {editable && (
           <button type="button" data-lang-add onClick={() => setForm({ id: null, name: "", flag: "🏳️", flagTouched: false })} className="rounded-full border border-dashed border-white/20 px-3 py-1.5 text-sm text-white/60 hover:text-white hover:border-white/40">
-            + Sprache
+            {t("ppChips.addLanguage")}
           </button>
         )}
       </div>
@@ -339,6 +341,7 @@ export function matchesFormat(videoId: string, tab: FormatTab, formats: Record<s
 /** 2026-11-16 — counts come from lib/postproFilter.facetCounts (the same function that filters), so a chip always
  * shows exactly as many videos as it says. A chip with 0 is hidden unless it is the active one. */
 export function FormatTabs({ counts, present, tab, onTab }: { counts: Record<string, number>; present: string[]; tab: FormatTab; onTab: (t: FormatTab) => void }) {
+  const { t } = useLanguage();
   // 2026-11-16, Lino: chips never disappear — every format of the project stays, greyed out with 0 when the other
   // filters exclude it (a 0 chip can't be clicked; the active one always can)
   const keys = present.includes(tab) || tab === "all" ? present : [...present, tab];
@@ -348,15 +351,15 @@ export function FormatTabs({ counts, present, tab, onTab }: { counts: Record<str
   const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-format-tabs className="mb-4 -mt-1 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-xs text-white/40">Format</span>
+      <span className="mr-1 text-xs text-white/40">{t("ppChips.format")}</span>
       <button type="button" data-format-tab="all" onClick={() => onTab("all")} className={pill(tab === "all", false)}>
-        Alle {n("all")}
+        {t("ppChips.all")} {n("all")}
       </button>
       {keys.map((k) => {
         const zero = !counts[k] && tab !== k;
         return (
           <button key={k} type="button" data-format-tab={k} data-zero={zero ? "1" : undefined} disabled={zero} onClick={() => onTab(k)} className={pill(tab === k, zero)}>
-            <FormatIcon f={k} /> {k === "other" ? "Andere" : k} {n(k)}
+            <FormatIcon f={k} /> {k === "other" ? t("ppChips.other") : k} {n(k)}
           </button>
         );
       })}
@@ -379,6 +382,7 @@ export function matchesPlatform(v: { platform?: string | null; platforms?: strin
 }
 
 export function PlatformTabs({ counts, present, tab, onTab }: { counts: Record<string, number>; present: string[]; tab: PlatformTab; onTab: (t: PlatformTab) => void }) {
+  const { t } = useLanguage();
   // 2026-11-16, Lino: chips never disappear (see FormatTabs) — every platform of the project + «Ohne» if it occurs
   const keys = present.includes(tab) || tab === "all" ? present : [...present, tab];
   if (!keys.some((k) => k !== "none") && tab === "all") return null;
@@ -387,13 +391,13 @@ export function PlatformTabs({ counts, present, tab, onTab }: { counts: Record<s
   const n = (k: string) => <span data-count className={`tabular-nums ${tab === k ? "text-black/50" : "text-white/40"}`}>{counts[k] ?? 0}</span>;
   return (
     <div data-platform-tabs className="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 text-xs text-white/40">Plattform</span>
-      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all", false)}>Alle {n("all")}</button>
+      <span className="mr-1 text-xs text-white/40">{t("ppChips.platform")}</span>
+      <button type="button" data-platform-tab="all" onClick={() => onTab("all")} className={pill(tab === "all", false)}>{t("ppChips.all")} {n("all")}</button>
       {keys.map((p) => {
         const zero = !counts[p] && tab !== p;
         return (
           <button key={p} type="button" data-platform-tab={p} data-zero={zero ? "1" : undefined} disabled={zero} onClick={() => onTab(p as PlatformTab)} className={pill(tab === p, zero)}>
-            {p === "none" ? <>Ohne {n(p)}</> : <><img src={`/platforms/${p}.png`} alt="" className={`h-3.5 w-3.5 object-contain ${zero ? "opacity-30" : ""}`} /> {PLATFORM_LABEL[p]} {n(p)}</>}
+            {p === "none" ? <>{t("ppChips.none")} {n(p)}</> : <><img src={`/platforms/${p}.png`} alt="" className={`h-3.5 w-3.5 object-contain ${zero ? "opacity-30" : ""}`} /> {PLATFORM_LABEL[p]} {n(p)}</>}
           </button>
         );
       })}

@@ -1,4 +1,5 @@
 "use client";
+import { useAppMode } from "@/lib/appMode";
 
 import { SeatGuard } from "./SeatGuard";
 import Link from "next/link";
@@ -76,6 +77,7 @@ export function AppShell({ children, tint }: { children: React.ReactNode; tint?:
  * their whole account dropdown with a hand-rolled one. */
 function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: string }) {
   const api = useApi();
+  const appMode = useAppMode();
   const { language, setLanguage, t } = useLanguage();
   const [showLanguageDialog, setShowLanguageDialog] = useState(false);
   const [showNotificationSettings, setShowNotificationSettings] = useState(false);
@@ -163,6 +165,8 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
         className="absolute inset-0 pointer-events-none"
         style={{ backgroundColor: tint ?? "rgba(0, 0, 0, 0)" }}
       />
+      {/* 2026-11-18 — iOS app mode (lib/appMode.ts): the app has its own navigation, no website header */}
+      {!appMode && (
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#161616]/80 border-b border-white/8">
         {/* 2026-07-28, Lino: "der Balken mit der Speicheranzeige soll mittig
             in der Navigation stehen" — grid statt flex-justify-between: die
@@ -325,6 +329,7 @@ function AppShellInner({ children, tint }: { children: React.ReactNode; tint?: s
           </div>
         </div>
       </header>
+      )}
       <SeatGuard />
       <main className="flex-1 flex flex-col">{children}</main>
       <LanguageDialog open={showLanguageDialog} onClose={() => setShowLanguageDialog(false)} />

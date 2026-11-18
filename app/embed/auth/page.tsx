@@ -3,11 +3,15 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useAuth, useClerk, useSignIn } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
+import { setAppMode } from "@/lib/appMode";
+import { safeNext } from "@/lib/safeNext";
 
 // 2026-10-12 — the iOS app embeds the web idea board (WKWebView). It gets a one-time Clerk sign-in
 // token from the API (POST /me/web-ticket) and opens /embed/auth?ticket=…&uid=…&next=/embed/idea/…:
 // already signed in as that user → straight on; signed in as someone else → sign out first; then
 // sign in with the ticket and go to `next` (only same-site /embed/ paths).
+// 2026-11-18 — the hybrid app also opens Postproduction, Ideas and Deliver: strict allowlist of relative paths
+// (safeNext), anything else → "/". Every call switches on «app mode» (lib/appMode.ts, cookie) — no website header.
 
 function EmbedAuth() {
   const params = useSearchParams();
@@ -21,8 +25,8 @@ function EmbedAuth() {
   useEffect(() => {
     if (!isLoaded || started.current) return;
     started.current = true;
-    const next = params.get("next") ?? "";
-    const target = next.startsWith("/embed/") && !next.startsWith("//") ? next : "/";
+    setAppMode(true);
+    const target = safeNext(params.get("next") ?? "");
     const ticket = params.get("ticket");
     const uid = params.get("uid");
     (async () => {

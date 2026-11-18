@@ -37,7 +37,8 @@ export function EdgeNavButton({
       // `group` fuers Tooltip-Hover, `flex-row-reverse` fuer die rechte
       // Seite: der Button bleibt trotz Tooltip-Sibling das aeussere
       // Element (Tooltip waechst nach INNEN, zur Bildschirmmitte hin).
-      className={`group fixed top-1/2 -translate-y-1/2 z-30 flex items-center gap-3 ${side === "right" ? "flex-row-reverse" : ""}`}
+      // 2026-11-18 — not on phone widths: there they covered the content (e.g. «Project info»); the pipeline bar on top navigates
+      className={`group fixed top-1/2 -translate-y-1/2 z-30 hidden sm:flex items-center gap-3 ${side === "right" ? "flex-row-reverse" : ""}`}
     >
       {/* 2026-08-26 — Lino: "wir entfernen uns von Übergangsanimationen,
           soll super schnell sein". The endless nudge+pulse `animate` loop
