@@ -68,6 +68,16 @@ export function AuthImage({
   const [failed, setFailed] = useState(false);
   const [remountKey, setRemountKey] = useState(0);
   const retryCountRef = useRef(0);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  function handleLoaded(img: HTMLImageElement) {
+    const isLandscape = img.naturalWidth >= img.naturalHeight;
+    if (lockAspectRatio) setRatio(isLandscape ? "16 / 9" : "9 / 16");
+    onOrientation?.(isLandscape ? "landscape" : "portrait");
+    if (img.naturalHeight > 0) onAspectRatio?.(img.naturalWidth / img.naturalHeight);
+    retryCountRef.current = 0;
+    setFailed(false);
+    setLoaded(true);
+  }
 
   // 2026-07-22, Lino: "springt der abschnitt für eine millisekunde nach
   // unten und dann wieder hoch... so ca. alle 13 sekunden" — the page's own
@@ -93,10 +103,17 @@ export function AuthImage({
   })();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset per image identity (see comment above)
     setLoaded(false);
     setRatio(null);
     setFailed(false);
     retryCountRef.current = 0;
+    // 2026-11-18, Lino: «wieso pulsieren auf ideas alle kacheln???» — an image from the browser cache fires «load»
+    // BEFORE this effect runs (stable hourly presigned URLs make covers cacheable); the reset above then left it
+    // loaded=false forever = permanent pulse although the photo was there. Already complete → loaded right away.
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) handleLoaded(img);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on a new image identity
   }, [pathIdentity]);
 
   return (
@@ -118,6 +135,7 @@ export function AuthImage({
     // eslint-disable-next-line @next/next/no-img-element
     <img
       key={remountKey}
+      ref={imgRef}
       src={path}
       alt={alt}
       // 2026-08-31 — perf pass: this is THE way every scene/shot/folder/
@@ -135,16 +153,7 @@ export function AuthImage({
         ...(lockAspectRatio && ratio ? { aspectRatio: ratio } : undefined),
         ...(objectPosition ? { objectPosition } : undefined),
       }}
-      onLoad={(e) => {
-        const img = e.currentTarget;
-        const isLandscape = img.naturalWidth >= img.naturalHeight;
-        if (lockAspectRatio) setRatio(isLandscape ? "16 / 9" : "9 / 16");
-        onOrientation?.(isLandscape ? "landscape" : "portrait");
-        if (img.naturalHeight > 0) onAspectRatio?.(img.naturalWidth / img.naturalHeight);
-        retryCountRef.current = 0;
-        setFailed(false);
-        setLoaded(true);
-      }}
+      onLoad={(e) => handleLoaded(e.currentTarget)}
       onError={() => {
         setLoaded(false);
         if (retryCountRef.current < 2) {
