@@ -35,10 +35,11 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
     boardImageConfig.densityCap = 1;
     boardImageConfig.thumbOnly = on;
     boardImageConfig.cull = true; // only nodes in / near the visible area are rendered
-    // 2026-11-18 — opt-in (Lino's OK, deployed as opt-in): ?media=still = videos / GIFs as stills (one player at a
-    // time), ?media=off = placeholders only; without the parameter everything stays as before («full»)
+    // 2026-11-18, Lino: «ja, board fix für alle app boards live» — default «still» (videos / GIFs as stills, one player
+    // at a time); ?media=off = placeholders only; ?media=full = the old behaviour (way out). Only the iOS app uses
+    // /embed/idea (protected route, no share embeds).
     const media = search.get("media");
-    boardImageConfig.media = media === "off" ? "off" : media === "still" ? "still" : "full";
+    boardImageConfig.media = media === "off" ? "off" : media === "full" ? "full" : "still";
     return on;
   });
   const [liteNote, setLiteNote] = useState(lite);
