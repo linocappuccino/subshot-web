@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { IdeaFocusView } from "@/app/components/IdeaFocusView";
 import { useApi } from "@/lib/useApi";
 import type { Idea, Member } from "@/lib/types";
@@ -26,14 +27,17 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
   // 2026-11-01, 2nd round (crash stayed): the app's board is ALWAYS in saving mode now — images planned for 1×
   // (≤1000-px R2 thumb at normal zoom, mid only when zoomed in), and no backdrop-filter blur (below): on iOS the
   // frosted group frame of the Apfelkiste board (2308×2318 board px) became one huge CoreAnimation backdrop layer.
+  // 2026-11-18 — read from the router, not window.location: /embed/auth arrives here by a client-side redirect, and
+  // during that first render window.location still showed /embed/auth (lite / media were lost)
+  const search = useSearchParams();
   const [lite] = useState(() => {
-    const on = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("lite") === "1";
+    const on = search.get("lite") === "1";
     boardImageConfig.densityCap = 1;
     boardImageConfig.thumbOnly = on;
     boardImageConfig.cull = true; // only nodes in / near the visible area are rendered
     // 2026-11-18 — opt-in (Lino's OK, deployed as opt-in): ?media=still = videos / GIFs as stills (one player at a
     // time), ?media=off = placeholders only; without the parameter everything stays as before («full»)
-    const media = new URLSearchParams(window.location.search).get("media");
+    const media = search.get("media");
     boardImageConfig.media = media === "off" ? "off" : media === "still" ? "still" : "full";
     return on;
   });
