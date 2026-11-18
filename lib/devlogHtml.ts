@@ -57,6 +57,8 @@ export function renderPostHtml(html: string): string {
     ALLOWED_ATTR: [
       "href", "src", "alt", "title", "target", "rel", "class", "srcset", "sizes", "width", "height",
       "controls", "poster", "playsinline", "preload", "loop", "muted", "autoplay", "type", "allow", "allowfullscreen", "frameborder",
+      // 2026-11-18 — how-to steps are one <ol start="N"> per step (screenshots in between): keep the step number
+      "start",
     ],
   });
   DOMPurify.removeHook("uponSanitizeElement");
