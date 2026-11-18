@@ -23,6 +23,8 @@ export function ConfirmDialog({
   danger = true,
   onConfirm,
   onCancel,
+  altLabel,
+  onAlt,
 }: {
   open: boolean;
   title: string;
@@ -34,6 +36,9 @@ export function ConfirmDialog({
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  /** 2026-11-18 — an optional second, destructive choice (red), e.g. «Auch Videos löschen» */
+  altLabel?: string;
+  onAlt?: () => void;
 }) {
   const { t } = useLanguage();
   const resolvedConfirmLabel = confirmLabel ?? t("common.delete");
@@ -48,7 +53,7 @@ export function ConfirmDialog({
         <h3 className="font-semibold mb-1.5">{title}</h3>
         <p className={`text-sm text-white/60 whitespace-pre-line max-h-60 overflow-y-auto ${emphasis ? "mb-3" : "mb-5"}`}>{message}</p>
         {emphasis && <p className="text-sm font-bold text-white mb-5">{emphasis}</p>}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
           <button
             onClick={onCancel}
             className="px-4 py-2 rounded-lg text-sm font-medium text-white/70 hover:bg-white/5 transition-colors"
@@ -63,6 +68,11 @@ export function ConfirmDialog({
           >
             {resolvedConfirmLabel}
           </button>
+          {altLabel && onAlt && (
+            <button data-confirm-alt onClick={onAlt} className="px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-red-600 hover:bg-red-500 text-white">
+              {altLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>,

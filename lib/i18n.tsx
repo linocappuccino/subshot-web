@@ -456,6 +456,11 @@ const translations = {
 
     // 2026-08-30 — Skript-Auswahlübersicht (abgenommene Ideen als Kacheln,
     // Klick öffnet die Shot-Planung nur für diese eine Idee/Abschnitt).
+    "scriptOverview.deleteShotlistTitle": "Shotlist löschen?",
+    "scriptOverview.deleteShotlistMessage": "«{name}» wird mit allen Szenen und Shots gelöscht.",
+    "scriptOverview.deleteShotlistWithVideos": "«{name}» wird mit allen Szenen und Shots gelöscht. Diese Shotlist hat {n} Video(s) in der Postproduction. Sollen die dazugehörigen Videos auch aus der Postproduction gelöscht werden?",
+    "scriptOverview.deleteShotlistKeepVideos": "Nur Shotlist löschen, Videos behalten",
+    "scriptOverview.deleteShotlistAndVideos": "Auch Videos löschen",
     "scriptOverview.sceneCount": "Szenen",
     "scriptOverview.backToOverview": "Zur Übersicht",
     "scriptOverview.uploadThumbnail": "Thumbnail hochladen",
@@ -2185,6 +2190,11 @@ const translations = {
     "timecodeBar.resetDone": "Markers reset",
 
     // 2026-08-30 — Script selection overview (approved ideas as tiles).
+    "scriptOverview.deleteShotlistTitle": "Delete shot list?",
+    "scriptOverview.deleteShotlistMessage": "«{name}» is deleted with all its scenes and shots.",
+    "scriptOverview.deleteShotlistWithVideos": "«{name}» is deleted with all its scenes and shots. This shot list has {n} video(s) in post-production. Delete those videos from post-production too?",
+    "scriptOverview.deleteShotlistKeepVideos": "Delete shot list only, keep videos",
+    "scriptOverview.deleteShotlistAndVideos": "Delete videos too",
     "scriptOverview.sceneCount": "scenes",
     "scriptOverview.backToOverview": "Back to overview",
     "scriptOverview.uploadThumbnail": "Upload thumbnail",

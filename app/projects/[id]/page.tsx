@@ -1203,16 +1203,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   // fall back to "Ohne Abschnitt" instead of disappearing. Clear
   // section_id locally on whatever scenes had it so that shows immediately
   // instead of waiting for a reload.
-  async function confirmDeleteSection() {
+  // 2026-11-18, Lino: «auf der postproduction seite dürfen KEINE videos gelöscht werden wenn in der shotlist eine
+  // shotlist gelöscht wird! oder es soll gefragt werden» — the dialog first asks the server which post-production
+  // videos live in this section; «Nur Shotlist löschen» keeps them (default), «Auch Videos löschen» removes them.
+  const [deleteSectionVideos, setDeleteSectionVideos] = useState<{ id: string; title: string }[] | null>(null);
+  useEffect(() => {
+    if (!deleteSection) { setDeleteSectionVideos(null); return; }
+    let alive = true;
+    api.sectionPostproVideos(deleteSection.id).then((r) => { if (alive) setDeleteSectionVideos(r.videos); }).catch(() => { if (alive) setDeleteSectionVideos([]); });
+    return () => { alive = false; };
+  }, [deleteSection, api]);
+  async function confirmDeleteSection(deleteVideos = false) {
     if (!deleteSection) return;
     try {
-      await api.deleteSection(deleteSection.id);
+      await api.deleteSection(deleteSection.id, deleteVideos);
       setData((prev) =>
         prev
           ? {
               ...prev,
               sections: prev.sections.filter((s) => s.id !== deleteSection.id),
-              scenes: prev.scenes.map((s) => (s.section_id === deleteSection.id ? { ...s, section_id: null } : s)),
+              scenes: prev.scenes.filter((s) => s.section_id !== deleteSection.id),
             }
           : prev
       );
@@ -2886,10 +2896,19 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         onCancel={() => setDeleteScene(null)}
       />
       <ConfirmDialog
-        open={deleteSection !== null}
-        title="Abschnitt löschen?"
-        message={`"${deleteSection?.name}" wird gelöscht. Enthaltene Szenen bleiben erhalten und landen unter "Ohne Abschnitt".`}
-        onConfirm={confirmDeleteSection}
+        open={deleteSection !== null && deleteSectionVideos !== null}
+        title={t("scriptOverview.deleteShotlistTitle")}
+        message={
+          (deleteSectionVideos ?? []).length > 0
+            ? t("scriptOverview.deleteShotlistWithVideos", { name: deleteSection?.name ?? "", n: String(deleteSectionVideos!.length) }) +
+              "\n\n" + deleteSectionVideos!.map((v) => "• " + v.title).join("\n")
+            : t("scriptOverview.deleteShotlistMessage", { name: deleteSection?.name ?? "" })
+        }
+        danger={(deleteSectionVideos ?? []).length === 0}
+        confirmLabel={(deleteSectionVideos ?? []).length > 0 ? t("scriptOverview.deleteShotlistKeepVideos") : undefined}
+        onConfirm={() => void confirmDeleteSection(false)}
+        altLabel={(deleteSectionVideos ?? []).length > 0 ? t("scriptOverview.deleteShotlistAndVideos") : undefined}
+        onAlt={() => void confirmDeleteSection(true)}
         onCancel={() => setDeleteSection(null)}
       />
       <ConfirmDialog

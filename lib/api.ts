@@ -711,7 +711,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       form.append("file", file);
       return request<Section>(`sections/${id}/thumbnail`, { method: "POST", body: form });
     },
-    deleteSection: (id: string) => request<void>(`sections/${id}`, { method: "DELETE" }),
+    deleteSection: (id: string, deleteVideos = false) => request<void>(`sections/${id}${deleteVideos ? "?delete_videos=true" : ""}`, { method: "DELETE" }),
+    sectionPostproVideos: (id: string) => request<{ videos: { id: string; title: string }[] }>(`sections/${id}/postpro-videos`),
     moveSection: (id: string, beforeSectionId: string | null) =>
       request<Section>(`sections/${id}/move`, { method: "POST", body: JSON.stringify({ before_section_id: beforeSectionId }) }),
     sendSectionToPostproduction: (id: string) =>
