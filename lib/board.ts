@@ -1245,7 +1245,24 @@ export function startDownload(url: string) {
  * web/… ≤4096 px; the original stays untouched for downloads). `densityCap` limits the device-pixel ratio the
  * browser plans for (iPhone = 3× → a 420 px card asked for the 2048-px mid version: 17 cards ≈ 160 MB decoded);
  * `thumbOnly` (Speichersparmodus, ?lite=1) never goes past the ≤1000 px thumb. Desktop: unchanged (no cap). */
-export const boardImageConfig = { densityCap: Infinity, thumbOnly: false, cull: false };
+// media (2026-11-18, iOS app embed): "full" = as everywhere; "still" = videos as a still + play button, ONE <video>
+// only after a tap (WebKit gives every <video> its own layer — 30 of them made every zoom step ~6× slower), GIFs as a
+// still until tapped; "off" = media only as placeholders (name, type)
+export const boardImageConfig: { densityCap: number; thumbOnly: boolean; cull: boolean; media: "full" | "still" | "off" } = { densityCap: Infinity, thumbOnly: false, cull: false, media: "full" };
+
+/** the one board video that may exist as a real <video> in «still» mode (others unmount) */
+const activeVideo = { id: null as string | null, listeners: new Set<(id: string | null) => void>() };
+export function setActiveBoardVideo(id: string | null) {
+  activeVideo.id = id;
+  activeVideo.listeners.forEach((l) => l(id));
+}
+export function onActiveBoardVideo(l: (id: string | null) => void): () => void {
+  activeVideo.listeners.add(l);
+  return () => activeVideo.listeners.delete(l);
+}
+export function activeBoardVideo(): string | null {
+  return activeVideo.id;
+}
 
 export function imageSources(src: string | null | undefined, thumb: string | null | undefined, aspect: number, cssWidth: number, srcset?: string | null) {
   if (!src) return { src: thumb ?? undefined };

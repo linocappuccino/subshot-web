@@ -3106,6 +3106,9 @@ export function IdeaBoard({
           if (v) {
             if (v.paused || v.ended) void v.play().catch(() => {});
             else v.pause();
+          } else {
+            // 2026-11-18 — «still» media mode (iOS embed): the still itself starts the one real player
+            op.videoToggle.dispatchEvent(new CustomEvent("subshot-video-activate"));
           }
         }
         if (op.duplicated) {

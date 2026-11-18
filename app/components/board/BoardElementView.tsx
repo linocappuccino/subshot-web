@@ -10,7 +10,7 @@ import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
 import { LocationMap } from "./BoardMap";
 import { TimetableNode } from "./BoardTimetable";
 import { formatDuration, parseDuration, parseTimeInput, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
-import { markersFirst } from "@/lib/board";
+import { activeBoardVideo, boardImageConfig, markersFirst, onActiveBoardVideo, setActiveBoardVideo } from "@/lib/board";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -903,6 +903,19 @@ function PlaceholderNode({ el, editable, labels }: { el: PlaceholderElement; edi
 
 function ImageNode({ el, onNaturalSize, missing }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; missing: string }) {
   const imgZoom = useContext(BoardImageZoomContext);
+  // 2026-11-18 (iOS app embed): «off» = placeholder; «still» = an animated GIF shows its still thumb until tapped
+  const [gifOn, setGifOn] = useState(false);
+  const isGif = el.mime === "image/gif" || /\.gif$/i.test(el.name || "");
+  if (boardImageConfig.media === "off") return <MediaPlaceholder el={el} kind={isGif ? "GIF" : "Image"} />;
+  if (boardImageConfig.media === "still" && isGif && !gifOn && el.thumb_src) {
+    return (
+      <div data-gif-still className="relative w-full h-full rounded-lg overflow-hidden shadow-[0_2px_10px_rgba(0,0,0,0.35)] bg-white/5" onDoubleClick={() => setGifOn(true)} onClick={() => setGifOn(true)}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 still */}
+        <img src={el.thumb_src} alt={el.name || ""} draggable={false} className="absolute inset-0 w-full h-full object-cover pointer-events-none select-none" />
+        <span className="absolute left-2 bottom-2 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white pointer-events-none">GIF ▶</span>
+      </div>
+    );
+  }
   if (!el.src) {
     return (
       <div className="w-full h-full rounded-lg bg-[#232325] border border-white/10 flex items-center justify-center text-xs text-white/40">
@@ -930,7 +943,96 @@ function pauseOtherMedia(me: HTMLMediaElement) {
   });
 }
 
+/** 2026-11-18 (iOS app embed, boardImageConfig.media): a stand-in without any media element — «off» = name + type */
+function MediaPlaceholder({ el, kind }: { el: MediaElement; kind: string }) {
+  return (
+    <div data-media-placeholder className="w-full h-full rounded-lg bg-[#232325] border border-white/10 flex flex-col items-center justify-center gap-1 px-2 text-center">
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-white/45">{kind}</span>
+      <span className="max-w-full truncate text-xs text-white/70">{el.name || kind}</span>
+    </div>
+  );
+}
+
+/** 2026-11-18 — «still» mode: the poster as a plain <img> + play button; a tap creates THE one <video> on the board
+ * (any other one unmounts), pausing / ending / scrolling away removes it again (src cleared, load()) */
+function StillVideoNode({ el, editable, voted }: { el: MediaElement; editable?: boolean; voted?: boolean }) {
+  const canDownload = !!useContext(BoardDownloadContext);
+  const [active, setActive] = useState(() => activeBoardVideo() === el.id);
+  const toggleRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => onActiveBoardVideo((id) => setActive(id === el.id)), [el.id]);
+  useEffect(() => {
+    const node = toggleRef.current;
+    if (!node) return;
+    const on = () => setActiveBoardVideo(el.id);
+    node.addEventListener("subshot-video-activate", on);
+    return () => node.removeEventListener("subshot-video-activate", on);
+  }, [el.id, active]);
+  useEffect(() => {
+    const v = videoRef.current;
+    return () => {
+      // free the decoder right away (WebKit keeps it otherwise)
+      if (v) { v.pause(); v.removeAttribute("src"); v.load(); }
+    };
+  }, [active]);
+  useEffect(() => () => { if (activeBoardVideo() === el.id) setActiveBoardVideo(null); }, [el.id]);
+  const stop = () => { if (activeBoardVideo() === el.id) setActiveBoardVideo(null); };
+  return (
+    <div className="relative w-full h-full">
+      <span className="absolute bottom-full left-0 right-0 mb-1 truncate text-[12px] leading-4 font-medium text-white/60 pointer-events-none select-none" style={{ paddingLeft: voted ? 26 : 2 }}>
+        {el.name || "Video"}
+      </span>
+      <div title={el.name || "Video"} className="w-full h-full rounded-lg overflow-hidden bg-black border border-white/10 flex flex-col shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+        {active && el.src ? (
+          <video
+            ref={videoRef}
+            data-board-player
+            src={el.src}
+            controls
+            autoPlay
+            playsInline
+            controlsList={canDownload ? undefined : "nodownload"}
+            disablePictureInPicture
+            poster={el.thumb_src ?? undefined}
+            data-no-drag
+            className="flex-1 min-h-0 w-full bg-black object-contain"
+            onPlay={(e) => pauseOtherMedia(e.currentTarget)}
+            onPause={stop}
+            onEnded={stop}
+          />
+        ) : (
+          <div className="relative flex-1 min-h-0">
+            {el.thumb_src && (
+              // eslint-disable-next-line @next/next/no-img-element -- presigned R2 poster
+              <img data-video-still src={el.thumb_src} alt="" draggable={false} className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none" />
+            )}
+            <div
+              ref={toggleRef}
+              data-no-drag={editable ? undefined : true}
+              data-video-toggle
+              role="button"
+              aria-label="Play"
+              onClick={editable ? undefined : () => setActiveBoardVideo(el.id)}
+              className="absolute inset-0 cursor-pointer flex items-center justify-center"
+            >
+              <span className="flex items-center justify-center w-14 h-14 max-w-[40%] max-h-[40%] aspect-square rounded-full bg-black/55 text-white shadow-lg pointer-events-none">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" className="ml-1"><path d="M8 5v14l11-7z" /></svg>
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function VideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; editable?: boolean; voted?: boolean }) {
+  if (boardImageConfig.media === "off") return <MediaPlaceholder el={el} kind="Video" />;
+  if (boardImageConfig.media === "still") return <StillVideoNode el={el} editable={editable} voted={voted} />;
+  return <FullVideoNode el={el} onNaturalSize={onNaturalSize} editable={editable} voted={voted} />;
+}
+
+function FullVideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElement; onNaturalSize: (w: number, h: number) => void; editable?: boolean; voted?: boolean }) {
   const canDownload = !!useContext(BoardDownloadContext);
   // 2026-11-09, Lino: "mit einem Klick aufs Video das Video starten oder stoppen — jetzt muss man immer auf
   // den kleinen Play-Button": a click / tap anywhere on the picture plays or pauses. A layer over the
