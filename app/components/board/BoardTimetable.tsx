@@ -21,6 +21,8 @@ export const BoardTimetableContext = createContext<{
   placeColorOf?: (address: string | undefined) => string | null;
   /** fly to + select the scene card */
   onGoTo?: (id: string) => void;
+  /** 2026-11-18 — «PDF herunterladen» on the node (team + client share page) */
+  onPdf?: () => Promise<void>;
 }>({ elements: [] });
 
 // 2026-10-29, Lino: "kein Text über den Frame der Node hinaus" — the flexible columns may
@@ -82,7 +84,8 @@ export function TimetableNode({
   onMeasure: (h: number) => void;
 }) {
   const { t } = useLanguage();
-  const { elements, placeColorOf, onGoTo } = useContext(BoardTimetableContext);
+  const { elements, placeColorOf, onGoTo, onPdf } = useContext(BoardTimetableContext);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const rows = useMemo(() => timetableRows(elements, el.sort ?? "time"), [elements, el.sort]);
   const columns = timetableColumns(el, rows);
   const [columnsOpen, setColumnsOpen] = useState(false);
@@ -161,6 +164,22 @@ export function TimetableNode({
             {rows.length === 1 ? t("ideaBoard.timetable.countOne") : t("ideaBoard.timetable.count", { count: rows.length })}
           </div>
         </div>
+        {onPdf && (
+          <button
+            data-no-drag
+            data-timetable-pdf
+            type="button"
+            disabled={pdfBusy}
+            onClick={() => {
+              setPdfBusy(true);
+              onPdf().finally(() => setPdfBusy(false));
+            }}
+            className={`${editable ? "" : "ml-auto "}flex items-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 px-2.5 py-1.5 text-[11px] font-semibold text-white disabled:opacity-60`}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+            {pdfBusy ? "…" : t("ideaBoard.timetable.pdf")}
+          </button>
+        )}
         {editable && (
           <div className="relative flex flex-wrap items-center gap-1.5 ml-auto">
             <button

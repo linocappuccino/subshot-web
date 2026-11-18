@@ -356,6 +356,7 @@ export function IdeaBoard({
   clipboard,
   templates,
   allowPresentation = true,
+  timetablePdf,
   externalData,
   historyApi,
   peers,
@@ -403,6 +404,8 @@ export function IdeaBoard({
   allowFlow?: boolean;
   /** presentation mode button (2026-10-09, Lino: not on the client page) */
   allowPresentation?: boolean;
+  /** 2026-11-18 — «PDF herunterladen» on Timetable nodes */
+  timetablePdf?: () => Promise<void>;
   /** 2026-10-09, Lino: ⌘C / ⌘V of nodes between boards — this board's idea,
    * and the server copy of another board's files / to-do lists */
   clipboard?: {
@@ -2187,8 +2190,9 @@ export function IdeaBoard({
         setSelection(new Set([id]));
         setInnerFocus({ elementId: id, nonce: Date.now() });
       },
+      onPdf: timetablePdf,
     }),
-    [data.elements, boardPlaces],
+    [data.elements, boardPlaces, timetablePdf],
   );
   // the place menu belongs to the selection it was opened for (another selection → closed)
   const [placeMenuFor, setPlaceMenuFor] = useState<string | null>(null);

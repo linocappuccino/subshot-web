@@ -16,10 +16,11 @@ import { boardHtmlToPlain } from "./board/BoardElementView";
 import { IdeaDeleteDialog } from "./IdeaDeleteDialog";
 import { ShareLinkModal } from "./ShareLinkModal";
 import { useToast } from "./ui/Toast";
-import { useApi } from "@/lib/useApi";
+import { useApi, useAuthToken } from "@/lib/useApi";
 import { ApiError } from "@/lib/api";
 import { useLanguage } from "@/lib/i18n";
 import { coverSrcOf, forSave, startDownload, type BoardData, type BoardVote } from "@/lib/board";
+import { downloadPdf } from "@/lib/downloadPdf";
 import type { Annotation, Idea, IdeaFeedback, Member, TodoList } from "@/lib/types";
 
 /** Full-screen view for one idea at a time, opened from a tile or "+ Idee" in
@@ -206,6 +207,7 @@ function IdeaBoardScreen({
   const api = useApi();
   const toast = useToast();
   const { t } = useLanguage();
+  const getAuthToken = useAuthToken();
 
   const [board, setBoard] = useState<{ data: BoardData; editable: boolean; flow?: boolean } | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -809,6 +811,11 @@ function IdeaBoardScreen({
             historyApi={collabLive ? collab.history : undefined}
             peers={collab.peers}
             onPresence={collab.setPresence}
+            timetablePdf={() =>
+              getAuthToken()
+                .then((tk) => downloadPdf(`${process.env.NEXT_PUBLIC_API_BASE_URL}/ideas/${idea.id}/board/timetable.pdf`, tk ? { Authorization: `Bearer ${tk}` } : {}, "Timetable.pdf"))
+                .catch((e) => toast.showError(e instanceof Error ? e.message : t("common.failed")))
+            }
             downloadFile={(key, name) =>
               api
                 .boardDownload(idea.id, key, name)
