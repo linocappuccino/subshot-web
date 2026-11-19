@@ -12,6 +12,11 @@ import { TimetableNode } from "./BoardTimetable";
 import { formatDuration, parseDuration, parseTimeInput, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
 import { activeBoardVideo, boardImageConfig, markersFirst, onActiveBoardVideo, setActiveBoardVideo } from "@/lib/board";
 import { isPhoneBoard, openVideoFullscreen } from "@/lib/videoFullscreen";
+
+/** 2026-11-19 — read-only boards: a long press must not open a video (the browser still fires «click» after it) */
+let pressStart = 0;
+const markPress = () => { pressStart = Date.now(); };
+const shortPress = () => Date.now() - pressStart < 500;
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -1015,7 +1020,8 @@ function StillVideoNode({ el, editable, voted }: { el: MediaElement; editable?: 
               data-video-toggle
               role="button"
               aria-label="Play"
-              onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? openVideoFullscreen(el.src, el.thumb_src, el.name) : setActiveBoardVideo(el.id))}
+              onPointerDown={editable ? undefined : markPress}
+              onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? shortPress() && openVideoFullscreen(el.src, el.thumb_src, el.name) : setActiveBoardVideo(el.id))}
               className="absolute inset-0 cursor-pointer flex items-center justify-center"
             >
               <span className="flex items-center justify-center w-14 h-14 max-w-[40%] max-h-[40%] aspect-square rounded-full bg-black/55 text-white shadow-lg pointer-events-none">
@@ -1101,7 +1107,8 @@ function FullVideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElemen
             data-video-toggle
             role="button"
             aria-label={playing ? "Pause" : "Play"}
-            onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? openVideoFullscreen(el.src, el.thumb_src, el.name) : toggle())}
+            onPointerDown={editable ? undefined : markPress}
+            onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? shortPress() && openVideoFullscreen(el.src, el.thumb_src, el.name) : toggle())}
             className="absolute inset-x-0 top-0 bottom-12 cursor-pointer flex items-center justify-center"
           >
             {!playing && (
