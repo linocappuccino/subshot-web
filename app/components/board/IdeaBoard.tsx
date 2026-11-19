@@ -3550,6 +3550,8 @@ export function IdeaBoard({
     textPlaceholder: t("ideaBoard.textPlaceholder"),
     open: t("ideaBoard.open"),
     download: t("ideaBoard.download"),
+    clientDownloadGroup: t("ideaBoard.clientDownload.groupBadge"),
+    clientDownloadGroupTitle: t("ideaBoard.clientDownload.groupBadgeTitle"),
     missingFile: t("ideaBoard.missingFile"),
     scene: t("ideaBoard.scene"),
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
@@ -3926,7 +3928,7 @@ export function IdeaBoard({
                 return (
                   <span
                     data-client-download-badge={st.on ? (st.via ?? "own") : "exception"}
-                    title={st.on ? (st.via === "group" ? "Kunden dürfen herunterladen (über die Gruppe)" : "Kunden dürfen herunterladen") : "Kein Kunden-Download (Ausnahme, die Gruppe erlaubt es)"}
+                    title={st.on ? (st.via === "group" ? t("ideaBoard.clientDownload.badgeGroup") : t("ideaBoard.clientDownload.badgeOn")) : t("ideaBoard.clientDownload.badgeException")}
                     className={`absolute -top-2.5 z-20 flex items-center justify-center w-7 h-7 rounded-full shadow-lg ${concealed.has(el.id) ? "right-6" : "-right-2.5"} ${st.on ? "bg-blue-600 text-white" : "bg-[#1c1c1e] border border-white/25 text-white/60"}`}
                     style={{ transform: `scale(${Math.min(1, 1 / view.scale)})`, transformOrigin: "100% 0" }}
                   >
@@ -4585,7 +4587,7 @@ export function IdeaBoard({
           )}
           {editable && selDownload && (
             <BarButton
-              title={selDownloadOn ? "Kunden dürfen herunterladen: an (ausschalten)" : "Kunden dürfen herunterladen (einschalten)"}
+              title={selDownloadOn ? t("ideaBoard.clientDownload.barOn") : t("ideaBoard.clientDownload.barOff")}
               active={selDownloadOn}
               onPress={() => setClientDownload(!selDownloadOn)}
             >
@@ -4722,8 +4724,8 @@ export function IdeaBoard({
                 })()}
                 {selDownload && (
                   <MenuItem
-                    label={selDownloadOn ? "✓ Kunden dürfen herunterladen" : "Kunden dürfen herunterladen"}
-                    hint={selDownload.length === 1 ? (selDownload[0].via === "group" ? "über Gruppe" : selDownload[0].via === "exception" ? "Ausnahme" : undefined) : undefined}
+                    label={`${selDownloadOn ? "✓ " : ""}${t("ideaBoard.clientDownload.menu")}`}
+                    hint={selDownload.length === 1 ? (selDownload[0].via === "group" ? t("ideaBoard.clientDownload.viaGroup") : selDownload[0].via === "exception" ? t("ideaBoard.clientDownload.exception") : undefined) : undefined}
                     onPress={() => menuAction(() => setClientDownload(!selDownloadOn))}
                   />
                 )}

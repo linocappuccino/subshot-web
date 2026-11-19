@@ -86,6 +86,9 @@ export type ScenePatch = {
 };
 
 export interface ElementViewLabels extends TodoLabels {
+  /** 2026-11-19 — group badge «Kunden-Download» (team) */
+  clientDownloadGroup?: string;
+  clientDownloadGroupTitle?: string;
   textPlaceholder: string;
   open: string;
   download: string;
@@ -1369,10 +1372,10 @@ function GroupNode({
       {clientDl.allLabel} ({el.download_count})
     </button>
   ) : !clientDl && el.allow_download ? (
-    <span data-client-download-badge="group" title="Kunden dürfen alle Bilder und Videos dieser Gruppe herunterladen (ausser einzeln ausgeschaltete)"
+    <span data-client-download-badge="group" title={labels.clientDownloadGroupTitle ?? ""}
       className="shrink-0 h-6 px-2 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
-      Kunden-Download
+      {labels.clientDownloadGroup ?? ""}
     </span>
   ) : null;
   const toggle = (
