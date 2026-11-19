@@ -39,6 +39,10 @@ export function openVideoFullscreen(src: string, poster?: string | null, title?:
   video.autoplay = true;
   video.playsInline = true;
   video.setAttribute("playsinline", "");
+  // 2026-11-19 — no download / picture-in-picture from the player's own menu (clients only get files the team
+  // allowed, through the board's download button; the team has its own button too)
+  video.setAttribute("controlslist", "nodownload noplaybackrate");
+  video.disablePictureInPicture = true;
   Object.assign(video.style, { width: "100%", height: "100%", objectFit: "contain", background: "#000" });
   const close = document.createElement("button");
   close.type = "button";

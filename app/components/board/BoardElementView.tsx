@@ -3,7 +3,7 @@
 import { FlowNode, type FlowPatch } from "./BoardFlow";
 import { CreditsNode } from "./BoardCredits";
 import { DubbingNode, type DubbingPatch } from "./BoardDubbing";
-import { BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
+import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
 import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
 import { LutPreviewNode, type LutPreviewLabels } from "./BoardLutPreview";
@@ -1345,12 +1345,36 @@ function GroupNode({
   ) : (
     <span data-group-title className={`min-w-0 flex-1 truncate text-sm font-semibold ${el.title ? "text-white/85" : "text-white/40"}`}>{el.title || labels.group}</span>
   );
+  const clientDl = useContext(BoardClientDownloadContext);
   const count = (
     <span className="shrink-0 text-xs text-white/40 tabular-nums">
       {el.vote && <span className="mr-1.5 text-amber-300/90">🗳️ {labels.voteGroup}</span>}
       {labels.groupItems.replace("{count}", String(members.length))}
     </span>
   );
+  // 2026-11-19, Lino — team: the group lets clients download its images / videos; client: «Alle herunterladen» as ZIP
+  const downloads = clientDl && el.download_count ? (
+    <button
+      data-no-drag
+      data-board-ui
+      data-client-download-zip
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        clientDl.zip(el.id);
+      }}
+      className="shrink-0 h-7 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
+      {clientDl.allLabel} ({el.download_count})
+    </button>
+  ) : !clientDl && el.allow_download ? (
+    <span data-client-download-badge="group" title="Kunden dürfen alle Bilder und Videos dieser Gruppe herunterladen (ausser einzeln ausgeschaltete)"
+      className="shrink-0 h-6 px-2 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center gap-1">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
+      Kunden-Download
+    </span>
+  ) : null;
   const toggle = (
     <button
       data-no-drag
@@ -1379,6 +1403,7 @@ function GroupNode({
           {toggle}
           {title}
           {count}
+          {downloads}
         </div>
       </div>
     );
@@ -1391,6 +1416,7 @@ function GroupNode({
         {toggle}
         {title}
         {count}
+        {downloads}
       </div>
       <div className="flex-1 min-h-0 p-2.5 flex gap-1.5">
         {thumbs.length > 0 ? (

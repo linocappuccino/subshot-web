@@ -75,6 +75,11 @@ export interface MediaElement extends BaseElement {
   thumb_src?: string | null;
   /** all display sizes with their pixel widths (images), added on read */
   srcset?: string | null;
+  /** 2026-11-19, Lino — «Kunden dürfen herunterladen» (images, videos): true / false set on this node,
+   *  missing = like its group. See clientDownloadState. */
+  allow_download?: boolean;
+  /** client pages only (server-computed): this client may download the original */
+  can_download?: boolean;
 }
 
 export interface LinkElement extends BaseElement {
@@ -163,6 +168,10 @@ export interface GroupElement extends BaseElement {
   vote?: boolean;
   /** 2026-11-09 — stable variant letter per member id (see voteLetters) */
   letters?: Record<string, string>;
+  /** 2026-11-19 — «Kunden dürfen herunterladen» for all images / videos in it (a member's own false wins) */
+  allow_download?: boolean;
+  /** client pages only (server-computed): how many members this client may download («Alle herunterladen») */
+  download_count?: number;
 }
 
 /** one 👍🏼 on a variant (GET …/board/votes) */
@@ -1223,6 +1232,28 @@ export function videoEmbedFor(rawUrl: string): VideoEmbed | null {
     return { kind: "video", src: url.toString(), aspect: 16 / 9 };
   }
   return null;
+}
+
+/** 2026-11-19, Lino: per image / video / group «Kunden dürfen herunterladen» — mirrors subshot-api
+ * idea_board.client_downloads. A node's own allow_download wins (on or off); without one its group's on counts.
+ * via: "own" = set on the node, "group" = from its group, "exception" = off although the group allows it. */
+export type ClientDownloadState = { on: boolean; via: "own" | "group" | "exception" | null };
+
+export function clientDownloadState(el: BoardElement, groupOf: Map<string, GroupElement>): ClientDownloadState | null {
+  if (el.type === "group") return { on: el.allow_download === true, via: el.allow_download === true ? "own" : null };
+  if (el.type !== "image" && el.type !== "video") return null;
+  const groupOn = groupOf.get(el.id)?.allow_download === true;
+  if (el.allow_download === true) return { on: true, via: "own" };
+  if (el.allow_download === false) return { on: false, via: groupOn ? "exception" : null };
+  return groupOn ? { on: true, via: "group" } : { on: false, via: null };
+}
+
+/** the allow_download value that makes a node / group end up `want` (undefined = leave it to the group) */
+export function clientDownloadValue(el: BoardElement, groupOf: Map<string, GroupElement>, want: boolean): boolean | undefined {
+  if (el.type === "group") return want ? true : undefined;
+  const groupOn = groupOf.get(el.id)?.allow_download === true;
+  if (groupOn) return want ? undefined : false;
+  return want ? true : undefined;
 }
 
 /** start a browser download from a presigned attachment URL */

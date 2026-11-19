@@ -50,6 +50,16 @@ export const publicIdeasPreviewApi = {
     handle<{ token: string; url: string; document: string; readonly: boolean; name: string; uid: string }>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/collab`, { method: "POST", headers: unlockHeaders(unlockToken) })
     ),
+  // 2026-11-19 — originals the team allowed («Kunden dürfen herunterladen»); 403 for everything else
+  boardDownload: (token: string, unlockToken: string | null, ideaId: string, elementId: string) =>
+    handle<{ url: string }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/download?element_id=${encodeURIComponent(elementId)}`, { headers: unlockHeaders(unlockToken) })
+    ),
+  /** «Alle herunterladen» of a group: a signed link (1 h) to the ZIP, streamed by the API */
+  boardGroupZip: (token: string, unlockToken: string | null, ideaId: string, groupId: string) =>
+    handle<{ path: string; files: number }>(
+      fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/groups/${encodeURIComponent(groupId)}/download-zip`, { method: "POST", headers: unlockHeaders(unlockToken) })
+    ).then((r) => ({ ...r, url: `${BASE_URL}${r.path}` })),
   boardPresign: (token: string, unlockToken: string | null, ideaId: string, keys: string[]) =>
     handle<{ urls: Record<string, string>; thumbs?: Record<string, string>; srcsets?: Record<string, string> }>(
       fetch(`${BASE_URL}/share/${token}/ideas/${ideaId}/board/presign`, {

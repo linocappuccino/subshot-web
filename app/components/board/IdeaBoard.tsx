@@ -15,6 +15,8 @@ import {
   elementKindForMime,
   hiddenElementIds,
   concealedIds,
+  clientDownloadState,
+  clientDownloadValue,
   voteLetters,
   normalizeGroups,
   guessMime,
@@ -84,7 +86,7 @@ import { BoardPresentation } from "./BoardPresentation";
 import { BoardMinimap, BoardSearchPanel, TagEditor, elementSearchText } from "./BoardNavigator";
 import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
-import { BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, DownloadButton } from "./BoardDownload";
+import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, ClientDownloadButton, DownloadButton, type ClientDownload } from "./BoardDownload";
 import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
 import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
 
@@ -365,6 +367,7 @@ export function IdeaBoard({
   peers,
   onPresence,
   downloadFile,
+  clientDownload,
   onError,
   onNotice,
   onEscape,
@@ -429,6 +432,8 @@ export function IdeaBoard({
   onPresence?: (p: { cursor?: { x: number; y: number } | null; selection?: string[] }) => void;
   /** download the ORIGINAL of a board file (key + original file name) */
   downloadFile?: (key: string, name: string) => void;
+  /** 2026-11-19 — client pages: download of the nodes / groups the team allowed (see BoardClientDownloadContext) */
+  clientDownload?: ClientDownload;
   onError?: (message: string) => void;
   /** a short success message (toast) */
   onNotice?: (message: string) => void;
@@ -3519,8 +3524,23 @@ export function IdeaBoard({
     const ids = selectionRef.current;
     patchElements(new Map([...ids].map((id) => [id, { hidden: hide ? true : undefined }])));
   }
+  // 2026-11-19, Lino: «Kunden dürfen herunterladen» per image / video / group
+  const groupOf = useMemo(() => {
+    const m = new Map<string, GroupElement>();
+    for (const g of data.elements) if (g.type === "group") for (const c of g.children) if (!m.has(c)) m.set(c, g);
+    return m;
+  }, [data.elements]);
+  function setClientDownload(want: boolean) {
+    const els = dataRef.current.elements.filter((e) => selectionRef.current.has(e.id) && clientDownloadState(e, groupOf));
+    patchElements(new Map(els.map((e) => [e.id, { allow_download: clientDownloadValue(e, groupOf, want) }])));
+  }
   const byId = useMemo(() => new Map(data.elements.map((el) => [el.id, el])), [data.elements]);
   const selectedEls = data.elements.filter((el) => selection.has(el.id));
+  // the selection's «Kunden dürfen herunterladen» (only images, videos and groups have it)
+  const selDownload = selectedEls.length > 0 && selectedEls.every((e) => clientDownloadState(e, groupOf))
+    ? selectedEls.map((e) => clientDownloadState(e, groupOf)!)
+    : null;
+  const selDownloadOn = !!selDownload && selDownload.every((s) => s.on);
   const selBounds = boundsOf(selectedEls);
   // the selection bar sits above a video's name label, not on it (2026-11-11)
   const selBarBounds = selectedEls.some((el) => el.type === "video")
@@ -3646,6 +3666,7 @@ export function IdeaBoard({
 
   return (
     <BoardDownloadContext.Provider value={downloadFile ?? null}>
+    <BoardClientDownloadContext.Provider value={editable ? null : clientDownload ?? null}>
     <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
     <BoardImageZoomContext.Provider value={settledScale <= 0.3 ? 0.3 : settledScale <= 0.55 ? 0.55 : settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
     <BoardTimetableContext.Provider value={timetableCtx}>
@@ -3897,6 +3918,24 @@ export function IdeaBoard({
                     borderRadius: 12,
                   }}
                 />
+              )}
+              {editable && (() => {
+                // 2026-11-19 — team: which nodes clients may download (blue = on, crossed out = exception in an allowed group)
+                const st = el.type === "group" ? null : clientDownloadState(el, groupOf);
+                if (!st || (!st.on && st.via !== "exception")) return null;
+                return (
+                  <span
+                    data-client-download-badge={st.on ? (st.via ?? "own") : "exception"}
+                    title={st.on ? (st.via === "group" ? "Kunden dürfen herunterladen (über die Gruppe)" : "Kunden dürfen herunterladen") : "Kein Kunden-Download (Ausnahme, die Gruppe erlaubt es)"}
+                    className={`absolute -top-2.5 z-20 flex items-center justify-center w-7 h-7 rounded-full shadow-lg ${concealed.has(el.id) ? "right-6" : "-right-2.5"} ${st.on ? "bg-blue-600 text-white" : "bg-[#1c1c1e] border border-white/25 text-white/60"}`}
+                    style={{ transform: `scale(${Math.min(1, 1 / view.scale)})`, transformOrigin: "100% 0" }}
+                  >
+                    <ClientDownloadIcon crossed={!st.on} />
+                  </span>
+                );
+              })()}
+              {!editable && clientDownload && (el.type === "image" || el.type === "video") && el.can_download && (
+                <ClientDownloadButton elementId={el.id} scale={1 / Math.max(view.scale, 0.5)} className={el.type === "video" ? "right-2 top-2" : "right-2 top-2"} />
               )}
               {concealed.has(el.id) && (el.hidden || el.type !== "group") && (
                 <span
@@ -4544,6 +4583,15 @@ export function IdeaBoard({
               <Divider />
             </>
           )}
+          {editable && selDownload && (
+            <BarButton
+              title={selDownloadOn ? "Kunden dürfen herunterladen: an (ausschalten)" : "Kunden dürfen herunterladen (einschalten)"}
+              active={selDownloadOn}
+              onPress={() => setClientDownload(!selDownloadOn)}
+            >
+              <ClientDownloadIcon />
+            </BarButton>
+          )}
           {selectedEls.length > 0 && (
             <BarButton
               title={selectedEls.every((e) => e.hidden) ? "Einblenden (Kunden sehen es wieder)" : "Ausblenden (Kunden sehen es nicht)"}
@@ -4672,6 +4720,13 @@ export function IdeaBoard({
                   const allHidden = sel.length > 0 && sel.every((e) => e.hidden);
                   return <MenuItem label={allHidden ? "Einblenden" : "Ausblenden (für Kunden)"} onPress={() => menuAction(() => setConcealed(!allHidden))} />;
                 })()}
+                {selDownload && (
+                  <MenuItem
+                    label={selDownloadOn ? "✓ Kunden dürfen herunterladen" : "Kunden dürfen herunterladen"}
+                    hint={selDownload.length === 1 ? (selDownload[0].via === "group" ? "über Gruppe" : selDownload[0].via === "exception" ? "Ausnahme" : undefined) : undefined}
+                    onPress={() => menuAction(() => setClientDownload(!selDownloadOn))}
+                  />
+                )}
                 <MenuItem label={t("ideaBoard.duplicate")} hint="⌘D" onPress={() => menuAction(duplicateSelection)} />
                 <MenuItem label={t("ideaBoard.bringFront")} onPress={() => menuAction(() => reorderSelection(true))} />
                 <MenuItem label={t("ideaBoard.sendBack")} onPress={() => menuAction(() => reorderSelection(false))} />
@@ -5120,6 +5175,7 @@ export function IdeaBoard({
     </BoardTimetableContext.Provider>
     </BoardImageZoomContext.Provider>
     </BoardZoomContext.Provider>
+    </BoardClientDownloadContext.Provider>
     </BoardDownloadContext.Provider>
   );
 }
@@ -5308,6 +5364,16 @@ function EyeOffIcon() {
       <path d="M6.6 6.6C3.6 8.6 2 12 2 12s3 8 10 8a10 10 0 0 0 5.4-1.6" />
       <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
       <path d="M2 2l20 20" />
+    </svg>
+  );
+}
+
+/** 2026-11-19 — «Kunden dürfen herunterladen» (crossed = not for clients although the group allows it) */
+function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+      {crossed && <path d="M4 4l16 16" />}
     </svg>
   );
 }

@@ -3,7 +3,7 @@ import { downloadPdf } from "@/lib/downloadPdf";
 
 import { useEffect, useRef, useState } from "react";
 import { IdeaBoard, type BoardPin, type BoardPinAnchor } from "./IdeaBoard";
-import { type BoardVote } from "@/lib/board";
+import { startDownload, type BoardVote } from "@/lib/board";
 import { BoardTodoContext } from "./BoardTodo";
 import { publicIdeasPreviewApi } from "@/lib/publicIdeasPreviewApi";
 import { useLanguage } from "@/lib/i18n";
@@ -153,6 +153,22 @@ export function PublicIdeaBoard({
         // no save-image / video-download menus (see BoardDownloadContext)
         // 2026-10-09, Lino: no presentation mode on the client page
         allowPresentation={false}
+        // 2026-11-19, Lino: «pro video oder bild (oder auch gruppe) einstellen … ob kunden … herunterladen können» —
+        // only the nodes the team allowed get a (blue) button; the server checks again (403 otherwise)
+        clientDownload={{
+          label: t("ideaBoard.clientDownload.file"),
+          allLabel: t("ideaBoard.clientDownload.all"),
+          file: (elementId) =>
+            publicIdeasPreviewApi
+              .boardDownload(token, unlockToken, ideaId, elementId)
+              .then((r) => startDownload(r.url))
+              .catch((e) => window.alert(e instanceof Error ? e.message : String(e))),
+          zip: (groupId) =>
+            publicIdeasPreviewApi
+              .boardGroupZip(token, unlockToken, ideaId, groupId)
+              .then((r) => startDownload(r.url))
+              .catch((e) => window.alert(e instanceof Error ? e.message : String(e))),
+        }}
         // 2026-11-18, Lino: «kunden dürfen diese pdf herunterladen» — the Timetable PDF only (what the client's board shows)
         timetablePdf={() =>
           downloadPdf(`${process.env.NEXT_PUBLIC_API_BASE_URL}/share/${token}/ideas/${ideaId}/board/timetable.pdf`,

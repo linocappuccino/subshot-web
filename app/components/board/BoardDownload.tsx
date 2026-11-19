@@ -7,6 +7,37 @@ import { createContext, useContext } from "react";
  * itself shows the lighter web version). Provided by IdeaBoard. */
 export const BoardDownloadContext = createContext<((key: string, name: string) => void) | null>(null);
 
+/** 2026-11-19, Lino — client pages: downloads only where the team switched «Kunden dürfen herunterladen» on
+ * (the server marks those nodes can_download / groups download_count and checks again on every download) */
+export type ClientDownload = { file: (elementId: string) => void; zip: (groupId: string) => void; label: string; allLabel: string };
+export const BoardClientDownloadContext = createContext<ClientDownload | null>(null);
+
+/** the client's (blue, always visible) download button on an allowed node */
+export function ClientDownloadButton({ elementId, scale = 1, className = "" }: { elementId: string; scale?: number; className?: string }) {
+  const dl = useContext(BoardClientDownloadContext);
+  if (!dl) return null;
+  return (
+    <button
+      data-board-ui
+      data-no-drag
+      data-client-download
+      title={dl.label}
+      aria-label={dl.label}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        dl.file(elementId);
+      }}
+      className={`absolute z-20 w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg ${className}`}
+      style={{ transform: `scale(${scale})`, transformOrigin: "100% 0" }}
+    >
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+      </svg>
+    </button>
+  );
+}
+
 /** current zoom, bucketed (1, 2, 4) — images ask for a bigger file only
  * when the board is zoomed in far enough to need it */
 export const BoardZoomContext = createContext(1);
