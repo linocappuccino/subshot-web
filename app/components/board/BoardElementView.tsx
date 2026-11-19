@@ -11,6 +11,7 @@ import { LocationMap } from "./BoardMap";
 import { TimetableNode } from "./BoardTimetable";
 import { formatDuration, parseDuration, parseTimeInput, sceneTimes, fromMin, type TimeField } from "@/lib/timetable";
 import { activeBoardVideo, boardImageConfig, markersFirst, onActiveBoardVideo, setActiveBoardVideo } from "@/lib/board";
+import { isPhoneBoard, openVideoFullscreen } from "@/lib/videoFullscreen";
 import { PRIORITY_COLORS, type Priority } from "@/lib/types";
 import DOMPurify from "dompurify";
 import { TodoNode, type TodoLabels } from "./BoardTodo";
@@ -965,9 +966,11 @@ function StillVideoNode({ el, editable, voted }: { el: MediaElement; editable?: 
     const node = toggleRef.current;
     if (!node) return;
     const on = () => setActiveBoardVideo(el.id);
+    const fs = () => { if (el.src) { setActiveBoardVideo(null); openVideoFullscreen(el.src, el.thumb_src, el.name); } };
     node.addEventListener("subshot-video-activate", on);
-    return () => node.removeEventListener("subshot-video-activate", on);
-  }, [el.id, active]);
+    node.addEventListener("subshot-video-fullscreen", fs);
+    return () => { node.removeEventListener("subshot-video-activate", on); node.removeEventListener("subshot-video-fullscreen", fs); };
+  }, [el.id, el.src, el.thumb_src, el.name, active]);
   useEffect(() => {
     const v = videoRef.current;
     return () => {
@@ -1012,7 +1015,7 @@ function StillVideoNode({ el, editable, voted }: { el: MediaElement; editable?: 
               data-video-toggle
               role="button"
               aria-label="Play"
-              onClick={editable ? undefined : () => setActiveBoardVideo(el.id)}
+              onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? openVideoFullscreen(el.src, el.thumb_src, el.name) : setActiveBoardVideo(el.id))}
               className="absolute inset-0 cursor-pointer flex items-center justify-center"
             >
               <span className="flex items-center justify-center w-14 h-14 max-w-[40%] max-h-[40%] aspect-square rounded-full bg-black/55 text-white shadow-lg pointer-events-none">
@@ -1040,7 +1043,15 @@ function FullVideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElemen
   // the player's own controls (scrubbing, volume, fullscreen) stays native. data-no-drag: on the team's
   // board the click also selects the card as before (the whole picture drags the card).
   const videoRef = useRef<HTMLVideoElement>(null);
+  const toggleRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    const node = toggleRef.current;
+    if (!node) return;
+    const fs = () => { if (el.src) { videoRef.current?.pause(); openVideoFullscreen(el.src, el.thumb_src, el.name); } };
+    node.addEventListener("subshot-video-fullscreen", fs);
+    return () => node.removeEventListener("subshot-video-fullscreen", fs);
+  }, [el.src, el.thumb_src, el.name]);
   function toggle() {
     const v = videoRef.current;
     if (!v) return;
@@ -1085,11 +1096,12 @@ function FullVideoNode({ el, onNaturalSize, editable, voted }: { el: MediaElemen
               plays / pauses on a click without movement (IdeaBoard, data-video-toggle); read-only views
               (client preview) keep their own click */}
           <div
+            ref={toggleRef}
             data-no-drag={editable ? undefined : true}
             data-video-toggle
             role="button"
             aria-label={playing ? "Pause" : "Play"}
-            onClick={editable ? undefined : toggle}
+            onClick={editable ? undefined : () => (isPhoneBoard() && el.src ? openVideoFullscreen(el.src, el.thumb_src, el.name) : toggle())}
             className="absolute inset-x-0 top-0 bottom-12 cursor-pointer flex items-center justify-center"
           >
             {!playing && (

@@ -67,6 +67,7 @@ import {
 } from "@/lib/board";
 import { BoardElementView, VIDEO_HEADER, VIDEO_LABEL, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
 import { BoardTimetableContext } from "./BoardTimetable";
+import { isPhoneBoard } from "@/lib/videoFullscreen";
 import type { FlowPatch } from "./BoardFlow";
 import { BoardCreditsContext } from "./BoardCredits";
 import { BoardDubbingContext, type DubbingPatch } from "./BoardDubbing";
@@ -160,6 +161,8 @@ type Op =
       duplicated?: { selection: Set<string>; clickedId: string };
       /** 2026-11-09 — pressed on a video's picture: a click without moving plays / pauses it */
       videoToggle?: HTMLElement | null;
+      /** when the pointer went down (a long press never opens a video) */
+      downAt?: number;
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string; target: string | null }
@@ -2781,6 +2784,7 @@ export function IdeaBoard({
         wasSelected: !duplicated && selectionRef.current.size === 1 && selectionRef.current.has(id),
         duplicated,
         videoToggle: target.closest<HTMLElement>("[data-video-toggle]"),
+        downAt: Date.now(),
         ...(() => {
           const all = dataRef.current.elements;
           const hiddenNow = hiddenElementIds(all);
@@ -3100,7 +3104,10 @@ export function IdeaBoard({
           apply(dataRef.current, { history: op.snapshot });
           return;
         }
-        if (op.videoToggle && !op.duplicated) {
+        if (op.videoToggle && !op.duplicated && isPhoneBoard()) {
+          // 2026-11-19, Lino: on a phone a simple tap (no move, no pinch, not a long press) opens the video full screen
+          if (Date.now() - (op.downAt ?? 0) < 500) op.videoToggle.dispatchEvent(new CustomEvent("subshot-video-fullscreen"));
+        } else if (op.videoToggle && !op.duplicated) {
           // 2026-11-09, Lino: the whole video picture drags the card; a click without moving plays / pauses
           const v = op.videoToggle.parentElement?.querySelector("video");
           if (v) {
