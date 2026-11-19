@@ -165,12 +165,24 @@ type Op =
       videoToggle?: HTMLElement | null;
       /** when the pointer went down (a long press never opens a video) */
       downAt?: number;
+      /** 2026-11-19 — a finger: the selection only changes when the drag really starts or on lifting
+       *  (a second finger = pinch, nothing selected); this is what was selected before */
+      touch?: boolean;
+      prevSelection?: Set<string>;
     }
   | { kind: "resize"; pointerId: number; id: string; sx: number; sy: number; w: number; h: number; aspect: number | null; header: number; snapshot: BoardData }
   | { kind: "connect"; pointerId: number; from: string; target: string | null }
   | { kind: "draw"; pointerId: number; points: [number, number][] }
   | { kind: "marquee"; pointerId: number; sx: number; sy: number; x0: number; y0: number; base: Set<string>; moved: boolean }
-  | { kind: "pinch"; dist: number; center: Point; view: View };
+  | { kind: "pinch"; dist: number; center: Point; view: View }
+  /** 2026-11-19 — a finger on a control inside a card (video, link, button …): selects the card on lifting,
+   *  unless it moved or a second finger joined (pinch) */
+  | { kind: "tap"; pointerId: number; id: string | null; sx: number; sy: number; moved: boolean };
+
+/** a finger has to stay on a card this long (and move a few px) before the card is dragged — the second finger
+ *  of a pinch usually lands within ~100 ms (2026-11-19, Lino: pinch on a node grabbed / opened it) */
+const TOUCH_DRAG_MS = 100;
+const TOUCH_DRAG_PX = 8;
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
@@ -531,6 +543,9 @@ export function IdeaBoard({
   const opRef = useRef<Op | null>(null);
   const pointers = useRef(new Map<number, Point>());
   const lastClick = useRef<{ id: string | null; time: number; x: number; y: number }>({ id: null, time: 0, x: 0, y: 0 });
+  // 2026-11-19 — after a two-finger gesture no click reaches the board (a still finger would otherwise
+  // "tap" the video / link it rested on when lifted): clicks are swallowed until shortly after the last finger
+  const suppressClickUntil = useRef(0);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -889,12 +904,21 @@ export function IdeaBoard({
       zoomAt(e.clientX, e.clientY, viewRef.current.scale * factor);
     }
     vp.addEventListener("wheel", onWheel, { passive: false });
+    // capture phase on the viewport: runs before the card's own (React) click handlers and before a link navigates
+    const swallowClick = (e: MouseEvent) => {
+      if (Date.now() < suppressClickUntil.current) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    vp.addEventListener("click", swallowClick, true);
     // Safari pinch on a trackpad fires gesture events instead of ctrl+wheel
     const prevent = (e: Event) => e.preventDefault();
     vp.addEventListener("gesturestart", prevent);
     vp.addEventListener("gesturechange", prevent);
     return () => {
       vp.removeEventListener("wheel", onWheel);
+      vp.removeEventListener("click", swallowClick, true);
       vp.removeEventListener("gesturestart", prevent);
       vp.removeEventListener("gesturechange", prevent);
     };
@@ -2612,11 +2636,61 @@ export function IdeaBoard({
   }
 
   // ── pointer handling ──────────────────────────────────────────────────
+  // whatever one finger started (drag, resize, selection, tap) is undone and becomes a two-finger zoom
+  function startPinch() {
+    const op = opRef.current;
+    if (op && op.kind === "move") {
+      if (op.touch) {
+        // a finger: back to exactly how it was — position and selection
+        if (op.moved || op.duplicated) apply(op.snapshot, { notify: false });
+        if (op.prevSelection) setSelection(op.prevSelection);
+      } else if (op.moved) apply(dataRef.current, { history: op.snapshot });
+    } else if (op && op.kind === "resize") {
+      apply(op.snapshot, { notify: false });
+    }
+    if (op && op.kind !== "pinch") suppressClickUntil.current = Number.POSITIVE_INFINITY;
+    setDrawPreview(null);
+    setMarquee(null);
+    setConnectPreview(null);
+    setImageDropTarget(null);
+    clearGroupHover();
+    showGroupDrop(null);
+    const [a, b] = [...pointers.current.values()];
+    for (const id of pointers.current.keys()) {
+      try { viewportRef.current?.setPointerCapture(id); } catch { /* finger already gone */ }
+    }
+    opRef.current = {
+      kind: "pinch",
+      dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      view: viewRef.current,
+    };
+    setBusyOp(null);
+    setGuides(null);
+  }
+
   function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-board-ui]")) return;
+    // 2026-11-19, Lino: two fingers on the board ALWAYS zoom — also when a finger lands on a video, a link, a
+    // text or a card. Fingers are therefore counted before anything else looks at the target.
+    const touch = e.pointerType === "touch";
+    if (touch) {
+      if (e.isPrimary) {
+        // first finger of a new gesture: forget fingers whose pointerup never reached the board
+        pointers.current.clear();
+        if (suppressClickUntil.current === Number.POSITIVE_INFINITY) suppressClickUntil.current = 0;
+      }
+      pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pointers.current.size === 2) {
+        e.preventDefault();
+        startPinch();
+        return;
+      }
+      if (pointers.current.size > 2) return;
+    }
     // pin mode: a click on a node places the feedback pin at that spot
-    if (pinPlacing && onPlacePin && e.button === 0 && pointers.current.size === 0) {
+    if (pinPlacing && onPlacePin && e.button === 0 && pointers.current.size === (touch ? 1 : 0)) {
       const node = target.closest<HTMLElement>("[data-el-id]");
       const el = node ? dataRef.current.elements.find((x) => x.id === node.dataset.elId) : null;
       if (el && el.type !== "drawing") {
@@ -2644,6 +2718,11 @@ export function IdeaBoard({
     const elNode = target.closest("[data-group-body]") && !target.closest("[data-group-header]") ? null : target.closest<HTMLElement>("[data-el-id]");
     if (target.closest("[data-no-drag]")) {
       // media controls / links inside a card: let the browser handle the click
+      if (touch) {
+        // a finger: the card is selected on lifting (not when a second finger turns it into a pinch)
+        opRef.current = { kind: "tap", pointerId: e.pointerId, id: editable ? elNode?.dataset.elId ?? null : null, sx: e.clientX, sy: e.clientY, moved: false };
+        return;
+      }
       if (editable && elNode) {
         setSelection(new Set([elNode.dataset.elId!]));
         setSelectedConnector(null);
@@ -2657,21 +2736,8 @@ export function IdeaBoard({
     viewportRef.current?.setPointerCapture(e.pointerId);
 
     if (pointers.current.size === 2) {
-      // second finger: whatever the first one started becomes a pinch
-      const op = opRef.current;
-      if (op && op.kind === "move" && op.moved) apply(dataRef.current, { history: op.snapshot });
-      setDrawPreview(null);
-      setMarquee(null);
-      setConnectPreview(null);
-      const [a, b] = [...pointers.current.values()];
-      opRef.current = {
-        kind: "pinch",
-        dist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-        center: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-        view: viewRef.current,
-      };
-      setBusyOp(null);
-      setGuides(null);
+      // second pointer (pen + finger …): whatever the first one started becomes a pinch
+      startPinch();
       return;
     }
     if (pointers.current.size > 2) return;
@@ -2740,9 +2806,13 @@ export function IdeaBoard({
 
     if (elNode && editable) {
       let id = elNode.dataset.elId!;
-      setSelectedConnector(null);
+      const prevSelection = selectionRef.current;
+      if (!touch) setSelectedConnector(null);
       let ids = selectionRef.current;
-      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      if (touch) {
+        // a finger: drag the selection if the card is part of it, else just this card — but don't select yet
+        if (!ids.has(id)) ids = new Set([id]);
+      } else if (e.shiftKey || e.metaKey || e.ctrlKey) {
         ids = new Set(ids);
         if (ids.has(id)) ids.delete(id);
         else ids.add(id);
@@ -2756,7 +2826,7 @@ export function IdeaBoard({
       // right here, exactly on top of the originals, and the drag moves the copies
       const snapshot = dataRef.current;
       let duplicated: { selection: Set<string>; clickedId: string } | undefined;
-      if (e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      if (!touch && e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
         const { copies, connectorCopies, mapping, select } = cloneNodes(ids, 0);
         if (copies.length) {
           duplicated = { selection: new Set(ids), clickedId: id };
@@ -2790,6 +2860,8 @@ export function IdeaBoard({
         duplicated,
         videoToggle: target.closest<HTMLElement>("[data-video-toggle]"),
         downAt: Date.now(),
+        touch,
+        prevSelection,
         ...(() => {
           const all = dataRef.current.elements;
           const hiddenNow = hiddenElementIds(all);
@@ -2870,6 +2942,10 @@ export function IdeaBoard({
       return;
     }
     if ("pointerId" in op && op.pointerId !== e.pointerId) return;
+    if (op.kind === "tap") {
+      if (Math.hypot(e.clientX - op.sx, e.clientY - op.sy) > 10) op.moved = true;
+      return;
+    }
 
     const scale = viewRef.current.scale;
     const freePlace = e.altKey;
@@ -2887,8 +2963,16 @@ export function IdeaBoard({
       case "move": {
         const dx = (e.clientX - op.sx) / scale;
         const dy = (e.clientY - op.sy) / scale;
-        if (!op.moved && Math.hypot(e.clientX - op.sx, e.clientY - op.sy) < 4) return;
-        if (!op.moved) setBusyOp("move");
+        if (!op.moved && Math.hypot(e.clientX - op.sx, e.clientY - op.sy) < (op.touch ? TOUCH_DRAG_PX : 4)) return;
+        // a finger only drags after a moment — a second finger landing right after it is a pinch, not a drag
+        if (!op.moved && op.touch && Date.now() - (op.downAt ?? 0) < TOUCH_DRAG_MS) return;
+        if (!op.moved) {
+          setBusyOp("move");
+          if (op.touch) {
+            setSelection(new Set(op.ids));
+            setSelectedConnector(null);
+          }
+        }
         op.moved = true;
         const p = op.origin.get(op.primary)!;
         let ddx = snap(p.x + dx, !freePlace) - p.x;
@@ -2982,8 +3066,14 @@ export function IdeaBoard({
     }
   }
 
+  function releaseClickGuard() {
+    // last finger of a two-finger gesture lifted: clicks are let through again a moment later
+    if (pointers.current.size === 0 && suppressClickUntil.current === Number.POSITIVE_INFINITY) suppressClickUntil.current = Date.now() + 400;
+  }
+
   function onPointerUp(e: React.PointerEvent<HTMLDivElement>) {
     pointers.current.delete(e.pointerId);
+    releaseClickGuard();
     if (!editingRef.current) window.setTimeout(focusPasteCatcher, 0);
     const op = opRef.current;
     if (!op) return;
@@ -2998,6 +3088,13 @@ export function IdeaBoard({
     setPanning(false);
 
     switch (op.kind) {
+      case "tap": {
+        if (!op.moved && op.id) {
+          setSelection(new Set([op.id]));
+          setSelectedConnector(null);
+        }
+        return;
+      }
       case "pan": {
         if (op.moved || op.middle) return;
         if (op.rightClick) {
@@ -3216,6 +3313,7 @@ export function IdeaBoard({
 
   function onPointerCancel(e: React.PointerEvent<HTMLDivElement>) {
     pointers.current.delete(e.pointerId);
+    releaseClickGuard();
     const op = opRef.current;
     if (op && op.kind === "move" && op.moved) apply(dataRef.current, { history: op.snapshot });
     else if (op && op.kind === "move" && op.duplicated) {
