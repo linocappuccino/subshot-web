@@ -1194,6 +1194,10 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<TodoList>(`ideas/${ideaId}/todo-lists`, { method: "POST", body: JSON.stringify({ name }) }),
     ideaBoardLinkPreview: (ideaId: string, url: string) =>
       request<LinkPreview>(`ideas/${ideaId}/board/link-preview`, { method: "POST", body: JSON.stringify({ url }) }),
+    // 2026-11-20 — an image link → stored as a board image (image: false = not an image)
+    ideaBoardImageFromUrl: (ideaId: string, url: string) =>
+      request<{ image: false } | { image: true; key: string; src: string; name: string; mime: string; width: number; height: number; source_url: string }>(
+        `ideas/${ideaId}/board/image-from-url`, { method: "POST", body: JSON.stringify({ url }) }),
 
     // ── Todo lists ───────────────────────────────────────────────────────
     createTodoList: (projectId: string, name: string, sortOrder = 0) =>

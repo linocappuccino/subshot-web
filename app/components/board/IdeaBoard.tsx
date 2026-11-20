@@ -124,6 +124,9 @@ type Point = { x: number; y: number };
 
 export type BoardUploadFn = (file: File, mime: string, onProgress: (fraction: number) => void) => Promise<{ key: string; src: string }>;
 export type BoardLinkPreviewFn = (url: string) => Promise<LinkPreview>;
+/** 2026-11-20, Lino: «Bilderlinks … direkt in ein bild umgewandelt» — the server downloads an image link into the
+ * board (like an upload); image: false = not an image (→ link card); throws = blocked / failed / too big */
+export type BoardImageFromUrlFn = (url: string) => Promise<{ image: false } | { image: true; key: string; src: string; name: string; mime: string; width: number; height: number; source_url: string }>;
 /** 2026-10-08, Lino: Feedback-Pins — a comment pinned to a spot on a node */
 export type BoardPin = { id: string; elementId: string; x: number; y: number; color: string; label: string; resolved?: boolean; active?: boolean; title?: string };
 export type BoardPinAnchor = { elementId: string; x: number; y: number };
@@ -354,6 +357,7 @@ export function IdeaBoard({
   onChange,
   uploadFile,
   fetchLinkPreview,
+  fetchImageFromUrl,
   generateImage,
   createLocationMap,
   extractPalette,
@@ -390,6 +394,7 @@ export function IdeaBoard({
   onChange?: (data: BoardData) => void;
   uploadFile?: BoardUploadFn;
   fetchLinkPreview?: BoardLinkPreviewFn;
+  fetchImageFromUrl?: BoardImageFromUrlFn;
   /** scene cards' "AI generieren" — same popup/engine as the shot list */
   generateImage?: BoardGenerateImageFn;
   /** location card: renders + stores the static map for picked coordinates */
@@ -1547,11 +1552,36 @@ export function IdeaBoard({
     const pid = newId();
     const { x, y } = place(at.x - 168, at.y - 80, 336, 288, avoidOverlap);
     setPending((p) => [...p, { id: pid, label: t("ideaBoard.linkLoading"), progress: null, x, y, w: 336, h: 120 }]);
+    // 2026-11-20, Lino: a link to an image becomes an image node (the server stores the file like an upload)
+    let imageErrorShown = false;
+    if (fetchImageFromUrl) {
+      const looksLikeImage = /\.(jpe?g|png|webp|gif|avif|heic|heif)(\?|#|$)/i.test(url);
+      try {
+        const r = await fetchImageFromUrl(url);
+        if (r.image) {
+          const moved = pendingRef.current.find((it) => it.id === pid);
+          setPending((p) => p.filter((it) => it.id !== pid));
+          const w = Math.min(480, Math.max(120, r.width));
+          const h = Math.round((w * r.height) / Math.max(1, r.width));
+          const el: MediaElement = {
+            id: newId(), type: "image", x: moved?.x ?? x, y: moved?.y ?? y, w, h, z: maxZ(dataRef.current.elements) + 1,
+            asset_key: r.key, src: r.src, name: r.name, mime: r.mime, origin_url: r.source_url,
+          };
+          addElements([el]);
+          return;
+        }
+        if (looksLikeImage) onNotice?.(t("ideaBoard.imageLink.notImage"));
+      } catch (e) {
+        // blocked / failed / too big → a link card as before, with the reason
+        onError?.(`${t("ideaBoard.imageLink.failed")}${e instanceof Error && e.message ? ` (${e.message})` : ""}`);
+        imageErrorShown = true;
+      }
+    }
     let preview: LinkPreview | null = null;
     try {
       preview = fetchLinkPreview ? await fetchLinkPreview(url) : null;
     } catch {
-      onError?.(t("ideaBoard.linkFailed"));
+      if (!imageErrorShown) onError?.(t("ideaBoard.linkFailed"));  // one message, not two
     }
     // moved while loading (2026-11-09): the card lands where its loading tile is now
     const moved = pendingRef.current.find((it) => it.id === pid);

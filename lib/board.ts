@@ -80,6 +80,8 @@ export interface MediaElement extends BaseElement {
   allow_download?: boolean;
   /** client pages only (server-computed): this client may download the original */
   can_download?: boolean;
+  /** 2026-11-20 — image made from a pasted / dropped image link: where it came from */
+  origin_url?: string;
 }
 
 export interface LinkElement extends BaseElement {

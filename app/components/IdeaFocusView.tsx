@@ -842,6 +842,7 @@ function IdeaBoardScreen({
               return { key: ticket.key, src: ticket.url };
             }}
             fetchLinkPreview={(url) => api.ideaBoardLinkPreview(idea.id, url)}
+            fetchImageFromUrl={(url) => api.ideaBoardImageFromUrl(idea.id, url)}
             votes={votes?.votes}
             myVoterKey={votes?.me}
             onVote={(groupId, elementId) =>
