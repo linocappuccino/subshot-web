@@ -3,6 +3,7 @@
 import { FlowNode, type FlowPatch } from "./BoardFlow";
 import { CreditsNode } from "./BoardCredits";
 import { DubbingNode, type DubbingPatch } from "./BoardDubbing";
+import { LightPlotNode } from "./LightPlotNode";
 import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, SharpImg } from "./BoardDownload";
 import { PlacePill, PlaceChangeIcon, mapsUrlForAddress } from "../PlacePill";
 import { MoodboardNode } from "./BoardMoodboard";
@@ -163,6 +164,7 @@ export function BoardElementView({
   voted,
   canEditFlow,
   onCommitFlow,
+  onOpenLightPlot,
   onCommitCredits,
   onCommitDubbing,
 }: {
@@ -203,12 +205,16 @@ export function BoardElementView({
   onCommitFlow?: (patch: FlowPatch) => void;
   /** «Live-Dubbing» node (2026-11-12) */
   onCommitDubbing?: (patch: DubbingPatch) => void;
+  /** «Lichtplan» (2026-11-20): opens the full-screen editor */
+  onOpenLightPlot?: () => void;
   /** «Credits» node (2026-11-11): currency / list collapsed */
   onCommitCredits?: (patch: Partial<Pick<CreditsElement, "currency" | "collapsed" | "title">>) => void;
   /** member of a vote group: the letter badge sits on the top-left corner → the video label starts after it */
   voted?: boolean;
 }) {
   switch (el.type) {
+    case "light_plot":
+      return <LightPlotNode el={el} editable={editable} onOpen={onOpenLightPlot} />;
     case "lutpreview":
       return <LutPreviewNode el={el} active={!!lutActive} busy={lutBusy} labels={labels.lutPreview} onPick={onLutPick} />;
     case "text":

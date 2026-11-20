@@ -754,6 +754,16 @@ export interface LutPreviewElement extends BaseElement {
   ar?: number;
 }
 
+/** 2026-11-20, Lino: «Lichtplan» — one lighting setup, vector JSON in metres (lib/lightPlot.ts); image_key = optional
+ * floor-plan photo (a normal board file) */
+export interface LightPlotElement extends BaseElement, Partial<import("./lightPlot").LightPlotData> {
+  type: "light_plot";
+  title: string;
+  image_key?: string;
+  image_src?: string | null;
+  image_thumb_src?: string | null;
+}
+
 export type PlaceholderSlot = "image" | "video" | "audio" | "pdf" | "file" | "link" | "color";
 export interface PlaceholderElement extends BaseElement {
   type: "placeholder";
@@ -857,7 +867,7 @@ export interface FlowElement extends BaseElement {
   finished?: boolean;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement | DubbingElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement | DubbingElement | LightPlotElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);

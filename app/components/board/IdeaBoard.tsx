@@ -30,6 +30,7 @@ import {
   type Connector,
   type DrawingElement,
   type GroupElement,
+  type LightPlotElement,
   type LinkElement,
   type LinkPreview,
   type MediaElement,
@@ -70,6 +71,8 @@ import {
 import { BoardElementView, VIDEO_HEADER, VIDEO_LABEL, boardHtmlToPlain, sanitizeBoardHtml, strokePath, type ScenePatch } from "./BoardElementView";
 import { BoardTimetableContext } from "./BoardTimetable";
 import { isPhoneBoard } from "@/lib/videoFullscreen";
+import { emptyPlot } from "@/lib/lightPlot";
+import { LightPlotEditor } from "./LightPlotEditor";
 import type { FlowPatch } from "./BoardFlow";
 import { BoardCreditsContext } from "./BoardCredits";
 import { BoardDubbingContext, type DubbingPatch } from "./BoardDubbing";
@@ -975,6 +978,19 @@ export function IdeaBoard({
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
+  }
+
+  // 2026-11-20, Lino: «Lichtplan» — one lighting setup; the editor opens right away
+  const [lightPlotOpen, setLightPlotOpen] = useState<string | null>(null);
+  function addLightPlot(at: Point) {
+    const w = 480;
+    const h = 360;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: LightPlotElement = { id: newId(), type: "light_plot", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: t("ideaBoard.menu.lightPlot"), ...emptyPlot() };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+    setLightPlotOpen(el.id);
   }
 
   // 2026-11-11, Lino: «Frageablauf» (admin-only) — starts empty in «Bearbeiten»
@@ -2501,6 +2517,7 @@ export function IdeaBoard({
     { id: "text", icon: "T", label: t("ideaBoard.menu.text"), hint: "T", keywords: "text textbox schrift titel überschrift notiz text box heading" },
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
+    { id: "light_plot", icon: "💡", label: t("ideaBoard.menu.lightPlot"), keywords: "lichtplan licht light plot lighting diagram setup lampen leuchten key fill rim aputure nanlite godox kelvin" },
     { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
     ...(dubbingCtx ? [{ id: "dubbing", icon: "🎙️", label: "Live-Dubbing", keywords: "live-dubbing dubbing voice-over voiceover sprecher aufnahme mikrofon synchron übersetzung sprache vertonen" }] : []),
     ...(creditsCtx ? [{ id: "credits", icon: "💳", label: "Credits (KI-Kosten)", keywords: "credits kosten higgsfield weavy figma ki ai geld budget chf usd ausgaben" }] : []),
@@ -2528,6 +2545,7 @@ export function IdeaBoard({
       case "scene": return addScene(at, true);
       case "moodboard": return addMoodboard(at);
       case "timetable": return addTimetable(at);
+      case "light_plot": return addLightPlot(at);
       case "flow": return addFlow(at);
       case "credits": return addCredits(at);
       case "dubbing": return addDubbing(at);
@@ -2553,6 +2571,11 @@ export function IdeaBoard({
 
 
   function activate(el: BoardElement) {
+    if (el.type === "light_plot") {
+      setSelection(new Set([el.id]));
+      setLightPlotOpen(el.id);
+      return;
+    }
     if (el.type === "group" && editable) {
       setSelection(new Set([el.id]));
       setEditingId(el.id);
@@ -3973,6 +3996,7 @@ export function IdeaBoard({
                 canEditFlow={allowFlow}
                 onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onCommitCredits={(patch) => commitCredits(el.id, patch)}
+                onOpenLightPlot={() => setLightPlotOpen(el.id)}
                 onCommitDubbing={(patch) => commitDubbing(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
                 sceneGenerating={aiRunning.has(el.id)}
@@ -4782,6 +4806,7 @@ export function IdeaBoard({
                   {todoCtx?.api && <MenuItem label={t("ideaBoard.menu.todo")} onPress={() => menuAction(() => void addTodo(menu.world))} />}
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
                   <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
+                  <MenuItem label={`💡 ${t("ideaBoard.menu.lightPlot")}`} onPress={() => menuAction(() => addLightPlot(menu.world))} />
                   {allowFlow && <MenuItem label="Frageablauf" onPress={() => menuAction(() => addFlow(menu.world))} />}
                   {creditsCtx && <MenuItem label="Credits (KI-Kosten)" onPress={() => menuAction(() => addCredits(menu.world))} />}
                   {dubbingCtx && <MenuItem label="🎙️ Live-Dubbing" onPress={() => menuAction(() => addDubbing(menu.world))} />}
@@ -4969,6 +4994,9 @@ export function IdeaBoard({
               <span className="text-[15px] leading-none">🧭</span>
             </ToolButton>
           )}
+          <ToolButton title={t("ideaBoard.menu.lightPlot")} onPress={() => addLightPlot(viewportCenterWorld())}>
+            <span className="text-[15px] leading-none">💡</span>
+          </ToolButton>
           <ToolButton title={t("ideaBoard.toolTimetable")} onPress={() => addTimetable(viewportCenterWorld())}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 4v17M16 2v4M8 2v4" /></svg>
           </ToolButton>
@@ -5305,6 +5333,19 @@ export function IdeaBoard({
     </BoardTimetableContext.Provider>
     </BoardImageZoomContext.Provider>
     </BoardZoomContext.Provider>
+    {lightPlotOpen && (() => {
+      const lp = data.elements.find((x): x is LightPlotElement => x.id === lightPlotOpen && x.type === "light_plot");
+      return lp ? (
+        <LightPlotEditor
+          key={lp.id}
+          el={lp}
+          editable={editable}
+          uploadFile={editable ? uploadFile : undefined}
+          onCommit={(patch) => patchElements(new Map([[lp.id, patch]]))}
+          onClose={() => setLightPlotOpen(null)}
+        />
+      ) : null;
+    })()}
     </BoardClientDownloadContext.Provider>
     </BoardDownloadContext.Provider>
   );
