@@ -211,6 +211,13 @@ export function ItemSymbol({ kind, w, h, sel }: { kind: ItemKind; w: number; h: 
           <circle r={6} fill="#78350f" />
         </g>
       );
+    case "chair":
+      return (
+        <g>
+          {box(-w / 2, -h / 2, w, h, 6)}
+          {box(-w / 2, -h / 2, w * 0.2, h, 4, "rgba(255,255,255,0.14)")}
+        </g>
+      );
     case "table":
       return (
         <g>

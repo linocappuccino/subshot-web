@@ -53,6 +53,29 @@ export function LightPlotDrawing({
       </g>
     ) : null;
   const font = lite ? 22 : 18;
+  // labels of lights / people never sit on each other: each one moves down until it is free (greedy)
+  const labelY = (() => {
+    const entries: { id: string; x: number; y: number; text: string; size: number }[] = [];
+    for (const p of plot.people) {
+      const text = p.kind === "camera" ? [p.name || L.camera, p.lens_mm ? `${p.lens_mm} mm` : "", p.kelvin ? `${p.kelvin} K` : ""].filter(Boolean).join(" · ") : p.name || L.talent;
+      entries.push({ id: p.id, x: p.x * PX, y: p.y * PX + (p.kind === "camera" ? 64 : 50), text, size: font * 0.85 });
+    }
+    if (!lite) for (const li of look.lights) entries.push({ id: li.id, x: li.x * PX, y: li.y * PX + 54, text: `${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`, size: font * 0.8 });
+    const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    const out = new Map<string, number>();
+    for (const e of entries) {
+      const w = e.text.length * e.size * 0.56;
+      let y = e.y;
+      for (let k = 0; k < 6; k++) {
+        const box = { x0: e.x - w / 2, x1: e.x + w / 2, y0: y - e.size, y1: y + e.size * 0.2 };
+        if (!placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) { placed.push(box); break; }
+        y += e.size * 1.25;
+        if (k === 5) placed.push({ x0: e.x - w / 2, x1: e.x + w / 2, y0: y - e.size, y1: y + e.size * 0.2 });
+      }
+      out.set(e.id, y);
+    }
+    return out;
+  })();
 
   return (
     <g>
@@ -160,7 +183,7 @@ export function LightPlotDrawing({
                 <CameraSymbol p={p} sel={s} />
               </g>
               {view.labels && (
-                <text x={x} y={y + 64} textAnchor="middle" fontSize={font * 0.85} fill="#fde68a" pointerEvents="none">
+                <text x={x} y={labelY.get(p.id) ?? y + 64} textAnchor="middle" fontSize={font * 0.85} fill="#fde68a" pointerEvents="none">
                   {[p.name || L.camera, p.lens_mm ? `${p.lens_mm} mm` : "", p.kelvin ? `${p.kelvin} K` : ""].filter(Boolean).join(" · ")}
                 </text>
               )}
@@ -173,7 +196,7 @@ export function LightPlotDrawing({
             <g data-lp-id={p.id} data-lp-part="body" transform={`translate(${x} ${y}) rotate(${p.rot})`} style={editable ? { cursor: "move" } : undefined}>
               <TalentSymbol p={p} sel={s} />
             </g>
-            {view.labels && <text x={x} y={y + 50} textAnchor="middle" fontSize={font * 0.85} fill="#fbcfe8" pointerEvents="none">{p.name || L.talent}</text>}
+            {view.labels && <text x={x} y={labelY.get(p.id) ?? y + 50} textAnchor="middle" fontSize={font * 0.85} fill="#fbcfe8" pointerEvents="none">{p.name || L.talent}</text>}
             {rotKnob(p.id, x, y, p.rot, 64)}
           </g>
         );
@@ -189,7 +212,7 @@ export function LightPlotDrawing({
             <circle cx={x - 30} cy={y - 30} r={13} fill="#18181b" stroke={c} strokeWidth={2.5} pointerEvents="none" />
             <text x={x - 30} y={y - 25} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff" pointerEvents="none">{i + 1}</text>
             {view.labels && !lite && (
-              <text x={x} y={y + 54} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
+              <text x={x} y={labelY.get(li.id) ?? y + 54} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
                 {`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`}
               </text>
             )}

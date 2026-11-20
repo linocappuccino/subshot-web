@@ -3,7 +3,7 @@
 // (which validates / clamps everything on save).
 
 export type WallKind = "wall" | "curve" | "window" | "door" | "opening";
-export type ItemKind = "table" | "sofa" | "bed" | "car" | "tree" | "stairs" | "rect" | "circle";
+export type ItemKind = "table" | "chair" | "sofa" | "bed" | "car" | "tree" | "stairs" | "rect" | "circle";
 export type Role = "key" | "fill" | "rim" | "back" | "practical" | "ambience" | "custom";
 export type Modifier = "bare" | "dish55" | "fresnel" | "softbox" | "lantern" | "custom";
 
@@ -92,7 +92,7 @@ export const MODIFIER_BEAM: Record<Modifier, number> = { bare: 110, dish55: 55, 
 /** camera view: how soft the light edge is (0 hard … 1 very soft) */
 export const MODIFIER_SOFT: Record<Modifier, number> = { bare: 0.45, dish55: 0.3, fresnel: 0.15, softbox: 0.95, lantern: 1, custom: 0.5 };
 /** camera view: how much a modifier eats (softbox / lantern lose light) */
-export const MODIFIER_GAIN: Record<Modifier, number> = { bare: 1, dish55: 1.6, fresnel: 2.2, softbox: 0.55, lantern: 0.45, custom: 1 };
+export const MODIFIER_GAIN: Record<Modifier, number> = { bare: 1, dish55: 1.6, fresnel: 2.2, softbox: 0.8, lantern: 0.6, custom: 1 };
 export const ROLES: Role[] = ["key", "fill", "rim", "back", "practical", "ambience", "custom"];
 export const MODIFIERS: Modifier[] = ["bare", "dish55", "fresnel", "softbox", "lantern", "custom"];
 
@@ -102,7 +102,7 @@ export function newLight(preset: string, x: number, y: number, role: Role = "key
 }
 
 export const ITEM_SIZE: Record<ItemKind, [number, number]> = {
-  table: [1.6, 0.9], sofa: [2.0, 0.9], bed: [2.0, 1.6], car: [4.4, 1.8], tree: [1.6, 1.6], stairs: [1.0, 2.6], rect: [1, 1], circle: [1, 1],
+  table: [1.6, 0.9], chair: [0.5, 0.5], sofa: [2.0, 0.9], bed: [2.0, 1.6], car: [4.4, 1.8], tree: [1.6, 1.6], stairs: [1.0, 2.6], rect: [1, 1], circle: [1, 1],
 };
 
 /** camera horizontal angle of view (degrees) from the lens and the sensor width */
@@ -150,7 +150,7 @@ const DE = {
   select: "Auswahl (V)", box: "Rahmen-Auswahl (B)", hand: "Verschieben (H)", walls: "Wände zeichnen (W)", measure: "Messen (M)", text: "Beschriftung (T)",
   wall: "Wand", curve: "Rundwand", window: "Fenster", door: "Tür", opening: "Durchgang",
   talent: "Talent", camera: "Kamera", light: "Licht", flag: "Flag", diffusion: "Diffusion", set: "Set-Stück", photo: "Grundriss-Foto", photoRemove: "Foto entfernen",
-  table: "Tisch", sofa: "Sofa", bed: "Bett", car: "Auto", tree: "Baum", stairs: "Treppe", rect: "Rechteck", circle: "Kreis",
+  table: "Tisch", chair: "Stuhl", sofa: "Sofa", bed: "Bett", car: "Auto", tree: "Baum", stairs: "Treppe", rect: "Rechteck", circle: "Kreis",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Eigene",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
   snap: "Snap", showLabels: "Labels", beams: "Kegel", spill: "Spill", undo: "Rückgängig", redo: "Wiederholen", png: "PNG", pdf: "PDF", close: "Schliessen",
@@ -169,7 +169,7 @@ const EN: typeof DE = {
   select: "Select (V)", box: "Box select (B)", hand: "Pan (H)", walls: "Draw walls (W)", measure: "Measure (M)", text: "Label (T)",
   wall: "Wall", curve: "Curved wall", window: "Window", door: "Door", opening: "Opening",
   talent: "Talent", camera: "Camera", light: "Light", flag: "Flag", diffusion: "Diffusion", set: "Set piece", photo: "Floor plan photo", photoRemove: "Remove photo",
-  table: "Table", sofa: "Sofa", bed: "Bed", car: "Car", tree: "Tree", stairs: "Stairs", rect: "Rectangle", circle: "Circle",
+  table: "Table", chair: "Chair", sofa: "Sofa", bed: "Bed", car: "Car", tree: "Tree", stairs: "Stairs", rect: "Rectangle", circle: "Circle",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Custom",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
   snap: "Snap", showLabels: "Labels", beams: "Beams", spill: "Spill", undo: "Undo", redo: "Redo", png: "PNG", pdf: "PDF", close: "Close",

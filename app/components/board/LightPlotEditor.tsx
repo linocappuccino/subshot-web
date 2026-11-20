@@ -519,7 +519,7 @@ export function LightPlotEditor({
       onKeyDown={(e) => e.stopPropagation()}
     >
       {/* top bar */}
-      <div className="flex items-center gap-2 px-3 h-12 border-b border-white/10 shrink-0 overflow-x-auto">
+      <div data-lp-topbar className="flex flex-wrap md:flex-nowrap items-center gap-x-2 gap-y-1.5 px-3 py-1.5 md:py-0 md:h-12 border-b border-white/10 shrink-0 md:overflow-x-auto">
         <button onClick={onClose} aria-label={L.close} className="md:hidden shrink-0 h-8 w-8 rounded-md bg-blue-600 text-[14px] font-bold">✕</button>
         <span className="text-[15px]">💡</span>
         <input
@@ -530,7 +530,7 @@ export function LightPlotEditor({
           className="w-32 md:w-48 shrink-0 min-w-0 bg-transparent text-[14px] font-semibold outline-none border-b border-transparent focus:border-white/30"
           aria-label={L.title}
         />
-        <div className="flex items-center gap-1 ml-2" data-lp-looks>
+        <div className="flex flex-wrap items-center gap-1 md:ml-2" data-lp-looks>
           {plot.looks.map((lk) => (
             <button key={lk.id} onClick={() => switchLook(lk.id)} onDoubleClick={() => editable && renameLook()}
               className={`h-7 px-2.5 rounded-md text-[12px] font-medium whitespace-nowrap ${lk.id === look.id ? "bg-white/15 text-white" : "text-white/55 hover:bg-white/8"}`}>{lk.name}</button>
@@ -544,7 +544,7 @@ export function LightPlotEditor({
             </>
           )}
         </div>
-        <div className="ml-auto flex items-center gap-2 shrink-0">
+        <div className="ml-auto flex flex-wrap md:flex-nowrap items-center gap-2 md:shrink-0">
           {(["snap", "labels", "beams"] as const).map((k) => (
             <label key={k} className="flex items-center gap-1 text-[12px] text-white/70">
               <input type="checkbox" checked={plot.view[k]} onChange={(e) => setViewOpt({ [k]: e.target.checked })} />
@@ -673,7 +673,7 @@ export function LightPlotEditor({
         </div>
         {camView && (
           <div data-lp-camview-panel className="relative flex-1 min-w-0 flex flex-col border-l border-white/10 bg-black">
-            <div className="flex items-center gap-2 px-2 h-10 border-b border-white/10 shrink-0 overflow-x-auto">
+            <div className="flex flex-wrap items-center gap-2 px-2 py-1.5 border-b border-white/10 shrink-0">
               {cameras.length > 1 && (
                 <select value={viewCam?.id} onChange={(e) => setViewOpt({ camera: e.target.value })} className="h-7 rounded-md bg-white/10 px-1 text-[12px]">
                   {cameras.map((c, i) => <option key={c.id} value={c.id}>{c.name || `${L.camera} ${i + 1}`}</option>)}
