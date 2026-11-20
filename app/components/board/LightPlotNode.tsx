@@ -4,6 +4,7 @@
 // fixture list. Deliberately cheap (iPhone / iPad must always open the board): one small SVG, no canvas, no WebGL,
 // the floor-plan photo only as its thumbnail. «Bearbeiten» / «Ansehen» opens the full-screen editor.
 
+import { useState } from "react";
 import { activeLook, kelvinColor, lpLabels, plotBounds, plotOf, roleText } from "@/lib/lightPlot";
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
@@ -11,6 +12,8 @@ import { LightPlotDrawing, PX } from "./LightPlotDrawing";
 
 export function LightPlotNode({ el, editable, onOpen }: { el: LightPlotElement; editable?: boolean; onOpen?: () => void }) {
   const { language } = useLanguage();
+  // v2: a rendered still of the camera view is shown first (plain <img>, no WebGL on the board); «Plan» switches
+  const [showPlan, setShowPlan] = useState(false);
   const L = lpLabels(language);
   const plot = plotOf(el);
   const look = activeLook(plot);
@@ -35,9 +38,20 @@ export function LightPlotNode({ el, editable, onOpen }: { el: LightPlotElement; 
         )}
       </div>
       <div className="relative flex-1 min-h-0 bg-[#141416]">
+        {look.render_src && !showPlan && el.view?.tile !== "plan" ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img data-light-plot-render src={look.render_src} alt={look.name} draggable={false} className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none select-none" />
+        ) : (
         <svg viewBox={`${b.x * PX} ${b.y * PX} ${b.w * PX} ${b.h * PX}`} className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid meet">
           <LightPlotDrawing plot={plot} look={look} L={L} bgSrc={el.image_thumb_src ?? el.image_src} lite />
         </svg>
+        )}
+        {look.render_src && (
+          <div className="absolute right-2 top-2 flex rounded-md overflow-hidden border border-white/15 text-[10px] font-semibold" data-no-drag onPointerDown={(e) => e.stopPropagation()}>
+            <button data-light-plot-tile="render" onClick={(e) => { e.stopPropagation(); setShowPlan(false); }} className={`px-1.5 py-0.5 ${!showPlan ? "bg-white/20 text-white" : "bg-black/50 text-white/60"}`}>{L.tileRender}</button>
+            <button data-light-plot-tile="plan" onClick={(e) => { e.stopPropagation(); setShowPlan(true); }} className={`px-1.5 py-0.5 ${showPlan ? "bg-white/20 text-white" : "bg-black/50 text-white/60"}`}>{L.tilePlan}</button>
+          </div>
+        )}
         {!look.lights.length && <div className="absolute inset-x-3 bottom-2 text-center text-[11px] text-white/40">{L.empty}</div>}
       </div>
       {listRows > 0 && (

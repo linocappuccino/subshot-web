@@ -16,6 +16,10 @@ import {
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
 import { LightPlotDrawing, PX } from "./LightPlotDrawing";
+import dynamic from "next/dynamic";
+import type { LightPlot3DHandle } from "./LightPlot3D";
+// three.js only loads when the camera view is opened (never with the board)
+const LightPlot3D = dynamic(() => import("./LightPlot3D").then((m) => m.LightPlot3D), { ssr: false });
 
 type Tool = "select" | "box" | "hand" | "walls" | "measure" | "text";
 type Pt = { x: number; y: number };
@@ -65,6 +69,10 @@ export function LightPlotEditor({
   const [busy, setBusy] = useState(false);
   // phones: the side panel (properties + fixture list) is a sheet you open
   const [panelOpen, setPanelOpen] = useState(false);
+  // v2: the camera view (3D) — split view on desktop, instead of the plan on a phone
+  const [camView, setCamView] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const view3d = useRef<LightPlot3DHandle>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
@@ -317,8 +325,8 @@ export function LightPlotEditor({
   const addPerson = (kind: "talent" | "camera") => {
     const c = center();
     const p = kind === "camera"
-      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, sensor: "s35" as const }
-      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "" };
+      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, sensor: "s35" as const, z: 1.5, tilt: 0 }
+      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.75 };
     add({ ...plot, people: [...plot.people, p] }, p.id);
   };
   const addLight = (preset: string) => {
@@ -459,6 +467,34 @@ export function LightPlotEditor({
     } finally { setBusy(false); }
   }
 
+  // ── camera view ─────────────────────────────────────────────────────────
+  const cameras = plot.people.filter((p) => p.kind === "camera");
+  const viewCam = cameras.find((c) => c.id === plot.view.camera) ?? cameras[0] ?? null;
+  async function renderStill() {
+    if (!uploadFile || !view3d.current) return;
+    setBusy(true);
+    setNotice(L.rendering);
+    try {
+      const blob = await view3d.current.capture(1600, 900, "image/jpeg");
+      if (!blob) return;
+      const up = await uploadFile(new File([blob], `${fileBase()} – render.jpg`, { type: "image/jpeg" }), "image/jpeg", () => {});
+      // the look keeps one still; the previous one leaves the board (→ board trash) on the next save
+      const next = setLook((lk) => ({ ...lk, render_key: up.key, render_src: up.src }), plotRef.current);
+      setPlot(next);
+      save({ ...next, looks: next.looks.map(({ render_src, ...lk }) => { void render_src; return lk; }) });
+      setNotice(L.rendered);
+      setTimeout(() => setNotice(null), 2500);
+    } catch {
+      setNotice(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function exportCamPng() {
+    const blob = await view3d.current?.capture(1920, 1080, "image/png");
+    if (blob) download(blob, `${fileBase()} – ${viewCam?.name || L.camera}.png`);
+  }
+
   // ── selection panel ─────────────────────────────────────────────────────
   const one = selected.size === 1 ? findObj(plot, [...selected][0]) : null;
   const vb = useMemo(() => plotBounds(plot, 1.2), [plot]);
@@ -525,6 +561,7 @@ export function LightPlotEditor({
               <button onClick={redo} disabled={!future.length} title={L.redo} className="h-8 w-8 rounded-md hover:bg-white/10 disabled:opacity-30">↷</button>
             </>
           )}
+          <button data-lp-camview onClick={() => setCamView((v) => !v)} className={`h-8 px-2.5 rounded-md text-[12px] font-semibold ${camView ? "bg-blue-600" : "bg-white/10 hover:bg-white/15"}`}>🎥 {L.camView}</button>
           <button data-lp-panel-toggle onClick={() => setPanelOpen((v) => !v)} className="md:hidden h-8 px-2.5 rounded-md bg-white/10 text-[12px] font-semibold">☰ {L.fixtures}</button>
           <button data-lp-export-png onClick={exportPng} disabled={busy} className="h-8 px-2.5 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold">{L.png}</button>
           <button data-lp-export-pdf onClick={exportPdf} disabled={busy} className="h-8 px-2.5 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold">{L.pdf}</button>
@@ -555,8 +592,9 @@ export function LightPlotEditor({
           <button title={L.fit} onClick={fit} className="w-9 h-9 rounded-lg text-[14px] text-white/70 hover:bg-white/10">⤢</button>
         </div>
 
-        {/* plan */}
-        <div className="relative flex-1 min-w-0">
+        {/* plan (+ camera view) */}
+        <div className="relative flex-1 min-w-0 flex">
+        <div className={`relative flex-1 min-w-0 ${camView ? "hidden md:block" : ""}`}>
           {tool === "walls" && editable && (
             <div className="absolute left-3 top-3 z-10 flex items-center gap-1 rounded-lg bg-[#1c1c1e]/95 border border-white/10 p-1">
               {(["wall", "curve", "window", "door", "opening"] as WallKind[]).map((k) => (
@@ -633,12 +671,45 @@ export function LightPlotEditor({
           </div>
           {!editable && <div className="absolute right-3 bottom-3 rounded-md bg-white/10 px-2 py-1 text-[11px] text-white/70">{L.readOnly}</div>}
         </div>
+        {camView && (
+          <div data-lp-camview-panel className="relative flex-1 min-w-0 flex flex-col border-l border-white/10 bg-black">
+            <div className="flex items-center gap-2 px-2 h-10 border-b border-white/10 shrink-0 overflow-x-auto">
+              {cameras.length > 1 && (
+                <select value={viewCam?.id} onChange={(e) => setViewOpt({ camera: e.target.value })} className="h-7 rounded-md bg-white/10 px-1 text-[12px]">
+                  {cameras.map((c, i) => <option key={c.id} value={c.id}>{c.name || `${L.camera} ${i + 1}`}</option>)}
+                </select>
+              )}
+              <label className="flex items-center gap-1 text-[12px] text-white/70 whitespace-nowrap">{L.exposure}
+                <input data-lp-exposure type="range" min={-6} max={6} step={0.5} value={plot.view.exposure ?? 0}
+                  onChange={(e) => setPlot({ ...plot, view: { ...plot.view, exposure: +e.target.value } })} onPointerUp={() => save(plotRef.current)} className="w-24" />
+                <span className="w-8 text-white/50">{(plot.view.exposure ?? 0) > 0 ? "+" : ""}{plot.view.exposure ?? 0}</span>
+              </label>
+              <div className="ml-auto flex items-center gap-1.5">
+                <button onClick={exportCamPng} disabled={!viewCam} className="h-7 px-2 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold whitespace-nowrap">{L.camViewPng}</button>
+                {editable && uploadFile && (
+                  <button data-lp-render onClick={renderStill} disabled={!viewCam || busy} className="h-7 px-2.5 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-[12px] font-semibold whitespace-nowrap">{L.render}</button>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 min-h-0">
+              <LightPlot3D ref={view3d} plot={plot} look={look} cam={viewCam} L={L} />
+            </div>
+            {notice && <div className="absolute left-1/2 -translate-x-1/2 bottom-3 rounded-lg bg-black/80 px-3 py-1.5 text-[12px] text-white">{notice}</div>}
+          </div>
+        )}
+        </div>
 
         {/* right panel */}
         <div className={`${panelOpen ? "fixed inset-x-0 bottom-0 z-30 max-h-[55%] rounded-t-2xl bg-[#18181a] border-t" : "hidden"} md:static md:block md:max-h-none md:rounded-none md:bg-transparent md:border-t-0 w-full md:w-72 shrink-0 md:border-l border-white/10 overflow-y-auto`}>
           {one && (
             <Props L={L} one={one} plot={plot} editable={editable} onPatch={(p) => update(one.obj.id, p)} onDelete={deleteSelected}
               bg={!!plot.room.bg} />
+          )}
+          {editable && !one && (
+            <div className="p-3 border-b border-white/10 space-y-2" data-lp-room>
+              <div className="text-[11px] uppercase tracking-wider text-white/45">{L.room}</div>
+              <Num label={L.wallHeight} value={plot.room.height ?? 2.6} min={2} max={8} step={0.1} onChange={(v) => commit({ ...plot, room: { ...plot.room, height: v } })} />
+            </div>
           )}
           {plot.room.bg && editable && !one && (
             <div className="p-3 border-b border-white/10 space-y-2">
@@ -743,6 +814,8 @@ function Props({ L, one, plot, editable, onPatch, onDelete }: {
         {li.modifier === "custom" && text("modifier_label", L.modLabel)}
         <Num label={`${L.beamAngle} °`} value={li.beam} min={5} max={360} disabled={!editable} onChange={(v) => onPatch({ beam: v })} />
         <Num label={`${L.rotation} °`} value={Math.round(li.rot)} min={-180} max={180} disabled={!editable} onChange={(v) => onPatch({ rot: v })} />
+        <Num label={L.height} value={li.z ?? 2} min={0.2} max={6} step={0.1} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
+        <Num label={L.tilt} value={li.tilt ?? 25} min={-60} max={90} disabled={!editable} onChange={(v) => onPatch({ tilt: v })} />
       </>
     );
   } else if (one.type === "person") {
@@ -755,6 +828,14 @@ function Props({ L, one, plot, editable, onPatch, onDelete }: {
             <Num label={`${L.wb} K`} value={Number(o.kelvin ?? 5600)} min={2000} max={10000} step={100} disabled={!editable} onChange={(v) => onPatch({ kelvin: v })} />
             <Num label={`${L.lens} mm`} value={Number(o.lens_mm ?? 35)} min={8} max={200} disabled={!editable} onChange={(v) => onPatch({ lens_mm: v })} />
             {sel("sensor", L.sensor, [["s35", "Super 35"], ["ff", "Full Frame"]])}
+            <Num label={L.height} value={Number(o.z ?? 1.5)} min={0.2} max={5} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
+            <Num label={L.tilt} value={Number(o.tilt ?? 0)} min={-45} max={45} disabled={!editable} onChange={(v) => onPatch({ tilt: v })} />
+          </>
+        )}
+        {o.kind === "talent" && (
+          <>
+            {sel("pose", L.pose, [["standing", L.standing], ["sitting", L.sitting]])}
+            <Num label={L.bodyHeight} value={Number(o.height_m ?? 1.75)} min={0.9} max={2.2} step={0.05} disabled={!editable} onChange={(v) => onPatch({ height_m: v })} />
           </>
         )}
         <Num label={`${L.rotation} °`} value={Math.round(Number(o.rot ?? 0))} min={-180} max={180} disabled={!editable} onChange={(v) => onPatch({ rot: v })} />

@@ -10,15 +10,27 @@ export type Modifier = "bare" | "dish55" | "fresnel" | "softbox" | "lantern" | "
 export interface LpWall { id: string; kind: WallKind; x1: number; y1: number; x2: number; y2: number; bend?: number }
 export interface LpLabel { id: string; x: number; y: number; text: string }
 export interface LpItem { id: string; kind: ItemKind; x: number; y: number; w: number; h: number; rot: number; label: string }
-export interface LpPerson { id: string; kind: "talent" | "camera"; x: number; y: number; rot: number; name: string; body?: string; kelvin?: number; lens_mm?: number; sensor?: "s35" | "ff" }
+export interface LpPerson {
+  id: string; kind: "talent" | "camera"; x: number; y: number; rot: number; name: string;
+  /** talent (v2): pose + body height (m) */
+  pose?: "standing" | "sitting"; height_m?: number;
+  /** camera: body, white balance, lens, sensor; v2: lens height (m) + tilt (° down) */
+  body?: string; kelvin?: number; lens_mm?: number; sensor?: "s35" | "ff"; z?: number; tilt?: number;
+}
 export interface LpLight {
   id: string; preset: string; name: string; role: Role; role_label?: string; kelvin: number; intensity: number;
   modifier: Modifier; modifier_label?: string; beam: number; rot: number; x: number; y: number;
+  /** v2 (camera view): height (m) and tilt (° down) */
+  z?: number; tilt?: number;
 }
 export interface LpMod { id: string; kind: "diffusion" | "flag"; x1: number; y1: number; x2: number; y2: number; label: string }
-export interface LpLook { id: string; name: string; lights: LpLight[]; mods: LpMod[] }
-export interface LpRoom { walls: LpWall[]; labels: LpLabel[]; items: LpItem[]; bg?: { x: number; y: number; w: number; h: number; opacity: number } }
-export interface LpView { snap: boolean; labels: boolean; beams: boolean; spill: number }
+export interface LpLook {
+  id: string; name: string; lights: LpLight[]; mods: LpMod[];
+  /** v2: «Bild rendern» — still of the camera view (board file); render_src added on read */
+  render_key?: string; render_src?: string | null;
+}
+export interface LpRoom { walls: LpWall[]; labels: LpLabel[]; items: LpItem[]; height?: number; bg?: { x: number; y: number; w: number; h: number; opacity: number } }
+export interface LpView { snap: boolean; labels: boolean; beams: boolean; spill: number; exposure?: number; camera?: string; tile?: "plan" }
 export interface LightPlotData { room: LpRoom; people: LpPerson[]; looks: LpLook[]; active_look: string; view: LpView }
 
 export const lpId = () => Math.random().toString(36).slice(2, 12);
@@ -44,32 +56,32 @@ export function plotOf(el: Partial<LightPlotData>): LightPlotData {
 export const activeLook = (p: LightPlotData) => p.looks.find((l) => l.id === p.active_look) ?? p.looks[0];
 
 // ── fixtures ───────────────────────────────────────────────────────────────
-export interface LightPreset { name: string; brand: string; k: [number, number, number]; shape: "point" | "tube" | "panel" }
+export interface LightPreset { name: string; brand: string; k: [number, number, number]; shape: "point" | "tube" | "panel"; watts?: number }
 const BI: [number, number, number] = [5600, 2700, 6500];
 const RGB: [number, number, number] = [5600, 2300, 10000];
 const DAY: [number, number, number] = [5600, 5600, 5600];
 export const LIGHT_PRESETS: LightPreset[] = [
-  { name: "Amaran 150c", brand: "Aputure", k: RGB, shape: "point" },
-  { name: "Amaran 300c", brand: "Aputure", k: RGB, shape: "point" },
-  { name: "Aputure LS 600d", brand: "Aputure", k: DAY, shape: "point" },
-  { name: "Aputure Nova P300c", brand: "Aputure", k: RGB, shape: "panel" },
-  { name: "Aputure Nova P600c", brand: "Aputure", k: RGB, shape: "panel" },
-  { name: "Godox SL60W", brand: "Godox", k: DAY, shape: "point" },
-  { name: "Godox VL300", brand: "Godox", k: DAY, shape: "point" },
-  { name: "Godox UL150", brand: "Godox", k: DAY, shape: "point" },
-  { name: "Nanlite Forza 150B", brand: "Nanlite", k: BI, shape: "point" },
-  { name: "Nanlite Forza 500B II", brand: "Nanlite", k: BI, shape: "point" },
-  { name: "Nanlite PavoTube II 15X", brand: "Nanlite", k: RGB, shape: "tube" },
-  { name: "Nanlite PavoTube II 30X", brand: "Nanlite", k: RGB, shape: "tube" },
-  { name: "Nanlite PavoSlim 60C", brand: "Nanlite", k: RGB, shape: "panel" },
-  { name: "FC-720C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Vela 150C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Vela 300C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Alien 150C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Alien 300C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Evoke 150C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Evoke 600C", brand: "Weitere", k: RGB, shape: "point" },
-  { name: "Evoke 5C", brand: "Weitere", k: RGB, shape: "point" },
+  { name: "Amaran 150c", brand: "Aputure", k: RGB, shape: "point", watts: 150 },
+  { name: "Amaran 300c", brand: "Aputure", k: RGB, shape: "point", watts: 300 },
+  { name: "Aputure LS 600d", brand: "Aputure", k: DAY, shape: "point", watts: 600 },
+  { name: "Aputure Nova P300c", brand: "Aputure", k: RGB, shape: "panel", watts: 300 },
+  { name: "Aputure Nova P600c", brand: "Aputure", k: RGB, shape: "panel", watts: 600 },
+  { name: "Godox SL60W", brand: "Godox", k: DAY, shape: "point", watts: 60 },
+  { name: "Godox VL300", brand: "Godox", k: DAY, shape: "point", watts: 300 },
+  { name: "Godox UL150", brand: "Godox", k: DAY, shape: "point", watts: 150 },
+  { name: "Nanlite Forza 150B", brand: "Nanlite", k: BI, shape: "point", watts: 150 },
+  { name: "Nanlite Forza 500B II", brand: "Nanlite", k: BI, shape: "point", watts: 500 },
+  { name: "Nanlite PavoTube II 15X", brand: "Nanlite", k: RGB, shape: "tube", watts: 20 },
+  { name: "Nanlite PavoTube II 30X", brand: "Nanlite", k: RGB, shape: "tube", watts: 40 },
+  { name: "Nanlite PavoSlim 60C", brand: "Nanlite", k: RGB, shape: "panel", watts: 60 },
+  { name: "FC-720C", brand: "Weitere", k: RGB, shape: "point", watts: 720 },
+  { name: "Vela 150C", brand: "Weitere", k: RGB, shape: "point", watts: 150 },
+  { name: "Vela 300C", brand: "Weitere", k: RGB, shape: "point", watts: 300 },
+  { name: "Alien 150C", brand: "Weitere", k: RGB, shape: "point", watts: 150 },
+  { name: "Alien 300C", brand: "Weitere", k: RGB, shape: "point", watts: 300 },
+  { name: "Evoke 150C", brand: "Weitere", k: RGB, shape: "point", watts: 150 },
+  { name: "Evoke 600C", brand: "Weitere", k: RGB, shape: "point", watts: 600 },
+  { name: "Evoke 5C", brand: "Weitere", k: RGB, shape: "point", watts: 5 },
 ];
 export const presetOf = (name: string) => LIGHT_PRESETS.find((p) => p.name === name);
 export const kelvinRange = (preset: string): [number, number] => {
@@ -77,12 +89,16 @@ export const kelvinRange = (preset: string): [number, number] => {
   return p ? [p.k[1], p.k[2]] : [1700, 20000];
 };
 export const MODIFIER_BEAM: Record<Modifier, number> = { bare: 110, dish55: 55, fresnel: 30, softbox: 90, lantern: 300, custom: 60 };
+/** camera view: how soft the light edge is (0 hard … 1 very soft) */
+export const MODIFIER_SOFT: Record<Modifier, number> = { bare: 0.45, dish55: 0.3, fresnel: 0.15, softbox: 0.95, lantern: 1, custom: 0.5 };
+/** camera view: how much a modifier eats (softbox / lantern lose light) */
+export const MODIFIER_GAIN: Record<Modifier, number> = { bare: 1, dish55: 1.6, fresnel: 2.2, softbox: 0.55, lantern: 0.45, custom: 1 };
 export const ROLES: Role[] = ["key", "fill", "rim", "back", "practical", "ambience", "custom"];
 export const MODIFIERS: Modifier[] = ["bare", "dish55", "fresnel", "softbox", "lantern", "custom"];
 
 export function newLight(preset: string, x: number, y: number, role: Role = "key"): LpLight {
   const p = presetOf(preset);
-  return { id: lpId(), preset, name: preset || "Licht", role, kelvin: p ? p.k[0] : 5600, intensity: 100, modifier: "bare", beam: MODIFIER_BEAM.bare, rot: 0, x, y };
+  return { id: lpId(), preset, name: preset || "Licht", role, kelvin: p ? p.k[0] : 5600, intensity: 100, modifier: "bare", beam: MODIFIER_BEAM.bare, rot: 0, x, y, z: 2, tilt: 25 };
 }
 
 export const ITEM_SIZE: Record<ItemKind, [number, number]> = {
@@ -143,6 +159,10 @@ const DE = {
   body: "Body", wb: "Weissabgleich", lens: "Objektiv", sensor: "Sensor", width: "Breite", depth: "Tiefe", label: "Beschriftung", bend: "Rundung", delete: "Löschen",
   preset: "Gerät", customName: "Eigenes Gerät", library: "Licht-Bibliothek", readOnly: "Nur ansehen", fit: "Alles zeigen", title: "Titel", opacity: "Deckkraft",
   hint: "Klick setzt Punkte, Doppelklick oder Esc beendet die Wand.", distance: "Distanz", roleLabel: "Eigene Rolle", modLabel: "Eigener Modifier",
+  camView: "Kamera-View", camViewOff: "Plan", noCamera: "Zuerst eine Kamera platzieren.", exposure: "Belichtung", height: "Höhe (m)", tilt: "Neigung °",
+  pose: "Pose", standing: "Stehend", sitting: "Sitzend", bodyHeight: "Körpergrösse (m)", wallHeight: "Wandhöhe (m)", render: "Bild rendern", rendering: "Rendert …",
+  rendered: "Bild gespeichert – die Kachel zeigt es.", camViewPng: "PNG (Kamera)", webglLost: "3D-Ansicht neu laden …", noWebgl: "Dieses Gerät kann die 3D-Ansicht nicht anzeigen.",
+  tilePlan: "Plan", tileRender: "Render", room: "Raum",
 };
 const EN: typeof DE = {
   node: "Light plot", edit: "Edit", view: "View", lights: "lights", empty: "No lights yet – «Edit» opens the editor.",
@@ -158,6 +178,10 @@ const EN: typeof DE = {
   body: "Body", wb: "White balance", lens: "Lens", sensor: "Sensor", width: "Width", depth: "Depth", label: "Label", bend: "Curve", delete: "Delete",
   preset: "Fixture", customName: "Custom fixture", library: "Light library", readOnly: "View only", fit: "Show all", title: "Title", opacity: "Opacity",
   hint: "Click to set points, double click or Esc ends the wall.", distance: "Distance", roleLabel: "Custom role", modLabel: "Custom modifier",
+  camView: "Camera view", camViewOff: "Plan", noCamera: "Place a camera first.", exposure: "Exposure", height: "Height (m)", tilt: "Tilt °",
+  pose: "Pose", standing: "Standing", sitting: "Sitting", bodyHeight: "Body height (m)", wallHeight: "Wall height (m)", render: "Render still", rendering: "Rendering …",
+  rendered: "Still saved – the tile shows it.", camViewPng: "PNG (camera)", webglLost: "Reloading the 3D view …", noWebgl: "This device can't show the 3D view.",
+  tilePlan: "Plan", tileRender: "Render", room: "Room",
 };
 export type LpLabels = typeof DE;
 export const lpLabels = (language: string): LpLabels => (language === "de" ? DE : EN);

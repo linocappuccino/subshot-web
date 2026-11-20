@@ -5,7 +5,8 @@
 // data-lp-id / data-lp-part handles for dragging). Pure render, no state.
 
 import { useId } from "react";
-import { cameraFov, kelvinColor, presetOf, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
+import { cameraFov, kelvinColor, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
+import { CameraSymbol, ItemSymbol, LightSymbol, ModSymbol, TalentSymbol } from "./LightPlotSymbols";
 
 export const PX = 100;
 const BLUE = "#3b82f6";
@@ -76,18 +77,10 @@ export function LightPlotDrawing({
         return (
           <g key={it.id} transform={`translate(${it.x * PX} ${it.y * PX}) rotate(${it.rot})`}>
             <g data-lp-id={it.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined}>
-              {it.kind === "circle" || it.kind === "tree" ? (
-                <ellipse rx={w / 2} ry={hh / 2} fill={it.kind === "tree" ? "rgba(74,222,128,0.18)" : "rgba(255,255,255,0.06)"} stroke={sel(it.id) ? BLUE : "rgba(255,255,255,0.55)"} strokeWidth={sel(it.id) ? 4 : 2.5} strokeDasharray={it.kind === "tree" ? "6 5" : undefined} />
-              ) : (
-                <rect x={-w / 2} y={-hh / 2} width={w} height={hh} rx={it.kind === "car" ? hh / 3 : it.kind === "sofa" ? 14 : 4} fill="rgba(255,255,255,0.06)" stroke={sel(it.id) ? BLUE : "rgba(255,255,255,0.55)"} strokeWidth={sel(it.id) ? 4 : 2.5} />
-              )}
-              {it.kind === "stairs" && Array.from({ length: Math.max(2, Math.round(it.h / 0.28)) }, (_, i) => (
-                <line key={i} x1={-w / 2} x2={w / 2} y1={-hh / 2 + ((i + 1) * hh) / (Math.round(it.h / 0.28) + 1)} y2={-hh / 2 + ((i + 1) * hh) / (Math.round(it.h / 0.28) + 1)} stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />
-              ))}
-              {it.kind === "bed" && <rect x={-w / 2 + 8} y={-hh / 2 + 8} width={w * 0.22} height={hh - 16} rx={6} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth={1.5} />}
+              <ItemSymbol kind={it.kind} w={w} h={hh} sel={sel(it.id)} />
             </g>
             {view.labels && (it.label || !lite) && (
-              <text y={5} textAnchor="middle" fontSize={font * 0.9} fill="rgba(255,255,255,0.7)" pointerEvents="none" transform={`rotate(${-it.rot})`}>{it.label || L[it.kind]}</text>
+              <text y={5} textAnchor="middle" fontSize={font * 0.9} fill="rgba(255,255,255,0.75)" pointerEvents="none" transform={`rotate(${-it.rot})`}>{it.label || L[it.kind]}</text>
             )}
             {rotKnob(it.id, 0, 0, 0, Math.max(w, hh) / 2 + 30)}
           </g>
@@ -137,16 +130,13 @@ export function LightPlotDrawing({
       })}
       {look.mods.map((m) => {
         const x1 = m.x1 * PX, y1 = m.y1 * PX, x2 = m.x2 * PX, y2 = m.y2 * PX;
-        const s = sel(m.id);
         return (
           <g key={m.id}>
             <g data-lp-id={m.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined}>
-              <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={s ? BLUE : m.kind === "flag" ? "#18181b" : "rgba(255,255,255,0.9)"} strokeWidth={m.kind === "flag" ? 10 : 6} strokeLinecap="round"
-                strokeDasharray={m.kind === "diffusion" ? "3 6" : undefined} />
-              {m.kind === "flag" && <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={s ? BLUE : "#e4e4e7"} strokeWidth={2} />}
+              <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} />
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={22} />
             </g>
-            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 12} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{m.label || L[m.kind]}</text>}
+            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{m.label || L[m.kind]}</text>}
             {h(m.id, "p1", x1, y1)}
             {h(m.id, "p2", x2, y2)}
           </g>
@@ -167,56 +157,43 @@ export function LightPlotDrawing({
             <g key={p.id}>
               <path d={`M ${x} ${y} L ${x + len * Math.cos(a1)} ${y + len * Math.sin(a1)} M ${x} ${y} L ${x + len * Math.cos(a2)} ${y + len * Math.sin(a2)}`} stroke="rgba(250,204,21,0.55)" strokeWidth={2} strokeDasharray="10 7" pointerEvents="none" />
               <g data-lp-id={p.id} data-lp-part="body" transform={`translate(${x} ${y}) rotate(${p.rot})`} style={editable ? { cursor: "move" } : undefined}>
-                <rect x={-30} y={-20} width={44} height={40} rx={6} fill="#27272a" stroke={s ? BLUE : "#facc15"} strokeWidth={s ? 4 : 3} />
-                <rect x={14} y={-12} width={20} height={24} rx={3} fill="#3f3f46" stroke={s ? BLUE : "#facc15"} strokeWidth={2} />
+                <CameraSymbol p={p} sel={s} />
               </g>
               {view.labels && (
-                <text x={x} y={y + 46} textAnchor="middle" fontSize={font * 0.85} fill="#fde68a" pointerEvents="none">
+                <text x={x} y={y + 64} textAnchor="middle" fontSize={font * 0.85} fill="#fde68a" pointerEvents="none">
                   {[p.name || L.camera, p.lens_mm ? `${p.lens_mm} mm` : "", p.kelvin ? `${p.kelvin} K` : ""].filter(Boolean).join(" · ")}
                 </text>
               )}
-              {rotKnob(p.id, x, y, p.rot, 70)}
+              {rotKnob(p.id, x, y, p.rot, 90)}
             </g>
           );
         }
         return (
           <g key={p.id}>
-            <g data-lp-id={p.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined}>
-              <circle cx={x} cy={y} r={24} fill="#3f3f46" stroke={s ? BLUE : "#f472b6"} strokeWidth={s ? 4 : 3} />
-              <path d={`M ${x + 22 * Math.cos(deg(p.rot - 35))} ${y + 22 * Math.sin(deg(p.rot - 35))} L ${x + 36 * Math.cos(deg(p.rot))} ${y + 36 * Math.sin(deg(p.rot))} L ${x + 22 * Math.cos(deg(p.rot + 35))} ${y + 22 * Math.sin(deg(p.rot + 35))}`} fill="#f472b6" />
+            <g data-lp-id={p.id} data-lp-part="body" transform={`translate(${x} ${y}) rotate(${p.rot})`} style={editable ? { cursor: "move" } : undefined}>
+              <TalentSymbol p={p} sel={s} />
             </g>
-            {view.labels && <text x={x} y={y + 44} textAnchor="middle" fontSize={font * 0.85} fill="#fbcfe8" pointerEvents="none">{p.name || L.talent}</text>}
-            {rotKnob(p.id, x, y, p.rot, 60)}
+            {view.labels && <text x={x} y={y + 50} textAnchor="middle" fontSize={font * 0.85} fill="#fbcfe8" pointerEvents="none">{p.name || L.talent}</text>}
+            {rotKnob(p.id, x, y, p.rot, 64)}
           </g>
         );
       })}
       {look.lights.map((li, i) => {
         const x = li.x * PX, y = li.y * PX, s = sel(li.id);
-        const shape = presetOf(li.preset)?.shape ?? "point";
         const c = kelvinColor(li.kelvin);
-        const tubeLen = li.preset.includes("15X") ? 60 : 120;
         return (
           <g key={li.id}>
             <g data-lp-id={li.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined} transform={`translate(${x} ${y}) rotate(${li.rot})`}>
-              {shape === "tube" ? (
-                <rect x={-7} y={-tubeLen / 2} width={14} height={tubeLen} rx={7} fill={c} stroke={s ? BLUE : "#18181b"} strokeWidth={s ? 4 : 2} />
-              ) : shape === "panel" ? (
-                <rect x={-10} y={-26} width={20} height={52} rx={4} fill={c} stroke={s ? BLUE : "#18181b"} strokeWidth={s ? 4 : 2} />
-              ) : (
-                <g>
-                  <circle r={20} fill={c} stroke={s ? BLUE : "#18181b"} strokeWidth={s ? 4 : 2} />
-                  <path d="M 18 -9 L 30 -15 L 30 15 L 18 9 Z" fill={c} stroke={s ? BLUE : "#18181b"} strokeWidth={2} />
-                </g>
-              )}
+              <LightSymbol li={li} sel={s} />
             </g>
-            <circle cx={x - 22} cy={y - 22} r={13} fill="#18181b" stroke={c} strokeWidth={2} pointerEvents="none" />
-            <text x={x - 22} y={y - 17} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff" pointerEvents="none">{i + 1}</text>
+            <circle cx={x - 30} cy={y - 30} r={13} fill="#18181b" stroke={c} strokeWidth={2.5} pointerEvents="none" />
+            <text x={x - 30} y={y - 25} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff" pointerEvents="none">{i + 1}</text>
             {view.labels && !lite && (
-              <text x={x} y={y + 40} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
+              <text x={x} y={y + 54} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
                 {`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`}
               </text>
             )}
-            {rotKnob(li.id, x, y, li.rot, 70)}
+            {rotKnob(li.id, x, y, li.rot, 80)}
           </g>
         );
       })}
