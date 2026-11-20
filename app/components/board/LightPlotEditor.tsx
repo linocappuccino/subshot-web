@@ -63,6 +63,8 @@ export function LightPlotEditor({
   const [libOpen, setLibOpen] = useState(false);
   const [setOpen, setSetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // phones: the side panel (properties + fixture list) is a sheet you open
+  const [panelOpen, setPanelOpen] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
@@ -321,9 +323,12 @@ export function LightPlotEditor({
   };
   const addLight = (preset: string) => {
     const c = center();
-    const li = newLight(preset, c.x - 1.5, c.y - 1, look.lights.length === 0 ? "key" : look.lights.length === 1 ? "fill" : "rim");
+    // new lights go round the middle (not on top of each other), pointing at it
+    const n = look.lights.length;
+    const ang = ((-150 + n * 70) * Math.PI) / 180;
+    const li = newLight(preset, snap(c.x + 2 * Math.cos(ang)), snap(c.y + 2 * Math.sin(ang)), n === 0 ? "key" : n === 1 ? "fill" : n === 2 ? "rim" : "back");
     if (!preset) li.name = L.customName;
-    li.rot = 30;
+    li.rot = Math.round((Math.atan2(c.y - li.y, c.x - li.x) * 180) / Math.PI);
     add(setLook((lk) => ({ ...lk, lights: [...lk.lights, li] })), li.id);
     setLibOpen(false);
   };
@@ -479,13 +484,14 @@ export function LightPlotEditor({
     >
       {/* top bar */}
       <div className="flex items-center gap-2 px-3 h-12 border-b border-white/10 shrink-0 overflow-x-auto">
+        <button onClick={onClose} aria-label={L.close} className="md:hidden shrink-0 h-8 w-8 rounded-md bg-blue-600 text-[14px] font-bold">✕</button>
         <span className="text-[15px]">💡</span>
         <input
           value={title}
           disabled={!editable}
           onChange={(e) => setTitle(e.target.value)}
           onBlur={() => editable && onCommit({ title: title.trim().slice(0, 200) })}
-          className="w-48 min-w-0 bg-transparent text-[14px] font-semibold outline-none border-b border-transparent focus:border-white/30"
+          className="w-32 md:w-48 shrink-0 min-w-0 bg-transparent text-[14px] font-semibold outline-none border-b border-transparent focus:border-white/30"
           aria-label={L.title}
         />
         <div className="flex items-center gap-1 ml-2" data-lp-looks>
@@ -519,6 +525,7 @@ export function LightPlotEditor({
               <button onClick={redo} disabled={!future.length} title={L.redo} className="h-8 w-8 rounded-md hover:bg-white/10 disabled:opacity-30">↷</button>
             </>
           )}
+          <button data-lp-panel-toggle onClick={() => setPanelOpen((v) => !v)} className="md:hidden h-8 px-2.5 rounded-md bg-white/10 text-[12px] font-semibold">☰ {L.fixtures}</button>
           <button data-lp-export-png onClick={exportPng} disabled={busy} className="h-8 px-2.5 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold">{L.png}</button>
           <button data-lp-export-pdf onClick={exportPdf} disabled={busy} className="h-8 px-2.5 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold">{L.pdf}</button>
           <button data-lp-close onClick={onClose} className="h-8 px-3 rounded-md bg-blue-600 hover:bg-blue-500 text-[12px] font-semibold">{L.close}</button>
@@ -628,7 +635,7 @@ export function LightPlotEditor({
         </div>
 
         {/* right panel */}
-        <div className="w-72 shrink-0 border-l border-white/10 overflow-y-auto">
+        <div className={`${panelOpen ? "fixed inset-x-0 bottom-0 z-30 max-h-[55%] rounded-t-2xl bg-[#18181a] border-t" : "hidden"} md:static md:block md:max-h-none md:rounded-none md:bg-transparent md:border-t-0 w-full md:w-72 shrink-0 md:border-l border-white/10 overflow-y-auto`}>
           {one && (
             <Props L={L} one={one} plot={plot} editable={editable} onPatch={(p) => update(one.obj.id, p)} onDelete={deleteSelected}
               bg={!!plot.room.bg} />
@@ -662,7 +669,7 @@ export function LightPlotEditor({
       </div>
 
       {/* hidden export drawing: the whole plan + the fixture list of this look */}
-      <svg ref={exportRef} xmlns="http://www.w3.org/2000/svg" className="hidden" viewBox={`${vb.x * PX} ${vb.y * PX} ${(vb.w + legendW) * PX} ${exportH * PX}`}>
+      <svg ref={exportRef} xmlns="http://www.w3.org/2000/svg" className="hidden" fontFamily="system-ui, -apple-system, Helvetica, Arial, sans-serif" viewBox={`${vb.x * PX} ${vb.y * PX} ${(vb.w + legendW) * PX} ${exportH * PX}`}>
         <rect x={vb.x * PX} y={vb.y * PX} width={(vb.w + legendW) * PX} height={exportH * PX} fill="#141416" />
         <LightPlotDrawing plot={plot} look={look} L={L} bgSrc={bg.src} />
         <g transform={`translate(${(vb.x + vb.w + 0.2) * PX} ${(vb.y + 0.5) * PX})`} fontFamily="system-ui, sans-serif">
