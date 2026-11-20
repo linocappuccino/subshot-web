@@ -129,10 +129,19 @@ function buildScene(THREE: typeof T, plot: LightPlotData, look: LpLook, cam: LpP
       for (const z of [-0.1, 0.1]) cap(0.075, 0.72, pants, 0, 0.44, z);
     }
     const hip = sitting ? 0.52 : 0.86;
-    cap(0.16, 0.42, cloth, -0.02, hip + 0.3, 0);                               // torso
-    for (const z of [-0.23, 0.23]) cap(0.055, 0.5, cloth, 0.0, hip + 0.22, z, 0, z > 0 ? -0.08 : 0.08); // arms
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.105, 18, 14), skin); head.position.set(0.0, hip + 0.73, 0); head.castShadow = true; g.add(head);
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), skin); nose.position.set(0.1, hip + 0.73, 0); g.add(nose);
+    // torso a bit flatter front-to-back, shoulders, slim arms, neck, an oval head looking forward
+    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.4, 4, 12), cloth);
+    torso.position.set(-0.02, hip + 0.3, 0); torso.scale.set(0.72, 1, 1.05); torso.castShadow = torso.receiveShadow = true; g.add(torso);
+    for (const z of [-0.2, 0.2]) {
+      const sh = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), cloth); sh.position.set(-0.02, hip + 0.5, z); sh.castShadow = true; g.add(sh);
+      cap(0.042, 0.5, cloth, -0.01, hip + 0.22, z * 1.08, 0, z > 0 ? -0.06 : 0.06);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), skin); hand.position.set(-0.01, hip - 0.06, z * 1.12); hand.castShadow = true; g.add(hand);
+    }
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.1, 12), skin); neck.position.set(0, hip + 0.6, 0); neck.castShadow = true; g.add(neck);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 16), skin); head.position.set(0.01, hip + 0.73, 0); head.scale.set(1.05, 1.18, 0.92); head.castShadow = head.receiveShadow = true; g.add(head);
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.018, 0.04, 8), skin); nose.position.set(0.11, hip + 0.72, 0); nose.rotation.z = -Math.PI / 2; g.add(nose);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(0.104, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), std("#3a2a20", 0.8));
+    hair.position.set(-0.005, hip + 0.745, 0); hair.scale.set(1.05, 1.18, 0.95); hair.rotation.z = 0.35; hair.castShadow = true; g.add(hair);
     scene.add(g);
   }
 

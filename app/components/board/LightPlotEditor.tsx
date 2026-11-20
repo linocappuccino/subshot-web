@@ -481,7 +481,7 @@ export function LightPlotEditor({
       // the look keeps one still; the previous one leaves the board (→ board trash) on the next save
       const next = setLook((lk) => ({ ...lk, render_key: up.key, render_src: up.src }), plotRef.current);
       setPlot(next);
-      save({ ...next, looks: next.looks.map(({ render_src, ...lk }) => { void render_src; return lk; }) });
+      save(next);  // render_src only lives in the board's state (the server keeps render_key and presigns on read)
       setNotice(L.rendered);
       setTimeout(() => setNotice(null), 2500);
     } catch {
