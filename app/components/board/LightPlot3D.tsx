@@ -60,7 +60,7 @@ function disposeTree(obj: T.Object3D) {
 
 export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; look: LpLook; cam: LpPerson | null; L: LpLabels; onMeter?: (lux: number) => void }>(function LightPlot3D({ plot, look, cam, L, onMeter }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const three = useRef<{ THREE: typeof T; renderer: T.WebGLRenderer; scene: T.Scene | null; camera: T.PerspectiveCamera | null; ms: number; head: ScanHead | null } | null>(null);
+  const three = useRef<{ THREE: typeof T; renderer: T.WebGLRenderer; scene: T.Scene | null; camera: T.PerspectiveCamera | null; ms: number; head: ScanHead | null; aspect: number; fit?: () => void } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "lost" | "nowebgl">("loading");
   const [scanned, setScanned] = useState(false);
   const latest = useRef({ plot, look, cam, onMeter });
@@ -84,7 +84,15 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
     t.scene = built.scene;
     t.camera = built.camera;
     const auto = p.view.auto_exposure !== false && built.meter.lux > 0;
-    t.renderer.toneMappingExposure = BASE_EXPOSURE * Math.pow(2, (p.view.exposure ?? 0) + (auto ? autoExposureEv(built.meter.lux) : 0));
+    // v4 manual exposure: with auto off and an aperture set, the camera's f-stop / ISO / shutter decide — compared with
+    // what an incident meter asks for at the face (N² = E·S·t / 250), the difference in stops shifts the picture
+    let manualEv = 0;
+    if (!auto && c.fstop && built.meter.lux > 0) {
+      const nNeed = Math.sqrt((built.meter.lux * (c.iso ?? 800) * (1 / (c.shutter ?? 50))) / 250);
+      manualEv = autoExposureEv(built.meter.lux) + 2 * Math.log2(nNeed / c.fstop);
+    }
+    t.renderer.toneMappingExposure = BASE_EXPOSURE * Math.pow(2, (p.view.exposure ?? 0) + (auto ? autoExposureEv(built.meter.lux) : manualEv));
+    if (Math.abs(built.aspect - t.aspect) > 0.001) { t.aspect = built.aspect; t.fit?.(); }
     t.renderer.domElement.dataset.lux = String(Math.round(built.meter.lux));
     latest.current.onMeter?.(built.meter.lux);
     draw();
@@ -122,15 +130,17 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       canvas.addEventListener("webglcontextlost", onLost);
       canvas.addEventListener("webglcontextrestored", onRestored);
       host.appendChild(canvas);
-      three.current = { THREE, renderer, scene: null, camera: null, ms: 0, head: null };
+      three.current = { THREE, renderer, scene: null, camera: null, ms: 0, head: null, aspect: ASPECT };
       const fit = () => {
         const w = host.clientWidth, h = host.clientHeight;
-        const cw = Math.min(w, h * ASPECT), ch = cw / ASPECT;
+        const a = three.current?.aspect ?? ASPECT;
+        const cw = Math.min(w, h * a), ch = cw / a;
         renderer.setSize(Math.max(1, Math.round(cw)), Math.max(1, Math.round(ch)), true);
         canvas!.style.width = `${cw}px`;
         canvas!.style.height = `${ch}px`;
         draw();
       };
+      three.current.fit = fit;
       ro = new ResizeObserver(fit);
       ro.observe(host);
       fit();
@@ -180,6 +190,7 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       r.getSize(prev);
       const pr = r.getPixelRatio();
       r.setPixelRatio(1);
+      h = Math.round(w / t.aspect);   // v4: the camera's frame (anamorphic = wider)
       r.setSize(w, h, false);
       r.render(t.scene, t.camera);
       const url = r.domElement.toDataURL(type, 0.9);   // read right after rendering (no preserveDrawingBuffer needed)

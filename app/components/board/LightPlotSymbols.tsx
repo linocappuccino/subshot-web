@@ -271,20 +271,51 @@ export function LightSymbol({ li, sel }: { li: LpLight; sel: boolean }) {
   }
 }
 
-/** camera on a tripod: body, lens (longer with more mm), matte box, monitor */
+/** camera, v4: drawn by class (phone, action cam, cinema body — bigger for LF / 65 mm) on its rig (tripod, slider,
+ * dolly on track, jib arm, gimbal handles, shoulder pad, handheld); lens longer with more mm, anamorphic = oval front */
 export function CameraSymbol({ p, sel }: { p: LpPerson; sel: boolean }) {
   const st = sel ? BLUE : "#facc15";
-  const lens = Math.max(18, Math.min(64, 14 + (p.lens_mm ?? 35) / 4));
+  const sensor = p.sensor ?? "s35";
+  const rig = p.rig ?? "tripod";
+  const phone = sensor.startsWith("phone"), action = sensor === "action";
+  const big = sensor === "lf" || sensor === "f65";
+  const lens = Math.max(14, Math.min(64, 14 + (p.lens_mm ?? 35) / (phone ? 0.6 : 4)));
+  const ana = Number(p.squeeze ?? 1) > 1.01;
+  const rigEl = (() => {
+    switch (rig) {
+      case "dolly": return <g>{[-36, 36].map((y) => <line key={y} x1={-90} y1={y} x2={90} y2={y} stroke="#71717a" strokeWidth={4} />)}{[-80, -50, -20, 10, 40, 70].map((x) => <line key={x} x1={x} y1={-40} x2={x} y2={40} stroke="#52525b" strokeWidth={3} />)}<rect x={-40} y={-30} width={80} height={60} rx={8} fill="#3f3f46" stroke="#71717a" strokeWidth={2} /></g>;
+      case "slider": return <g><Legs r={46} color="#71717a" /><rect x={-80} y={-5} width={160} height={10} rx={4} fill="#52525b" /></g>;
+      case "jib": return <g><Legs r={46} color="#71717a" /><line x1={-120} y1={0} x2={0} y2={0} stroke="#71717a" strokeWidth={8} strokeLinecap="round" /><circle cx={-120} cy={0} r={14} fill="#52525b" /></g>;
+      case "gimbal": return <g><path d="M -20 -40 A 40 40 0 0 0 -20 40" fill="none" stroke="#71717a" strokeWidth={5} />{[-40, 40].map((y) => <line key={y} x1={-20} y1={y} x2={-46} y2={y} stroke="#71717a" strokeWidth={6} strokeLinecap="round" />)}</g>;
+      case "shoulder": return <rect x={-58} y={-14} width={26} height={28} rx={8} fill="#3f3f46" stroke="#71717a" strokeWidth={2} />;
+      case "handheld": return null;
+      default: return <Legs r={52} color="#71717a" />;
+    }
+  })();
+  if (phone || action) {
+    return (
+      <g>
+        {rigEl}
+        {phone
+          ? <rect x={-6} y={-30} width={10} height={60} rx={4} fill="#27272a" stroke={st} strokeWidth={sel ? 4 : 3} />
+          : <rect x={-14} y={-12} width={22} height={24} rx={4} fill="#27272a" stroke={st} strokeWidth={sel ? 4 : 3} />}
+        <circle cx={phone ? 6 : 10} cy={phone ? -18 : 0} r={phone ? 4 : 7} fill="#18181b" stroke={st} strokeWidth={2} />
+      </g>
+    );
+  }
+  const bw = big ? 56 : 46, bh = big ? 48 : 40;
   return (
     <g>
-      <Legs r={52} color="#71717a" />
-      <rect x={-34} y={-20} width={46} height={40} rx={6} fill="#27272a" stroke={st} strokeWidth={sel ? 4 : 3} />
-      <rect x={-40} y={-9} width={8} height={18} rx={2} fill="#3f3f46" />
+      {rigEl}
+      <rect x={12 - bw} y={-bh / 2} width={bw} height={bh} rx={6} fill="#27272a" stroke={st} strokeWidth={sel ? 4 : 3} />
+      <rect x={6 - bw} y={-9} width={8} height={18} rx={2} fill="#3f3f46" />
       <path d={`M 12 -12 L ${12 + lens} -10 L ${12 + lens} 10 L 12 12 Z`} fill="#18181b" stroke={st} strokeWidth={2} />
       {[0.35, 0.7].map((f) => <line key={f} x1={12 + lens * f} y1={-11} x2={12 + lens * f} y2={11} stroke="#52525b" strokeWidth={2} />)}
-      <path d={`M ${12 + lens} -14 L ${24 + lens} -22 L ${24 + lens} 22 L ${12 + lens} 14 Z`} fill="#27272a" stroke={st} strokeWidth={2} />
-      <rect x={-22} y={-34} width={22} height={12} rx={2} fill="#3f3f46" stroke="#71717a" strokeWidth={1.5} />
-      <rect x={-20} y={-32} width={18} height={8} fill="#60a5fa" fillOpacity={0.5} />
+      {ana
+        ? <ellipse cx={14 + lens} cy={0} rx={4} ry={18} fill="#1e3a8a" fillOpacity={0.6} stroke={st} strokeWidth={2} />
+        : <path d={`M ${12 + lens} -14 L ${24 + lens} -22 L ${24 + lens} 22 L ${12 + lens} 14 Z`} fill="#27272a" stroke={st} strokeWidth={2} />}
+      <rect x={-22} y={-bh / 2 - 14} width={22} height={12} rx={2} fill="#3f3f46" stroke="#71717a" strokeWidth={1.5} />
+      <rect x={-20} y={-bh / 2 - 12} width={18} height={8} fill="#60a5fa" fillOpacity={0.5} />
     </g>
   );
 }

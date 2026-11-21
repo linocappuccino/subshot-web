@@ -189,6 +189,8 @@ const DE = {
   frame: "Rahmen", fabric: "Stoff", silk: "Silk", grid14: "Grid Cloth 1/4", grid12: "Grid Cloth 1/2", gridFull: "Grid Cloth voll", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
   f216: "Folie 216", f250: "Folie 250", f251: "Folie 251", scrim1: "Scrim Single", scrim2: "Scrim Double", flagSize: "Grösse", cloth: "Stoff", solid: "Solid", duvetyne: "Duvetyne",
   sunfire: "Sunfire", poly: "Poly",
+  lensPreset: "Objektiv", squeeze: "Anamorphot", spherical: "Sphärisch", anamorphic: "anamorph", aperture: "Blende", shutter: "Verschluss", rig: "Aufbau",
+  tripod: "Stativ", shoulder: "Schulter", gimbal: "Gimbal", slider: "Slider", dolly: "Dolly", jib: "Kran / Jib", handheld: "Handheld", noModifier: "ohne Modifier",
   snap: "Snap", showLabels: "Labels", beams: "Kegel", spill: "Spill", undo: "Rückgängig", redo: "Wiederholen", png: "PNG", pdf: "PDF", close: "Schliessen",
   addLook: "+ Look", duplicate: "Duplizieren", rename: "Umbenennen", deleteLook: "Look löschen", fixtures: "Fixture-Liste", noFixtures: "Noch keine Lichter in diesem Look.",
   name: "Name", role: "Rolle", kelvin: "Kelvin", intensity: "Intensität", modifier: "Modifier", beamAngle: "Abstrahlwinkel", rotation: "Rotation",
@@ -219,6 +221,8 @@ const EN: typeof DE = {
   frame: "Frame", fabric: "Fabric", silk: "Silk", grid14: "Grid cloth 1/4", grid12: "Grid cloth 1/2", gridFull: "Grid cloth full", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
   f216: "Gel 216", f250: "Gel 250", f251: "Gel 251", scrim1: "Single scrim", scrim2: "Double scrim", flagSize: "Size", cloth: "Cloth", solid: "Solid", duvetyne: "Duvetyne",
   sunfire: "Sunfire", poly: "Poly",
+  lensPreset: "Lens", squeeze: "Anamorphic", spherical: "Spherical", anamorphic: "anamorphic", aperture: "Aperture", shutter: "Shutter", rig: "Rig",
+  tripod: "Tripod", shoulder: "Shoulder", gimbal: "Gimbal", slider: "Slider", dolly: "Dolly", jib: "Crane / jib", handheld: "Handheld", noModifier: "no modifier",
   snap: "Snap", showLabels: "Labels", beams: "Beams", spill: "Spill", undo: "Undo", redo: "Redo", png: "PNG", pdf: "PDF", close: "Close",
   addLook: "+ Look", duplicate: "Duplicate", rename: "Rename", deleteLook: "Delete look", fixtures: "Fixture list", noFixtures: "No lights in this look yet.",
   name: "Name", role: "Role", kelvin: "Kelvin", intensity: "Intensity", modifier: "Modifier", beamAngle: "Beam angle", rotation: "Rotation",
@@ -234,7 +238,17 @@ const EN: typeof DE = {
 };
 export type LpLabels = typeof DE;
 export const lpLabels = (language: string): LpLabels => (language === "de" ? DE : EN);
-export const roleText = (L: LpLabels, li: LpLight) => (li.role === "custom" ? li.role_label || L.custom : L[li.role]);
+// v4: a custom role without its own label shows the fixture's class (e.g. «Fresnel»), not «Custom»
+export const CAT_LABEL: Record<FixtureCat, "catFresnel" | "catHmi" | "catCob" | "catPar" | "catProfile" | "catPanel" | "catMat" | "catTube" | "catSpace" | "catBank" | "catPractical" | "catSmall" | "catSun"> = {
+  fresnel: "catFresnel", hmi: "catHmi", cob: "catCob", par: "catPar", profile: "catProfile", panel: "catPanel", mat: "catMat", tube: "catTube",
+  space: "catSpace", bank: "catBank", practical: "catPractical", small: "catSmall", sun: "catSun",
+};
+export const roleText = (L: LpLabels, li: LpLight) => {
+  if (li.role !== "custom") return L[li.role];
+  if (li.role_label) return li.role_label;
+  const cat = presetOf(li.preset)?.cat;
+  return cat ? L[CAT_LABEL[cat]] : L.custom;
+};
 /** v4: the default plan label of a flag / frame / bounce object (its own label wins) */
 export function modText(L: LpLabels, m: LpMod) {
   if (m.label) return m.label;
@@ -243,7 +257,7 @@ export function modText(L: LpLabels, m: LpMod) {
   if (m.kind === "flag" && m.size) return m.size === "floppy" ? "Floppy 4×4" : m.size === "cutter" ? "Cutter 10×42″" : `Flag ${m.size.replace("x", "×")}″`;
   return L[m.kind];
 }
-export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "custom" ? li.modifier_label || L.custom : L[li.modifier]);
+export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "custom" ? li.modifier_label || L.custom : li.modifier === "bare" ? L.noModifier : L[li.modifier]);
 
 // ── portrait presets (2026-11-21, v3): key light relative to talent + camera — mirrors subshot-api
 // app/light_plot.py PRESETS_PORTRAIT / apply_preset ──────────────────────────────────────────────────────────

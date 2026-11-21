@@ -11,9 +11,9 @@ import { createPortal } from "react-dom";
 import {
   activeLook, cameraFov, emptyPlot, ITEM_SIZE, kelvinColor, kelvinRange, LIGHT_PRESETS, lpId, lpLabels, MODIFIER_BEAM, MODIFIERS, modifierText,
   newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
-  type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
+  CAT_LABEL, type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
 } from "@/lib/lightPlot";
-import { FABRICS, FLAG_SIZES, FRAMES, type FabricKey, type FixtureCat, type FlagSize, type FrameKey } from "@/lib/lightCatalog";
+import { FABRICS, FLAG_SIZES, FRAMES, frameAspect, LENSES, RIGS, SENSORS, SQUEEZES, type FabricKey, type FixtureCat, type FlagSize, type FrameKey, type LensKey, type SensorKey } from "@/lib/lightCatalog";
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
 import { LightPlotDrawing, PX } from "./LightPlotDrawing";
@@ -330,7 +330,7 @@ export function LightPlotEditor({
   const addPerson = (kind: "talent" | "camera") => {
     const c = center();
     const p = kind === "camera"
-      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, sensor: "s35" as const, z: 1.5, tilt: 0 }
+      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, lens: "p35" as const, sensor: "ff" as const, fstop: 2.8, iso: 800, shutter: 50, rig: "tripod" as const, z: 1.5, tilt: 0 }
       : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.75 };
     add({ ...plot, people: [...plot.people, p] }, p.id);
   };
@@ -784,7 +784,7 @@ export function LightPlotEditor({
               </button>
             ))}
             {plot.people.filter((p) => p.kind === "camera").map((p) => (
-              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {p.lens_mm} mm ({Math.round(cameraFov(p.lens_mm, p.sensor))}°) · {p.kelvin} K</div>
+              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {SENSORS[p.sensor ?? "s35"]?.label} · {p.lens_mm} mm{p.squeeze && p.squeeze > 1 ? ` ${p.squeeze}× ana` : ""} ({Math.round(cameraFov(p.lens_mm, p.sensor, p.squeeze))}°){p.fstop ? ` · f/${p.fstop}` : ""} · {p.kelvin} K{p.rig ? ` · ${L[p.rig]}` : ""}</div>
             ))}
           </div>
         </div>
@@ -877,8 +877,25 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
           <>
             {text("body", L.body)}
             <Num label={`${L.wb} K`} value={Number(o.kelvin ?? 5600)} min={2000} max={10000} step={100} disabled={!editable} onChange={(v) => onPatch({ kelvin: v })} />
-            <Num label={`${L.lens} mm`} value={Number(o.lens_mm ?? 35)} min={8} max={200} disabled={!editable} onChange={(v) => onPatch({ lens_mm: v })} />
-            {sel("sensor", L.sensor, [["s35", "Super 35"], ["ff", "Full Frame"]])}
+            {/* v4 camera catalogue: sensor class, lens preset (zoom range / prime), focal length, anamorphic, aperture / ISO / shutter, rig */}
+            {sel("sensor", L.sensor, (Object.keys(SENSORS) as SensorKey[]).map((k) => [k, SENSORS[k].label] as [string, string]))}
+            <label className="block text-[11px] text-white/55">{L.lensPreset}
+              <select data-lp-lens value={String(o.lens ?? "")} disabled={!editable} className={field}
+                onChange={(e) => { const k = e.target.value as LensKey | ""; if (!k) return onPatch({ lens: undefined }); const ln = LENSES[k];
+                  const mm = Math.min(ln.max, Math.max(ln.min, Number(o.lens_mm ?? 35))); onPatch({ lens: k, lens_mm: k === "phone" ? (String(o.sensor).startsWith("phone") ? mm : 6.9) : ln.min === ln.max ? ln.min : mm, fstop: Math.max(ln.f, Number(o.fstop ?? ln.f)) }); }}>
+                <option value="">—</option>
+                {(Object.keys(LENSES) as LensKey[]).map((k) => <option key={k} value={k}>{LENSES[k].label}</option>)}
+              </select>
+            </label>
+            {(() => { const ln = o.lens ? LENSES[o.lens as LensKey] : null; return (
+              <Num label={`${L.lens} mm`} value={Number(o.lens_mm ?? 35)} min={ln ? ln.min : 1} max={ln ? ln.max : 1200} step={ln?.min === ln?.max && ln ? 1 : 0.1} disabled={!editable || (!!ln && ln.min === ln.max)} onChange={(v) => onPatch({ lens_mm: v })} />
+            ); })()}
+            {sel("squeeze", L.squeeze, SQUEEZES.map((q) => [String(q), q === 1 ? L.spherical : `${q}× ${L.anamorphic}`] as [string, string]))}
+            <div className="text-[11px] text-white/45">{Math.round(cameraFov(Number(o.lens_mm ?? 35), (o.sensor as SensorKey) ?? "s35", Number(o.squeeze ?? 1)))}° · {frameAspect((o.sensor as SensorKey) ?? "s35", Number(o.squeeze ?? 1)).toFixed(2)}:1</div>
+            <Num label={`${L.aperture} (f/)`} value={Number(o.fstop ?? 2.8)} min={o.lens ? LENSES[o.lens as LensKey].f : 0.7} max={32} step={0.1} disabled={!editable} onChange={(v) => onPatch({ fstop: v })} />
+            <Num label="ISO" value={Number(o.iso ?? 800)} min={25} max={51200} step={100} disabled={!editable} onChange={(v) => onPatch({ iso: v })} />
+            <Num label={`${L.shutter} (1/x s)`} value={Number(o.shutter ?? 50)} min={1} max={8000} disabled={!editable} onChange={(v) => onPatch({ shutter: v })} />
+            {sel("rig", L.rig, RIGS.map((r) => [r, L[r]] as [string, string]))}
             <Num label={L.height} value={Number(o.z ?? 1.5)} min={0.2} max={5} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
             <Num label={L.tilt} value={Number(o.tilt ?? 0)} min={-45} max={45} disabled={!editable} onChange={(v) => onPatch({ tilt: v })} />
           </>
@@ -1023,7 +1040,3 @@ function fStop(lux: number) {
 
 // v4 library order of the generic categories
 const CAT_ORDER: FixtureCat[] = ["fresnel", "hmi", "cob", "par", "profile", "panel", "mat", "bank", "tube", "space", "practical", "small", "sun"];
-const CAT_LABEL: Record<FixtureCat, "catFresnel" | "catHmi" | "catCob" | "catPar" | "catProfile" | "catPanel" | "catMat" | "catTube" | "catSpace" | "catBank" | "catPractical" | "catSmall" | "catSun"> = {
-  fresnel: "catFresnel", hmi: "catHmi", cob: "catCob", par: "catPar", profile: "catProfile", panel: "catPanel", mat: "catMat", tube: "catTube",
-  space: "catSpace", bank: "catBank", practical: "catPractical", small: "catSmall", sun: "catSun",
-};

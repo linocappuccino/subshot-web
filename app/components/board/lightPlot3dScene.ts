@@ -5,7 +5,7 @@
 // wall / floor colour, procedural plaster / wood textures. Only ever imported by LightPlot3D (dynamic import).
 
 import type * as T from "three";
-import { FABRICS, FLAG_SIZES, FRAMES } from "@/lib/lightCatalog";
+import { FABRICS, FLAG_SIZES, FRAMES, frameAspect } from "@/lib/lightCatalog";
 import { BOUNCE_Z, cameraFov, isBounce, kelvinColor, MODIFIER_GAIN, MODIFIER_SIZE, MODIFIER_SOFT, presetOf, SURFACE_REFLECT, type LightPlotData, type LpLight, type LpLook, type LpPerson } from "@/lib/lightPlot";
 
 export const ASPECT = 16 / 9;
@@ -942,11 +942,51 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   }
 
   // the camera
-  const hfov = cameraFov(cam.lens_mm, cam.sensor);
-  const vfov = (2 * Math.atan(Math.tan(((hfov / 2) * Math.PI) / 180) / ASPECT) * 180) / Math.PI;
-  const camera = new THREE.PerspectiveCamera(vfov, ASPECT, 0.05, 300);
+  // v4: the other cameras of the plan as 3D models — body by class (phone, action cam, cinema, large format), lens
+  // length from the focal length, rig (tripod, slider, dolly + track, jib, gimbal, shoulder, handheld)
+  for (const pc of plot.people) {
+    if (pc.kind !== "camera" || pc.id === cam.id) continue;
+    const sensor = pc.sensor ?? "s35", rig = pc.rig ?? "tripod";
+    const phoneCam = sensor.startsWith("phone"), action = sensor === "action", big = sensor === "lf" || sensor === "f65";
+    const cz = pc.z ?? 1.5, cr = (pc.rot * Math.PI) / 180, ct = ((pc.tilt ?? 0) * Math.PI) / 180;
+    const g = new THREE.Group();
+    g.position.set(pc.x, 0, pc.y);
+    const headG = new THREE.Group();
+    headG.position.y = cz;
+    headG.rotation.set(0, -cr, -ct, "YXZ");
+    const camMat = new THREE.MeshStandardMaterial({ color: "#2a2a2e", roughness: 0.5, metalness: 0.4 });
+    if (phoneCam) headG.add(new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.16, 0.075), camMat));
+    else if (action) headG.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.045, 0.06), camMat));
+    else {
+      const [bl, bh, bw] = big ? [0.3, 0.2, 0.17] : [0.22, 0.15, 0.13];
+      const body = new THREE.Mesh(new THREE.BoxGeometry(bl, bh, bw), camMat); body.position.x = -bl / 2; headG.add(body);
+      const ll = Math.min(0.35, 0.06 + (pc.lens_mm ?? 35) / 600);
+      const lensM = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, ll, 18), black); lensM.rotation.z = -Math.PI / 2; lensM.position.x = ll / 2; headG.add(lensM);
+      if (Number(pc.squeeze ?? 1) > 1.01) { const ov = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.02, 24), black); ov.rotation.z = -Math.PI / 2; ov.scale.set(1, 1, 0.6); ov.position.x = ll + 0.01; headG.add(ov); }
+      const mon = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.09, 0.14), camMat); mon.position.set(-bl * 0.6, bh / 2 + 0.06, 0); headG.add(mon);
+    }
+    g.add(headG);
+    if (rig === "tripod" || rig === "slider" || rig === "jib") g.add(stand(THREE, metal, Math.max(0.3, cz - 0.08)));
+    if (rig === "slider") { const rail = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.04, 0.08), metal); rail.position.y = cz - 0.1; rail.rotation.y = -cr + Math.PI / 2; g.add(rail); }
+    if (rig === "jib") { const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 10), metal); arm.rotation.z = Math.PI / 2; arm.position.set(-0.6, cz - 0.05, 0); arm.rotation.y = -cr; g.add(arm); }
+    if (rig === "dolly") {
+      const cart = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.25, 0.6), camMat); cart.position.y = 0.2; g.add(cart);
+      const col = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, Math.max(0.2, cz - 0.3), 10), metal); col.position.y = (cz + 0.3) / 2; g.add(col);
+      for (const sz of [-0.35, 0.35]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(3, 0.03, 0.05), metal); tr.position.set(0, 0.015, sz); tr.rotation.y = -cr; g.add(tr); }
+    }
+    if (rig === "gimbal") { const ringG = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.012, 8, 24, Math.PI), metal); ringG.position.y = cz; ringG.rotation.y = -cr; g.add(ringG); }
+    g.traverse((o) => { o.castShadow = true; o.receiveShadow = true; });
+    scene.add(g);
+  }
+
+  // v4: sensor class + focal length + anamorphic squeeze → angle of view and the delivered frame (16:9 or up to 2.39:1)
+  const squeeze = Number(cam.squeeze ?? 1);
+  const aspect = frameAspect(cam.sensor ?? "s35", squeeze);
+  const hfov = cameraFov(cam.lens_mm, cam.sensor, squeeze);
+  const vfov = (2 * Math.atan(Math.tan(((hfov / 2) * Math.PI) / 180) / aspect) * 180) / Math.PI;
+  const camera = new THREE.PerspectiveCamera(vfov, aspect, 0.05, 300);
   const cz = cam.z ?? 1.5, ct = ((cam.tilt ?? 0) * Math.PI) / 180, cr = (cam.rot * Math.PI) / 180;
   camera.position.set(cam.x, cz, cam.y);
   camera.lookAt(cam.x + Math.cos(cr) * Math.cos(ct), cz - Math.sin(ct), cam.y + Math.sin(cr) * Math.cos(ct));
-  return { scene, camera, meter: { lux } };
+  return { scene, camera, meter: { lux }, aspect };
 }
