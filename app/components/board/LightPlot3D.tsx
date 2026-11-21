@@ -11,7 +11,32 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type * as T from "three";
 import type { LightPlotData, LpLabels, LpLook, LpPerson } from "@/lib/lightPlot";
-import { ASPECT, buildScene } from "./lightPlot3dScene";
+import { ASPECT, buildScene, type ScanHead } from "./lightPlot3dScene";
+
+// 2026-11-21 (v4): the scanned talent head (CC BY 3.0, public/models/LICENSE-human.txt), ~650 KB, fetched only when
+// the camera view opens; kept for the page's life (shared by every rebuild), sculpted head as fallback on failure
+const HEAD_URL = "/models/light-plot-head.glb";
+let headPromise: Promise<ScanHead | null> | null = null;
+function loadHead(THREE: typeof T): Promise<ScanHead | null> {
+  if (!headPromise) headPromise = (async () => {
+    try {
+      const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+      const gltf = await new GLTFLoader().loadAsync(HEAD_URL);
+      let mesh: T.Mesh | null = null;
+      gltf.scene.traverse((o) => { if (!mesh && (o as T.Mesh).isMesh) mesh = o as T.Mesh; });
+      if (!mesh) return null;
+      const m = (mesh as T.Mesh).material as T.MeshStandardMaterial;
+      for (const t of [m.map, m.normalMap]) if (t) { t.userData.shared = true; t.anisotropy = 4; }
+      if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
+      // GLTFLoader flips normalScale.y for meshes without tangents — keep its sign on our own skin material
+      return { geometry: (mesh as T.Mesh).geometry, map: m.map, normalMap: m.normalMap, normalScaleY: m.normalScale?.y ?? -1 };
+    } catch {
+      headPromise = null;   // retry next time the view opens
+      return null;
+    }
+  })();
+  return headPromise;
+}
 
 export type LightPlot3DHandle = { capture: (w: number, h: number, type?: string) => Promise<Blob | null>; stats: () => { ms: number; geometries: number; textures: number; calls: number } | null };
 
@@ -21,9 +46,9 @@ const isPhone = () => typeof window !== "undefined" && window.matchMedia("(point
 function disposeTree(obj: T.Object3D) {
   obj.traverse((o) => {
     const m = o as T.Mesh;
-    if (m.geometry) m.geometry.dispose();
+    if (m.geometry && !o.userData.shared) m.geometry.dispose();
     const mats = (Array.isArray(m.material) ? m.material : m.material ? [m.material] : []) as T.MeshStandardMaterial[];
-    mats.forEach((x) => { x.map?.dispose(); x.dispose(); });
+    mats.forEach((x) => { if (x.map && !x.map.userData.shared) x.map.dispose(); x.dispose(); });
     const l = o as T.SpotLight;
     if (l.shadow?.map) l.shadow.map.dispose();
   });
@@ -31,8 +56,9 @@ function disposeTree(obj: T.Object3D) {
 
 export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; look: LpLook; cam: LpPerson | null; L: LpLabels }>(function LightPlot3D({ plot, look, cam, L }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const three = useRef<{ THREE: typeof T; renderer: T.WebGLRenderer; scene: T.Scene | null; camera: T.PerspectiveCamera | null; ms: number } | null>(null);
+  const three = useRef<{ THREE: typeof T; renderer: T.WebGLRenderer; scene: T.Scene | null; camera: T.PerspectiveCamera | null; ms: number; head: ScanHead | null } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "lost" | "nowebgl">("loading");
+  const [scanned, setScanned] = useState(false);
   const latest = useRef({ plot, look, cam });
   latest.current = { plot, look, cam };
   const frame = useRef(0);
@@ -50,7 +76,7 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
     const { plot: p, look: lk, cam: c } = latest.current;
     if (!t || !c) return;
     if (t.scene) disposeTree(t.scene);
-    const built = buildScene(t.THREE, p, lk, c, isPhone());
+    const built = buildScene(t.THREE, p, lk, c, isPhone(), t.head);
     t.scene = built.scene;
     t.camera = built.camera;
     t.renderer.toneMappingExposure = BASE_EXPOSURE * Math.pow(2, p.view.exposure ?? 0);
@@ -89,7 +115,7 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       canvas.addEventListener("webglcontextlost", onLost);
       canvas.addEventListener("webglcontextrestored", onRestored);
       host.appendChild(canvas);
-      three.current = { THREE, renderer, scene: null, camera: null, ms: 0 };
+      three.current = { THREE, renderer, scene: null, camera: null, ms: 0, head: null };
       const fit = () => {
         const w = host.clientWidth, h = host.clientHeight;
         const cw = Math.min(w, h * ASPECT), ch = cw / ASPECT;
@@ -101,6 +127,14 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       ro = new ResizeObserver(fit);
       ro.observe(host);
       fit();
+      // the scanned head first (one fetch per page, ~650 KB) — the sculpted head stands in if it fails
+      const t0 = performance.now();
+      const head = await loadHead(THREE);
+      if (!alive || !three.current) return;
+      three.current.head = head;
+      setScanned(!!head);
+      canvas.dataset.head = head ? "scan" : "sculpted";
+      canvas.dataset.headMs = String(Math.round(performance.now() - t0));
       setState("ready");
       rebuild();
     })();
@@ -158,6 +192,9 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       {!cam && <div className="absolute inset-0 flex items-center justify-center text-[13px] text-white/60 px-6 text-center">{L.noCamera}</div>}
       {state === "loading" && cam && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/50">…</div>}
       {state === "lost" && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/60">{L.webglLost}</div>}
+      {scanned && state === "ready" && cam && (
+        <a href="/models/LICENSE-human.txt" target="_blank" rel="noopener" data-lp-head-credit className="absolute right-2 bottom-1.5 text-[9px] text-white/35 hover:text-white/70 pointer-events-auto">{L.headCredit}</a>
+      )}
       {state === "nowebgl" && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/60 px-6 text-center">{L.noWebgl}</div>}
     </div>
   );

@@ -68,7 +68,9 @@ export default function proxy(req: NextRequest, ev: NextFetchEvent) {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // 2026-11-21 (light plot v4): + glb|txt — the static 3D head (public/models/light-plot-head.glb) and its licence
+    // text must load for signed-out guests too (share links render the camera view); public/ files only, no route
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|glb|txt)).*)",
     "/(api|trpc)(.*)",
   ],
 };

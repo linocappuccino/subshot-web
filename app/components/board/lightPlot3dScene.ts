@@ -152,8 +152,12 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
 }
 
 /** skin with wrap lighting: light reaches a little past the terminator and warms it — a cheap subsurface look */
-export function skinMaterial(THREE: Three) {
-  const m = new THREE.MeshPhysicalMaterial({ color: "#c99f86", roughness: 0.52, sheen: 0.35, sheenColor: new THREE.Color("#ffd2bd"), sheenRoughness: 0.6 });
+export function skinMaterial(THREE: Three, scan?: { map: T.Texture | null; normalMap: T.Texture | null; normalScaleY?: number }) {
+  // 2026-11-21 (v4): body skin = the scan's neck tone (#bf978b, measured from its colour map) so head and body meet
+  // without a seam; the scanned head uses its colour + normal map with the same wrap lighting
+  const m = new THREE.MeshPhysicalMaterial(scan
+    ? { map: scan.map, normalMap: scan.normalMap, normalScale: new THREE.Vector2(1, scan.normalScaleY ?? -1), color: new THREE.Color(0.86, 0.84, 0.84), roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color("#ffd2bd"), sheenRoughness: 0.6 }
+    : { color: "#bf978b", roughness: 0.52, sheen: 0.35, sheenColor: new THREE.Color("#ffd2bd"), sheenRoughness: 0.6 });
   m.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace("#include <lights_physical_pars_fragment>", THREE.ShaderChunk.lights_physical_pars_fragment.replace(
       "vec3 irradiance = dotNL * directLight.color;",
@@ -164,7 +168,7 @@ export function skinMaterial(THREE: Three) {
 }
 
 /** a human figure with real proportions (≈ 7.5 heads), facing +x; standing or sitting */
-export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Material; shirt: T.Material; pants: T.Material; shoes: T.Material; hair: T.Material }) {
+export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Material; shirt: T.Material; pants: T.Material; shoes: T.Material; hair: T.Material; headSkin?: T.Material }, scanHead?: T.BufferGeometry | null) {
   const g = new THREE.Group();
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const { skin, shirt, pants, shoes, hair } = mats;
@@ -205,13 +209,27 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
   }
   // trapezius: the slope from the neck down to the shoulders
   g.add(ball(THREE, shirt, V(-0.025, shoulderY - 0.005, 0), 0.1, 0.85, 0.5, 2.0));
-  g.add(limb(THREE, skin, V(0, shoulderY - 0.04, 0), V(0.005, shoulderY + 0.105, 0), 0.058, 0.052));
   const headC = V(0.015, shoulderY + 0.175, 0);
+  // the scan's neck ends in a 5.8 cm tube 3 cm behind the head centre (public/models build) — the body's neck continues it
+  if (scanHead && mats.headSkin) g.add(limb(THREE, skin, V(headC.x - 0.03, shoulderY - 0.04, 0), V(headC.x - 0.024, headC.y - 0.11, 0), 0.062, 0.054));
+  else g.add(limb(THREE, skin, V(0, shoulderY - 0.04, 0), V(0.005, shoulderY + 0.105, 0), 0.058, 0.052));
   // 2026-11-21 (v3): a sculpted head (nose, brow, eye sockets, cheekbones, lips, chin) — its forms cast the face
   // shadows Rembrandt / loop / split light depend on
-  const head = sculptedHead(THREE, skin, hair);
-  head.position.copy(headC);
-  g.add(head);
+  // 2026-11-21 (v4), Lino: «ein Gratismodell … was realistisch aussieht» — a real 3D head scan (Lee Perry-Smith,
+  // CC BY 3.0, public/models/LICENSE-human.txt), cut at the neck, in metres, facing +x, centred like the sculpted head.
+  // Its geometry is shared across rebuilds (userData.shared → never disposed per rebuild). Fallback: sculpted head.
+  if (scanHead && mats.headSkin) {
+    const head = new THREE.Mesh(scanHead, mats.headSkin);
+    head.userData.shared = true;
+    head.castShadow = head.receiveShadow = true;
+    head.position.copy(headC);
+    head.rotation.z = 0.08;   // the scan looks a little down — level the gaze so a high key throws the nose shadow
+    g.add(head);
+  } else {
+    const head = sculptedHead(THREE, skin, hair);
+    head.position.copy(headC);
+    g.add(head);
+  }
   if (sitting) {
     const wood = new THREE.MeshStandardMaterial({ color: "#6b5440", roughness: 0.7 });
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), wood);
@@ -250,7 +268,9 @@ function stand(THREE: Three, mat: T.Material, h: number) {
   return g;
 }
 
-export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean) {
+export type ScanHead = { geometry: T.BufferGeometry; map: T.Texture | null; normalMap: T.Texture | null; normalScaleY: number };
+
+export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#060607");
   const H = plot.room.height ?? 2.6;
@@ -372,10 +392,11 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     pants: new THREE.MeshStandardMaterial({ color: "#2b2e35", roughness: 0.85 }),
     shoes: new THREE.MeshStandardMaterial({ color: "#151517", roughness: 0.5 }),
     hair: new THREE.MeshStandardMaterial({ color: "#3a2a1f", roughness: 0.7 }),
+    headSkin: scan ? skinMaterial(THREE, scan) : undefined,
   };
   for (const p of plot.people) {
     if (p.kind !== "talent") continue;
-    const f = humanFigure(THREE, p.pose === "sitting", mats);
+    const f = humanFigure(THREE, p.pose === "sitting", mats, scan?.geometry);
     f.position.set(p.x, 0, p.y);
     f.rotation.y = -(p.rot * Math.PI) / 180;
     f.scale.setScalar((p.height_m ?? 1.75) / 1.75);

@@ -161,7 +161,7 @@ const DE = {
   hint: "Klick setzt Punkte, Doppelklick oder Esc beendet die Wand.", distance: "Distanz", roleLabel: "Eigene Rolle", modLabel: "Eigener Modifier",
   camView: "Kamera-View", camViewOff: "Plan", noCamera: "Zuerst eine Kamera platzieren.", exposure: "Belichtung", height: "Höhe (m)", tilt: "Neigung °",
   pose: "Pose", standing: "Stehend", sitting: "Sitzend", bodyHeight: "Körpergrösse (m)", wallHeight: "Wandhöhe (m)", render: "Bild rendern", rendering: "Rendert …",
-  rendered: "Bild gespeichert – die Kachel zeigt es.", camViewPng: "PNG (Kamera)", webglLost: "3D-Ansicht neu laden …", noWebgl: "Dieses Gerät kann die 3D-Ansicht nicht anzeigen.",
+  rendered: "Bild gespeichert – die Kachel zeigt es.", camViewPng: "PNG (Kamera)", webglLost: "3D-Ansicht neu laden …", noWebgl: "Dieses Gerät kann die 3D-Ansicht nicht anzeigen.", headCredit: "Kopf: 3D-Scan «Infinite» von Lee Perry-Smith (triplegangers.com), CC BY 3.0",
   tilePlan: "Plan", tileRender: "Render", room: "Raum",
   portraitPreset: "Licht-Preset", presetPick: "Preset wählen …", rembrandt: "Rembrandt", loop: "Loop", butterfly: "Butterfly (Paramount)", split: "Split", broad: "Broad", short: "Short",
   closeUp: "Gesicht nah (85 mm)",
@@ -182,7 +182,7 @@ const EN: typeof DE = {
   hint: "Click to set points, double click or Esc ends the wall.", distance: "Distance", roleLabel: "Custom role", modLabel: "Custom modifier",
   camView: "Camera view", camViewOff: "Plan", noCamera: "Place a camera first.", exposure: "Exposure", height: "Height (m)", tilt: "Tilt °",
   pose: "Pose", standing: "Standing", sitting: "Sitting", bodyHeight: "Body height (m)", wallHeight: "Wall height (m)", render: "Render still", rendering: "Rendering …",
-  rendered: "Still saved – the tile shows it.", camViewPng: "PNG (camera)", webglLost: "Reloading the 3D view …", noWebgl: "This device can't show the 3D view.",
+  rendered: "Still saved – the tile shows it.", camViewPng: "PNG (camera)", webglLost: "Reloading the 3D view …", noWebgl: "This device can't show the 3D view.", headCredit: "Head: 3D scan «Infinite» by Lee Perry-Smith (triplegangers.com), CC BY 3.0",
   tilePlan: "Plan", tileRender: "Render", room: "Room",
   portraitPreset: "Lighting preset", presetPick: "Choose preset …", rembrandt: "Rembrandt", loop: "Loop", butterfly: "Butterfly (Paramount)", split: "Split", broad: "Broad", short: "Short",
   closeUp: "Face close-up (85 mm)",
@@ -195,8 +195,9 @@ export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "cust
 // ── portrait presets (2026-11-21, v3): key light relative to talent + camera — mirrors subshot-api
 // app/light_plot.py PRESETS_PORTRAIT / apply_preset ──────────────────────────────────────────────────────────
 export type PortraitPreset = "rembrandt" | "loop" | "butterfly" | "split" | "broad" | "short";
+// 2026-11-21 (v4): Rembrandt 65° — on the scanned (real) face 55° only gives a loop; 65° closes the triangle on the far cheek
 export const PORTRAIT_PRESETS: Record<PortraitPreset, [number, number, number]> = {
-  butterfly: [0, 40, 1.6], loop: [35, 30, 1.8], rembrandt: [55, 45, 1.8], split: [90, 5, 1.6], broad: [45, 30, 1.8], short: [45, 30, 1.8],
+  butterfly: [0, 40, 1.6], loop: [35, 30, 1.8], rembrandt: [65, 45, 1.8], split: [90, 5, 1.6], broad: [45, 30, 1.8], short: [45, 30, 1.8],
 };
 const wrapDeg = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 export const eyeHeight = (t: LpPerson) => ((t.pose === "sitting" ? 1.18 : 1.62) * (t.height_m ?? 1.75)) / 1.75;
@@ -210,12 +211,16 @@ export function applyPreset(p: LightPlotData, preset: PortraitPreset, talentId?:
   const [off, elev, presetDist] = PORTRAIT_PRESETS[preset];
   // butterfly sits on the camera axis: the light goes just behind / above the camera, not into its picture
   const camDist = cam ? Math.hypot(cam.x - t.x, cam.y - t.y) : 0;
-  const dist = preset === "butterfly" && cam ? Math.max(presetDist, camDist + 0.35) : presetDist;
+  // 2026-11-21 (v4): under a low ceiling the light comes closer instead of lower — the elevation (nose shadow, Rembrandt
+  // triangle) is what makes the look; never closer than 0.9 m. Butterfly keeps its distance (it must clear the camera).
+  const zMax = (p.room.height ?? 2.6) - 0.15;
+  const fitDist = Math.max(0.9, (zMax - eyeHeight(t)) / Math.tan((elev * Math.PI) / 180));
+  const dist = preset === "butterfly" && cam ? Math.max(presetDist, camDist + 0.35) : Math.min(presetDist, fitDist);
   const side = wrapDeg(t.rot - camDir) < -1 ? -1 : 1;
   const az = preset === "broad" ? camDir - side * off : preset === "short" ? camDir + side * off : camDir + off;
   const r2 = (v: number) => Math.round(v * 100) / 100;
   const x = r2(t.x + dist * Math.cos((az * Math.PI) / 180)), y = r2(t.y + dist * Math.sin((az * Math.PI) / 180));
-  const z = r2(Math.min((p.room.height ?? 2.6) - 0.15, eyeHeight(t) + dist * Math.tan((elev * Math.PI) / 180)));
+  const z = r2(Math.min(zMax, eyeHeight(t) + dist * Math.tan((elev * Math.PI) / 180)));
   return {
     ...p,
     looks: p.looks.map((lk) => {
@@ -223,7 +228,9 @@ export function applyPreset(p: LightPlotData, preset: PortraitPreset, talentId?:
       const idx = lk.lights.findIndex((l) => l.role === "key");
       const lights = [...lk.lights];
       const base = idx >= 0 ? lights[idx] : lights[0] ?? { ...newLight("Aputure LS 600d", x, y, "key"), modifier: "dish55" as Modifier, beam: 55 };
-      const moved = { ...base, x, y, z, rot: Math.round(wrapDeg(az + 180) * 10) / 10, tilt: elev, role: "key" as Role };
+      // closer than the preset distance → dimmer by the inverse square, so the face keeps its exposure
+      const intensity = dist < presetDist - 0.01 ? Math.max(5, Math.round(100 * (dist / presetDist) ** 2)) : base.intensity;
+      const moved = { ...base, x, y, z, intensity, rot: Math.round(wrapDeg(az + 180) * 10) / 10, tilt: elev, role: "key" as Role };
       if (idx >= 0) lights[idx] = moved; else if (lights.length) lights[0] = moved; else lights.push(moved);
       return { ...lk, lights };
     }),
