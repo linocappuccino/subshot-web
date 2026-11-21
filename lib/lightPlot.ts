@@ -23,14 +23,26 @@ export interface LpLight {
   /** v2 (camera view): height (m) and tilt (° down) */
   z?: number; tilt?: number;
 }
-export interface LpMod { id: string; kind: "diffusion" | "flag"; x1: number; y1: number; x2: number; y2: number; label: string }
+export type ModKind = "diffusion" | "flag" | "reflector" | "vflat" | "card";
+export type BounceSurface = "white" | "silver" | "gold" | "black";
+export interface LpMod {
+  id: string; kind: ModKind; x1: number; y1: number; x2: number; y2: number; label: string;
+  /** v4 bounce objects (reflector / vflat / card): surface + centre height (m) */
+  surface?: BounceSurface; z?: number;
+}
+export const BOUNCE_KINDS: ModKind[] = ["reflector", "vflat", "card"];
+export const isBounce = (m: LpMod) => BOUNCE_KINDS.includes(m.kind);
+/** default centre height (m) — mirrors app/light_plot.py BOUNCE_Z */
+export const BOUNCE_Z: Record<string, number> = { reflector: 1.0, vflat: 1.2, card: 1.3 };
+/** reflectance of the surfaces (black = negative fill: absorbs, and takes away the room bounce from its side) */
+export const SURFACE_REFLECT: Record<BounceSurface, number> = { white: 0.8, silver: 0.9, gold: 0.8, black: 0 };
 export interface LpLook {
   id: string; name: string; lights: LpLight[]; mods: LpMod[];
   /** v2: «Bild rendern» — still of the camera view (board file); render_src added on read */
   render_key?: string; render_src?: string | null;
 }
-export interface LpRoom { walls: LpWall[]; labels: LpLabel[]; items: LpItem[]; height?: number; bg?: { x: number; y: number; w: number; h: number; opacity: number } }
-export interface LpView { snap: boolean; labels: boolean; beams: boolean; spill: number; exposure?: number; camera?: string; tile?: "plan" }
+export interface LpRoom { walls: LpWall[]; labels: LpLabel[]; items: LpItem[]; height?: number; bg?: { x: number; y: number; w: number; h: number; opacity: number }; wall_color?: string }
+export interface LpView { snap: boolean; labels: boolean; beams: boolean; spill: number; exposure?: number; auto_exposure?: boolean; camera?: string; tile?: "plan" }
 export interface LightPlotData { room: LpRoom; people: LpPerson[]; looks: LpLook[]; active_look: string; view: LpView }
 
 export const lpId = () => Math.random().toString(36).slice(2, 12);
@@ -45,7 +57,8 @@ export function plotOf(el: Partial<LightPlotData>): LightPlotData {
   const base = emptyPlot();
   const looks = el.looks?.length ? el.looks : base.looks;
   return {
-    room: { walls: el.room?.walls ?? [], labels: el.room?.labels ?? [], items: el.room?.items ?? [], ...(el.room?.bg ? { bg: el.room.bg } : {}) },
+    room: { walls: el.room?.walls ?? [], labels: el.room?.labels ?? [], items: el.room?.items ?? [], ...(el.room?.bg ? { bg: el.room.bg } : {}),
+      ...(el.room?.height ? { height: el.room.height } : {}), ...(el.room?.wall_color ? { wall_color: el.room.wall_color } : {}) },
     people: el.people ?? [],
     looks,
     active_look: looks.some((l) => l.id === el.active_look) ? (el.active_look as string) : looks[0].id,
@@ -149,7 +162,9 @@ const DE = {
   node: "Lichtplan", edit: "Bearbeiten", view: "Ansehen", lights: "Lichter", empty: "Noch keine Lichter – «Bearbeiten» öffnet den Editor.",
   select: "Auswahl (V)", box: "Rahmen-Auswahl (B)", hand: "Verschieben (H)", walls: "Wände zeichnen (W)", measure: "Messen (M)", text: "Beschriftung (T)",
   wall: "Wand", curve: "Rundwand", window: "Fenster", door: "Tür", opening: "Durchgang",
-  talent: "Talent", camera: "Kamera", light: "Licht", flag: "Flag", diffusion: "Diffusion", set: "Set-Stück", photo: "Grundriss-Foto", photoRemove: "Foto entfernen",
+  talent: "Talent", camera: "Kamera", light: "Licht", flag: "Flag", diffusion: "Diffusion", reflector: "Reflektor", vflat: "V-Flat / Styropor", card: "Bounce-Karte",
+  surface: "Oberfläche", white: "Weiss", silver: "Silber", gold: "Gold", black: "Schwarz (Negativ)", centerHeight: "Mitte Höhe (m)", size: "Grösse",
+  wallColor: "Wandfarbe", autoExposure: "Auto", metered: "Gemessen", bounce: "Aufheller", set: "Set-Stück", photo: "Grundriss-Foto", photoRemove: "Foto entfernen",
   table: "Tisch", chair: "Stuhl", sofa: "Sofa", bed: "Bett", car: "Auto", tree: "Baum", stairs: "Treppe", rect: "Rechteck", circle: "Kreis",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Eigene",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
@@ -170,7 +185,9 @@ const EN: typeof DE = {
   node: "Light plot", edit: "Edit", view: "View", lights: "lights", empty: "No lights yet – «Edit» opens the editor.",
   select: "Select (V)", box: "Box select (B)", hand: "Pan (H)", walls: "Draw walls (W)", measure: "Measure (M)", text: "Label (T)",
   wall: "Wall", curve: "Curved wall", window: "Window", door: "Door", opening: "Opening",
-  talent: "Talent", camera: "Camera", light: "Light", flag: "Flag", diffusion: "Diffusion", set: "Set piece", photo: "Floor plan photo", photoRemove: "Remove photo",
+  talent: "Talent", camera: "Camera", light: "Light", flag: "Flag", diffusion: "Diffusion", reflector: "Reflector", vflat: "V-flat / poly board", card: "Bounce card",
+  surface: "Surface", white: "White", silver: "Silver", gold: "Gold", black: "Black (negative)", centerHeight: "Centre height (m)", size: "Size",
+  wallColor: "Wall colour", autoExposure: "Auto", metered: "Metered", bounce: "Bounce", set: "Set piece", photo: "Floor plan photo", photoRemove: "Remove photo",
   table: "Table", chair: "Chair", sofa: "Sofa", bed: "Bed", car: "Car", tree: "Tree", stairs: "Stairs", rect: "Rectangle", circle: "Circle",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Custom",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",

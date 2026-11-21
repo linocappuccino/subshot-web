@@ -5,7 +5,7 @@
 // wall / floor colour, procedural plaster / wood textures. Only ever imported by LightPlot3D (dynamic import).
 
 import type * as T from "three";
-import { cameraFov, kelvinColor, MODIFIER_GAIN, MODIFIER_SOFT, presetOf, type LightPlotData, type LpLight, type LpLook, type LpPerson } from "@/lib/lightPlot";
+import { BOUNCE_Z, cameraFov, isBounce, kelvinColor, MODIFIER_GAIN, MODIFIER_SOFT, presetOf, SURFACE_REFLECT, type LightPlotData, type LpLight, type LpLook, type LpPerson } from "@/lib/lightPlot";
 
 export const ASPECT = 16 / 9;
 
@@ -268,9 +268,88 @@ function stand(THREE: Three, mat: T.Material, h: number) {
   return g;
 }
 
+// 2026-11-21 (v4): PCSS — percentage-closer soft shadows for the key light's face shadow map: a blocker search finds
+// how far the occluder is from the receiver, the penumbra grows with that gap × the source size (contact hardening:
+// the nose shadow is sharp at the nose and softer further away, the shadow on the wall softer than on the face).
+// Patched once into three's PCF path; only a light whose shadow.radius is NEGATIVE uses it — the radius then encodes
+// the depth range (far/near) and the source size (see pcssRadius). Every other light keeps plain PCF.
+let pcssInstalled = false;
+export function installPcss(THREE: Three, phone: boolean) {
+  if (pcssInstalled) return;
+  pcssInstalled = true;
+  const n = phone ? 16 : 32;   // samples per pass (blocker search + filter); phone: fewer (measured, see LightPlot3D stats)
+  const fn = `
+	#define PCSS_N ${n}
+	float pcssRand( vec2 co ) { return fract( 52.9829189 * fract( dot( co, vec2( 0.06711056, 0.00583715 ) ) ) ); }   // interleaved gradient noise (even grain)
+	vec2 pcssDisk( int i, float rot ) {
+		float fi = float( i ) + 0.5;
+		float r = sqrt( fi / float( PCSS_N ) );
+		float a = fi * 2.39996323 + rot;   // golden-angle spiral, rotated per pixel (no banding)
+		return vec2( cos( a ), sin( a ) ) * r;
+	}
+	float pcssShadow( sampler2D sm, vec2 mapSize, float enc, vec3 c ) {
+		float e = - enc;
+		float kq = floor( e / 1000.0 );
+		float F = max( 1.01, e - kq * 1000.0 );     // far / near of the shadow camera
+		float K = kq / 100.0;                        // source size / (frustum width per metre × near)
+		float zR = F / ( F - c.z * ( F - 1.0 ) );    // receiver distance / near (linearised depth)
+		vec2 texel = 1.0 / mapSize;
+		float rot = pcssRand( gl_FragCoord.xy ) * 6.2831853;
+		// 1) blocker search: how far in front of the receiver are the occluders (average)?
+		float searchUV = clamp( 0.5 * K / zR, 2.0 * texel.x, 0.04 );
+		float sum = 0.0; float cnt = 0.0;
+		for ( int i = 0; i < PCSS_N; i ++ ) {
+			float d = unpackRGBAToDepth( texture2D( sm, c.xy + pcssDisk( i, rot ) * searchUV ) );
+			if ( d < c.z ) { sum += d; cnt += 1.0; }
+		}
+		if ( cnt < 0.5 ) return 1.0;
+		float zB = F / ( F - ( sum / cnt ) * ( F - 1.0 ) );
+		// 2) penumbra from similar triangles: size × (receiver − blocker) / blocker, in shadow-map units at the receiver
+		float filterUV = clamp( K * ( zR - zB ) / ( zB * zR ), 1.0 * texel.x, 0.035 );
+		float lit = 0.0;
+		for ( int i = 0; i < PCSS_N; i ++ ) lit += texture2DCompare( sm, c.xy + pcssDisk( i, rot + 1.7 ) * filterUV, c.z );
+		return lit / float( PCSS_N );
+	}
+`;
+  let chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
+  const anchor = "\tvec2 texture2DDistribution(";
+  const pcfStart = "\t\t#if defined( SHADOWMAP_TYPE_PCF )\n";
+  const pcfEnd = "\t\t#elif defined( SHADOWMAP_TYPE_PCF_SOFT )";
+  if (!chunk.includes(anchor) || !chunk.includes(pcfStart) || !chunk.includes(pcfEnd)) return;   // three changed: plain PCF
+  chunk = chunk.replace(anchor, fn + anchor);
+  chunk = chunk.replace(pcfStart, pcfStart + "\t\t\tif ( shadowRadius < 0.0 ) { shadow = pcssShadow( shadowMap, shadowMapSize, shadowRadius, shadowCoord.xyz ); } else {\n");
+  chunk = chunk.replace(pcfEnd, "\t\t\t}\n" + pcfEnd);
+  THREE.ShaderChunk.shadowmap_pars_fragment = chunk;
+}
+
+/** shadow.radius for a PCSS light: −(far/near + 1000 × round(100 × K)), K = size / (2·tan(fov/2) × near) */
+export function pcssRadius(srcSize: number, fovHalf: number, near: number, far: number) {
+  const F = Math.min(999, Math.max(2, Math.round(far / near)));
+  const K = Math.min(9999, Math.max(1, Math.round((100 * srcSize) / (2 * Math.tan(fovHalf) * near))));
+  return -(F + 1000 * K);
+}
+
+const DEFAULT_WALL = "#d8d2c6";
+const DEFAULT_WALL_LUM = (() => { const r = 0xd8 / 255, g = 0xd2 / 255, b = 0xc6 / 255; const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); })();
+type Emitter = { pos: T.Vector3; dir: T.Vector3; cd: number; omni: boolean; cosO: number; cosI: number; color: T.Color };
+/** illuminance (lux-like, the scene's photometric units) from one fixture at point p with surface normal n;
+ * dome = incident-meter dome response (1 + cos) / 2 instead of a flat cosine */
+function irradiance(THREE: Three, e: Emitter, p: T.Vector3, n: T.Vector3, dome = false) {
+  const l = e.pos.clone().sub(p);
+  const d2 = Math.max(0.04, l.lengthSq());
+  l.normalize();
+  const c = n.dot(l);
+  const inc = dome ? (1 + c) / 2 : Math.max(0, c);
+  if (inc <= 0) return 0;
+  const cone = e.omni ? 1 : smooth(e.cosO, Math.max(e.cosO + 1e-4, e.cosI), e.dir.dot(l.clone().negate()));
+  void THREE;
+  return (e.cd * cone * inc) / d2;
+}
+
 export type ScanHead = { geometry: T.BufferGeometry; map: T.Texture | null; normalMap: T.Texture | null; normalScaleY: number };
 
-export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null) {
+export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null, noPcss = false) {
+  if (!noPcss) installPcss(THREE, phone);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#060607");
   const H = plot.room.height ?? 2.6;
@@ -282,7 +361,8 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.62 }));
   floor.rotation.x = -Math.PI / 2;
   add(floor, false, true);
-  const wallTex = noiseTexture(THREE, "#d8d2c6", "plaster");
+  const wallHex = plot.room.wall_color ?? DEFAULT_WALL;
+  const wallTex = noiseTexture(THREE, wallHex, "plaster");
   wallTex.repeat.set(3, 1.5);
   const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.92 });
   const trimMat = new THREE.MeshStandardMaterial({ color: "#efece6", roughness: 0.6 });
@@ -420,6 +500,8 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const black = new THREE.MeshStandardMaterial({ color: "#121214", roughness: 0.6, metalness: 0.2 });
   const shadowSize = phone ? 512 : 1024;
   let totalPower = 0;
+  // v4: every light as a simple emitter (position, axis, candela, cone) — the bounce objects and the face meter use it
+  const emitters: Emitter[] = [];
   // v3: the key light gets a sharp, tight shadow around the talent's head (the nose / cheekbone shadows of
   // Rembrandt, loop, split …); the other lights keep their normal shadow maps
   const keyId = (look.lights.find((l) => l.role === "key") ?? look.lights[0])?.id;
@@ -436,6 +518,12 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     const dir = new THREE.Vector3(Math.cos(r) * Math.cos(tilt), -Math.sin(tilt), Math.sin(r) * Math.cos(tilt));
     const pos = new THREE.Vector3(li.x, z, li.y);
     const soft = fam === "softbox" || fam === "panel" || fam === "tube" || diffused;
+    {
+      const omni = fam === "lantern" || li.beam >= 180;
+      const ang = Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180 * (diffused ? 1.35 : 1));
+      const pen = soft ? 1 : MODIFIER_SOFT[li.modifier];
+      emitters.push({ pos, dir, cd: omni ? cd / 2.2 : cd, omni, cosO: Math.cos(ang), cosI: Math.cos(ang * (1 - pen)), color });
+    }
     // apparent size of the source (m): drives how soft its shadow edges are
     const srcSize = diffused ? 1.2 : ({ softbox: 0.9, lantern: 0.6, panel: 0.6, tube: 0.8, dish: 0.55, fresnel: 0.15, cob: 0.1 } as Record<string, number>)[fam] ?? 0.2;
 
@@ -475,6 +563,8 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
           sp.shadow.radius = Math.min(9, 1 + (14 * srcSize) / Math.max(0.5, dist));  // penumbra grows with the source size / distance
           sp.shadow.camera.near = Math.max(0.1, dist - 1.5);
           sp.shadow.camera.far = dist + 6;
+          // v4: contact-hardening soft shadow (PCSS) from the real source size; the PCF radius above is the fallback
+          if (pcssInstalled && !noPcss) sp.shadow.radius = pcssRadius(srcSize, sp.angle * sp.shadow.focus, sp.shadow.camera.near, sp.shadow.camera.far);
         }
       }
       scene.add(sp);
@@ -536,6 +626,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const cloth = new THREE.MeshStandardMaterial({ color: "#ffffff", transparent: true, opacity: 0.55, roughness: 1, side: THREE.DoubleSide });
   const flagMat = new THREE.MeshStandardMaterial({ color: "#0a0a0b", roughness: 1, side: THREE.DoubleSide });
   for (const mo of look.mods) {
+    if (isBounce(mo)) continue;   // v4: drawn + lit below
     const len = Math.hypot(mo.x2 - mo.x1, mo.y2 - mo.y1);
     if (len < 0.05) continue;
     const g = new THREE.Group();
@@ -559,8 +650,89 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     scene.add(g);
   }
 
-  // bounce approximation: floor / wall colour, stronger with more light in the room
-  scene.add(new THREE.HemisphereLight("#d9d2c6", "#7a6650", 1.5 + Math.min(40, totalPower / 3500)));
+  // bounce approximation: floor / wall colour, stronger with more light in the room; v4: scaled with the wall colour
+  const wallC = new THREE.Color(wallHex);
+  const wallLum = (0.2126 * wallC.r + 0.7152 * wallC.g + 0.0722 * wallC.b) / DEFAULT_WALL_LUM;
+  const hemiI = (1.5 + Math.min(40, totalPower / 3500)) * Math.max(0.15, Math.min(1.25, wallLum));
+  scene.add(new THREE.HemisphereLight(wallC.clone().lerp(new THREE.Color("#d9d2c6"), 0.35), "#7a6650", hemiI));
+
+  // v4 bounce objects (reflector, V-flat / poly board, bounce card): each receives light from every fixture (inverse
+  // square × cosine of incidence × the fixture's cone) and re-emits ρ·E/π as a soft area light of its own size, facing
+  // its normal; black boards (ρ 0) take the room bounce away on their side (negative area light = negative fill)
+  const bounces: { pos: T.Vector3; n: T.Vector3; area: number; L: number; color: T.Color }[] = [];
+  const headAim = headPos ?? new THREE.Vector3(0, 1.5, 0);
+  const surfMat: Record<string, T.Material> = {
+    white: new THREE.MeshStandardMaterial({ color: "#f2f2f0", roughness: 0.95, side: THREE.DoubleSide }),
+    silver: new THREE.MeshStandardMaterial({ color: "#d4d4d8", roughness: 0.3, metalness: 0.85, side: THREE.DoubleSide }),
+    gold: new THREE.MeshStandardMaterial({ color: "#d9a640", roughness: 0.32, metalness: 0.85, side: THREE.DoubleSide }),
+    black: new THREE.MeshStandardMaterial({ color: "#0b0b0c", roughness: 1, side: THREE.DoubleSide }),
+  };
+  const goldTint = (() => { const w = new THREE.Color(kelvinColor(5600)), g = new THREE.Color(kelvinColor(3200)); return new THREE.Color(g.r / w.r, g.g / w.g, g.b / w.b).multiplyScalar(1 / Math.max(g.r / w.r, g.g / w.g, g.b / w.b)); })();
+  for (const mo of look.mods) {
+    if (!isBounce(mo)) continue;
+    const len = Math.max(0.1, Math.hypot(mo.x2 - mo.x1, mo.y2 - mo.y1));
+    const surface = mo.surface ?? "white";
+    const cz = Math.min(H - 0.05, mo.z ?? BOUNCE_Z[mo.kind] ?? 1.2);
+    const pos = new THREE.Vector3((mo.x1 + mo.x2) / 2, cz, (mo.y1 + mo.y2) / 2);
+    const [w, h] = mo.kind === "vflat" ? [len, Math.min(2.4, H)] : mo.kind === "card" ? [len, len * 0.75] : [len, len];
+    // the board faces the nearest talent: V-flats stand upright (normal in the floor plane), reflectors / cards aim at the head
+    const seg = new THREE.Vector3(mo.x2 - mo.x1, 0, mo.y2 - mo.y1).normalize();
+    let n = new THREE.Vector3(-seg.z, 0, seg.x);
+    if (n.dot(headAim.clone().sub(pos)) < 0) n.negate();
+    if (mo.kind !== "vflat") n = headAim.clone().sub(pos).normalize();
+    const vpos = mo.kind === "vflat" ? pos.clone().setY(h / 2) : pos;
+    // received light
+    let E = 0;
+    const col = new THREE.Color(0, 0, 0);
+    for (const e of emitters) { const ei = irradiance(THREE, e, vpos, n); E += ei; col.add(e.color.clone().multiplyScalar(ei)); }
+    if (E > 0) col.multiplyScalar(1 / Math.max(col.r, col.g, col.b, 1e-6)); else col.set("#ffffff");
+    if (surface === "gold") col.multiply(goldTint);
+    const rho = SURFACE_REFLECT[surface];
+    // silver: more specular — a smaller, punchier source; black: minus the room bounce it hides
+    const L = surface === "black" ? -(hemiI / Math.PI) * 0.8 : (rho * E) / Math.PI * (surface === "silver" ? 1.6 : 1);
+    const [rw, rh] = mo.kind === "reflector" ? [len * 0.886, len * 0.886] : [w, h];
+    const shrink = surface === "silver" ? 0.7 : 1;
+    const rect = new THREE.RectAreaLight(surface === "black" ? new THREE.Color("#ffffff") : col, L, rw * shrink, rh * shrink);
+    rect.position.copy(vpos).add(n.clone().multiplyScalar(0.03));
+    rect.lookAt(vpos.clone().add(n.clone().multiplyScalar(2)));
+    scene.add(rect);
+    bounces.push({ pos: vpos.clone(), n: n.clone(), area: rw * rh * shrink * shrink, L, color: col });
+    // the board itself
+    const g = new THREE.Group();
+    g.position.copy(vpos);
+    g.lookAt(vpos.clone().add(n));
+    const board = new THREE.Mesh(mo.kind === "reflector" ? new THREE.CircleGeometry(len / 2, 40) : new THREE.PlaneGeometry(w, h), surfMat[surface]);
+    board.castShadow = board.receiveShadow = true;
+    g.add(board);
+    if (mo.kind === "vflat") {   // the second leaf of the V, hinged at one edge, behind the face
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.05), surfMat[surface === "black" ? "black" : "white"]);
+      leaf.position.set(w * 0.25, 0, -w * 0.43); leaf.rotation.y = -Math.PI / 3; leaf.castShadow = true; g.add(leaf);
+    } else {
+      const rim = new THREE.Mesh(mo.kind === "reflector" ? new THREE.TorusGeometry(len / 2, 0.008, 6, 40) : new THREE.BoxGeometry(w + 0.02, h + 0.02, 0.01), metal);
+      rim.position.z = -0.006; g.add(rim);
+    }
+    scene.add(g);
+    if (mo.kind !== "vflat") {
+      const st = stand(THREE, metal, Math.max(0.3, cz - h / 2));
+      st.position.set(pos.x - n.x * 0.05, 0, pos.z - n.z * 0.05);
+      scene.add(st);
+    }
+  }
+
+  // v4 face meter (spot meter / incident dome at the face, pointed at the camera): fixtures + bounce boards + room
+  let lux = 0;
+  if (headPos && talent0) {
+    const fr = -(talent0.rot * Math.PI) / 180;
+    const face = headPos.clone().add(new THREE.Vector3(Math.cos(-fr) * 0.1, 0, Math.sin(-fr) * 0.1));
+    const toCam = new THREE.Vector3(cam.x, cam.z ?? 1.5, cam.y).sub(face).normalize();
+    for (const e of emitters) lux += irradiance(THREE, e, face, toCam, true);
+    for (const b of bounces) {
+      const v = b.pos.clone().sub(face); const d2 = Math.max(0.04, v.lengthSq()); v.normalize();
+      const cosB = Math.max(0, -v.dot(b.n)), dome = (1 + v.dot(toCam)) / 2;
+      lux += (b.L * b.area * cosB * dome) / d2;
+    }
+    lux = Math.max(0, lux + hemiI);
+  }
 
   // the camera
   const hfov = cameraFov(cam.lens_mm, cam.sensor);
@@ -569,5 +741,5 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const cz = cam.z ?? 1.5, ct = ((cam.tilt ?? 0) * Math.PI) / 180, cr = (cam.rot * Math.PI) / 180;
   camera.position.set(cam.x, cz, cam.y);
   camera.lookAt(cam.x + Math.cos(cr) * Math.cos(ct), cz - Math.sin(ct), cam.y + Math.sin(cr) * Math.cos(ct));
-  return { scene, camera };
+  return { scene, camera, meter: { lux } };
 }

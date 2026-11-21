@@ -3,7 +3,7 @@
 // 2026-11-20 (light plot v2), Lino: «die lichter und kameras und models müssen viel detailierter aussehen» — own
 // top-down drawings (1 m = 100 units, facing +x = rot 0, centred on the object). Plain SVG, no images.
 
-import { kelvinColor, presetOf, type ItemKind, type LpLight, type LpPerson } from "@/lib/lightPlot";
+import { kelvinColor, presetOf, type ItemKind, type LpLight, type ModKind, type LpPerson } from "@/lib/lightPlot";
 
 const BLUE = "#3b82f6";
 const DARK = "#1f1f23";
@@ -243,10 +243,27 @@ export function ItemSymbol({ kind, w, h, sel }: { kind: ItemKind; w: number; h: 
 }
 
 /** a flag on a C-stand, or a diffusion frame (from p1 to p2 in units) */
-export function ModSymbol({ kind, x1, y1, x2, y2, sel }: { kind: "flag" | "diffusion"; x1: number; y1: number; x2: number; y2: number; sel: boolean }) {
+const SURFACE_FILL: Record<string, string> = { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b" };
+
+export function ModSymbol({ kind, x1, y1, x2, y2, sel, surface }: { kind: ModKind; x1: number; y1: number; x2: number; y2: number; sel: boolean; surface?: string }) {
   const len = Math.hypot(x2 - x1, y2 - y1) || 1;
   const a = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
   const st = sel ? BLUE : kind === "flag" ? "#e4e4e7" : "#f4f4f5";
+  if (kind === "reflector" || kind === "vflat" || kind === "card") {
+    // 2026-11-21 (v4) bounce objects, top view: the board in its surface colour (black = negative fill, white outline)
+    const fill = SURFACE_FILL[surface ?? "white"] ?? SURFACE_FILL.white;
+    const edge = sel ? BLUE : surface === "black" ? "#e4e4e7" : "#52525b";
+    const t = kind === "vflat" ? 12 : kind === "reflector" ? 8 : 5;
+    return (
+      <g transform={`translate(${x1} ${y1}) rotate(${a})`}>
+        {kind === "reflector" && <><g transform={`translate(${len / 2} 22)`}><Legs r={18} color={LINE} /></g><line x1={len / 2} y1={22} x2={len / 2} y2={0} stroke={LINE} strokeWidth={2} /></>}
+        {kind === "vflat"
+          ? <path d={`M0 ${-t / 2} L${len} ${-t / 2} L${len} ${t / 2} L0 ${t / 2} Z M${len * 0.5} ${-t / 2} L${len * 0.5} ${t / 2}`} fill={fill} stroke={edge} strokeWidth={sel ? 3 : 1.5} />
+          : <rect x={0} y={-t / 2} width={len} height={t} rx={kind === "reflector" ? t / 2 : 1} fill={fill} stroke={edge} strokeWidth={sel ? 3 : 1.5} />}
+        {surface === "silver" && Array.from({ length: Math.max(2, Math.floor(len / 14)) }, (_, i) => <line key={i} x1={i * 14 + 3} y1={-t / 2 + 1} x2={i * 14 + 9} y2={t / 2 - 1} stroke="#e4e4e7" strokeWidth={1} />)}
+      </g>
+    );
+  }
   return (
     <g transform={`translate(${x1} ${y1}) rotate(${a})`}>
       {/* C-stand base + arm at the first end */}

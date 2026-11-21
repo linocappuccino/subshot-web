@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import {
   activeLook, cameraFov, emptyPlot, ITEM_SIZE, kelvinColor, kelvinRange, LIGHT_PRESETS, lpId, lpLabels, MODIFIER_BEAM, MODIFIERS, modifierText,
   newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
-  type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind,
+  type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
 } from "@/lib/lightPlot";
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
@@ -73,6 +73,7 @@ export function LightPlotEditor({
   const [camView, setCamView] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const view3d = useRef<LightPlot3DHandle>(null);
+  const [meterLux, setMeterLux] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
@@ -343,8 +344,23 @@ export function LightPlotEditor({
     add(setLook((lk) => ({ ...lk, lights: [...lk.lights, li] })), li.id);
     setLibOpen(false);
   };
-  const addMod = (kind: "flag" | "diffusion") => {
+  const addMod = (kind: ModKind) => {
     const c = center();
+    if (BOUNCE_KINDS.includes(kind)) {
+      // v4 bounce object: 1 m from the talent on the side away from the key (the shadow side), facing the talent
+      const t = plot.people.find((p) => p.kind === "talent");
+      const key = look.lights.find((l) => l.role === "key") ?? look.lights[0];
+      const tx = t?.x ?? c.x, ty = t?.y ?? c.y;
+      const away = key ? Math.atan2(ty - key.y, tx - key.x) : 0;
+      const half = (kind === "reflector" ? 0.8 : kind === "vflat" ? 1.2 : 0.5) / 2;
+      const d = kind === "vflat" ? 1.3 : 1.0;
+      const mx = tx + d * Math.cos(away), my = ty + d * Math.sin(away);
+      const px = -Math.sin(away) * half, py = Math.cos(away) * half;
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      const m: LpMod = { id: lpId(), kind, x1: r2(mx - px), y1: r2(my - py), x2: r2(mx + px), y2: r2(my + py), label: "", surface: "white", z: BOUNCE_Z[kind] };
+      add(setLook((lk) => ({ ...lk, mods: [...lk.mods, m] })), m.id);
+      return;
+    }
     const m = { id: lpId(), kind, x1: c.x - 0.6, y1: c.y - 1.5, x2: c.x + 0.6, y2: c.y - 1.5, label: "" };
     add(setLook((lk) => ({ ...lk, mods: [...lk.mods, m] })), m.id);
   };
@@ -587,6 +603,9 @@ export function LightPlotEditor({
               <button data-lp-add="light" title={L.library} onClick={() => setLibOpen((v) => !v)} className={`w-9 h-9 rounded-lg text-[15px] ${libOpen ? "bg-white/15" : "text-white/80 hover:bg-white/10"}`}>💡</button>
               <button data-lp-add="flag" title={L.flag} onClick={() => addMod("flag")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">▬</button>
               <button data-lp-add="diffusion" title={L.diffusion} onClick={() => addMod("diffusion")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">┅</button>
+              <button data-lp-add="reflector" title={L.reflector} onClick={() => addMod("reflector")} className="w-9 h-9 rounded-lg text-[15px] font-bold text-white/80 hover:bg-white/10">◐</button>
+              <button data-lp-add="vflat" title={L.vflat} onClick={() => addMod("vflat")} className="w-9 h-9 rounded-lg text-[14px] font-bold text-white/80 hover:bg-white/10">▯</button>
+              <button data-lp-add="card" title={L.card} onClick={() => addMod("card")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">▭</button>
               <button data-lp-add="set" title={L.set} onClick={() => setSetOpen((v) => !v)} className={`w-9 h-9 rounded-lg text-[15px] ${setOpen ? "bg-white/15" : "text-white/80 hover:bg-white/10"}`}>🛋</button>
               {uploadFile && <button data-lp-add="photo" title={L.photo} onClick={pickPhoto} className="w-9 h-9 rounded-lg text-[15px] text-white/80 hover:bg-white/10">🗺</button>}
             </>
@@ -687,6 +706,16 @@ export function LightPlotEditor({
                   onChange={(e) => setPlot({ ...plot, view: { ...plot.view, exposure: +e.target.value } })} onPointerUp={() => save(plotRef.current)} className="w-24" />
                 <span className="w-8 text-white/50">{(plot.view.exposure ?? 0) > 0 ? "+" : ""}{plot.view.exposure ?? 0}</span>
               </label>
+              {/* v4: auto exposure = a spot meter on the face; the slider is then an offset */}
+              <label className="flex items-center gap-1 text-[12px] text-white/70 whitespace-nowrap">
+                <input data-lp-auto-exposure type="checkbox" checked={plot.view.auto_exposure !== false} disabled={!editable}
+                  onChange={(e) => commit({ ...plot, view: { ...plot.view, auto_exposure: e.target.checked } })} />{L.autoExposure}
+              </label>
+              {meterLux > 0 && (
+                <span data-lp-meter className="text-[11px] text-white/50 whitespace-nowrap" title="ISO 800 · 1/50 s">
+                  {L.metered}: {meterLux >= 1000 ? `${(meterLux / 1000).toFixed(1)} klx` : `${Math.round(meterLux)} lx`} ≈ f/{fStop(meterLux)}
+                </span>
+              )}
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 {editable && plot.people.some((p) => p.kind === "talent") && (
                   <button data-lp-closeup onClick={() => commit(closeUpCamera(plot, one?.type === "person" && (one.obj as { kind?: string }).kind === "talent" ? one.obj.id : undefined))}
@@ -699,7 +728,7 @@ export function LightPlotEditor({
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              <LightPlot3D ref={view3d} plot={plot} look={look} cam={viewCam} L={L} />
+              <LightPlot3D ref={view3d} plot={plot} look={look} cam={viewCam} L={L} onMeter={setMeterLux} />
             </div>
             {notice && <div className="absolute left-1/2 -translate-x-1/2 bottom-3 rounded-lg bg-black/80 px-3 py-1.5 text-[12px] text-white">{notice}</div>}
           </div>
@@ -717,6 +746,9 @@ export function LightPlotEditor({
             <div className="p-3 border-b border-white/10 space-y-2" data-lp-room>
               <div className="text-[11px] uppercase tracking-wider text-white/45">{L.room}</div>
               <Num label={L.wallHeight} value={plot.room.height ?? 2.6} min={2} max={8} step={0.1} onChange={(v) => commit({ ...plot, room: { ...plot.room, height: v } })} />
+              <label className="flex items-center justify-between text-[11px] text-white/55">{L.wallColor}
+                <input data-lp-wall-color type="color" value={plot.room.wall_color ?? "#d8d2c6"} onChange={(e) => commit({ ...plot, room: { ...plot.room, wall_color: e.target.value } })} className="w-10 h-7 bg-transparent" />
+              </label>
             </div>
           )}
           {plot.room.bg && editable && !one && (
@@ -738,6 +770,13 @@ export function LightPlotEditor({
                   <span className="block text-[12px] font-semibold truncate">{li.name}</span>
                   <span className="block text-[11px] text-white/55">{roleText(L, li)} · {li.kelvin} K · {li.intensity}% · {modifierText(L, li)} {li.beam}°</span>
                 </span>
+              </button>
+            ))}
+            {look.mods.filter(isBounce).map((m) => (
+              <button key={m.id} data-lp-fixture-bounce onClick={() => setSelected(new Set([m.id]))}
+                className={`w-full text-left flex gap-2 items-center rounded-lg px-2 py-1 mb-1 ${selected.has(m.id) ? "bg-blue-600/25" : "hover:bg-white/5"}`}>
+                <span className="w-5 h-5 shrink-0 rounded-full border border-white/30" style={{ background: { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b" }[m.surface ?? "white"] }} />
+                <span className="text-[11px] text-white/70 truncate">{m.label || L[m.kind]} · {L[m.surface ?? "white"]} · {Math.hypot(m.x2 - m.x1, m.y2 - m.y1).toFixed(1)} m</span>
               </button>
             ))}
             {plot.people.filter((p) => p.kind === "camera").map((p) => (
@@ -878,9 +917,32 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
   } else if (one.type === "label") {
     body = text("text", L.label);
   } else if (one.type === "mod") {
+    const m = o as unknown as LpMod;
+    const len = Math.hypot(m.x2 - m.x1, m.y2 - m.y1);
+    // reflector sizes: keep the centre, set the diameter (= segment length)
+    const resize = (d: number) => {
+      const cx = (m.x1 + m.x2) / 2, cy = (m.y1 + m.y2) / 2, ux = (m.x2 - m.x1) / (len || 1), uy = (m.y2 - m.y1) / (len || 1);
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      onPatch({ x1: r2(cx - (ux * d) / 2), y1: r2(cy - (uy * d) / 2), x2: r2(cx + (ux * d) / 2), y2: r2(cy + (uy * d) / 2) });
+    };
     body = (
       <>
-        {sel("kind", "", [["flag", L.flag], ["diffusion", L.diffusion]])}
+        {sel("kind", "", ([["flag", L.flag], ["diffusion", L.diffusion], ["reflector", L.reflector], ["vflat", L.vflat], ["card", L.card]] as [string, string][]))}
+        {isBounce(m) && (
+          <>
+            {sel("surface", L.surface, (["white", "silver", "gold", "black"] as const).map((k) => [k, L[k]]))}
+            {m.kind === "reflector" && (
+              <label className="block text-[11px] text-white/55">{L.size}
+                <select data-lp-reflector-size value={Math.abs(len - 1.1) < 0.05 ? "1.1" : Math.abs(len - 0.8) < 0.05 ? "0.8" : ""} disabled={!editable} onChange={(e) => e.target.value && resize(+e.target.value)}
+                  className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none">
+                  <option value="">{len.toFixed(2)} m</option><option value="0.8">80 cm</option><option value="1.1">110 cm</option>
+                </select>
+              </label>
+            )}
+            <Num label={L.centerHeight} value={Number(m.z ?? BOUNCE_Z[m.kind] ?? 1.2)} min={0.1} max={6} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
+            <div className="text-[11px] text-white/55">{len.toFixed(2)} m</div>
+          </>
+        )}
         {text("label", L.label)}
       </>
     );
@@ -917,3 +979,11 @@ function makePdf(jpg: Uint8Array, w: number, h: number): Blob {
 }
 
 export { emptyPlot };
+
+/** v4: the f-stop an incident meter would give for `lux` at ISO 800, 1/50 s (N² = E·S·t / C, C = 250), rounded to a
+ * third-stop scale value */
+function fStop(lux: number) {
+  const n = Math.sqrt((lux * 800 * (1 / 50)) / 250);
+  const scale = [1, 1.1, 1.2, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22, 25, 29, 32];
+  return scale.reduce((a, b) => (Math.abs(Math.log(b / n)) < Math.abs(Math.log(a / n)) ? b : a));
+}

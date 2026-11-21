@@ -41,6 +41,10 @@ function loadHead(THREE: typeof T): Promise<ScanHead | null> {
 export type LightPlot3DHandle = { capture: (w: number, h: number, type?: string) => Promise<Blob | null>; stats: () => { ms: number; geometries: number; textures: number; calls: number } | null };
 
 const BASE_EXPOSURE = 0.0045;
+// v4 auto exposure: the face meter (lux at the talent's face) maps to this reference — calibrated on the demo plan so
+// skin sits a little above middle grey (3000 lx ↔ the former EV −2); the manual slider is an offset from it
+const AUTO_REF_LUX = 750;
+export const autoExposureEv = (lux: number) => Math.log2(AUTO_REF_LUX / Math.max(1, lux));
 const isPhone = () => typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches && Math.min(window.innerWidth, window.innerHeight) < 768;
 
 function disposeTree(obj: T.Object3D) {
@@ -54,13 +58,13 @@ function disposeTree(obj: T.Object3D) {
   });
 }
 
-export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; look: LpLook; cam: LpPerson | null; L: LpLabels }>(function LightPlot3D({ plot, look, cam, L }, ref) {
+export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; look: LpLook; cam: LpPerson | null; L: LpLabels; onMeter?: (lux: number) => void }>(function LightPlot3D({ plot, look, cam, L, onMeter }, ref) {
   const hostRef = useRef<HTMLDivElement>(null);
   const three = useRef<{ THREE: typeof T; renderer: T.WebGLRenderer; scene: T.Scene | null; camera: T.PerspectiveCamera | null; ms: number; head: ScanHead | null } | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "lost" | "nowebgl">("loading");
   const [scanned, setScanned] = useState(false);
-  const latest = useRef({ plot, look, cam });
-  latest.current = { plot, look, cam };
+  const latest = useRef({ plot, look, cam, onMeter });
+  latest.current = { plot, look, cam, onMeter };
   const frame = useRef(0);
 
   const draw = () => {
@@ -79,7 +83,10 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
     const built = buildScene(t.THREE, p, lk, c, isPhone(), t.head);
     t.scene = built.scene;
     t.camera = built.camera;
-    t.renderer.toneMappingExposure = BASE_EXPOSURE * Math.pow(2, p.view.exposure ?? 0);
+    const auto = p.view.auto_exposure !== false && built.meter.lux > 0;
+    t.renderer.toneMappingExposure = BASE_EXPOSURE * Math.pow(2, (p.view.exposure ?? 0) + (auto ? autoExposureEv(built.meter.lux) : 0));
+    t.renderer.domElement.dataset.lux = String(Math.round(built.meter.lux));
+    latest.current.onMeter?.(built.meter.lux);
     draw();
   };
 

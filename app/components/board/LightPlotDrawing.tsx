@@ -156,7 +156,7 @@ export function LightPlotDrawing({
         return (
           <g key={m.id}>
             <g data-lp-id={m.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined}>
-              <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} />
+              <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} surface={m.surface} />
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={22} />
             </g>
             {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{m.label || L[m.kind]}</text>}
