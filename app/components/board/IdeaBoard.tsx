@@ -141,11 +141,10 @@ export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
 export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
 
 // 2026-11-21, Lino: «das Board muss grösser sein und man muss weiter hinauszoomen können» — 2 % instead of 10 %
-// (5× further out). Below LOD_SCALE (the former minimum) nodes are drawn as light blocks (colour + title), images only
-// while the board has few of them — so a big board stays smooth and within iOS memory when seen whole.
+// (5× further out). Below LOD_SCALE (the former minimum) nodes are drawn as light blocks with 96-px previews
+// (LodBlock) — so a big board stays smooth and within iOS memory when seen whole.
 const MIN_SCALE = 0.02;
 const LOD_SCALE = 0.1;
-const LOD_MAX_IMAGES = 60;
 const MAX_SCALE = 4;
 const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
@@ -3817,8 +3816,6 @@ export function IdeaBoard({
 
   // world-space rectangle that is rendered when culling is on (boardImageConfig.cull, the iOS embed): the visible
   // area plus one screen in every direction
-  // far zoom (LOD): images stay as small previews only while the board has few of them (memory on iPhone / iPad)
-  const lodImages = useMemo(() => data.elements.filter((e) => e.type === "image" || e.type === "moodboard" || !!(e as { image_thumb_src?: string }).image_thumb_src).length <= LOD_MAX_IMAGES, [data.elements]);
   const cullRect = (() => {
     if (!boardImageConfig.cull || !viewportSize.w) return null;
     const s = Math.max(0.01, view.scale);
@@ -3989,7 +3986,7 @@ export function IdeaBoard({
                 transition: "opacity .2s",
               }}
             >
-              {lod && !selected && editingId !== el.id && !isDrawing && el.type !== "group" ? <LodBlock el={el} scale={view.scale} images={lodImages} /> : (
+              {lod && !selected && editingId !== el.id && !isDrawing && el.type !== "group" ? <LodBlock el={el} scale={view.scale} /> : (
               <BoardElementView
                 el={el}
                 voted={el.type === "video" && votedIds.has(el.id)}
@@ -5562,24 +5559,29 @@ function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
   );
 }
 
-/** 2026-11-21 — a node seen from far away (zoom < 10 %): a light block in the node's colour with its title in a
- * readable size (scaled against the zoom), images as their small preview only on boards with few images */
+/** 2026-11-21 — a node seen from far away (zoom < 10 %): a light block in the node's colour; images / videos / scene
+ * cards show their 96-px preview (tiny_src, made by the server on first request — a few KB each, so even 100 of them
+ * stay tiny in memory); the title only when it fits completely (no «v…» stubs) */
 const LOD_COLORS: Record<string, string> = {
   text: "#3f3f46", sticky: "#ca8a04", scene: "#1d4ed8", image: "#27272a", video: "#7f1d1d", moodboard: "#27272a", todo: "#065f46",
   timetable: "#4338ca", flow: "#0e7490", credits: "#6d28d9", palette: "#9d174d", location: "#166534", link: "#334155", pdf: "#991b1b",
   file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46",
 };
-function LodBlock({ el, scale, images }: { el: BoardElement; scale: number; images: boolean }) {
-  const e = el as BoardElement & { title?: string; name?: string; thumb_src?: string | null; image_thumb_src?: string | null; color?: string };
-  const thumb = images ? e.thumb_src ?? e.image_thumb_src ?? null : null;
-  const title = e.title || e.name || "";
-  const fs = Math.min(e.h * 0.4, 13 / Math.max(scale, 0.01));
+const LOD_FONT = 11;   // px on screen
+function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
+  const e = el as BoardElement & { title?: string; name?: string; tiny_src?: string | null; image_tiny_src?: string | null; color?: string };
+  const tiny = e.tiny_src ?? e.image_tiny_src ?? null;
+  const [failed, setFailed] = useState(false);
+  const title = (e.title || e.name || "").trim();
+  const s = Math.max(scale, 0.005);
+  // on-screen size of the block → the title only if it fits in full (≈ 0.6 em per character)
+  const fits = !!title && e.w * s >= title.length * LOD_FONT * 0.6 + 8 && e.h * s >= LOD_FONT + 6;
   return (
     <div data-lod className="absolute inset-0 overflow-hidden" style={{ height: e.h, background: e.type === "color" && e.color ? e.color : LOD_COLORS[e.type] ?? "#3f3f46", borderRadius: Math.min(e.w, e.h) * 0.06 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {thumb && <img src={thumb} alt="" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />}
-      {title && !thumb && (
-        <div className="absolute left-0 right-0 top-0 px-[4%] text-white/90 font-semibold truncate" style={{ fontSize: fs, lineHeight: 1.2, paddingTop: fs * 0.3 }}>{title}</div>
+      {tiny && !failed && <img data-lod-tiny src={tiny} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
+      {fits && (!tiny || failed) && (
+        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px` }}>{title}</div>
       )}
     </div>
   );
