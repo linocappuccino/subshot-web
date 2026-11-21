@@ -306,7 +306,7 @@ export function installPcss(THREE: Three, phone: boolean) {
 		if ( cnt < 0.5 ) return 1.0;
 		float zB = F / ( F - ( sum / cnt ) * ( F - 1.0 ) );
 		// 2) penumbra from similar triangles: size × (receiver − blocker) / blocker, in shadow-map units at the receiver
-		float filterUV = clamp( K * ( zR - zB ) / ( zB * zR ), 3.0 * texel.x, 0.035 );   // ≥ 3 texels: no single-pixel contact dots
+		float filterUV = clamp( K * ( zR - zB ) / ( zB * zR ), 5.0 * texel.x, 0.035 );   // ≥ 5 texels (≈ 2 mm on the face): no facet / dot artefacts in creases
 		float lit = 0.0;
 		for ( int i = 0; i < PCSS_NF; i ++ ) {
 			vec2 o = pcssDisk( i, float( PCSS_NF ), rot + 1.7 ) * filterUV;
@@ -563,7 +563,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
           sp.shadow.focus = Math.min(1, need / (2 * sp.angle));
           sp.shadow.mapSize.set(phone ? 2048 : 4096, phone ? 2048 : 4096);
           sp.shadow.bias = -0.00012;
-          sp.shadow.normalBias = pcssInstalled && !noPcss ? 0.006 : 0.0025;   // PCSS: a little more (no acne at the terminator)
+          sp.shadow.normalBias = 0.0025;
           sp.shadow.radius = Math.min(9, 1 + (14 * srcSize) / Math.max(0.5, dist));  // penumbra grows with the source size / distance
           sp.shadow.camera.near = Math.max(0.1, dist - 1.5);
           sp.shadow.camera.far = dist + 6;
