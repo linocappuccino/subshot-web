@@ -697,14 +697,87 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     // where the light exits: unlit, not tone-mapped (would be black at the scene's photometric exposure)
     const glow = new THREE.MeshBasicMaterial({ color: color.clone().multiplyScalar(0.55 + li.intensity / 250), toneMapped: false });
     const fixture = new THREE.Group();
-    fixture.add(stand(THREE, metal, Math.max(0.3, z - 0.12)));
+    const standObj = stand(THREE, metal, Math.max(0.3, z - 0.12));
+    fixture.add(standObj);
     const head = new THREE.Group();
     head.position.set(0, z, 0);
     head.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
     const yoke = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.012, 6, 16, Math.PI), metal);
     yoke.rotation.y = Math.PI / 2;
     const m = (geo: T.BufferGeometry, mat: T.Material, x = 0) => { const o = new THREE.Mesh(geo, mat); o.position.x = x; o.castShadow = true; head.add(o); return o; };
-    if (fam === "softbox") {
+    // v4 catalogue models: by modifier first, then the fixture's shape (each a recognisable silhouette)
+    const shape = preset?.shape;
+    const mod = li.modifier;
+    let noStand = false;
+    const mat = (c: string, rough = 0.6, metal = 0.2) => new THREE.MeshStandardMaterial({ color: c, roughness: rough, metalness: metal, side: THREE.DoubleSide });
+    if (mod === "strip" || mod === "octa" || mod === "softbox_s" || mod === "softbox_l" || mod === "grid") {
+      const [w, h] = areaSize(li);
+      m(new THREE.BoxGeometry(0.22, 0.2, 0.2), black, -0.12);
+      const depth = mod === "octa" ? 0.55 : 0.45;
+      const body = mod === "octa"
+        ? m(new THREE.CylinderGeometry(w / 2, 0.12, depth, 8, 1, true), mat("#111", 0.9), depth / 2)
+        : m(new THREE.CylinderGeometry(Math.SQRT1_2, 0.12 * Math.SQRT2, depth, 4, 1, true), mat("#111", 0.9), depth / 2);
+      body.rotation.z = -Math.PI / 2;
+      if (mod !== "octa") { body.rotation.x = Math.PI / 4; body.scale.set(1, h, w); }
+      const front = m(mod === "octa" ? new THREE.CircleGeometry(w / 2 - 0.02, 8) : new THREE.PlaneGeometry(w * 0.96, h * 0.96), glow, depth + 0.005);
+      front.rotation.y = Math.PI / 2; front.castShadow = false;
+      if (mod === "grid") { const g2 = m(new THREE.PlaneGeometry(w * 0.96, h * 0.96), new THREE.MeshBasicMaterial({ color: "#000", wireframe: true }), depth + 0.02); g2.rotation.y = Math.PI / 2; }
+    } else if (mod === "para_s" || mod === "para_m" || mod === "para_l") {
+      const r = areaSize(li)[0] / 2;
+      m(new THREE.CylinderGeometry(0.1, 0.1, 0.24, 16), black, -0.12).rotation.z = Math.PI / 2;
+      const umb = m(new THREE.SphereGeometry(r * 1.15, 16, 8, 0, Math.PI * 2, 0, Math.PI / 3.2), mat("#d4d4d8", 0.4, 0.5), r * 0.75);
+      umb.rotation.z = Math.PI / 2; umb.scale.set(1, 1.25, 1);
+      const shaft = m(new THREE.CylinderGeometry(0.008, 0.008, r * 1.3, 6), metal, r * 0.4); shaft.rotation.z = Math.PI / 2;
+      const front = m(new THREE.CircleGeometry(r, 16), new THREE.MeshBasicMaterial({ color: glow.color, transparent: true, opacity: 0.25, toneMapped: false, side: THREE.DoubleSide }), r * 0.78);
+      front.rotation.y = Math.PI / 2; front.castShadow = false;
+    } else if (mod === "dome") {
+      m(new THREE.BoxGeometry(0.24, 0.2, 0.2), black, -0.1);
+      const d = m(new THREE.SphereGeometry(0.17, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), glow, 0.02); d.rotation.z = -Math.PI / 2; d.castShadow = false;
+    } else if (mod === "snoot") {
+      m(new THREE.BoxGeometry(0.24, 0.2, 0.2), black, -0.1);
+      const sn = m(new THREE.CylinderGeometry(0.035, 0.08, 0.3, 16, 1, true), mat("#111"), 0.15); sn.rotation.z = -Math.PI / 2;
+      const f2 = m(new THREE.CircleGeometry(0.033, 16), glow, 0.3); f2.rotation.y = Math.PI / 2; f2.castShadow = false;
+    } else if (mod === "projector" || shape === "profile" || shape === "dedo") {
+      const L2 = shape === "dedo" ? 0.22 : 0.5, R = shape === "dedo" ? 0.05 : 0.09;
+      m(new THREE.BoxGeometry(0.24, 0.24, 0.2), black, -0.12);
+      const barrel = m(new THREE.CylinderGeometry(R, R * 1.15, L2, 18), mat("#1a1a1c", 0.5, 0.4), L2 / 2); barrel.rotation.z = -Math.PI / 2;
+      for (const t of [0.3, 0.6]) { const ring = m(new THREE.TorusGeometry(R * 1.05, 0.008, 6, 18), metal, L2 * t); ring.rotation.y = Math.PI / 2; }
+      const lensF = m(new THREE.CircleGeometry(R * 0.85, 18), glow, L2 + 0.002); lensF.rotation.y = Math.PI / 2; lensF.castShadow = false;
+    } else if (shape === "par") {
+      const can = m(new THREE.CylinderGeometry(0.15, 0.11, 0.36, 20), black, 0.0); can.rotation.z = -Math.PI / 2;
+      const lensP = m(new THREE.CircleGeometry(0.14, 20), glow, 0.181); lensP.rotation.y = Math.PI / 2; lensP.castShadow = false;
+    } else if (shape === "mat" || shape === "bank" || shape === "window") {
+      const [w, h] = areaSize(li);
+      if (shape === "window") noStand = true;
+      m(new THREE.BoxGeometry(0.04, h + 0.04, w + 0.04), shape === "window" ? mat("#f4f4f2", 0.5) : black, -0.02);
+      const face = m(new THREE.PlaneGeometry(w, h), glow, 0.002); face.rotation.y = Math.PI / 2; face.castShadow = false;
+      if (shape === "bank") for (let k = 0; k < 4; k++) { const tb = m(new THREE.CylinderGeometry(0.014, 0.014, h * 0.94, 8), glow, 0.02); tb.position.z = -w / 2 + w * (k + 0.5) / 4; tb.castShadow = false; }
+    } else if (shape === "pixelbar") {
+      head.quaternion.identity();
+      const len = preset?.src ?? 1;
+      for (let k = 0; k < 10; k++) { const px = m(new THREE.BoxGeometry(0.04, len / 10 - 0.01, 0.04), k % 2 ? glow : black); px.position.y = -len / 2 + (k + 0.5) * len / 10; px.castShadow = false; }
+      head.position.y = Math.max(len / 2 + 0.2, z);
+    } else if (shape === "spacelight") {
+      noStand = true; head.quaternion.identity(); head.position.y = Math.min(H - 0.5, z);
+      const skirt = m(new THREE.CylinderGeometry(0.45, 0.45, 0.7, 20, 1, true), mat("#e8e6e0", 0.95)); skirt.castShadow = false;
+      const core = m(new THREE.CylinderGeometry(0.2, 0.2, 0.4, 16), glow); core.castShadow = false;
+    } else if (shape === "practical") {
+      noStand = !li.preset.includes("Steh");
+      head.quaternion.identity();
+      const bulb = m(new THREE.SphereGeometry(0.045, 14, 10), glow); bulb.castShadow = false;
+      if (li.preset.includes("Steh") || li.preset.includes("Tisch")) {
+        const shade = m(new THREE.CylinderGeometry(0.12, 0.2, 0.25, 20, 1, true), new THREE.MeshStandardMaterial({ color: "#f3e7cf", roughness: 0.9, side: THREE.DoubleSide, emissive: glow.color, emissiveIntensity: 0 }));
+        shade.position.y = 0.04; shade.castShadow = false;
+      }
+    } else if (shape === "ring") {
+      const ring = m(new THREE.TorusGeometry(0.22, 0.025, 10, 40), glow); ring.rotation.y = Math.PI / 2; ring.castShadow = false;
+    } else if (shape === "oncam") {
+      m(new THREE.BoxGeometry(0.05, 0.06, 0.08), black, -0.02);
+      const f3 = m(new THREE.PlaneGeometry(0.06, 0.05), glow, 0.006); f3.rotation.y = Math.PI / 2; f3.castShadow = false;
+    } else if (shape === "sun") {
+      noStand = true;
+      const sunDisc = m(new THREE.SphereGeometry(0.2, 16, 12), new THREE.MeshBasicMaterial({ color: "#fff4d6", toneMapped: false })); sunDisc.castShadow = false;
+    } else if (fam === "softbox") {
       m(new THREE.BoxGeometry(0.22, 0.2, 0.2), black, -0.12);
       const box = m(new THREE.CylinderGeometry(0.62, 0.12, 0.5, 4, 1, true), new THREE.MeshStandardMaterial({ color: "#111", roughness: 0.9, side: THREE.DoubleSide }), 0.2);
       box.rotation.z = -Math.PI / 2; box.rotation.x = Math.PI / 4;
@@ -737,8 +810,9 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
       refl.rotation.z = -Math.PI / 2;
       const face = m(new THREE.CircleGeometry(0.075, 20), glow, 0.03); face.rotation.y = Math.PI / 2; face.castShadow = false;
     }
-    head.add(yoke);
+    if (!noStand) head.add(yoke);
     fixture.add(head);
+    if (noStand) fixture.remove(standObj);
     fixture.position.set(li.x, 0, li.y);
     // the fixture must not shadow its own light
     fixture.traverse((o) => { o.castShadow = false; });
