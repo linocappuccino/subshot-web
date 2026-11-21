@@ -67,6 +67,68 @@ function ball(THREE: Three, mat: T.Material, p: T.Vector3, r: number, sx = 1, sy
   return m;
 }
 
+const smooth = (e0: number, e1: number, x: number) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+const gauss = (a: number, sa: number, b: number, sb: number) => Math.exp(-((a * a) / (sa * sa) + (b * b) / (sb * sb)));
+
+/** a procedurally sculpted head (facing +x, centred, ≈ 23 cm tall): a dense ellipsoid displaced into nose (bridge,
+ * tip, nostrils), brow ridge, eye sockets with eyeballs, cheekbones, lips, chin and a narrower jaw; ears; hair */
+export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
+  const g = new THREE.Group();
+  const geo = new THREE.SphereGeometry(1, 128, 96);
+  const pos = geo.attributes.position as T.BufferAttribute;
+  const RX = 0.098, RY = 0.118, RZ = 0.078;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const f = Math.max(0, x);              // front of the face
+    const az = Math.abs(z);
+    // jaw narrower towards the chin, back of the skull a little fuller
+    const jaw = y < 0 ? 1 - 0.28 * Math.pow(-y, 1.6) : 1;
+    let px = x * RX * (x < 0 ? 1.04 : 1), py = y * RY, pz = z * RZ * jaw;
+    // nose: bridge between the eyes → tip, wider and further out towards the tip
+    const t = Math.min(1, Math.max(0, (0.16 - y) / 0.42));
+    const noseMask = smooth(-0.34, -0.26, y) * (1 - smooth(0.12, 0.2, y));
+    const nose = (0.004 + 0.026 * Math.pow(t, 1.7)) * Math.exp(-((z * z) / Math.pow(0.055 + 0.06 * t, 2))) * noseMask * Math.pow(f, 6);
+    const nostrils = 0.007 * gauss(y + 0.27, 0.06, az - 0.1, 0.05) * Math.pow(f, 4);
+    const underNose = -0.006 * gauss(y + 0.33, 0.035, z, 0.12) * Math.pow(f, 4);
+    const brow = 0.009 * gauss(y - 0.26, 0.07, z, 0.5) * Math.pow(f, 3);
+    const sockets = -0.013 * gauss(y - 0.12, 0.1, az - 0.33, 0.13) * Math.pow(f, 3);
+    const cheeks = 0.008 * gauss(y + 0.04, 0.13, az - 0.55, 0.16) * Math.pow(f, 2);
+    const lips = 0.008 * gauss(y + 0.47, 0.06, z, 0.26) * Math.pow(f, 4) - 0.003 * gauss(y + 0.505, 0.012, z, 0.28) * Math.pow(f, 4);
+    const chin = 0.011 * gauss(y + 0.73, 0.1, z, 0.26) * Math.pow(f, 3);
+    const d = nose + nostrils + underNose + brow + sockets + cheeks + lips + chin;
+    const n = new THREE.Vector3(px / (RX * RX), py / (RY * RY), pz / (RZ * RZ)).normalize();
+    px += n.x * d; py += n.y * d; pz += n.z * d;
+    pos.setXYZ(i, px, py, pz);
+  }
+  geo.computeVertexNormals();
+  const face = new THREE.Mesh(geo, skin);
+  face.castShadow = face.receiveShadow = true;
+  g.add(face);
+  // eyes in the sockets: white + iris + pupil, looking forward
+  const white = new THREE.MeshPhysicalMaterial({ color: "#e9e4dc", roughness: 0.25, clearcoat: 1 });
+  const iris = new THREE.MeshStandardMaterial({ color: "#4a3626", roughness: 0.4 });
+  for (const sz of [-1, 1]) {
+    const uy = 0.12, uz = 0.33 * sz, ux = Math.sqrt(1 - uy * uy - uz * uz);
+    const c = new THREE.Vector3(ux * RX - 0.013, uy * RY, uz * RZ);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0118, 20, 14), white); eye.position.copy(c); eye.receiveShadow = true; g.add(eye);
+    const ir = new THREE.Mesh(new THREE.CircleGeometry(0.0052, 18), iris); ir.position.copy(c).add(new THREE.Vector3(0.0117, 0, 0)); ir.rotation.y = Math.PI / 2; g.add(ir);
+  }
+  // ears
+  for (const sz of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), skin);
+    ear.position.set(-0.008, 0.004, sz * RZ * 0.98); ear.scale.set(0.55, 1.05, 0.28);
+    ear.castShadow = ear.receiveShadow = true; g.add(ear);
+  }
+  // hair: top + back of the skull
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
+  cap.scale.set(RX * 1.06, RY * 1.05, RZ * 1.1);
+  cap.position.set(-0.006, 0.012, 0);
+  cap.rotation.z = 0.5;
+  cap.castShadow = true;
+  g.add(cap);
+  return g;
+}
+
 /** a human figure with real proportions (≈ 7.5 heads), facing +x; standing or sitting */
 export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Material; shirt: T.Material; pants: T.Material; shoes: T.Material; hair: T.Material }) {
   const g = new THREE.Group();
@@ -109,20 +171,11 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
   }
   g.add(limb(THREE, skin, V(0, shoulderY - 0.02, 0), V(0.01, shoulderY + 0.1, 0), 0.05, 0.045));
   const headC = V(0.015, shoulderY + 0.2, 0);
-  g.add(ball(THREE, skin, headC, 0.1, 1.05, 1.22, 0.9));
-  // face details: nose, brow, ears; hair cap on top + back
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.016, 0.045, 10), skin);
-  nose.position.copy(headC).add(V(0.105, -0.01, 0));
-  nose.rotation.z = -Math.PI / 2;
-  g.add(nose);
-  for (const s of [-1, 1]) g.add(ball(THREE, skin, headC.clone().add(V(-0.005, 0, s * 0.093)), 0.022, 0.6, 1.2, 0.5));
-  for (const s of [-1, 1]) g.add(ball(THREE, mats.shoes, headC.clone().add(V(0.093, 0.025, s * 0.035)), 0.011));
-  const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.106, 22, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), hair);
-  hairCap.position.copy(headC).add(V(-0.01, 0.025, 0));
-  hairCap.scale.set(1.05, 1.15, 0.95);
-  hairCap.rotation.z = 0.45;
-  hairCap.castShadow = true;
-  g.add(hairCap);
+  // 2026-11-21 (v3): a sculpted head (nose, brow, eye sockets, cheekbones, lips, chin) — its forms cast the face
+  // shadows Rembrandt / loop / split light depend on
+  const head = sculptedHead(THREE, skin, hair);
+  head.position.copy(headC);
+  g.add(head);
   if (sitting) {
     const wood = new THREE.MeshStandardMaterial({ color: "#6b5440", roughness: 0.7 });
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), wood);
@@ -310,6 +363,11 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const black = new THREE.MeshStandardMaterial({ color: "#121214", roughness: 0.6, metalness: 0.2 });
   const shadowSize = phone ? 512 : 1024;
   let totalPower = 0;
+  // v3: the key light gets a sharp, tight shadow around the talent's head (the nose / cheekbone shadows of
+  // Rembrandt, loop, split …); the other lights keep their normal shadow maps
+  const keyId = (look.lights.find((l) => l.role === "key") ?? look.lights[0])?.id;
+  const talent0 = plot.people.find((p) => p.kind === "talent");
+  const headPos = talent0 ? new THREE.Vector3(talent0.x, (talent0.pose === "sitting" ? 1.18 : 1.62) * ((talent0.height_m ?? 1.75) / 1.75), talent0.y) : null;
   look.lights.forEach((li, i) => {
     const fam = family(li);
     const watts = presetOf(li.preset)?.watts ?? 150;
@@ -332,12 +390,12 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
       if (soft) {
         // soft source: an area light the size of the softbox / panel / tube + a weaker soft spot for its shadow
         const [aw, ah] = fam === "softbox" ? [0.9, 0.9] : fam === "panel" ? [0.3, 0.6] : fam === "tube" ? [0.05, li.preset.includes("15X") ? 0.6 : 1.2] : [0.8, 0.8];
-        const area = new THREE.RectAreaLight(color, (cd * 0.6) / (aw * ah * 3.2), aw, ah);
+        const area = new THREE.RectAreaLight(color, (cd * 0.4) / (aw * ah * 3.2), aw, ah);
         area.position.copy(pos.clone().add(dir.clone().multiplyScalar(fam === "softbox" ? 0.45 : 0.1)));
         area.lookAt(pos.clone().add(dir.clone().multiplyScalar(4)));
         scene.add(area);
       }
-      const sp = new THREE.SpotLight(color, soft ? cd * 0.45 : cd, 0, Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180 * (diffused ? 1.35 : 1)), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
+      const sp = new THREE.SpotLight(color, soft ? cd * 0.62 : cd, 0, Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180 * (diffused ? 1.35 : 1)), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
       sp.position.copy(pos);
       sp.target.position.copy(pos.clone().add(dir.clone().multiplyScalar(3)));
       scene.add(sp.target);
@@ -348,6 +406,17 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
         sp.shadow.normalBias = 0.02;
         sp.shadow.radius = soft ? 10 : 2 + 6 * MODIFIER_SOFT[li.modifier];
         sp.shadow.camera.near = 0.2;
+        if (li.id === keyId && headPos) {
+          const dist = pos.distanceTo(headPos);
+          const need = 2 * Math.atan(0.9 / Math.max(0.3, dist));          // ≈ 1.8 m wide around the head
+          sp.shadow.focus = Math.min(1, need / (2 * sp.angle));
+          sp.shadow.mapSize.set(phone ? 2048 : 4096, phone ? 2048 : 4096);
+          sp.shadow.bias = -0.00012;
+          sp.shadow.normalBias = 0.0025;
+          sp.shadow.radius = soft ? 3.5 : 1.2;
+          sp.shadow.camera.near = Math.max(0.1, dist - 1.5);
+          sp.shadow.camera.far = dist + 6;
+        }
       }
       scene.add(sp);
     }

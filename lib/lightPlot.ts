@@ -163,6 +163,8 @@ const DE = {
   pose: "Pose", standing: "Stehend", sitting: "Sitzend", bodyHeight: "Körpergrösse (m)", wallHeight: "Wandhöhe (m)", render: "Bild rendern", rendering: "Rendert …",
   rendered: "Bild gespeichert – die Kachel zeigt es.", camViewPng: "PNG (Kamera)", webglLost: "3D-Ansicht neu laden …", noWebgl: "Dieses Gerät kann die 3D-Ansicht nicht anzeigen.",
   tilePlan: "Plan", tileRender: "Render", room: "Raum",
+  portraitPreset: "Licht-Preset", presetPick: "Preset wählen …", rembrandt: "Rembrandt", loop: "Loop", butterfly: "Butterfly (Paramount)", split: "Split", broad: "Broad", short: "Short",
+  closeUp: "Gesicht nah (85 mm)",
 };
 const EN: typeof DE = {
   node: "Light plot", edit: "Edit", view: "View", lights: "lights", empty: "No lights yet – «Edit» opens the editor.",
@@ -182,8 +184,58 @@ const EN: typeof DE = {
   pose: "Pose", standing: "Standing", sitting: "Sitting", bodyHeight: "Body height (m)", wallHeight: "Wall height (m)", render: "Render still", rendering: "Rendering …",
   rendered: "Still saved – the tile shows it.", camViewPng: "PNG (camera)", webglLost: "Reloading the 3D view …", noWebgl: "This device can't show the 3D view.",
   tilePlan: "Plan", tileRender: "Render", room: "Room",
+  portraitPreset: "Lighting preset", presetPick: "Choose preset …", rembrandt: "Rembrandt", loop: "Loop", butterfly: "Butterfly (Paramount)", split: "Split", broad: "Broad", short: "Short",
+  closeUp: "Face close-up (85 mm)",
 };
 export type LpLabels = typeof DE;
 export const lpLabels = (language: string): LpLabels => (language === "de" ? DE : EN);
 export const roleText = (L: LpLabels, li: LpLight) => (li.role === "custom" ? li.role_label || L.custom : L[li.role]);
 export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "custom" ? li.modifier_label || L.custom : L[li.modifier]);
+
+// ── portrait presets (2026-11-21, v3): key light relative to talent + camera — mirrors subshot-api
+// app/light_plot.py PRESETS_PORTRAIT / apply_preset ──────────────────────────────────────────────────────────
+export type PortraitPreset = "rembrandt" | "loop" | "butterfly" | "split" | "broad" | "short";
+export const PORTRAIT_PRESETS: Record<PortraitPreset, [number, number, number]> = {
+  butterfly: [0, 40, 1.6], loop: [35, 30, 1.8], rembrandt: [50, 40, 1.8], split: [90, 5, 1.6], broad: [45, 30, 1.8], short: [45, 30, 1.8],
+};
+const wrapDeg = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
+export const eyeHeight = (t: LpPerson) => ((t.pose === "sitting" ? 1.18 : 1.62) * (t.height_m ?? 1.75)) / 1.75;
+
+export function applyPreset(p: LightPlotData, preset: PortraitPreset, talentId?: string): LightPlotData {
+  const t = p.people.find((q) => q.kind === "talent" && (!talentId || q.id === talentId));
+  if (!t) return p;
+  const cams = p.people.filter((q) => q.kind === "camera");
+  const cam = cams.find((c) => c.id === p.view.camera) ?? cams[0];
+  const camDir = cam ? (Math.atan2(cam.y - t.y, cam.x - t.x) * 180) / Math.PI : t.rot;
+  const [off, elev, dist] = PORTRAIT_PRESETS[preset];
+  const side = wrapDeg(t.rot - camDir) < -1 ? -1 : 1;
+  const az = preset === "broad" ? camDir - side * off : preset === "short" ? camDir + side * off : camDir + off;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  const x = r2(t.x + dist * Math.cos((az * Math.PI) / 180)), y = r2(t.y + dist * Math.sin((az * Math.PI) / 180));
+  const z = r2(Math.min(10, eyeHeight(t) + dist * Math.tan((elev * Math.PI) / 180)));
+  return {
+    ...p,
+    looks: p.looks.map((lk) => {
+      if (lk.id !== p.active_look) return lk;
+      const idx = lk.lights.findIndex((l) => l.role === "key");
+      const lights = [...lk.lights];
+      const base = idx >= 0 ? lights[idx] : lights[0] ?? { ...newLight("Aputure LS 600d", x, y, "key"), modifier: "dish55" as Modifier, beam: 55 };
+      const moved = { ...base, x, y, z, rot: Math.round(wrapDeg(az + 180) * 10) / 10, tilt: elev, role: "key" as Role };
+      if (idx >= 0) lights[idx] = moved; else if (lights.length) lights[0] = moved; else lights.push(moved);
+      return { ...lk, lights };
+    }),
+  };
+}
+
+/** a close-up camera (85 mm) in front of the talent at eye height — the face check */
+export function closeUpCamera(p: LightPlotData, talentId?: string): LightPlotData {
+  const t = p.people.find((q) => q.kind === "talent" && (!talentId || q.id === talentId));
+  if (!t) return p;
+  const d = 1.9, a = (t.rot * Math.PI) / 180;
+  const cam: LpPerson = { id: "", kind: "camera", name: "Close-up", x: Math.round((t.x + d * Math.cos(a)) * 100) / 100, y: Math.round((t.y + d * Math.sin(a)) * 100) / 100,
+    rot: Math.round(wrapDeg(t.rot + 180)), lens_mm: 85, sensor: "ff", z: Math.round(eyeHeight(t) * 100) / 100, tilt: 0, kelvin: 5600, body: "" };
+  const existing = p.people.find((q) => q.kind === "camera" && q.name === "Close-up");
+  cam.id = existing?.id ?? lpId();
+  const people = existing ? p.people.map((q) => (q.id === existing.id ? cam : q)) : [...p.people, cam];
+  return { ...p, people, view: { ...p.view, camera: cam.id } };
+}

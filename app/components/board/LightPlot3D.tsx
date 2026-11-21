@@ -79,7 +79,7 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       }
       renderer.setPixelRatio(Math.min(isPhone() ? 1.5 : 2, window.devicePixelRatio || 1));
       renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.shadowMap.type = THREE.PCFShadowMap;  // honours shadow.radius (sharp key on the face, soft elsewhere)
       renderer.toneMapping = THREE.AgXToneMapping;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       canvas = renderer.domElement;

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   activeLook, cameraFov, emptyPlot, ITEM_SIZE, kelvinColor, kelvinRange, LIGHT_PRESETS, lpId, lpLabels, MODIFIER_BEAM, MODIFIERS, modifierText,
-  newLight, plotBounds, plotOf, presetOf, ROLES, roleText,
+  newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
   type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind,
 } from "@/lib/lightPlot";
 import type { LightPlotElement } from "@/lib/board";
@@ -684,7 +684,11 @@ export function LightPlotEditor({
                   onChange={(e) => setPlot({ ...plot, view: { ...plot.view, exposure: +e.target.value } })} onPointerUp={() => save(plotRef.current)} className="w-24" />
                 <span className="w-8 text-white/50">{(plot.view.exposure ?? 0) > 0 ? "+" : ""}{plot.view.exposure ?? 0}</span>
               </label>
-              <div className="ml-auto flex items-center gap-1.5">
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                {editable && plot.people.some((p) => p.kind === "talent") && (
+                  <button data-lp-closeup onClick={() => commit(closeUpCamera(plot, one?.type === "person" && (one.obj as { kind?: string }).kind === "talent" ? one.obj.id : undefined))}
+                    className="h-7 px-2 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold whitespace-nowrap">{L.closeUp}</button>
+                )}
                 <button onClick={exportCamPng} disabled={!viewCam} className="h-7 px-2 rounded-md bg-white/10 hover:bg-white/15 text-[12px] font-semibold whitespace-nowrap">{L.camViewPng}</button>
                 {editable && uploadFile && (
                   <button data-lp-render onClick={renderStill} disabled={!viewCam || busy} className="h-7 px-2.5 rounded-md bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-[12px] font-semibold whitespace-nowrap">{L.render}</button>
@@ -703,6 +707,7 @@ export function LightPlotEditor({
         <div className={`${panelOpen ? "fixed inset-x-0 bottom-0 z-30 max-h-[55%] rounded-t-2xl bg-[#18181a] border-t" : "hidden"} md:static md:block md:max-h-none md:rounded-none md:bg-transparent md:border-t-0 w-full md:w-72 shrink-0 md:border-l border-white/10 overflow-y-auto`}>
           {one && (
             <Props L={L} one={one} plot={plot} editable={editable} onPatch={(p) => update(one.obj.id, p)} onDelete={deleteSelected}
+              onPreset={(preset) => commit(applyPreset(plot, preset, one.obj.id))}
               bg={!!plot.room.bg} />
           )}
           {editable && !one && (
@@ -770,9 +775,9 @@ function Num({ label, value, min, max, step = 1, onChange, disabled }: { label: 
   );
 }
 
-function Props({ L, one, plot, editable, onPatch, onDelete }: {
+function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
   L: ReturnType<typeof lpLabels>; one: { type: string; obj: Record<string, unknown> & { id: string } }; plot: LightPlotData; editable: boolean;
-  onPatch: (p: Record<string, unknown>) => void; onDelete: () => void; bg: boolean;
+  onPatch: (p: Record<string, unknown>) => void; onDelete: () => void; bg: boolean; onPreset?: (p: PortraitPreset) => void;
 }) {
   const o = one.obj as Record<string, unknown>;
   const field = "w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none focus:border-blue-500";
@@ -836,6 +841,14 @@ function Props({ L, one, plot, editable, onPatch, onDelete }: {
           <>
             {sel("pose", L.pose, [["standing", L.standing], ["sitting", L.sitting]])}
             <Num label={L.bodyHeight} value={Number(o.height_m ?? 1.75)} min={0.9} max={2.2} step={0.05} disabled={!editable} onChange={(v) => onPatch({ height_m: v })} />
+            {editable && onPreset && (
+              <label className="block text-[11px] text-white/55">{L.portraitPreset}
+                <select data-lp-portrait-preset value="" onChange={(e) => e.target.value && onPreset(e.target.value as PortraitPreset)} className={field}>
+                  <option value="">{L.presetPick}</option>
+                  {(Object.keys(PORTRAIT_PRESETS) as PortraitPreset[]).map((k) => <option key={k} value={k}>{L[k]}</option>)}
+                </select>
+              </label>
+            )}
           </>
         )}
         <Num label={`${L.rotation} °`} value={Math.round(Number(o.rot ?? 0))} min={-180} max={180} disabled={!editable} onChange={(v) => onPatch({ rot: v })} />
