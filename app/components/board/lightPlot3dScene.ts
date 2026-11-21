@@ -277,14 +277,15 @@ let pcssInstalled = false;
 export function installPcss(THREE: Three, phone: boolean) {
   if (pcssInstalled) return;
   pcssInstalled = true;
-  const n = phone ? 16 : 32;   // samples per pass (blocker search + filter); phone: fewer (measured, see LightPlot3D stats)
+  // samples: blocker search / filter — the filter needs more (grain in the penumbra); phone fewer search samples
+  const [ns, nf] = phone ? [8, 24] : [16, 32];
   const fn = `
-	#define PCSS_N ${n}
-	float pcssRand( vec2 co ) { return fract( 52.9829189 * fract( dot( co, vec2( 0.06711056, 0.00583715 ) ) ) ); }   // interleaved gradient noise (even grain)
-	vec2 pcssDisk( int i, float rot ) {
+	#define PCSS_NS ${ns}
+	#define PCSS_NF ${nf}
+	vec2 pcssDisk( int i, float n, float rot ) {
 		float fi = float( i ) + 0.5;
-		float r = sqrt( fi / float( PCSS_N ) );
-		float a = fi * 2.39996323 + rot;   // golden-angle spiral, rotated per pixel (no banding)
+		float r = sqrt( fi / n );
+		float a = fi * 2.39996323 + rot;   // golden-angle (Vogel) spiral
 		return vec2( cos( a ), sin( a ) ) * r;
 	}
 	float pcssShadow( sampler2D sm, vec2 mapSize, float enc, vec3 c ) {
@@ -294,21 +295,24 @@ export function installPcss(THREE: Three, phone: boolean) {
 		float K = kq / 100.0;                        // source size / (frustum width per metre × near)
 		float zR = F / ( F - c.z * ( F - 1.0 ) );    // receiver distance / near (linearised depth)
 		vec2 texel = 1.0 / mapSize;
-		float rot = pcssRand( gl_FragCoord.xy ) * 6.2831853;
+		float rot = 0.0;   // one fixed spiral for every pixel: a per-pixel random rotation showed as dots in the penumbra
 		// 1) blocker search: how far in front of the receiver are the occluders (average)?
 		float searchUV = clamp( 0.5 * K / zR, 2.0 * texel.x, 0.04 );
 		float sum = 0.0; float cnt = 0.0;
-		for ( int i = 0; i < PCSS_N; i ++ ) {
-			float d = unpackRGBAToDepth( texture2D( sm, c.xy + pcssDisk( i, rot ) * searchUV ) );
-			if ( d < c.z ) { sum += d; cnt += 1.0; }
+		for ( int i = 0; i < PCSS_NS; i ++ ) {
+			float d = unpackRGBAToDepth( texture2D( sm, c.xy + pcssDisk( i, float( PCSS_NS ), rot ) * searchUV ) );
+			if ( d < c.z - 0.0002 ) { sum += d; cnt += 1.0; }   // ≈ 3 mm: the surface's own depth is no blocker (no grain)
 		}
 		if ( cnt < 0.5 ) return 1.0;
 		float zB = F / ( F - ( sum / cnt ) * ( F - 1.0 ) );
 		// 2) penumbra from similar triangles: size × (receiver − blocker) / blocker, in shadow-map units at the receiver
-		float filterUV = clamp( K * ( zR - zB ) / ( zB * zR ), 1.0 * texel.x, 0.035 );
+		float filterUV = clamp( K * ( zR - zB ) / ( zB * zR ), 3.0 * texel.x, 0.035 );   // ≥ 3 texels: no single-pixel contact dots
 		float lit = 0.0;
-		for ( int i = 0; i < PCSS_N; i ++ ) lit += texture2DCompare( sm, c.xy + pcssDisk( i, rot + 1.7 ) * filterUV, c.z );
-		return lit / float( PCSS_N );
+		for ( int i = 0; i < PCSS_NF; i ++ ) {
+			vec2 o = pcssDisk( i, float( PCSS_NF ), rot + 1.7 ) * filterUV;
+			lit += texture2DCompare( sm, c.xy + o, c.z );
+		}
+		return lit / float( PCSS_NF );
 	}
 `;
   let chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
@@ -559,7 +563,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
           sp.shadow.focus = Math.min(1, need / (2 * sp.angle));
           sp.shadow.mapSize.set(phone ? 2048 : 4096, phone ? 2048 : 4096);
           sp.shadow.bias = -0.00012;
-          sp.shadow.normalBias = 0.0025;
+          sp.shadow.normalBias = pcssInstalled && !noPcss ? 0.006 : 0.0025;   // PCSS: a little more (no acne at the terminator)
           sp.shadow.radius = Math.min(9, 1 + (14 * srcSize) / Math.max(0.5, dist));  // penumbra grows with the source size / distance
           sp.shadow.camera.near = Math.max(0.1, dist - 1.5);
           sp.shadow.camera.far = dist + 6;
