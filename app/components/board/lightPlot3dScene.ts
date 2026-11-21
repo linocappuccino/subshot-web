@@ -5,7 +5,8 @@
 // wall / floor colour, procedural plaster / wood textures. Only ever imported by LightPlot3D (dynamic import).
 
 import type * as T from "three";
-import { BOUNCE_Z, cameraFov, isBounce, kelvinColor, MODIFIER_GAIN, MODIFIER_SOFT, presetOf, SURFACE_REFLECT, type LightPlotData, type LpLight, type LpLook, type LpPerson } from "@/lib/lightPlot";
+import { FABRICS, FLAG_SIZES, FRAMES } from "@/lib/lightCatalog";
+import { BOUNCE_Z, cameraFov, isBounce, kelvinColor, MODIFIER_GAIN, MODIFIER_SIZE, MODIFIER_SOFT, presetOf, SURFACE_REFLECT, type LightPlotData, type LpLight, type LpLook, type LpPerson } from "@/lib/lightPlot";
 
 export const ASPECT = 16 / 9;
 
@@ -285,13 +286,38 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
   return g;
 }
 
+/** the 3D model / light family of a fixture (v4: from the catalogue shape + modifier) */
 function family(li: LpLight) {
-  if (li.modifier === "softbox") return "softbox";
-  if (li.modifier === "lantern") return "lantern";
-  if (li.modifier === "fresnel") return "fresnel";
-  if (li.modifier === "dish55") return "dish";
+  const m = li.modifier;
+  if (m === "softbox" || m === "softbox_s" || m === "softbox_l" || m === "strip" || m === "octa" || m === "grid") return "softbox";
+  if (m === "para_s" || m === "para_m" || m === "para_l") return "para";
+  if (m === "lantern" || m === "dome") return "lantern";
+  if (m === "fresnel") return "fresnel";
+  if (m === "dish55") return "dish";
   const s = presetOf(li.preset)?.shape;
-  return s === "tube" ? "tube" : s === "panel" ? "panel" : "cob";
+  if (s === "tube" || s === "pixelbar") return "tube";
+  if (s === "panel" || s === "mat" || s === "bank" || s === "window" || s === "ring") return "panel";
+  if (s === "fresnel" || s === "par" || s === "profile" || s === "dedo") return "fresnel";
+  if (s === "spacelight" || s === "practical") return "lantern";
+  if (s === "sun") return "sun";
+  return "cob";
+}
+
+/** area light size (w, h in m) of a soft source — modifier first, else the fixture's own face */
+function areaSize(li: LpLight): [number, number] {
+  const m = li.modifier;
+  const bymod: Partial<Record<string, [number, number]>> = { softbox_s: [0.6, 0.6], softbox: [0.9, 0.9], softbox_l: [1.2, 0.9], strip: [0.3, 1.2], octa: [1.5, 1.5],
+    grid: [0.9, 0.9], para_s: [0.9, 0.9], para_m: [1.2, 1.2], para_l: [1.8, 1.8], dome: [0.35, 0.35] };
+  if (bymod[m]) return bymod[m]!;
+  const p = presetOf(li.preset);
+  const src = p?.src ?? 0.6;
+  switch (p?.shape) {
+    case "tube": return [0.05, src];
+    case "pixelbar": return [0.06, src];
+    case "panel": case "bank": return [src * 0.5, src];
+    case "window": return [src, src * 1.3];
+    default: return [src, src];
+  }
 }
 
 /** a light stand: three legs + pole up to `h` */
@@ -535,7 +561,17 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     c.r /= Math.max(0.05, wb.r); c.g /= Math.max(0.05, wb.g); c.b /= Math.max(0.05, wb.b);
     return c.multiplyScalar(1 / Math.max(c.r, c.g, c.b));
   };
-  const diffusers = look.mods.filter((m) => m.kind === "diffusion");
+  // old boards: a diffusion frame without a frame size softens any light within 1.3 m of it (as before)
+  const diffusers = look.mods.filter((m) => m.kind === "diffusion" && !m.frame);
+  // v4 frames with a size: the one crossing the line lamp → talent (plan view) turns the lamp into a frame-sized source
+  const frames = look.mods.filter((m) => m.kind === "diffusion" && m.frame);
+  const litFrames = new Set<string>();
+  const segCross = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) => {
+    const d = (bx - ax) * (dy - cy) - (by - ay) * (dx - cx);
+    if (Math.abs(d) < 1e-9) return null;
+    const t = ((cx - ax) * (dy - cy) - (cy - ay) * (dx - cx)) / d, u = ((cx - ax) * (by - ay) - (cy - ay) * (bx - ax)) / d;
+    return t > 0 && t < 1 && u >= 0 && u <= 1 ? t : null;
+  };
   const nearDiff = (x: number, y: number) => diffusers.some((d) => {
     const vx = d.x2 - d.x1, vy = d.y2 - d.y1, L2 = vx * vx + vy * vy || 1;
     const t = Math.max(0, Math.min(1, ((x - d.x1) * vx + (y - d.y1) * vy) / L2));
@@ -554,40 +590,82 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   const headPos = talent0 ? new THREE.Vector3(talent0.x, (talent0.pose === "sitting" ? 1.18 : 1.62) * ((talent0.height_m ?? 1.75) / 1.75), talent0.y) : null;
   look.lights.forEach((li, i) => {
     const fam = family(li);
-    const watts = presetOf(li.preset)?.watts ?? 150;
+    const preset = presetOf(li.preset);
+    const watts = preset?.watts ?? 150;
     const diffused = nearDiff(li.x, li.y);
     const color = tint(li.kelvin);
-    const cd = watts * 55 * MODIFIER_GAIN[li.modifier] * (li.intensity / 100) * (diffused ? 0.55 : 1);
-    totalPower += cd;
+    let cd = watts * 55 * MODIFIER_GAIN[li.modifier] * (li.intensity / 100) * (diffused ? 0.55 : 1);
     const z = li.z ?? 2, tilt = ((li.tilt ?? 25) * Math.PI) / 180, r = (li.rot * Math.PI) / 180;
-    const dir = new THREE.Vector3(Math.cos(r) * Math.cos(tilt), -Math.sin(tilt), Math.sin(r) * Math.cos(tilt));
-    const pos = new THREE.Vector3(li.x, z, li.y);
-    const soft = fam === "softbox" || fam === "panel" || fam === "tube" || diffused;
+    let dir = new THREE.Vector3(Math.cos(r) * Math.cos(tilt), -Math.sin(tilt), Math.sin(r) * Math.cos(tilt));
+    let pos = new THREE.Vector3(li.x, z, li.y);
+    let beamDeg = li.beam * (diffused ? 1.35 : 1);
+    // v4 sun: a distant source — the irradiance at the talent stays ~20 000 (scene lux) × intensity, wherever it is placed
+    if (fam === "sun" && headPos) cd = 20000 * (li.intensity / 100) * pos.distanceToSquared(headPos);
+    // apparent size of the source (m) for soft shadows: the modifier, else the fixture's own face (catalogue)
+    let srcSize = diffused ? 1.2 : li.modifier !== "bare" ? MODIFIER_SIZE[li.modifier] : preset?.src ?? 0.1;
+    let soft = fam === "softbox" || fam === "para" || fam === "panel" || fam === "tube" || diffused;
+    let area: [number, number] | null = soft ? (diffused ? [0.8, 0.8] : areaSize(li)) : null;
+    let areaAhead = fam === "softbox" ? 0.45 : 0.1;
+    // v4 diffusion frame (with a size) between the lamp and the talent: the lit frame becomes the source —
+    // Lambertian panel of the frame size with ρ = fabric transmission × scatter, at the frame; the unscattered rest
+    // stays a (weaker, hard) part of the lamp; scrims (no scatter) only dim
+    let hardRest: { cd: number } | null = null;
+    if (headPos && frames.length) {
+      for (const fm of frames) {
+        const t = segCross(li.x, li.y, headPos.x, headPos.z, fm.x1, fm.y1, fm.x2, fm.y2);
+        if (t == null) continue;
+        const fab = FABRICS[(fm.fabric ?? "silk") as keyof typeof FABRICS] ?? FABRICS.silk;
+        const S = FRAMES[fm.frame as keyof typeof FRAMES] ?? Math.hypot(fm.x2 - fm.x1, fm.y2 - fm.y1);
+        if (fab.d < 0.05) { cd *= fab.t; break; }
+        const fpos = new THREE.Vector3((fm.x1 + fm.x2) / 2, Math.min(H - 0.05, fm.z ?? Math.max(S / 2, pos.y + (headPos.y - pos.y) * t)), (fm.y1 + fm.y2) / 2);
+        const tmp: Emitter = { pos, dir, cd, omni: fam === "lantern" || li.beam >= 180, cosO: Math.cos(Math.min(Math.PI * 0.47, (beamDeg / 2) * Math.PI / 180)), cosI: Math.cos(Math.min(Math.PI * 0.47, (beamDeg / 2) * Math.PI / 180) * 0.5), color };
+        const toLamp = pos.clone().sub(fpos).normalize();
+        const E = irradiance(THREE, tmp, fpos, toLamp);                 // light arriving at the frame centre
+        // flux the frame catches: E × area, but never more than the lamp's beam carries (cd × beam solid angle)
+        const halfBeam = Math.min(Math.PI * 0.47, (beamDeg / 2) * Math.PI / 180);
+        const flux = Math.min(E * S * S, (tmp.omni ? cd * 4 * Math.PI : cd * 2 * Math.PI * (1 - Math.cos(halfBeam))));
+        const Lf = (flux * fab.t * fab.d) / (Math.PI * S * S);            // luminance of the lit fabric (Lambertian)
+        // intensity of the glowing frame towards the talent — near field: a disc of equal area, E = πL·R²/(R²+d²)
+        const dHead = Math.max(0.2, fpos.distanceTo(headPos)), R2 = (S * S) / Math.PI;
+        const Ieq = Math.min(Lf * S * S, (Math.PI * Lf * R2 * dHead * dHead) / (R2 + dHead * dHead));
+        if (fab.d < 0.75) hardRest = { cd: cd * fab.t * (1 - fab.d) };
+        litFrames.add(fm.id);
+        pos = fpos; dir = headPos.clone().sub(fpos).normalize(); cd = Ieq; beamDeg = 150;
+        srcSize = S; soft = true; area = [Math.min(S, 6), Math.min(S, H)]; areaAhead = 0.02;
+        break;
+      }
+    }
+    totalPower += cd;
     {
-      const omni = fam === "lantern" || li.beam >= 180;
-      const ang = Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180 * (diffused ? 1.35 : 1));
+      const omni = (fam === "lantern" || li.beam >= 180) && !area;
+      const ang = Math.min(Math.PI * 0.47, ((beamDeg / 2) * Math.PI) / 180);
       const pen = soft ? 1 : MODIFIER_SOFT[li.modifier];
       emitters.push({ pos, dir, cd: omni ? cd / 2.2 : cd, omni, cosO: Math.cos(ang), cosI: Math.cos(ang * (1 - pen)), color });
+      if (hardRest) {
+        const a0 = Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180);
+        const lp = new THREE.Vector3(li.x, z, li.y), ld = new THREE.Vector3(Math.cos(r) * Math.cos(tilt), -Math.sin(tilt), Math.sin(r) * Math.cos(tilt));
+        emitters.push({ pos: lp, dir: ld, cd: hardRest.cd, omni: false, cosO: Math.cos(a0), cosI: Math.cos(a0 * 0.7), color });
+        const hs = new THREE.SpotLight(color, hardRest.cd, 0, a0, 0.3, 2);
+        hs.position.copy(lp); hs.target.position.copy(lp.clone().add(ld.multiplyScalar(3))); scene.add(hs, hs.target);
+      }
     }
-    // apparent size of the source (m): drives how soft its shadow edges are
-    const srcSize = diffused ? 1.2 : ({ softbox: 0.9, lantern: 0.6, panel: 0.6, tube: 0.8, dish: 0.55, fresnel: 0.15, cob: 0.1 } as Record<string, number>)[fam] ?? 0.2;
 
     // the light itself
-    if (fam === "lantern" || li.beam >= 180) {
+    if ((fam === "lantern" || li.beam >= 180) && !area) {
       const pl = new THREE.PointLight(color, cd / 2.2, 0, 2);
       pl.position.copy(pos);
       if (i < 6) { pl.castShadow = true; pl.shadow.mapSize.set(shadowSize / 2, shadowSize / 2); pl.shadow.bias = -0.002; pl.shadow.radius = 8; }
       scene.add(pl);
     } else {
-      if (soft) {
-        // soft source: an area light the size of the softbox / panel / tube + a weaker soft spot for its shadow
-        const [aw, ah] = fam === "softbox" ? [0.9, 0.9] : fam === "panel" ? [0.3, 0.6] : fam === "tube" ? [0.05, li.preset.includes("15X") ? 0.6 : 1.2] : [0.8, 0.8];
-        const area = new THREE.RectAreaLight(color, (cd * 0.4) / (aw * ah * 3.2), aw, ah);
-        area.position.copy(pos.clone().add(dir.clone().multiplyScalar(fam === "softbox" ? 0.45 : 0.1)));
-        area.lookAt(pos.clone().add(dir.clone().multiplyScalar(4)));
-        scene.add(area);
+      if (soft && area) {
+        // soft source: an area light the size of the softbox / panel / tube / frame + a weaker soft spot for its shadow
+        const [aw, ah] = area;
+        const al = new THREE.RectAreaLight(color, (cd * 0.4) / (aw * ah * 3.2), aw, ah);
+        al.position.copy(pos.clone().add(dir.clone().multiplyScalar(areaAhead)));
+        al.lookAt(pos.clone().add(dir.clone().multiplyScalar(4)));
+        scene.add(al);
       }
-      const sp = new THREE.SpotLight(color, soft ? cd * 0.62 : cd, 0, Math.min(Math.PI * 0.47, ((li.beam / 2) * Math.PI) / 180 * (diffused ? 1.35 : 1)), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
+      const sp = new THREE.SpotLight(color, soft ? cd * 0.62 : cd, 0, Math.min(Math.PI * 0.47, ((beamDeg / 2) * Math.PI) / 180), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
       sp.position.copy(pos);
       sp.target.position.copy(pos.clone().add(dir.clone().multiplyScalar(3)));
       scene.add(sp.target);
@@ -669,6 +747,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
 
   // flags on C-stands, diffusion frames as translucent cloth in a frame
   const cloth = new THREE.MeshStandardMaterial({ color: "#ffffff", transparent: true, opacity: 0.55, roughness: 1, side: THREE.DoubleSide });
+  const frameGlow = new THREE.MeshBasicMaterial({ color: "#d8d6d0", transparent: true, opacity: 0.92, side: THREE.DoubleSide, toneMapped: false });
   const flagMat = new THREE.MeshStandardMaterial({ color: "#0a0a0b", roughness: 1, side: THREE.DoubleSide });
   for (const mo of look.mods) {
     if (isBounce(mo)) continue;   // v4: drawn + lit below
@@ -677,9 +756,14 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     const g = new THREE.Group();
     g.position.set((mo.x1 + mo.x2) / 2, 0, (mo.y1 + mo.y2) / 2);
     g.rotation.y = -Math.atan2(mo.y2 - mo.y1, mo.x2 - mo.x1);
-    const hgt = mo.kind === "flag" ? 0.75 : 1.2;
-    const cy = mo.kind === "flag" ? 1.75 : 1.5;
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, hgt), mo.kind === "flag" ? flagMat : cloth);
+    // v4: flag sizes (18×24, 24×36, floppy, cutter) and frame sizes — height from the catalogue, centre height from z
+    const fs = mo.kind === "flag" && mo.size ? FLAG_SIZES[mo.size] : null;
+    const fr = mo.kind === "diffusion" && mo.frame ? FRAMES[mo.frame] : null;
+    const hgt = fs ? fs[1] : fr ? Math.min(fr, H) : mo.kind === "flag" ? 0.75 : 1.2;
+    const cy = Math.min(H - hgt / 2, mo.z ?? (mo.kind === "flag" ? 1.75 : fr ? Math.max(hgt / 2 + 0.3, 1.5) : 1.5));
+    // a frame that a lamp shines through glows (unlit, like a softbox front); otherwise translucent cloth
+    const lit = mo.kind === "diffusion" && litFrames.has(mo.id);
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(len, hgt), mo.kind === "flag" ? flagMat : lit ? frameGlow : cloth);
     panel.position.y = cy;
     panel.castShadow = mo.kind === "flag";
     g.add(panel);
@@ -711,6 +795,9 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     silver: new THREE.MeshStandardMaterial({ color: "#d4d4d8", roughness: 0.3, metalness: 0.85, side: THREE.DoubleSide }),
     gold: new THREE.MeshStandardMaterial({ color: "#d9a640", roughness: 0.32, metalness: 0.85, side: THREE.DoubleSide }),
     black: new THREE.MeshStandardMaterial({ color: "#0b0b0c", roughness: 1, side: THREE.DoubleSide }),
+    sunfire: new THREE.MeshStandardMaterial({ color: "#e6c27a", roughness: 0.35, metalness: 0.8, side: THREE.DoubleSide }),
+    ultrabounce: new THREE.MeshStandardMaterial({ color: "#f7f7f5", roughness: 1, side: THREE.DoubleSide }),
+    poly: new THREE.MeshStandardMaterial({ color: "#ecebe6", roughness: 1, side: THREE.DoubleSide }),
   };
   const goldTint = (() => { const w = new THREE.Color(kelvinColor(5600)), g = new THREE.Color(kelvinColor(3200)); return new THREE.Color(g.r / w.r, g.g / w.g, g.b / w.b).multiplyScalar(1 / Math.max(g.r / w.r, g.g / w.g, g.b / w.b)); })();
   for (const mo of look.mods) {
@@ -732,6 +819,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     for (const e of emitters) { const ei = irradiance(THREE, e, vpos, n); E += ei; col.add(e.color.clone().multiplyScalar(ei)); }
     if (E > 0) col.multiplyScalar(1 / Math.max(col.r, col.g, col.b, 1e-6)); else col.set("#ffffff");
     if (surface === "gold") col.multiply(goldTint);
+    if (surface === "sunfire") col.lerp(col.clone().multiply(goldTint), 0.5);   // silver + gold stripes: half the warmth
     const rho = SURFACE_REFLECT[surface];
     // silver: more specular — a smaller, punchier source; black: minus the room bounce it hides
     const L = surface === "black" ? -(hemiI / Math.PI) * 0.8 : (rho * E) / Math.PI * (surface === "silver" ? 1.6 : 1);

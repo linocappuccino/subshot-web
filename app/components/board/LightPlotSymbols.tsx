@@ -243,7 +243,7 @@ export function ItemSymbol({ kind, w, h, sel }: { kind: ItemKind; w: number; h: 
 }
 
 /** a flag on a C-stand, or a diffusion frame (from p1 to p2 in units) */
-const SURFACE_FILL: Record<string, string> = { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b" };
+const SURFACE_FILL: Record<string, string> = { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b", sunfire: "#d9b15c", ultrabounce: "#fafafa", poly: "#e7e5e4" };
 
 export function ModSymbol({ kind, x1, y1, x2, y2, sel, surface }: { kind: ModKind; x1: number; y1: number; x2: number; y2: number; sel: boolean; surface?: string }) {
   const len = Math.hypot(x2 - x1, y2 - y1) || 1;

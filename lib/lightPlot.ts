@@ -2,10 +2,11 @@
 // (origin top-left, y down, rotation in degrees: 0 = right, 90 = down). Mirrors subshot-api app/light_plot.py
 // (which validates / clamps everything on save).
 
+import { GENERIC_FIXTURES, MODIFIER_KEYS, MODIFIER_SPECS, type FabricKey, type FixtureCat, type FixtureShape, type FlagSize, type FrameKey, type ModifierKey } from "./lightCatalog";
 export type WallKind = "wall" | "curve" | "window" | "door" | "opening";
 export type ItemKind = "table" | "chair" | "sofa" | "bed" | "car" | "tree" | "stairs" | "rect" | "circle";
 export type Role = "key" | "fill" | "rim" | "back" | "practical" | "ambience" | "custom";
-export type Modifier = "bare" | "dish55" | "fresnel" | "softbox" | "lantern" | "custom";
+export type Modifier = ModifierKey;
 
 export interface LpWall { id: string; kind: WallKind; x1: number; y1: number; x2: number; y2: number; bend?: number }
 export interface LpLabel { id: string; x: number; y: number; text: string }
@@ -24,18 +25,20 @@ export interface LpLight {
   z?: number; tilt?: number;
 }
 export type ModKind = "diffusion" | "flag" | "reflector" | "vflat" | "card";
-export type BounceSurface = "white" | "silver" | "gold" | "black";
+export type BounceSurface = "white" | "silver" | "gold" | "black" | "sunfire" | "ultrabounce" | "poly";
 export interface LpMod {
   id: string; kind: ModKind; x1: number; y1: number; x2: number; y2: number; label: string;
   /** v4 bounce objects (reflector / vflat / card): surface + centre height (m) */
   surface?: BounceSurface; z?: number;
+  /** v4 catalogue: diffusion frame size + fabric; flag size + cloth */
+  frame?: FrameKey; fabric?: FabricKey; size?: FlagSize; cloth?: "solid" | "duvetyne";
 }
 export const BOUNCE_KINDS: ModKind[] = ["reflector", "vflat", "card"];
 export const isBounce = (m: LpMod) => BOUNCE_KINDS.includes(m.kind);
 /** default centre height (m) — mirrors app/light_plot.py BOUNCE_Z */
 export const BOUNCE_Z: Record<string, number> = { reflector: 1.0, vflat: 1.2, card: 1.3 };
 /** reflectance of the surfaces (black = negative fill: absorbs, and takes away the room bounce from its side) */
-export const SURFACE_REFLECT: Record<BounceSurface, number> = { white: 0.8, silver: 0.9, gold: 0.8, black: 0 };
+export const SURFACE_REFLECT: Record<BounceSurface, number> = { white: 0.8, silver: 0.9, gold: 0.8, black: 0, sunfire: 0.85, ultrabounce: 0.9, poly: 0.85 };
 export interface LpLook {
   id: string; name: string; lights: LpLight[]; mods: LpMod[];
   /** v2: «Bild rendern» — still of the camera view (board file); render_src added on read */
@@ -69,7 +72,7 @@ export function plotOf(el: Partial<LightPlotData>): LightPlotData {
 export const activeLook = (p: LightPlotData) => p.looks.find((l) => l.id === p.active_look) ?? p.looks[0];
 
 // ── fixtures ───────────────────────────────────────────────────────────────
-export interface LightPreset { name: string; brand: string; k: [number, number, number]; shape: "point" | "tube" | "panel"; watts?: number }
+export interface LightPreset { name: string; brand: string; k: [number, number, number]; shape: FixtureShape; watts?: number; cat?: FixtureCat; beam?: number; src?: number; example?: string }
 const BI: [number, number, number] = [5600, 2700, 6500];
 const RGB: [number, number, number] = [5600, 2300, 10000];
 const DAY: [number, number, number] = [5600, 5600, 5600];
@@ -95,23 +98,28 @@ export const LIGHT_PRESETS: LightPreset[] = [
   { name: "Evoke 150C", brand: "Weitere", k: RGB, shape: "point", watts: 150 },
   { name: "Evoke 600C", brand: "Weitere", k: RGB, shape: "point", watts: 600 },
   { name: "Evoke 5C", brand: "Weitere", k: RGB, shape: "point", watts: 5 },
+  // v4: generic fixture types by category (lib/lightCatalog.ts) — the library lists them first, grouped
+  ...GENERIC_FIXTURES.map((g) => ({ ...g, brand: "Generisch" })),
 ];
 export const presetOf = (name: string) => LIGHT_PRESETS.find((p) => p.name === name);
 export const kelvinRange = (preset: string): [number, number] => {
   const p = presetOf(preset);
   return p ? [p.k[1], p.k[2]] : [1700, 20000];
 };
-export const MODIFIER_BEAM: Record<Modifier, number> = { bare: 110, dish55: 55, fresnel: 30, softbox: 90, lantern: 300, custom: 60 };
+const specMap = (k: "beam" | "soft" | "gain" | "src") => Object.fromEntries(MODIFIER_KEYS.map((m) => [m, MODIFIER_SPECS[m][k]])) as Record<Modifier, number>;
+export const MODIFIER_BEAM: Record<Modifier, number> = specMap("beam");
+/** v4: apparent source size (m) of a modifier — soft shadows (PCSS) */
+export const MODIFIER_SIZE: Record<Modifier, number> = specMap("src");
 /** camera view: how soft the light edge is (0 hard … 1 very soft) */
-export const MODIFIER_SOFT: Record<Modifier, number> = { bare: 0.45, dish55: 0.3, fresnel: 0.15, softbox: 0.95, lantern: 1, custom: 0.5 };
+export const MODIFIER_SOFT: Record<Modifier, number> = specMap("soft");
 /** camera view: how much a modifier eats (softbox / lantern lose light) */
-export const MODIFIER_GAIN: Record<Modifier, number> = { bare: 1, dish55: 1.6, fresnel: 2.2, softbox: 0.8, lantern: 0.6, custom: 1 };
+export const MODIFIER_GAIN: Record<Modifier, number> = specMap("gain");
 export const ROLES: Role[] = ["key", "fill", "rim", "back", "practical", "ambience", "custom"];
-export const MODIFIERS: Modifier[] = ["bare", "dish55", "fresnel", "softbox", "lantern", "custom"];
+export const MODIFIERS: Modifier[] = MODIFIER_KEYS;
 
 export function newLight(preset: string, x: number, y: number, role: Role = "key"): LpLight {
   const p = presetOf(preset);
-  return { id: lpId(), preset, name: preset || "Licht", role, kelvin: p ? p.k[0] : 5600, intensity: 100, modifier: "bare", beam: MODIFIER_BEAM.bare, rot: 0, x, y, z: 2, tilt: 25 };
+  return { id: lpId(), preset, name: preset || "Licht", role, kelvin: p ? p.k[0] : 5600, intensity: 100, modifier: "bare", beam: p?.beam ?? MODIFIER_BEAM.bare, rot: 0, x, y, z: 2, tilt: 25 };
 }
 
 export const ITEM_SIZE: Record<ItemKind, [number, number]> = {
@@ -168,6 +176,13 @@ const DE = {
   table: "Tisch", chair: "Stuhl", sofa: "Sofa", bed: "Bett", car: "Auto", tree: "Baum", stairs: "Treppe", rect: "Rechteck", circle: "Kreis",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Eigene",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
+  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic 90", para_m: "Parabolic 120", para_l: "Parabolic 180",
+  dome: "Dome", grid: "Softbox + Grid", snoot: "Snoot", barndoors: "Torblende", projector: "Projektion / Gobo",
+  catFresnel: "Fresnel", catHmi: "HMI", catCob: "COB / Point Source", catPar: "Par", catProfile: "Profiler / Spot", catPanel: "LED-Panel", catMat: "Flex-Matte", catTube: "Tubes / Pixel-Bars",
+  catSpace: "Space Light / Ballon", catBank: "Kino-Bank", catPractical: "Practicals", catSmall: "Ring / On-Camera", catSun: "Sonne / Fenster", catBrands: "Markenmodelle",
+  frame: "Rahmen", fabric: "Stoff", silk: "Silk", grid14: "Grid Cloth 1/4", grid12: "Grid Cloth 1/2", gridFull: "Grid Cloth voll", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
+  f216: "Folie 216", f250: "Folie 250", f251: "Folie 251", scrim1: "Scrim Single", scrim2: "Scrim Double", flagSize: "Grösse", cloth: "Stoff", solid: "Solid", duvetyne: "Duvetyne",
+  sunfire: "Sunfire", poly: "Poly",
   snap: "Snap", showLabels: "Labels", beams: "Kegel", spill: "Spill", undo: "Rückgängig", redo: "Wiederholen", png: "PNG", pdf: "PDF", close: "Schliessen",
   addLook: "+ Look", duplicate: "Duplizieren", rename: "Umbenennen", deleteLook: "Look löschen", fixtures: "Fixture-Liste", noFixtures: "Noch keine Lichter in diesem Look.",
   name: "Name", role: "Rolle", kelvin: "Kelvin", intensity: "Intensität", modifier: "Modifier", beamAngle: "Abstrahlwinkel", rotation: "Rotation",
@@ -191,6 +206,13 @@ const EN: typeof DE = {
   table: "Table", chair: "Chair", sofa: "Sofa", bed: "Bed", car: "Car", tree: "Tree", stairs: "Stairs", rect: "Rectangle", circle: "Circle",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Custom",
   bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
+  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic 90", para_m: "Parabolic 120", para_l: "Parabolic 180",
+  dome: "Dome", grid: "Softbox + grid", snoot: "Snoot", barndoors: "Barn doors", projector: "Projection / gobo",
+  catFresnel: "Fresnel", catHmi: "HMI", catCob: "COB / point source", catPar: "Par", catProfile: "Profile / spot", catPanel: "LED panel", catMat: "Flex mat", catTube: "Tubes / pixel bars",
+  catSpace: "Space light / balloon", catBank: "Kino bank", catPractical: "Practicals", catSmall: "Ring / on-camera", catSun: "Sun / window", catBrands: "Brand models",
+  frame: "Frame", fabric: "Fabric", silk: "Silk", grid14: "Grid cloth 1/4", grid12: "Grid cloth 1/2", gridFull: "Grid cloth full", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
+  f216: "Gel 216", f250: "Gel 250", f251: "Gel 251", scrim1: "Single scrim", scrim2: "Double scrim", flagSize: "Size", cloth: "Cloth", solid: "Solid", duvetyne: "Duvetyne",
+  sunfire: "Sunfire", poly: "Poly",
   snap: "Snap", showLabels: "Labels", beams: "Beams", spill: "Spill", undo: "Undo", redo: "Redo", png: "PNG", pdf: "PDF", close: "Close",
   addLook: "+ Look", duplicate: "Duplicate", rename: "Rename", deleteLook: "Delete look", fixtures: "Fixture list", noFixtures: "No lights in this look yet.",
   name: "Name", role: "Role", kelvin: "Kelvin", intensity: "Intensity", modifier: "Modifier", beamAngle: "Beam angle", rotation: "Rotation",

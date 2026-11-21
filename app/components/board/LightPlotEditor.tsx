@@ -13,6 +13,7 @@ import {
   newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
   type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
 } from "@/lib/lightPlot";
+import { FABRICS, FLAG_SIZES, FRAMES, type FabricKey, type FixtureCat, type FlagSize, type FrameKey } from "@/lib/lightCatalog";
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
 import { LightPlotDrawing, PX } from "./LightPlotDrawing";
@@ -628,10 +629,13 @@ export function LightPlotEditor({
           {libOpen && editable && (
             <div data-lp-library className="absolute left-3 top-3 z-20 w-72 max-h-[70%] overflow-y-auto rounded-xl bg-[#1c1c1e] border border-white/12 shadow-2xl p-2">
               <div className="px-1 pb-1 text-[11px] uppercase tracking-wider text-white/45">{L.library}</div>
-              {[...new Set(LIGHT_PRESETS.map((p) => p.brand))].map((brand) => (
-                <div key={brand} className="mb-1">
-                  <div className="px-1 text-[11px] font-semibold text-white/55">{brand}</div>
-                  {LIGHT_PRESETS.filter((p) => p.brand === brand).map((p) => (
+              {/* v4: generic types grouped by category first, then the brand models */}
+              {[...CAT_ORDER.map((c) => ({ key: c, title: L[CAT_LABEL[c]], items: LIGHT_PRESETS.filter((p) => p.cat === c) })),
+                ...[...new Set(LIGHT_PRESETS.filter((p) => !p.cat).map((p) => p.brand))].map((brand) => ({ key: brand, title: brand, items: LIGHT_PRESETS.filter((p) => !p.cat && p.brand === brand) }))]
+                .filter((g) => g.items.length).map((grp) => (
+                <div key={grp.key} className="mb-1">
+                  <div className="px-1 text-[11px] font-semibold text-white/55">{grp.title}</div>
+                  {grp.items.map((p) => (
                     <button key={p.name} data-lp-preset={p.name} onClick={() => addLight(p.name)} className="w-full text-left px-2 py-1 rounded-md text-[12px] hover:bg-white/10 flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: kelvinColor(p.k[0]) }} />
                       {p.name}
@@ -775,7 +779,7 @@ export function LightPlotEditor({
             {look.mods.filter(isBounce).map((m) => (
               <button key={m.id} data-lp-fixture-bounce onClick={() => setSelected(new Set([m.id]))}
                 className={`w-full text-left flex gap-2 items-center rounded-lg px-2 py-1 mb-1 ${selected.has(m.id) ? "bg-blue-600/25" : "hover:bg-white/5"}`}>
-                <span className="w-5 h-5 shrink-0 rounded-full border border-white/30" style={{ background: { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b" }[m.surface ?? "white"] }} />
+                <span className="w-5 h-5 shrink-0 rounded-full border border-white/30" style={{ background: { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b", sunfire: "#d9b15c", ultrabounce: "#fafafa", poly: "#e7e5e4" }[m.surface ?? "white"] }} />
                 <span className="text-[11px] text-white/70 truncate">{m.label || L[m.kind]} · {L[m.surface ?? "white"]} · {Math.hypot(m.x2 - m.x1, m.y2 - m.y1).toFixed(1)} m</span>
               </button>
             ))}
@@ -920,17 +924,18 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
     const m = o as unknown as LpMod;
     const len = Math.hypot(m.x2 - m.x1, m.y2 - m.y1);
     // reflector sizes: keep the centre, set the diameter (= segment length)
-    const resize = (d: number) => {
+    const sized = (d: number) => {
       const cx = (m.x1 + m.x2) / 2, cy = (m.y1 + m.y2) / 2, ux = (m.x2 - m.x1) / (len || 1), uy = (m.y2 - m.y1) / (len || 1);
       const r2 = (v: number) => Math.round(v * 100) / 100;
-      onPatch({ x1: r2(cx - (ux * d) / 2), y1: r2(cy - (uy * d) / 2), x2: r2(cx + (ux * d) / 2), y2: r2(cy + (uy * d) / 2) });
+      return { x1: r2(cx - (ux * d) / 2), y1: r2(cy - (uy * d) / 2), x2: r2(cx + (ux * d) / 2), y2: r2(cy + (uy * d) / 2) };
     };
+    const resize = (d: number) => onPatch(sized(d));
     body = (
       <>
         {sel("kind", "", ([["flag", L.flag], ["diffusion", L.diffusion], ["reflector", L.reflector], ["vflat", L.vflat], ["card", L.card]] as [string, string][]))}
         {isBounce(m) && (
           <>
-            {sel("surface", L.surface, (["white", "silver", "gold", "black"] as const).map((k) => [k, L[k]]))}
+            {sel("surface", L.surface, (["white", "silver", "gold", "sunfire", "ultrabounce", "poly", "black"] as const).map((k) => [k, L[k]]))}
             {m.kind === "reflector" && (
               <label className="block text-[11px] text-white/55">{L.size}
                 <select data-lp-reflector-size value={Math.abs(len - 1.1) < 0.05 ? "1.1" : Math.abs(len - 0.8) < 0.05 ? "0.8" : ""} disabled={!editable} onChange={(e) => e.target.value && resize(+e.target.value)}
@@ -942,6 +947,34 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
             <Num label={L.centerHeight} value={Number(m.z ?? BOUNCE_Z[m.kind] ?? 1.2)} min={0.1} max={6} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
             <div className="text-[11px] text-white/55">{len.toFixed(2)} m</div>
           </>
+        )}
+        {/* v4 catalogue: frame size + fabric for diffusion, size + cloth for flags, and their centre height */}
+        {m.kind === "diffusion" && (
+          <>
+            <label className="block text-[11px] text-white/55">{L.frame}
+              <select data-lp-frame value={m.frame ?? ""} disabled={!editable} className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none"
+                onChange={(e) => { const k = e.target.value as FrameKey | ""; onPatch(k ? { ...sized(FRAMES[k]), frame: k } : { frame: undefined }); }}>
+                <option value="">{len.toFixed(1)} m</option>
+                {(Object.keys(FRAMES) as FrameKey[]).map((k) => <option key={k} value={k}>{k.replace("x", "×")} ({FRAMES[k]} m)</option>)}
+              </select>
+            </label>
+            {sel("fabric", L.fabric, (Object.keys(FABRICS) as FabricKey[]).map((k) => [k, L[k === "grid" ? "gridFull" : k]] as [string, string]))}
+          </>
+        )}
+        {m.kind === "flag" && (
+          <>
+            <label className="block text-[11px] text-white/55">{L.flagSize}
+              <select data-lp-flag-size value={m.size ?? ""} disabled={!editable} className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none"
+                onChange={(e) => { const k = e.target.value as FlagSize | ""; onPatch(k ? { ...sized(FLAG_SIZES[k][0]), size: k } : { size: undefined }); }}>
+                <option value="">{len.toFixed(1)} m</option>
+                {([["18x24", "18×24″"], ["24x36", "24×36″"], ["floppy", "Floppy 4×4"], ["cutter", "Cutter 10×42″"]] as [FlagSize, string][]).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+              </select>
+            </label>
+            {sel("cloth", L.cloth, [["solid", L.solid], ["duvetyne", L.duvetyne]])}
+          </>
+        )}
+        {(m.kind === "diffusion" || m.kind === "flag") && (
+          <Num label={L.centerHeight} value={Number(m.z ?? (m.kind === "flag" ? 1.75 : 1.5))} min={0.1} max={6} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
         )}
         {text("label", L.label)}
       </>
@@ -987,3 +1020,10 @@ function fStop(lux: number) {
   const scale = [1, 1.1, 1.2, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22, 25, 29, 32];
   return scale.reduce((a, b) => (Math.abs(Math.log(b / n)) < Math.abs(Math.log(a / n)) ? b : a));
 }
+
+// v4 library order of the generic categories
+const CAT_ORDER: FixtureCat[] = ["fresnel", "hmi", "cob", "par", "profile", "panel", "mat", "bank", "tube", "space", "practical", "small", "sun"];
+const CAT_LABEL: Record<FixtureCat, "catFresnel" | "catHmi" | "catCob" | "catPar" | "catProfile" | "catPanel" | "catMat" | "catTube" | "catSpace" | "catBank" | "catPractical" | "catSmall" | "catSun"> = {
+  fresnel: "catFresnel", hmi: "catHmi", cob: "catCob", par: "catPar", profile: "catProfile", panel: "catPanel", mat: "catMat", tube: "catTube",
+  space: "catSpace", bank: "catBank", practical: "catPractical", small: "catSmall", sun: "catSun",
+};
