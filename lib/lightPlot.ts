@@ -196,7 +196,7 @@ export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "cust
 // app/light_plot.py PRESETS_PORTRAIT / apply_preset ──────────────────────────────────────────────────────────
 export type PortraitPreset = "rembrandt" | "loop" | "butterfly" | "split" | "broad" | "short";
 export const PORTRAIT_PRESETS: Record<PortraitPreset, [number, number, number]> = {
-  butterfly: [0, 40, 1.6], loop: [35, 30, 1.8], rembrandt: [50, 40, 1.8], split: [90, 5, 1.6], broad: [45, 30, 1.8], short: [45, 30, 1.8],
+  butterfly: [0, 40, 1.6], loop: [35, 30, 1.8], rembrandt: [55, 45, 1.8], split: [90, 5, 1.6], broad: [45, 30, 1.8], short: [45, 30, 1.8],
 };
 const wrapDeg = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
 export const eyeHeight = (t: LpPerson) => ((t.pose === "sitting" ? 1.18 : 1.62) * (t.height_m ?? 1.75)) / 1.75;

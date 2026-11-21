@@ -74,7 +74,7 @@ const gauss = (a: number, sa: number, b: number, sb: number) => Math.exp(-((a * 
  * tip, nostrils), brow ridge, eye sockets with eyeballs, cheekbones, lips, chin and a narrower jaw; ears; hair */
 export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
   const g = new THREE.Group();
-  const geo = new THREE.SphereGeometry(1, 128, 96);
+  const geo = new THREE.SphereGeometry(1, 160, 120);
   const pos = geo.attributes.position as T.BufferAttribute;
   const RX = 0.098, RY = 0.118, RZ = 0.078;
   for (let i = 0; i < pos.count; i++) {
@@ -86,16 +86,22 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
     let px = x * RX * (x < 0 ? 1.04 : 1), py = y * RY, pz = z * RZ * jaw;
     // nose: bridge between the eyes → tip, wider and further out towards the tip
     const t = Math.min(1, Math.max(0, (0.16 - y) / 0.42));
-    const noseMask = smooth(-0.34, -0.26, y) * (1 - smooth(0.12, 0.2, y));
-    const nose = (0.003 + 0.02 * Math.pow(t, 1.8)) * Math.exp(-((z * z) / Math.pow(0.055 + 0.06 * t, 2))) * noseMask * Math.pow(f, 6);
-    const nostrils = 0.007 * gauss(y + 0.27, 0.06, az - 0.1, 0.05) * Math.pow(f, 4);
-    const underNose = -0.006 * gauss(y + 0.33, 0.035, z, 0.12) * Math.pow(f, 4);
-    const brow = 0.009 * gauss(y - 0.26, 0.07, z, 0.5) * Math.pow(f, 3);
-    const sockets = -0.013 * gauss(y - 0.12, 0.1, az - 0.33, 0.13) * Math.pow(f, 3);
-    const cheeks = 0.008 * gauss(y + 0.04, 0.13, az - 0.55, 0.16) * Math.pow(f, 2);
-    const lips = 0.008 * gauss(y + 0.47, 0.06, z, 0.26) * Math.pow(f, 4) - 0.003 * gauss(y + 0.505, 0.012, z, 0.28) * Math.pow(f, 4);
-    const chin = 0.011 * gauss(y + 0.73, 0.1, z, 0.26) * Math.pow(f, 3);
-    const d = nose + nostrils + underNose + brow + sockets + cheeks + lips + chin;
+    const noseMask = smooth(-0.33, -0.25, y) * (1 - smooth(0.12, 0.2, y));
+    // ridge rises gently, the tip is a rounded ball, the wings (nostrils) sit low and wide
+    const ridge = (0.002 + 0.0165 * Math.pow(t, 1.6)) * Math.exp(-((z * z) / Math.pow(0.05 + 0.045 * t, 2))) * noseMask;
+    const tip = 0.006 * gauss(y + 0.235, 0.06, z, 0.075);
+    const nose = (ridge + tip) * Math.pow(f, 6);
+    const nostrils = 0.0065 * gauss(y + 0.265, 0.055, az - 0.105, 0.055) * Math.pow(f, 4);
+    const underNose = -0.0035 * gauss(y + 0.315, 0.03, z, 0.13) * Math.pow(f, 4);
+    const philtrum = -0.0016 * gauss(y + 0.38, 0.045, z, 0.035) * Math.pow(f, 5) + 0.0008 * gauss(y + 0.38, 0.045, az - 0.05, 0.02) * Math.pow(f, 5);
+    const brow = 0.008 * gauss(y - 0.26, 0.08, z, 0.5) * Math.pow(f, 3);
+    const sockets = -0.012 * gauss(y - 0.12, 0.1, az - 0.33, 0.13) * Math.pow(f, 3);
+    const cheeks = 0.009 * gauss(y + 0.06, 0.16, az - 0.55, 0.2) * Math.pow(f, 2);
+    // closed lips: upper + lower volume, only a hairline between them (no gap)
+    const lips = (0.0055 * gauss(y + 0.445, 0.035, z, 0.24) + 0.0065 * gauss(y + 0.525, 0.04, z, 0.22) - 0.0011 * gauss(y + 0.485, 0.008, z, 0.26)) * Math.pow(f, 4);
+    const chin = 0.01 * gauss(y + 0.73, 0.11, z, 0.28) * Math.pow(f, 3);
+    const nasolabial = -0.0018 * gauss(y + 0.36, 0.12, az - 0.22, 0.05) * Math.pow(f, 3);
+    const d = nose + nostrils + underNose + philtrum + brow + sockets + cheeks + lips + chin + nasolabial;
     const n = new THREE.Vector3(px / (RX * RX), py / (RY * RY), pz / (RZ * RZ)).normalize();
     px += n.x * d; py += n.y * d; pz += n.z * d;
     pos.setXYZ(i, px, py, pz);
@@ -105,13 +111,18 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
   face.castShadow = face.receiveShadow = true;
   g.add(face);
   // eyes in the sockets: white + iris + pupil, looking forward
-  const white = new THREE.MeshPhysicalMaterial({ color: "#e9e4dc", roughness: 0.25, clearcoat: 1 });
-  const iris = new THREE.MeshStandardMaterial({ color: "#4a3626", roughness: 0.4 });
+  const white = new THREE.MeshPhysicalMaterial({ color: "#ece6dd", roughness: 0.25, clearcoat: 1, emissive: new THREE.Color("#2a2622") });
+  const iris = new THREE.MeshStandardMaterial({ color: "#3a2a1e", roughness: 0.35 });
   for (const sz of [-1, 1]) {
     const uy = 0.12, uz = 0.33 * sz, ux = Math.sqrt(1 - uy * uy - uz * uz);
-    const c = new THREE.Vector3(ux * RX - 0.013, uy * RY, uz * RZ);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0118, 20, 14), white); eye.position.copy(c); eye.receiveShadow = true; g.add(eye);
-    const ir = new THREE.Mesh(new THREE.CircleGeometry(0.0052, 18), iris); ir.position.copy(c).add(new THREE.Vector3(0.0117, 0, 0)); ir.rotation.y = Math.PI / 2; g.add(ir);
+    const c = new THREE.Vector3(ux * RX - 0.0135, uy * RY, uz * RZ);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.0118, 24, 16), white); eye.position.copy(c); eye.receiveShadow = true; g.add(eye);
+    const ir = new THREE.Mesh(new THREE.CircleGeometry(0.0062, 20), iris); ir.position.copy(c).add(new THREE.Vector3(0.0116, -0.001, 0)); ir.rotation.y = Math.PI / 2; g.add(ir);
+    // eyelids: upper lid covers the top third, lower lid a sliver — the eye sits in the face, not on it
+    const lidGeo = new THREE.SphereGeometry(0.0128, 24, 12, 0, Math.PI * 2, 0, Math.PI * 0.4);
+    const upper = new THREE.Mesh(lidGeo, skin); upper.position.copy(c); upper.rotation.z = -0.3; upper.castShadow = upper.receiveShadow = true; g.add(upper);
+    const lower = new THREE.Mesh(new THREE.SphereGeometry(0.0126, 24, 10, 0, Math.PI * 2, Math.PI * 0.72, Math.PI * 0.28), skin);
+    lower.position.copy(c); lower.rotation.z = 0.25; lower.receiveShadow = true; g.add(lower);
   }
   // ears
   for (const sz of [-1, 1]) {
@@ -121,13 +132,35 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
   }
   // hair: top + back of the skull
   // a cap of 90° tilted back: hairline on the forehead, down to the nape at the back
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.5), hair);
-  cap.scale.set(RX * 1.1, RY * 1.07, RZ * 1.14);   // clearly outside the skin → a clean hairline, no flicker
-  cap.position.set(0.0, 0.004, 0);
-  cap.rotation.z = 0.55;
+  // hair volume: the skull shape 3–5 % larger above the hairline, sinking just under the skin below it — a closed
+  // volume whose edge meets the skin (no shell, no gap); hairline high in front, above the ears, low at the nape
+  const capGeo = new THREE.SphereGeometry(1, 120, 80);
+  const cp = capGeo.attributes.position as T.BufferAttribute;
+  for (let i = 0; i < cp.count; i++) {
+    const x = cp.getX(i), y = cp.getY(i), z = cp.getZ(i);
+    const line = y - (0.3 * x + 0.16 - 0.12 * Math.abs(z) * (x < 0 ? 1 : 0));
+    const amt = smooth(-0.05, 0.07, line);
+    const k = 0.985 + amt * (0.045 + 0.025 * Math.max(0, y));
+    const jaw = y < 0 ? 1 - 0.28 * Math.pow(-y, 1.6) : 1;
+    cp.setXYZ(i, x * RX * (x < 0 ? 1.04 : 1) * k, y * RY * k, z * RZ * jaw * k);
+  }
+  capGeo.computeVertexNormals();
+  const cap = new THREE.Mesh(capGeo, hair);
   cap.castShadow = true;
   g.add(cap);
   return g;
+}
+
+/** skin with wrap lighting: light reaches a little past the terminator and warms it — a cheap subsurface look */
+export function skinMaterial(THREE: Three) {
+  const m = new THREE.MeshPhysicalMaterial({ color: "#c99f86", roughness: 0.52, sheen: 0.35, sheenColor: new THREE.Color("#ffd2bd"), sheenRoughness: 0.6 });
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace("#include <lights_physical_pars_fragment>", THREE.ShaderChunk.lights_physical_pars_fragment.replace(
+      "vec3 irradiance = dotNL * directLight.color;",
+      "float wrapNL = saturate( ( dot( geometryNormal, directLight.direction ) + 0.2 ) / 1.2 );\n\tvec3 irradiance = mix( vec3( dotNL ), wrapNL * vec3( 1.0, 0.78, 0.66 ), 0.4 ) * directLight.color;"));
+  };
+  m.customProgramCacheKey = () => "subshot-skin-wrap";
+  return m;
 }
 
 /** a human figure with real proportions (≈ 7.5 heads), facing +x; standing or sitting */
@@ -161,8 +194,8 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
   g.add(torso);
   const shoulderY = 1.44 + lift;
   for (const s of [-1, 1]) {
-    const sh = V(-0.01, shoulderY - 0.03, s * 0.2);
-    g.add(ball(THREE, shirt, sh, 0.06));
+    const sh = V(-0.01, shoulderY - 0.035, s * 0.2);
+    g.add(ball(THREE, shirt, sh, 0.058, 1.0, 0.82, 1.05));
     const elbow = sitting ? V(0.12, shoulderY - 0.3, s * 0.23) : V(-0.02, shoulderY - 0.3, s * 0.235);
     const wrist = sitting ? V(0.36, shoulderY - 0.4, s * 0.2) : V(0.0, shoulderY - 0.56, s * 0.24);
     g.add(limb(THREE, shirt, sh, elbow, 0.048, 0.04));
@@ -170,8 +203,10 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
     g.add(limb(THREE, skin, elbow, wrist, 0.037, 0.028));
     g.add(ball(THREE, skin, wrist.clone().add(sitting ? V(0.05, -0.01, 0) : V(0, -0.06, 0)), 0.04, 1.1, 1.3, 0.6));
   }
-  g.add(limb(THREE, skin, V(0, shoulderY - 0.03, 0), V(0.0, shoulderY + 0.13, 0), 0.046, 0.04));
-  const headC = V(0.015, shoulderY + 0.2, 0);
+  // trapezius: the slope from the neck down to the shoulders
+  g.add(ball(THREE, shirt, V(-0.025, shoulderY - 0.005, 0), 0.1, 0.85, 0.5, 2.0));
+  g.add(limb(THREE, skin, V(0, shoulderY - 0.04, 0), V(0.005, shoulderY + 0.105, 0), 0.058, 0.052));
+  const headC = V(0.015, shoulderY + 0.175, 0);
   // 2026-11-21 (v3): a sculpted head (nose, brow, eye sockets, cheekbones, lips, chin) — its forms cast the face
   // shadows Rembrandt / loop / split light depend on
   const head = sculptedHead(THREE, skin, hair);
@@ -332,7 +367,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
 
   // talent
   const mats = {
-    skin: new THREE.MeshPhysicalMaterial({ color: "#c99f86", roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color("#ffd9c4") }),
+    skin: skinMaterial(THREE),
     shirt: new THREE.MeshStandardMaterial({ color: "#3e5266", roughness: 0.9 }),
     pants: new THREE.MeshStandardMaterial({ color: "#2b2e35", roughness: 0.85 }),
     shoes: new THREE.MeshStandardMaterial({ color: "#151517", roughness: 0.5 }),
@@ -380,6 +415,8 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
     const dir = new THREE.Vector3(Math.cos(r) * Math.cos(tilt), -Math.sin(tilt), Math.sin(r) * Math.cos(tilt));
     const pos = new THREE.Vector3(li.x, z, li.y);
     const soft = fam === "softbox" || fam === "panel" || fam === "tube" || diffused;
+    // apparent size of the source (m): drives how soft its shadow edges are
+    const srcSize = diffused ? 1.2 : ({ softbox: 0.9, lantern: 0.6, panel: 0.6, tube: 0.8, dish: 0.55, fresnel: 0.15, cob: 0.1 } as Record<string, number>)[fam] ?? 0.2;
 
     // the light itself
     if (fam === "lantern" || li.beam >= 180) {
@@ -405,7 +442,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
         sp.shadow.mapSize.set(shadowSize, shadowSize);
         sp.shadow.bias = -0.0005;
         sp.shadow.normalBias = 0.02;
-        sp.shadow.radius = soft ? 10 : 2 + 6 * MODIFIER_SOFT[li.modifier];
+        sp.shadow.radius = Math.min(9, 1 + (14 * srcSize) / Math.max(0.5, pos.length() > 0 ? z + 1 : 2));
         sp.shadow.camera.near = 0.2;
         if (li.id === keyId && headPos) {
           const dist = pos.distanceTo(headPos);
@@ -414,7 +451,7 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
           sp.shadow.mapSize.set(phone ? 2048 : 4096, phone ? 2048 : 4096);
           sp.shadow.bias = -0.00012;
           sp.shadow.normalBias = 0.0025;
-          sp.shadow.radius = soft ? 3.5 : 1.2;
+          sp.shadow.radius = Math.min(9, 1 + (14 * srcSize) / Math.max(0.5, dist));  // penumbra grows with the source size / distance
           sp.shadow.camera.near = Math.max(0.1, dist - 1.5);
           sp.shadow.camera.far = dist + 6;
         }
