@@ -207,12 +207,15 @@ export function applyPreset(p: LightPlotData, preset: PortraitPreset, talentId?:
   const cams = p.people.filter((q) => q.kind === "camera");
   const cam = cams.find((c) => c.id === p.view.camera) ?? cams[0];
   const camDir = cam ? (Math.atan2(cam.y - t.y, cam.x - t.x) * 180) / Math.PI : t.rot;
-  const [off, elev, dist] = PORTRAIT_PRESETS[preset];
+  const [off, elev, presetDist] = PORTRAIT_PRESETS[preset];
+  // butterfly sits on the camera axis: the light goes just behind / above the camera, not into its picture
+  const camDist = cam ? Math.hypot(cam.x - t.x, cam.y - t.y) : 0;
+  const dist = preset === "butterfly" && cam ? Math.max(presetDist, camDist + 0.35) : presetDist;
   const side = wrapDeg(t.rot - camDir) < -1 ? -1 : 1;
   const az = preset === "broad" ? camDir - side * off : preset === "short" ? camDir + side * off : camDir + off;
   const r2 = (v: number) => Math.round(v * 100) / 100;
   const x = r2(t.x + dist * Math.cos((az * Math.PI) / 180)), y = r2(t.y + dist * Math.sin((az * Math.PI) / 180));
-  const z = r2(Math.min(10, eyeHeight(t) + dist * Math.tan((elev * Math.PI) / 180)));
+  const z = r2(Math.min((p.room.height ?? 2.6) - 0.15, eyeHeight(t) + dist * Math.tan((elev * Math.PI) / 180)));
   return {
     ...p,
     looks: p.looks.map((lk) => {

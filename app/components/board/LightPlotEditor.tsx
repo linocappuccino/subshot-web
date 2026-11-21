@@ -166,6 +166,9 @@ export function LightPlotEditor({
   function onPointerDown(e: React.PointerEvent<SVGSVGElement>) {
     e.stopPropagation();
     svgRef.current?.setPointerCapture?.(e.pointerId);
+    // a mouse / pen is one pointer: forget fingers / pointers whose pointerup never arrived (else a stale entry turns
+    // the next click into a «pinch» and nothing can be selected)
+    if (e.pointerType !== "touch" || e.isPrimary) pointers.current.clear();
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];

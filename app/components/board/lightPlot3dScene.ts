@@ -87,7 +87,7 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
     // nose: bridge between the eyes → tip, wider and further out towards the tip
     const t = Math.min(1, Math.max(0, (0.16 - y) / 0.42));
     const noseMask = smooth(-0.34, -0.26, y) * (1 - smooth(0.12, 0.2, y));
-    const nose = (0.004 + 0.026 * Math.pow(t, 1.7)) * Math.exp(-((z * z) / Math.pow(0.055 + 0.06 * t, 2))) * noseMask * Math.pow(f, 6);
+    const nose = (0.003 + 0.02 * Math.pow(t, 1.8)) * Math.exp(-((z * z) / Math.pow(0.055 + 0.06 * t, 2))) * noseMask * Math.pow(f, 6);
     const nostrils = 0.007 * gauss(y + 0.27, 0.06, az - 0.1, 0.05) * Math.pow(f, 4);
     const underNose = -0.006 * gauss(y + 0.33, 0.035, z, 0.12) * Math.pow(f, 4);
     const brow = 0.009 * gauss(y - 0.26, 0.07, z, 0.5) * Math.pow(f, 3);
@@ -120,10 +120,11 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
     ear.castShadow = ear.receiveShadow = true; g.add(ear);
   }
   // hair: top + back of the skull
-  const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.55), hair);
-  cap.scale.set(RX * 1.06, RY * 1.05, RZ * 1.1);
-  cap.position.set(-0.006, 0.012, 0);
-  cap.rotation.z = 0.5;
+  // a cap of 90° tilted back: hairline on the forehead, down to the nape at the back
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 24, 0, Math.PI * 2, 0, Math.PI * 0.5), hair);
+  cap.scale.set(RX * 1.1, RY * 1.07, RZ * 1.14);   // clearly outside the skin → a clean hairline, no flicker
+  cap.position.set(0.0, 0.004, 0);
+  cap.rotation.z = 0.55;
   cap.castShadow = true;
   g.add(cap);
   return g;
@@ -169,7 +170,7 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
     g.add(limb(THREE, skin, elbow, wrist, 0.037, 0.028));
     g.add(ball(THREE, skin, wrist.clone().add(sitting ? V(0.05, -0.01, 0) : V(0, -0.06, 0)), 0.04, 1.1, 1.3, 0.6));
   }
-  g.add(limb(THREE, skin, V(0, shoulderY - 0.02, 0), V(0.01, shoulderY + 0.1, 0), 0.05, 0.045));
+  g.add(limb(THREE, skin, V(0, shoulderY - 0.03, 0), V(0.0, shoulderY + 0.13, 0), 0.046, 0.04));
   const headC = V(0.015, shoulderY + 0.2, 0);
   // 2026-11-21 (v3): a sculpted head (nose, brow, eye sockets, cheekbones, lips, chin) — its forms cast the face
   // shadows Rembrandt / loop / split light depend on
