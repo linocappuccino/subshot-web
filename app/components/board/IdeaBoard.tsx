@@ -140,7 +140,12 @@ export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
 export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
 
-const MIN_SCALE = 0.1;
+// 2026-11-21, Lino: «das Board muss grösser sein und man muss weiter hinauszoomen können» — 2 % instead of 10 %
+// (5× further out). Below LOD_SCALE (the former minimum) nodes are drawn as light blocks (colour + title), images only
+// while the board has few of them — so a big board stays smooth and within iOS memory when seen whole.
+const MIN_SCALE = 0.02;
+const LOD_SCALE = 0.1;
+const LOD_MAX_IMAGES = 60;
 const MAX_SCALE = 4;
 const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
@@ -506,7 +511,10 @@ export function IdeaBoard({
   const [zoomCap] = useState(() =>
     typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse) and (max-width: 900px), (pointer: coarse) and (max-height: 500px)").matches ? 2 : MAX_SCALE,
   );
-  const targetZoom = Math.min(zoomCap, Math.max(1, view.scale));
+  // 2026-11-21: in the far-zoom LOD range the layout itself is zoomed down too (CSS zoom < 1, in 0.5 % steps) —
+  // with a scale() transform alone WebKit paints the layer at its UNscaled size (50× the screen at 2 %), which cost
+  // ~190 ms frames on the iPhone emulation; LOD blocks carry no small text, so the 9-px font floor does not matter
+  const targetZoom = view.scale < LOD_SCALE ? Math.max(MIN_SCALE, Math.round(view.scale * 200) / 200) : Math.min(zoomCap, Math.max(1, view.scale));
   useEffect(() => {
     if (targetZoom === settledScale) return;
     const t = window.setTimeout(() => setSettledScale(targetZoom), 150);
@@ -3809,6 +3817,8 @@ export function IdeaBoard({
 
   // world-space rectangle that is rendered when culling is on (boardImageConfig.cull, the iOS embed): the visible
   // area plus one screen in every direction
+  // far zoom (LOD): images stay as small previews only while the board has few of them (memory on iPhone / iPad)
+  const lodImages = useMemo(() => data.elements.filter((e) => e.type === "image" || e.type === "moodboard" || !!(e as { image_thumb_src?: string }).image_thumb_src).length <= LOD_MAX_IMAGES, [data.elements]);
   const cullRect = (() => {
     if (!boardImageConfig.cull || !viewportSize.w) return null;
     const s = Math.max(0.01, view.scale);
@@ -3959,6 +3969,7 @@ export function IdeaBoard({
               (el.x > cullRect.x2 || el.y > cullRect.y2 || el.x + el.w < cullRect.x1 || el.y + Math.max(el.h, 40) < cullRect.y1)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
+          const lod = view.scale < LOD_SCALE;
           const isFrame = el.type === "group" && !el.collapsed;
           const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow" || el.type === "credits" || el.type === "dubbing";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
@@ -3978,6 +3989,7 @@ export function IdeaBoard({
                 transition: "opacity .2s",
               }}
             >
+              {lod && !selected && editingId !== el.id && !isDrawing && el.type !== "group" ? <LodBlock el={el} scale={view.scale} images={lodImages} /> : (
               <BoardElementView
                 el={el}
                 voted={el.type === "video" && votedIds.has(el.id)}
@@ -4030,6 +4042,7 @@ export function IdeaBoard({
                   if (Math.abs(want - el.h) > 2) updateElement(el.id, { h: want }, { notify: editable });
                 }}
               />
+              )}
               {el.type === "moodboard" && (moodboardBusy[el.id] ?? 0) > 0 && (
                 <div
                   className="absolute left-1/2 bottom-3 z-10 pointer-events-none rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white animate-pulse whitespace-nowrap"
@@ -5546,5 +5559,28 @@ function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
       <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
       {crossed && <path d="M4 4l16 16" />}
     </svg>
+  );
+}
+
+/** 2026-11-21 — a node seen from far away (zoom < 10 %): a light block in the node's colour with its title in a
+ * readable size (scaled against the zoom), images as their small preview only on boards with few images */
+const LOD_COLORS: Record<string, string> = {
+  text: "#3f3f46", sticky: "#ca8a04", scene: "#1d4ed8", image: "#27272a", video: "#7f1d1d", moodboard: "#27272a", todo: "#065f46",
+  timetable: "#4338ca", flow: "#0e7490", credits: "#6d28d9", palette: "#9d174d", location: "#166534", link: "#334155", pdf: "#991b1b",
+  file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46",
+};
+function LodBlock({ el, scale, images }: { el: BoardElement; scale: number; images: boolean }) {
+  const e = el as BoardElement & { title?: string; name?: string; thumb_src?: string | null; image_thumb_src?: string | null; color?: string };
+  const thumb = images ? e.thumb_src ?? e.image_thumb_src ?? null : null;
+  const title = e.title || e.name || "";
+  const fs = Math.min(e.h * 0.4, 13 / Math.max(scale, 0.01));
+  return (
+    <div data-lod className="absolute inset-0 overflow-hidden" style={{ height: e.h, background: e.type === "color" && e.color ? e.color : LOD_COLORS[e.type] ?? "#3f3f46", borderRadius: Math.min(e.w, e.h) * 0.06 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {thumb && <img src={thumb} alt="" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover" />}
+      {title && !thumb && (
+        <div className="absolute left-0 right-0 top-0 px-[4%] text-white/90 font-semibold truncate" style={{ fontSize: fs, lineHeight: 1.2, paddingTop: fs * 0.3 }}>{title}</div>
+      )}
+    </div>
   );
 }
