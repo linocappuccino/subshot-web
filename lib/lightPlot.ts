@@ -2,6 +2,7 @@
 // (origin top-left, y down, rotation in degrees: 0 = right, 90 = down). Mirrors subshot-api app/light_plot.py
 // (which validates / clamps everything on save).
 
+import { frameAspect, SENSORS, type LensKey, type Rig, type SensorKey } from "./lightCatalog";
 import { GENERIC_FIXTURES, MODIFIER_KEYS, MODIFIER_SPECS, type FabricKey, type FixtureCat, type FixtureShape, type FlagSize, type FrameKey, type ModifierKey } from "./lightCatalog";
 export type WallKind = "wall" | "curve" | "window" | "door" | "opening";
 export type ItemKind = "table" | "chair" | "sofa" | "bed" | "car" | "tree" | "stairs" | "rect" | "circle";
@@ -16,7 +17,9 @@ export interface LpPerson {
   /** talent (v2): pose + body height (m) */
   pose?: "standing" | "sitting"; height_m?: number;
   /** camera: body, white balance, lens, sensor; v2: lens height (m) + tilt (° down) */
-  body?: string; kelvin?: number; lens_mm?: number; sensor?: "s35" | "ff"; z?: number; tilt?: number;
+  body?: string; kelvin?: number; lens_mm?: number; sensor?: SensorKey; z?: number; tilt?: number;
+  /** v4 camera catalogue: lens preset, anamorphic squeeze, aperture, ISO, shutter (1/x s), rig */
+  lens?: LensKey; squeeze?: number; fstop?: number; iso?: number; shutter?: number; rig?: Rig;
 }
 export interface LpLight {
   id: string; preset: string; name: string; role: Role; role_label?: string; kelvin: number; intensity: number;
@@ -127,8 +130,11 @@ export const ITEM_SIZE: Record<ItemKind, [number, number]> = {
 };
 
 /** camera horizontal angle of view (degrees) from the lens and the sensor width */
-export function cameraFov(lensMm = 35, sensor: "s35" | "ff" = "s35") {
-  const w = sensor === "ff" ? 36 : 24.89;
+export function cameraFov(lensMm = 35, sensor: SensorKey = "s35", squeeze = 1) {
+  // v4: every sensor class + anamorphic squeeze (the de-squeezed width), cropped to the delivered frame
+  const sz = SENSORS[sensor] ?? SENSORS.s35;
+  const aspect = frameAspect(sensor, squeeze);
+  const w = Math.min(sz.w * squeeze, sz.h * aspect);
   return (2 * Math.atan(w / (2 * Math.max(1, lensMm))) * 180) / Math.PI;
 }
 
@@ -175,8 +181,8 @@ const DE = {
   wallColor: "Wandfarbe", autoExposure: "Auto", metered: "Gemessen", bounce: "Aufheller", set: "Set-Stück", photo: "Grundriss-Foto", photoRemove: "Foto entfernen",
   table: "Tisch", chair: "Stuhl", sofa: "Sofa", bed: "Bett", car: "Auto", tree: "Baum", stairs: "Treppe", rect: "Rechteck", circle: "Kreis",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Eigene",
-  bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
-  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic 90", para_m: "Parabolic 120", para_l: "Parabolic 180",
+  bare: "Ohne", dish55: "Beauty Dish 55", fresnel: "Fresnel-Linse", softbox: "Softbox 90", lantern: "Laterne",
+  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic S 90", para_m: "Parabolic M 120", para_l: "Parabolic L 180",
   dome: "Dome", grid: "Softbox + Grid", snoot: "Snoot", barndoors: "Torblende", projector: "Projektion / Gobo",
   catFresnel: "Fresnel", catHmi: "HMI", catCob: "COB / Point Source", catPar: "Par", catProfile: "Profiler / Spot", catPanel: "LED-Panel", catMat: "Flex-Matte", catTube: "Tubes / Pixel-Bars",
   catSpace: "Space Light / Ballon", catBank: "Kino-Bank", catPractical: "Practicals", catSmall: "Ring / On-Camera", catSun: "Sonne / Fenster", catBrands: "Markenmodelle",
@@ -205,8 +211,8 @@ const EN: typeof DE = {
   wallColor: "Wall colour", autoExposure: "Auto", metered: "Metered", bounce: "Bounce", set: "Set piece", photo: "Floor plan photo", photoRemove: "Remove photo",
   table: "Table", chair: "Chair", sofa: "Sofa", bed: "Bed", car: "Car", tree: "Tree", stairs: "Stairs", rect: "Rectangle", circle: "Circle",
   key: "Key", fill: "Fill", rim: "Edge/Rim", back: "Back", practical: "Practical", ambience: "Ambience", custom: "Custom",
-  bare: "Bare", dish55: "Dish 55", fresnel: "Fresnel", softbox: "Softbox", lantern: "Lantern",
-  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic 90", para_m: "Parabolic 120", para_l: "Parabolic 180",
+  bare: "Bare", dish55: "Beauty dish 55", fresnel: "Fresnel lens", softbox: "Softbox 90", lantern: "Lantern",
+  softbox_s: "Softbox S (60 cm)", softbox_l: "Softbox L (120 cm)", strip: "Strip 30×120", octa: "Octa 150", para_s: "Parabolic S 90", para_m: "Parabolic M 120", para_l: "Parabolic L 180",
   dome: "Dome", grid: "Softbox + grid", snoot: "Snoot", barndoors: "Barn doors", projector: "Projection / gobo",
   catFresnel: "Fresnel", catHmi: "HMI", catCob: "COB / point source", catPar: "Par", catProfile: "Profile / spot", catPanel: "LED panel", catMat: "Flex mat", catTube: "Tubes / pixel bars",
   catSpace: "Space light / balloon", catBank: "Kino bank", catPractical: "Practicals", catSmall: "Ring / on-camera", catSun: "Sun / window", catBrands: "Brand models",
@@ -229,6 +235,14 @@ const EN: typeof DE = {
 export type LpLabels = typeof DE;
 export const lpLabels = (language: string): LpLabels => (language === "de" ? DE : EN);
 export const roleText = (L: LpLabels, li: LpLight) => (li.role === "custom" ? li.role_label || L.custom : L[li.role]);
+/** v4: the default plan label of a flag / frame / bounce object (its own label wins) */
+export function modText(L: LpLabels, m: LpMod) {
+  if (m.label) return m.label;
+  if (isBounce(m)) return `${L[m.kind]} · ${L[m.surface ?? "white"]}`;
+  if (m.kind === "diffusion" && m.frame) return `${m.frame.replace("x", "×")} · ${L[m.fabric === "grid" ? "gridFull" : m.fabric ?? "silk"]}`;
+  if (m.kind === "flag" && m.size) return m.size === "floppy" ? "Floppy 4×4" : m.size === "cutter" ? "Cutter 10×42″" : `Flag ${m.size.replace("x", "×")}″`;
+  return L[m.kind];
+}
 export const modifierText = (L: LpLabels, li: LpLight) => (li.modifier === "custom" ? li.modifier_label || L.custom : L[li.modifier]);
 
 // ── portrait presets (2026-11-21, v3): key light relative to talent + camera — mirrors subshot-api

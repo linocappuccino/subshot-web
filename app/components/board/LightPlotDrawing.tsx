@@ -5,7 +5,7 @@
 // data-lp-id / data-lp-part handles for dragging). Pure render, no state.
 
 import { useId } from "react";
-import { cameraFov, kelvinColor, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
+import { cameraFov, kelvinColor, modText, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
 import { CameraSymbol, ItemSymbol, LightSymbol, ModSymbol, TalentSymbol } from "./LightPlotSymbols";
 
 export const PX = 100;
@@ -60,7 +60,7 @@ export function LightPlotDrawing({
       const text = p.kind === "camera" ? [p.name || L.camera, p.lens_mm ? `${p.lens_mm} mm` : "", p.kelvin ? `${p.kelvin} K` : ""].filter(Boolean).join(" · ") : p.name || L.talent;
       entries.push({ id: p.id, x: p.x * PX, y: p.y * PX + (p.kind === "camera" ? 64 : 50), text, size: font * 0.85 });
     }
-    if (!lite) for (const li of look.lights) entries.push({ id: li.id, x: li.x * PX, y: li.y * PX + 54, text: `${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`, size: font * 0.8 });
+    if (!lite) for (const li of look.lights) entries.push({ id: li.id, x: li.x * PX, y: li.y * PX + 54, text: `${li.role === "custom" && !li.role_label ? li.name : roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`, size: font * 0.8 });
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     const out = new Map<string, number>();
     for (const e of entries) {
@@ -159,7 +159,7 @@ export function LightPlotDrawing({
               <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} surface={m.surface} />
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={22} />
             </g>
-            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{m.label || L[m.kind]}</text>}
+            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{modText(L, m)}</text>}
             {h(m.id, "p1", x1, y1)}
             {h(m.id, "p2", x2, y2)}
           </g>
@@ -213,7 +213,7 @@ export function LightPlotDrawing({
             <text x={x - 30} y={y - 25} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff" pointerEvents="none">{i + 1}</text>
             {view.labels && !lite && (
               <text x={x} y={labelY.get(li.id) ?? y + 54} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
-                {`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`}
+                {`${li.role === "custom" && !li.role_label ? li.name : roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`}
               </text>
             )}
             {rotKnob(li.id, x, y, li.rot, 80)}

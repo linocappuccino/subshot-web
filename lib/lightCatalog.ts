@@ -115,3 +115,37 @@ export type FabricKey = keyof typeof FABRICS;
 export const FLAG_SIZES = { "18x24": [0.45, 0.6], "24x36": [0.6, 0.9], floppy: [1.2, 1.2], cutter: [0.25, 1.07] } as const;
 export type FlagSize = keyof typeof FLAG_SIZES;
 export const FLAG_CLOTH = ["solid", "duvetyne"] as const;
+
+// ── cameras + lenses (2026-11-21, Lino: «auch Kameras und Objektive») ──
+/** sensor classes: active area width × height (mm) — the angle of view comes from these + the focal length */
+export const SENSORS = {
+  phone_main: { w: 9.8, h: 7.3, label: "Smartphone Hauptkamera (1/1.3″)" },
+  phone_wide: { w: 5.6, h: 4.2, label: "Smartphone Ultraweitwinkel (1/2.55″)" },
+  phone_tele: { w: 4.8, h: 3.6, label: "Smartphone Tele (1/3″)" },
+  action: { w: 6.17, h: 4.55, label: "Action-Cam (1/2.3″)" },
+  mft: { w: 17.3, h: 13, label: "Micro Four Thirds" },
+  apsc: { w: 23.5, h: 15.6, label: "APS-C" },
+  s35: { w: 24.89, h: 18.66, label: "Super 35" },
+  ff: { w: 36, h: 24, label: "Vollformat" },
+  lf: { w: 36.7, h: 25.54, label: "Large Format (LF)" },
+  f65: { w: 54.12, h: 25.58, label: "65 mm" },
+} as const;
+export type SensorKey = keyof typeof SENSORS;
+/** lens presets: primes and zooms (focal range mm, widest aperture); phones carry their real focal lengths */
+export const LENSES = {
+  p14: { min: 14, max: 14, f: 2.8, label: "14 mm" }, p18: { min: 18, max: 18, f: 2.8, label: "18 mm" }, p24: { min: 24, max: 24, f: 1.4, label: "24 mm" },
+  p35: { min: 35, max: 35, f: 1.4, label: "35 mm" }, p50: { min: 50, max: 50, f: 1.4, label: "50 mm" }, p85: { min: 85, max: 85, f: 1.4, label: "85 mm" },
+  m100: { min: 100, max: 100, f: 2.8, label: "100 mm Makro" }, p135: { min: 135, max: 135, f: 2, label: "135 mm" },
+  z1635: { min: 16, max: 35, f: 2.8, label: "Zoom 16–35 mm" }, z2470: { min: 24, max: 70, f: 2.8, label: "Zoom 24–70 mm" }, z70200: { min: 70, max: 200, f: 2.8, label: "Zoom 70–200 mm" },
+  phone: { min: 2, max: 15, f: 1.8, label: "Smartphone-Objektiv" },
+} as const;
+export type LensKey = keyof typeof LENSES;
+export const SQUEEZES = [1, 1.33, 1.5, 1.8, 2] as const;
+export const RIGS = ["tripod", "shoulder", "gimbal", "slider", "dolly", "jib", "handheld"] as const;
+export type Rig = (typeof RIGS)[number];
+/** delivered image aspect: spherical 16:9; anamorphic = the de-squeezed sensor, cropped to 2.39:1 at most */
+export function frameAspect(sensor: SensorKey = "s35", squeeze = 1) {
+  if (squeeze <= 1.01) return 16 / 9;
+  const s = SENSORS[sensor] ?? SENSORS.s35;
+  return Math.min(2.39, (s.w * squeeze) / s.h);
+}
