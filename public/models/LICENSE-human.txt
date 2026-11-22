@@ -18,7 +18,6 @@ Please remember: Do what you want with the files, but always mention where you g
 
 Changes made by Subshot (2026-11-21): mesh cut at the neck (shoulders removed), converted to metres
 (chin to crown 0.23 m), rotated to face +x, centred on the head; colour map and tangent normal map embedded
-as JPEG; specular map dropped; the closed eyelids cut open (almond-shaped) for separately modelled eyeballs.
-No endorsement by the author is implied.
+as JPEG; specular map dropped. No endorsement by the author is implied.
 
 Attribution shown in the app (camera view of the light plot) and in the How-to «Canvas node: Light plot».

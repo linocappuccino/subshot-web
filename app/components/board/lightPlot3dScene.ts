@@ -152,46 +152,6 @@ export function sculptedHead(THREE: Three, skin: T.Material, hair: T.Material) {
   return g;
 }
 
-// 2026-11-21 (v4), Lino: «kann er die augen geöffnet haben??» — the scan's closed lids are cut open into an almond
-// (public/models build, EYE_Z / EYE_Y there); behind each opening sits an eyeball: sclera, iris, pupil with a glossy
-// clear coat (catchlights of the lights), and a dark socket so nothing shows through the corners
-const SCAN_EYES: [number, number, number][] = [[0.065, 0.0028, 0.0045 - 0.0295], [0.065, 0.0028, 0.0045 + 0.0295]];
-function irisTexture(THREE: Three) {
-  // a small radial iris: dark limbal ring, brown with lighter streaks towards the pupil, black pupil
-  const c = document.createElement("canvas"); c.width = c.height = 128;
-  const x = c.getContext("2d")!;
-  const g = x.createRadialGradient(64, 64, 6, 64, 64, 64);
-  g.addColorStop(0, "#050505"); g.addColorStop(0.36, "#050505"); g.addColorStop(0.4, "#6b5236");
-  g.addColorStop(0.75, "#4a3622"); g.addColorStop(0.92, "#2a1d12"); g.addColorStop(1, "#1b130c");
-  x.fillStyle = g; x.beginPath(); x.arc(64, 64, 64, 0, Math.PI * 2); x.fill();
-  x.globalAlpha = 0.18; x.strokeStyle = "#b08a5a";
-  for (let i = 0; i < 48; i++) { const a = (i / 48) * Math.PI * 2; x.beginPath(); x.moveTo(64 + Math.cos(a) * 26, 64 + Math.sin(a) * 26); x.lineTo(64 + Math.cos(a) * 54, 64 + Math.sin(a) * 54); x.stroke(); }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-function scanEyes(THREE: Three) {
-  const g = new THREE.Group();
-  const sclera = new THREE.MeshPhysicalMaterial({ color: "#d6cbbd", roughness: 0.45, clearcoat: 1, clearcoatRoughness: 0.05 });
-  const iris = new THREE.MeshPhysicalMaterial({ map: irisTexture(THREE), roughness: 0.5, clearcoat: 1, clearcoatRoughness: 0.03 });
-  const socket = new THREE.MeshBasicMaterial({ color: "#6a3a30" });   // caruncle / inner lid tone in the corners
-  for (const [x, y, z] of SCAN_EYES) {
-    const so = new THREE.Mesh(new THREE.SphereGeometry(0.0165, 16, 12), socket);
-    so.position.set(x - 0.006, y, z);
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.0123, 32, 24), sclera);
-    ball.position.set(x, y, z);
-    ball.receiveShadow = true;
-    // iris: a shallow cap on the front of the ball (follows its curvature — no z-fighting, catchlight on the curve)
-    const capGeo = new THREE.SphereGeometry(0.01245, 32, 12, 0, Math.PI * 2, 0, 0.54);
-    const cp = capGeo.attributes.position as T.BufferAttribute, cuv = capGeo.attributes.uv as T.BufferAttribute;
-    const rr = 0.01245 * Math.sin(0.54);   // just outside the 12.3 mm ball
-    for (let i = 0; i < cp.count; i++) cuv.setXY(i, 0.5 + cp.getX(i) / (2 * rr), 0.5 + cp.getZ(i) / (2 * rr));   // planar: the disc texture lies flat on the cap
-    const ir = new THREE.Mesh(capGeo, iris);
-    ir.position.set(x, y, z); ir.rotation.z = -Math.PI / 2; ir.receiveShadow = true;
-    g.add(so, ball, ir);
-  }
-  return g;
-}
-
 /** skin with wrap lighting: light reaches a little past the terminator and warms it — a cheap subsurface look */
 export function skinMaterial(THREE: Three, scan?: { map: T.Texture | null; normalMap: T.Texture | null; normalScaleY?: number }) {
   // 2026-11-21 (v4): body skin = the scan's neck tone (#bf978b, measured from its colour map) so head and body meet
@@ -265,7 +225,6 @@ export function humanFigure(THREE: Three, sitting: boolean, mats: { skin: T.Mate
     head.castShadow = head.receiveShadow = true;
     head.position.copy(headC);
     head.rotation.z = 0.08;   // the scan looks a little down — level the gaze so a high key throws the nose shadow
-    head.add(scanEyes(THREE));
     g.add(head);
   } else {
     const head = sculptedHead(THREE, skin, hair);
