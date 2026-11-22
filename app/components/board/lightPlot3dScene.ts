@@ -379,10 +379,12 @@ function irradiance(THREE: Three, e: Emitter, p: T.Vector3, n: T.Vector3, dome =
 export type ScanHead = { geometry: T.BufferGeometry; map: T.Texture | null; normalMap: T.Texture | null; normalScaleY: number };
 
 // 2026-11-22: the woman / man figures (MakeHuman CC0, public/models/talent-<model>-<pose>.glb) — loaded by LightPlot3D
+const SOFT_AREA = 0.85, SOFT_SPOT = 0.3;
 export type TalentAsset = { scene: T.Object3D; seat: number; eye: number };
 export const TALENT_STANDING_H: Record<string, number> = { female: 1.609, male: 1.75 };
 /** once per loaded figure: glossy eyes with a clear coat (sharp catchlights of the lamps), textures in sRGB */
 export function prepareTalent(THREE: Three, root: T.Object3D) {
+  const caps: [T.Mesh, T.Mesh][] = [];
   root.traverse((o) => {
     const m = o as T.Mesh;
     const mat = m.material as T.MeshStandardMaterial | undefined;
@@ -391,8 +393,24 @@ export function prepareTalent(THREE: Three, root: T.Object3D) {
     if (mat.name === "high-poly") {
       m.material = new THREE.MeshPhysicalMaterial({ map: mat.map, alphaTest: mat.alphaTest || 0.35, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.02, side: mat.side });
     }
+    // brows, lashes, hair: soft alpha edges (alpha to coverage with MSAA) instead of a hard cut-out
+    if (/^eyebrow|^eyelashes/.test(mat.name)) {
+      mat.alphaTest = 0.02; mat.transparent = true; mat.depthWrite = false; mat.needsUpdate = true;
+    }
+    if (HAIR_TONE[mat.name]) {
+      mat.alphaTest = 0.02; mat.transparent = true; mat.depthWrite = false; mat.side = THREE.DoubleSide; mat.needsUpdate = true;
+      // a slightly smaller opaque shell in the hair colour under the strands: no scalp shining through gaps
+      const cap = new THREE.Mesh(m.geometry, new THREE.MeshStandardMaterial({ color: HAIR_TONE[mat.name], roughness: 0.9 }));
+      cap.name = "hair-cap";
+      m.geometry.computeBoundingBox();
+      const c = m.geometry.boundingBox!.getCenter(new THREE.Vector3());
+      cap.position.copy(c).multiplyScalar(1 - 0.975); cap.scale.setScalar(0.975);
+      caps.push([m, cap]);
+    }
   });
+  for (const [m, cap] of caps) m.add(cap);
 }
+const HAIR_TONE: Record<string, string> = { short02: "#3b2a20", ponytail01: "#5a3d2b" };
 export const talentKey = (p: LpPerson) => (p.model === "female" || p.model === "male" ? `${p.model}-${p.pose === "sitting" ? "sitting" : "standing"}` : null);
 
 export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null, noPcss = false,
@@ -667,12 +685,14 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
       if (soft && area) {
         // soft source: an area light the size of the softbox / panel / tube / frame + a weaker soft spot for its shadow
         const [aw, ah] = area;
-        const al = new THREE.RectAreaLight(color, (cd * 0.4) / (aw * ah * 3.2), aw, ah);
+        // 2026-11-22: a big source wraps light around forms (soft terminator) — the area light carries most of it,
+        // the spot only shapes the cast shadows (before: 0.4 / 0.62 — on the real faces softbox ≈ dish)
+        const al = new THREE.RectAreaLight(color, (cd * SOFT_AREA) / (aw * ah * 3.2), aw, ah);
         al.position.copy(pos.clone().add(dir.clone().multiplyScalar(areaAhead)));
         al.lookAt(pos.clone().add(dir.clone().multiplyScalar(4)));
         scene.add(al);
       }
-      const sp = new THREE.SpotLight(color, soft ? cd * 0.62 : cd, 0, Math.min(Math.PI * 0.47, ((beamDeg / 2) * Math.PI) / 180), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
+      const sp = new THREE.SpotLight(color, soft ? cd * SOFT_SPOT : cd, 0, Math.min(Math.PI * 0.47, ((beamDeg / 2) * Math.PI) / 180), soft ? 1 : MODIFIER_SOFT[li.modifier], 2);
       sp.position.copy(pos);
       sp.target.position.copy(pos.clone().add(dir.clone().multiplyScalar(3)));
       scene.add(sp.target);
