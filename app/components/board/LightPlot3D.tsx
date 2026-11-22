@@ -11,11 +11,36 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type * as T from "three";
 import type { LightPlotData, LpLabels, LpLook, LpPerson } from "@/lib/lightPlot";
-import { ASPECT, buildScene, type ScanHead } from "./lightPlot3dScene";
+import { ASPECT, buildScene, prepareTalent, talentKey, type ScanHead, type TalentAsset } from "./lightPlot3dScene";
+
+// 2026-11-22: woman / man figures (MakeHuman CC0, ~1.3 MB each) — fetched only when a talent in the plan uses one,
+// one glb per figure + pose, kept for the page's life; until it is there the scene shows the drawn figure
+const talentAssets = new Map<string, TalentAsset | null>();
+const talentLoads = new Map<string, Promise<void>>();
+function loadTalent(THREE: typeof T, key: string): Promise<void> {
+  let p = talentLoads.get(key);
+  if (!p) {
+    p = (async () => {
+      try {
+        const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+        const gltf = await new GLTFLoader().loadAsync(`/models/talent-${key}.glb`);
+        const ex = (gltf.parser.json as { extras?: { seat_m?: number; eye_m?: number } }).extras ?? {};
+        prepareTalent(THREE, gltf.scene);
+        talentAssets.set(key, { scene: gltf.scene, seat: ex.seat_m ?? 0.45, eye: ex.eye_m ?? 1.55 });
+      } catch {
+        talentAssets.set(key, null);
+        // stays failed for this page (guests get 404) — talentAssets has null, so no refetch on every rebuild
+      }
+    })();
+    talentLoads.set(key, p);
+  }
+  return p;
+}
 
 // 2026-11-21 (v4): the scanned talent head (CC BY 3.0, public/models/LICENSE-human.txt), ~650 KB, fetched only when
 // the camera view opens; kept for the page's life (shared by every rebuild), sculpted head as fallback on failure
 const HEAD_URL = "/models/light-plot-head.glb";
+const needsScan = (p: LightPlotData) => p.people.some((q) => q.kind === "talent" && (q.model ?? "scan") === "scan");
 let headPromise: Promise<ScanHead | null> | null = null;
 function loadHead(THREE: typeof T): Promise<ScanHead | null> {
   if (!headPromise) headPromise = (async () => {
@@ -31,8 +56,7 @@ function loadHead(THREE: typeof T): Promise<ScanHead | null> {
       // GLTFLoader flips normalScale.y for meshes without tangents — keep its sign on our own skin material
       return { geometry: (mesh as T.Mesh).geometry, map: m.map, normalMap: m.normalMap, normalScaleY: m.normalScale?.y ?? -1 };
     } catch {
-      headPromise = null;   // retry next time the view opens
-      return null;
+      return null;           // stays failed for this page (guests get 404 — no refetch on every rebuild)
     }
   })();
   return headPromise;
@@ -52,7 +76,7 @@ function disposeTree(obj: T.Object3D) {
     const m = o as T.Mesh;
     if (m.geometry && !o.userData.shared) m.geometry.dispose();
     const mats = (Array.isArray(m.material) ? m.material : m.material ? [m.material] : []) as T.MeshStandardMaterial[];
-    mats.forEach((x) => { if (x.map && !x.map.userData.shared) x.map.dispose(); x.dispose(); });
+    if (!o.userData.shared) mats.forEach((x) => { if (x.map && !x.map.userData.shared) x.map.dispose(); x.dispose(); });
     const l = o as T.SpotLight;
     if (l.shadow?.map) l.shadow.map.dispose();
   });
@@ -80,7 +104,13 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
     const { plot: p, look: lk, cam: c } = latest.current;
     if (!t || !c) return;
     if (t.scene) disposeTree(t.scene);
-    const built = buildScene(t.THREE, p, lk, c, isPhone(), t.head);
+    // figures the plan needs but that are not loaded yet: load, then build again (drawn figure meanwhile)
+    const missing = [...new Set(p.people.map((q) => (q.kind === "talent" ? talentKey(q) : null)).filter((k): k is string => !!k && !talentAssets.has(k)))];
+    if (missing.length) Promise.all(missing.map((k) => loadTalent(t.THREE, k))).then(() => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(rebuild); });
+    // a talent switched to the scan figure later: fetch the head now, then build again
+    if (needsScan(p) && !t.head) loadHead(t.THREE).then((h) => { if (three.current && h) { three.current.head = h; setScanned(true); three.current.renderer.domElement.dataset.head = "scan"; cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(rebuild); } });
+    const built = buildScene(t.THREE, p, lk, c, isPhone(), t.head, false, talentAssets);
+    t.renderer.domElement.dataset.figures = [...new Set(p.people.map((q) => (q.kind === "talent" ? talentKey(q) : null)).filter(Boolean))].map((k) => `${k}:${talentAssets.get(k as string) ? "loaded" : talentAssets.has(k as string) ? "failed" : "loading"}`).join(",");
     t.scene = built.scene;
     t.camera = built.camera;
     const auto = p.view.auto_exposure !== false && built.meter.lux > 0;
@@ -144,13 +174,14 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       ro = new ResizeObserver(fit);
       ro.observe(host);
       fit();
-      // the scanned head first (one fetch per page, ~650 KB) — the sculpted head stands in if it fails
+      // the scanned head first (one fetch per page, ~650 KB) — only when a talent uses the scan figure (2026-11-22);
+      // the sculpted head stands in if it fails
       const t0 = performance.now();
-      const head = await loadHead(THREE);
+      const head = needsScan(latest.current.plot) ? await loadHead(THREE) : null;
       if (!alive || !three.current) return;
       three.current.head = head;
       setScanned(!!head);
-      canvas.dataset.head = head ? "scan" : "sculpted";
+      canvas.dataset.head = head ? "scan" : needsScan(latest.current.plot) ? "sculpted" : "none";
       canvas.dataset.headMs = String(Math.round(performance.now() - t0));
       setState("ready");
       rebuild();
@@ -210,8 +241,11 @@ export const LightPlot3D = forwardRef<LightPlot3DHandle, { plot: LightPlotData; 
       {!cam && <div className="absolute inset-0 flex items-center justify-center text-[13px] text-white/60 px-6 text-center">{L.noCamera}</div>}
       {state === "loading" && cam && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/50">…</div>}
       {state === "lost" && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/60">{L.webglLost}</div>}
-      {scanned && state === "ready" && cam && (
+      {scanned && state === "ready" && cam && plot.people.some((q) => q.kind === "talent" && (q.model ?? "scan") === "scan") && (
         <a href="/models/LICENSE-human.txt" target="_blank" rel="noopener" data-lp-head-credit className="absolute right-2 bottom-1.5 text-[9px] text-white/35 hover:text-white/70 pointer-events-auto">{L.headCredit}</a>
+      )}
+      {state === "ready" && cam && plot.people.some((q) => q.kind === "talent" && (q.model === "female" || q.model === "male")) && (
+        <a href="/models/LICENSE-makehuman.txt" target="_blank" rel="noopener" data-lp-figures-credit className="absolute left-2 bottom-1.5 text-[9px] text-white/35 hover:text-white/70 pointer-events-auto">{L.figuresCredit}</a>
       )}
       {state === "nowebgl" && <div className="absolute inset-0 flex items-center justify-center text-[12px] text-white/60 px-6 text-center">{L.noWebgl}</div>}
     </div>

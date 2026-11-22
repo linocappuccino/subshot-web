@@ -11,7 +11,7 @@ import { createPortal } from "react-dom";
 import {
   activeLook, cameraFov, emptyPlot, ITEM_SIZE, kelvinColor, kelvinRange, LIGHT_PRESETS, lpId, lpLabels, MODIFIER_BEAM, MODIFIERS, modifierText,
   newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
-  CAT_LABEL, type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
+  CAT_LABEL, TALENT_MODELS, type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
 } from "@/lib/lightPlot";
 import { FABRICS, FLAG_SIZES, FRAMES, frameAspect, LENSES, RIGS, SENSORS, SQUEEZES, type FabricKey, type FixtureCat, type FlagSize, type FrameKey, type LensKey, type SensorKey } from "@/lib/lightCatalog";
 import type { LightPlotElement } from "@/lib/board";
@@ -331,7 +331,7 @@ export function LightPlotEditor({
     const c = center();
     const p = kind === "camera"
       ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, lens: "p35" as const, sensor: "ff" as const, fstop: 2.8, iso: 800, shutter: 50, rig: "tripod" as const, z: 1.5, tilt: 0 }
-      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.75 };
+      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.7, model: "female" as const };
     add({ ...plot, people: [...plot.people, p] }, p.id);
   };
   const addLight = (preset: string) => {
@@ -519,7 +519,8 @@ export function LightPlotEditor({
   const one = selected.size === 1 ? findObj(plot, [...selected][0]) : null;
   const vb = useMemo(() => plotBounds(plot, 1.2), [plot]);
   const legendW = 4.6;
-  const exportH = Math.max(vb.h, 1.2 + look.lights.length * 0.42);
+  const exportTalents = plot.people.filter((p) => p.kind === "talent");
+  const exportH = Math.max(vb.h, 1.2 + look.lights.length * 0.42 + exportTalents.length * 0.3);
 
   const grid = useMemo(() => {
     const step = PX * (view.k < 0.25 ? 5 : 1);
@@ -783,8 +784,11 @@ export function LightPlotEditor({
                 <span className="text-[11px] text-white/70 truncate">{m.label || L[m.kind]} · {L[m.surface ?? "white"]} · {Math.hypot(m.x2 - m.x1, m.y2 - m.y1).toFixed(1)} m</span>
               </button>
             ))}
+            {plot.people.filter((p) => p.kind === "talent").map((p) => (
+              <div key={p.id} data-lp-fixture-talent className="mt-2 text-[11px] text-white/55">🧍 {p.name || L.talent} · {L[p.model ?? "scan"]} · {(p.height_m ?? 1.75).toFixed(2)} m · {p.pose === "sitting" ? L.sitting : L.standing}</div>
+            ))}
             {plot.people.filter((p) => p.kind === "camera").map((p) => (
-              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {SENSORS[p.sensor ?? "s35"]?.label} · {p.lens_mm} mm{p.squeeze && p.squeeze > 1 ? ` ${p.squeeze}× ana` : ""} ({Math.round(cameraFov(p.lens_mm, p.sensor, p.squeeze))}°){p.fstop ? ` · f/${p.fstop}` : ""} · {p.kelvin} K{p.rig ? ` · ${L[p.rig]}` : ""}</div>
+              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {L[`sn_${(p.sensor ?? "s35") as SensorKey}`]} · {p.lens_mm} mm{p.squeeze && p.squeeze > 1 ? ` ${p.squeeze}× ana` : ""} ({Math.round(cameraFov(p.lens_mm, p.sensor, p.squeeze))}°){p.fstop ? ` · f/${p.fstop}` : ""} · {p.kelvin} K{p.rig ? ` · ${L[p.rig]}` : ""}</div>
             ))}
           </div>
         </div>
@@ -804,6 +808,11 @@ export function LightPlotEditor({
               <text x={34} y={-6} fontSize={16} fontWeight={600} fill="#fff">{li.name}</text>
               <text x={34} y={13} fontSize={13} fill="rgba(255,255,255,0.6)">{`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}% · ${modifierText(L, li)} ${li.beam}°`}</text>
             </g>
+          ))}
+          {exportTalents.map((p, i) => (
+            <text key={p.id} y={70 + look.lights.length * 42 + 10 + i * 30} fontSize={14} fill="rgba(255,255,255,0.7)">
+              {`${p.name || L.talent} · ${L[p.model ?? "scan"]} · ${(p.height_m ?? 1.75).toFixed(2)} m · ${p.pose === "sitting" ? L.sitting : L.standing}`}
+            </text>
           ))}
         </g>
       </svg>
@@ -878,7 +887,7 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
             {text("body", L.body)}
             <Num label={`${L.wb} K`} value={Number(o.kelvin ?? 5600)} min={2000} max={10000} step={100} disabled={!editable} onChange={(v) => onPatch({ kelvin: v })} />
             {/* v4 camera catalogue: sensor class, lens preset (zoom range / prime), focal length, anamorphic, aperture / ISO / shutter, rig */}
-            {sel("sensor", L.sensor, (Object.keys(SENSORS) as SensorKey[]).map((k) => [k, SENSORS[k].label] as [string, string]))}
+            {sel("sensor", L.sensor, (Object.keys(SENSORS) as SensorKey[]).map((k) => [k, L[`sn_${k}`]] as [string, string]))}
             <label className="block text-[11px] text-white/55">{L.lensPreset}
               <select data-lp-lens value={String(o.lens ?? "")} disabled={!editable} className={field}
                 onChange={(e) => { const k = e.target.value as LensKey | ""; if (!k) return onPatch({ lens: undefined }); const ln = LENSES[k];
@@ -902,6 +911,8 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
         )}
         {o.kind === "talent" && (
           <>
+            {/* 2026-11-22: woman / man (MakeHuman) or the man with the head scan */}
+            {sel("model", L.figure, TALENT_MODELS.map((m) => [m, L[m]] as [string, string]))}
             {sel("pose", L.pose, [["standing", L.standing], ["sitting", L.sitting]])}
             <Num label={L.bodyHeight} value={Number(o.height_m ?? 1.75)} min={0.9} max={2.2} step={0.05} disabled={!editable} onChange={(v) => onPatch({ height_m: v })} />
             {editable && onPreset && (
