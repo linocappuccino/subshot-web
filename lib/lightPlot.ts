@@ -6,6 +6,8 @@ import { frameAspect, SENSORS, type LensKey, type Rig, type SensorKey } from "./
 import { GENERIC_FIXTURES, MODIFIER_KEYS, MODIFIER_SPECS, type FabricKey, type FixtureCat, type FixtureShape, type FlagSize, type FrameKey, type ModifierKey } from "./lightCatalog";
 export type WallKind = "wall" | "curve" | "window" | "door" | "opening";
 export type ItemKind = "table" | "chair" | "sofa" | "bed" | "car" | "tree" | "stairs" | "rect" | "circle";
+export type TalentModel = "female" | "male" | "scan";
+export const TALENT_MODELS: TalentModel[] = ["female", "male", "scan"];
 export type Role = "key" | "fill" | "rim" | "back" | "practical" | "ambience" | "custom";
 export type Modifier = ModifierKey;
 
@@ -20,6 +22,8 @@ export interface LpPerson {
   body?: string; kelvin?: number; lens_mm?: number; sensor?: SensorKey; z?: number; tilt?: number;
   /** v4 camera catalogue: lens preset, anamorphic squeeze, aperture, ISO, shutter (1/x s), rig */
   lens?: LensKey; squeeze?: number; fstop?: number; iso?: number; shutter?: number; rig?: Rig;
+  /** 2026-11-22: talent figure — woman / man (MakeHuman, CC0) or the man with the head scan (default for old boards) */
+  model?: TalentModel;
 }
 export interface LpLight {
   id: string; preset: string; name: string; role: Role; role_label?: string; kelvin: number; intensity: number;
@@ -189,6 +193,8 @@ const DE = {
   frame: "Rahmen", fabric: "Stoff", silk: "Silk", grid14: "Grid Cloth 1/4", grid12: "Grid Cloth 1/2", gridFull: "Grid Cloth voll", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
   f216: "Folie 216", f250: "Folie 250", f251: "Folie 251", scrim1: "Scrim Single", scrim2: "Scrim Double", flagSize: "Grösse", cloth: "Stoff", solid: "Solid", duvetyne: "Duvetyne",
   sunfire: "Sunfire", poly: "Poly",
+  sn_phone_main: "Smartphone Hauptkamera (1/1.3″)", sn_phone_wide: "Smartphone Ultraweitwinkel (1/2.55″)", sn_phone_tele: "Smartphone Tele (1/3″)", sn_action: "Action-Cam (1/2.3″)", sn_mft: "Micro Four Thirds", sn_apsc: "APS-C", sn_s35: "Super 35", sn_ff: "Vollformat", sn_lf: "Large Format (LF)", sn_f65: "65 mm",
+  figure: "Figur", female: "Frau", male: "Mann", scan: "Mann (Scan)", figuresCredit: "Figuren: MakeHuman (CC0)",
   lensPreset: "Objektiv", squeeze: "Anamorphot", spherical: "Sphärisch", anamorphic: "anamorph", aperture: "Blende", shutter: "Verschluss", rig: "Aufbau",
   tripod: "Stativ", shoulder: "Schulter", gimbal: "Gimbal", slider: "Slider", dolly: "Dolly", jib: "Kran / Jib", handheld: "Handheld", noModifier: "ohne Modifier",
   snap: "Snap", showLabels: "Labels", beams: "Kegel", spill: "Spill", undo: "Rückgängig", redo: "Wiederholen", png: "PNG", pdf: "PDF", close: "Schliessen",
@@ -221,6 +227,8 @@ const EN: typeof DE = {
   frame: "Frame", fabric: "Fabric", silk: "Silk", grid14: "Grid cloth 1/4", grid12: "Grid cloth 1/2", gridFull: "Grid cloth full", ultrabounce: "Ultrabounce", muslin: "Muslin", opal: "Opal",
   f216: "Gel 216", f250: "Gel 250", f251: "Gel 251", scrim1: "Single scrim", scrim2: "Double scrim", flagSize: "Size", cloth: "Cloth", solid: "Solid", duvetyne: "Duvetyne",
   sunfire: "Sunfire", poly: "Poly",
+  sn_phone_main: "Smartphone main camera (1/1.3″)", sn_phone_wide: "Smartphone ultra wide (1/2.55″)", sn_phone_tele: "Smartphone tele (1/3″)", sn_action: "Action cam (1/2.3″)", sn_mft: "Micro Four Thirds", sn_apsc: "APS-C", sn_s35: "Super 35", sn_ff: "Full frame", sn_lf: "Large format (LF)", sn_f65: "65 mm",
+  figure: "Figure", female: "Woman", male: "Man", scan: "Man (scan)", figuresCredit: "Figures: MakeHuman (CC0)",
   lensPreset: "Lens", squeeze: "Anamorphic", spherical: "Spherical", anamorphic: "anamorphic", aperture: "Aperture", shutter: "Shutter", rig: "Rig",
   tripod: "Tripod", shoulder: "Shoulder", gimbal: "Gimbal", slider: "Slider", dolly: "Dolly", jib: "Crane / jib", handheld: "Handheld", noModifier: "no modifier",
   snap: "Snap", showLabels: "Labels", beams: "Beams", spill: "Spill", undo: "Undo", redo: "Redo", png: "PNG", pdf: "PDF", close: "Close",

@@ -378,7 +378,25 @@ function irradiance(THREE: Three, e: Emitter, p: T.Vector3, n: T.Vector3, dome =
 
 export type ScanHead = { geometry: T.BufferGeometry; map: T.Texture | null; normalMap: T.Texture | null; normalScaleY: number };
 
-export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null, noPcss = false) {
+// 2026-11-22: the woman / man figures (MakeHuman CC0, public/models/talent-<model>-<pose>.glb) — loaded by LightPlot3D
+export type TalentAsset = { scene: T.Object3D; seat: number; eye: number };
+export const TALENT_STANDING_H: Record<string, number> = { female: 1.609, male: 1.75 };
+/** once per loaded figure: glossy eyes with a clear coat (sharp catchlights of the lamps), textures in sRGB */
+export function prepareTalent(THREE: Three, root: T.Object3D) {
+  root.traverse((o) => {
+    const m = o as T.Mesh;
+    const mat = m.material as T.MeshStandardMaterial | undefined;
+    if (!mat) return;
+    if (mat.map) { mat.map.colorSpace = THREE.SRGBColorSpace; mat.map.userData.shared = true; }
+    if (mat.name === "high-poly") {
+      m.material = new THREE.MeshPhysicalMaterial({ map: mat.map, alphaTest: mat.alphaTest || 0.35, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.02, side: mat.side });
+    }
+  });
+}
+export const talentKey = (p: LpPerson) => (p.model === "female" || p.model === "male" ? `${p.model}-${p.pose === "sitting" ? "sitting" : "standing"}` : null);
+
+export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam: LpPerson, phone: boolean, scan?: ScanHead | null, noPcss = false,
+  talents?: Map<string, TalentAsset | null>) {
   if (!noPcss) installPcss(THREE, phone);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#060607");
@@ -506,6 +524,33 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   };
   for (const p of plot.people) {
     if (p.kind !== "talent") continue;
+    const key = talentKey(p);
+    const asset = key ? talents?.get(key) : null;
+    if (asset && p.model) {
+      // the MakeHuman figure, shared geometry / materials (userData.shared: kept across rebuilds), scaled to the height
+      const s = (p.height_m ?? 1.7) / TALENT_STANDING_H[p.model];
+      const g = new THREE.Group();
+      const fig = asset.scene.clone(true);
+      fig.traverse((o) => { o.userData.shared = true; o.castShadow = o.receiveShadow = true; });
+      g.add(fig);
+      if (p.pose === "sitting") {
+        const wood = new THREE.MeshStandardMaterial({ color: "#6b5440", roughness: 0.7 });
+        const seatY = asset.seat;
+        const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.05, 0.46), wood);
+        seat.position.set(-0.02, seatY - 0.025, 0); g.add(seat);
+        const back = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.48, 0.44), wood);
+        back.position.set(-0.27, seatY + 0.24, 0); g.add(back);
+        for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+          const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, seatY - 0.05), wood);
+          leg.position.set(-0.02 + sx * 0.19, (seatY - 0.05) / 2, sz * 0.19); g.add(leg);
+        }
+      }
+      g.position.set(p.x, 0, p.y);
+      g.rotation.y = -(p.rot * Math.PI) / 180;
+      g.scale.setScalar(s);
+      add(g);
+      continue;
+    }
     const f = humanFigure(THREE, p.pose === "sitting", mats, scan?.geometry);
     f.position.set(p.x, 0, p.y);
     f.rotation.y = -(p.rot * Math.PI) / 180;
@@ -546,7 +591,10 @@ export function buildScene(THREE: Three, plot: LightPlotData, look: LpLook, cam:
   // Rembrandt, loop, split …); the other lights keep their normal shadow maps
   const keyId = (look.lights.find((l) => l.role === "key") ?? look.lights[0])?.id;
   const talent0 = plot.people.find((p) => p.kind === "talent");
-  const headPos = talent0 ? new THREE.Vector3(talent0.x, (talent0.pose === "sitting" ? 1.18 : 1.62) * ((talent0.height_m ?? 1.75) / 1.75), talent0.y) : null;
+  const t0asset = talent0 && talentKey(talent0) ? talents?.get(talentKey(talent0)!) : null;
+  const headPos = talent0 ? new THREE.Vector3(talent0.x,
+    t0asset && talent0.model ? (t0asset.eye + 0.02) * ((talent0.height_m ?? 1.7) / TALENT_STANDING_H[talent0.model]) : (talent0.pose === "sitting" ? 1.18 : 1.62) * ((talent0.height_m ?? 1.75) / 1.75),
+    talent0.y) : null;
   look.lights.forEach((li, i) => {
     const fam = family(li);
     const preset = presetOf(li.preset);

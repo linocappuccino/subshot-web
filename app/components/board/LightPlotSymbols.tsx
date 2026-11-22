@@ -337,9 +337,13 @@ export function TalentSymbol({ p, sel }: { p: LpPerson; sel: boolean }) {
       <ellipse cx={-2} cy={-27} rx={9} ry={7} fill="#52525b" stroke={st} strokeWidth={2} />
       <ellipse cx={-2} cy={27} rx={9} ry={7} fill="#52525b" stroke={st} strokeWidth={2} />
       <ellipse cx={-2} cy={0} rx={14} ry={26} fill="#3f3f46" stroke={st} strokeWidth={sel ? 4 : 3} />
+      {/* 2026-11-22: the figure shows in the plan — woman: ponytail, man: short hair, scan: bald head */}
+      {p.model === "female" && <ellipse cx={-14} cy={0} rx={9} ry={5} fill="#8a5a3c" stroke={st} strokeWidth={1.5} />}
       <circle cx={2} cy={0} r={12} fill="#d6b49a" stroke={st} strokeWidth={2} />
       <path d="M 13 -4 L 19 0 L 13 4 Z" fill="#d6b49a" stroke={st} strokeWidth={1.5} />
-      <path d="M -9 -8 Q -4 0 -9 8" fill="#57534e" />
+      {p.model === "female" && <path d="M -10 -10 Q 4 -16 8 -6 L 8 6 Q 4 16 -10 10 Z" fill="#8a5a3c" />}
+      {p.model === "male" && <path d="M -10 -11 Q 6 -15 9 -4 L 9 4 Q 6 15 -10 11 Z" fill="#5a4030" />}
+      {(p.model ?? "scan") === "scan" && <path d="M -9 -8 Q -4 0 -9 8" fill="#57534e" />}
     </g>
   );
 }
