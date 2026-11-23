@@ -110,6 +110,13 @@ export function PageNode({ el, editing, editable, onCommitTitle }: { el: PageEle
 /** the navigation top left while a page is open: ← Back · Board / Page A / Page B */
 export function PageBreadcrumb({ path, onGo, left }: { path: PageElement[]; onGo: (page: string | null) => void; left: number }) {
   const { t } = useLanguage();
+  // narrow screens: the crumbs scroll, the open page (the end) stays in view
+  const crumbsRef = useRef<HTMLDivElement>(null);
+  const key = path.map((p) => p.id).join("/");
+  useEffect(() => {
+    const el = crumbsRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [key]);
   if (!path.length) return null;
   const parent = path.length > 1 ? path[path.length - 2].id : null;
   return (
@@ -118,7 +125,7 @@ export function PageBreadcrumb({ path, onGo, left }: { path: PageElement[]; onGo
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg>
         {t("ideaBoard.page.back")}
       </button>
-      <div className="flex items-center min-w-0 overflow-x-auto [scrollbar-width:none]">
+      <div ref={crumbsRef} className="flex items-center min-w-0 overflow-x-auto [scrollbar-width:none]">
         <button data-page-crumb="" onClick={() => onGo(null)} className="h-8 px-2 rounded-lg hover:bg-white/10 shrink-0 text-white/60">{t("ideaBoard.page.board")}</button>
         {path.map((p, i) => (
           <span key={p.id} className="flex items-center min-w-0 shrink-0">
