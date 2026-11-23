@@ -143,8 +143,17 @@ export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspe
 // 2026-11-21, Lino: «das Board muss grösser sein und man muss weiter hinauszoomen können» — 2 % instead of 10 %
 // (5× further out). Below LOD_SCALE (the former minimum) nodes are drawn as light blocks with 96-px previews
 // (LodBlock) — so a big board stays smooth and within iOS memory when seen whole.
+// 2026-11-23, Lino: «die Grösse soll quasi unlimitiert sein» — no fixed floor you hit while working: you can
+// always zoom out until the whole board fits with room around it (dynamic, see minScaleRef), at least to 2 %;
+// 0.1 % is the technical floor (layout stays exact far inside the browsers' ±33 million px range)
 const MIN_SCALE = 0.02;
+const MIN_SCALE_ABS = 0.001;
 const LOD_SCALE = 0.1;
+/** 2 significant digits (0.0123 → 0.012) — the CSS zoom of the far-zoom layout changes in small, relative steps */
+const zoomStep = (v: number) => {
+  const p = Math.pow(10, Math.floor(Math.log10(v)) - 1);
+  return Math.round(v / p) * p;
+};
 const MAX_SCALE = 4;
 const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
@@ -481,9 +490,22 @@ export function IdeaBoard({
   });
   const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
   const dataRef = useRef(data);
+
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   // viewport size in CSS px (for culling far-away nodes in the iOS embed, see cullRect)
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
+  // how far out you may zoom: the whole board fits at half size (room around it), never less far than 2 %
+  const minScaleRef = useRef(MIN_SCALE);
+  useEffect(() => {
+    const r = viewportRef.current?.getBoundingClientRect();
+    const b = boundsOf(data.elements);
+    if (!r || !b || !r.width || !r.height) {
+      minScaleRef.current = MIN_SCALE;
+      return;
+    }
+    const fit = Math.min(r.width / Math.max(b.w, 1), r.height / Math.max(b.h, 1));
+    minScaleRef.current = Math.max(MIN_SCALE_ABS, Math.min(MIN_SCALE, fit * 0.5));
+  }, [data.elements, viewportSize]);
   useEffect(() => {
     const node = viewportRef.current;
     if (!node || !boardImageConfig.cull) return;
@@ -513,7 +535,7 @@ export function IdeaBoard({
   // 2026-11-21: in the far-zoom LOD range the layout itself is zoomed down too (CSS zoom < 1, in 0.5 % steps) —
   // with a scale() transform alone WebKit paints the layer at its UNscaled size (50× the screen at 2 %), which cost
   // ~190 ms frames on the iPhone emulation; LOD blocks carry no small text, so the 9-px font floor does not matter
-  const targetZoom = view.scale < LOD_SCALE ? Math.max(MIN_SCALE, Math.round(view.scale * 200) / 200) : Math.min(zoomCap, Math.max(1, view.scale));
+  const targetZoom = view.scale < LOD_SCALE ? Math.max(MIN_SCALE_ABS, zoomStep(view.scale)) : Math.min(zoomCap, Math.max(1, view.scale));
   useEffect(() => {
     if (targetZoom === settledScale) return;
     const t = window.setTimeout(() => setSettledScale(targetZoom), 150);
@@ -699,7 +721,7 @@ export function IdeaBoard({
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect) return;
     const v = viewRef.current;
-    const s = clamp(nextScale, MIN_SCALE, MAX_SCALE);
+    const s = clamp(nextScale, minScaleRef.current, MAX_SCALE);
     const px = clientX - rect.left;
     const py = clientY - rect.top;
     const wx = (px - v.x) / v.scale;
@@ -736,7 +758,7 @@ export function IdeaBoard({
         next = { scale: 1, x: rect.width / 2 - 216, y: Math.min(160, rect.height / 4) };
       } else {
         const pad = opts.pad ?? 96;
-        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), MIN_SCALE, opts.maxScale ?? 1);
+        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), minScaleRef.current, opts.maxScale ?? 1);
         next = { scale: s, x: rect.width / 2 - (b.x + b.w / 2) * s, y: rect.height / 2 - (b.y + b.h / 2) * s };
       }
       if (opts.animate) {
@@ -2993,7 +3015,7 @@ export function IdeaBoard({
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const rect = viewportRef.current!.getBoundingClientRect();
-      const s = clamp(op.view.scale * (dist / op.dist), MIN_SCALE, MAX_SCALE);
+      const s = clamp(op.view.scale * (dist / op.dist), minScaleRef.current, MAX_SCALE);
       const wx = (op.center.x - rect.left - op.view.x) / op.view.scale;
       const wy = (op.center.y - rect.top - op.view.y) / op.view.scale;
       const next = { scale: s, x: center.x - rect.left - wx * s, y: center.y - rect.top - wy * s };
@@ -5331,7 +5353,7 @@ export function IdeaBoard({
           onClick={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1); }}
           className="min-w-[52px] h-8 rounded-lg text-xs tabular-nums hover:bg-white/10"
         >
-          {Math.round(view.scale * 100)}%
+          {view.scale < 0.01 ? (view.scale * 100).toFixed(1) : Math.round(view.scale * 100)}%
         </button>
         <ZoomButton title={t("ideaBoard.zoomIn")} onPress={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, view.scale * 1.25); }}>+</ZoomButton>
         <ZoomButton title={t("ideaBoard.zoomFit")} onPress={fitToContent}>
@@ -5573,7 +5595,7 @@ function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
   const tiny = e.tiny_src ?? e.image_tiny_src ?? null;
   const [failed, setFailed] = useState(false);
   const title = (e.title || e.name || "").trim();
-  const s = Math.max(scale, 0.005);
+  const s = Math.max(scale, MIN_SCALE_ABS);
   // on-screen size of the block → the title only if it fits in full (≈ 0.6 em per character)
   const fits = !!title && e.w * s >= title.length * LOD_FONT * 0.6 + 8 && e.h * s >= LOD_FONT + 6;
   return (
