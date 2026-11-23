@@ -2722,8 +2722,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <EdgeNavButton
                 side="left"
                 onClick={goToIdeas}
-                ariaLabel="Ideen"
-                label="Ideen"
+                ariaLabel={t("workflow.conceptNav")}
+                label={t("workflow.conceptNav")}
               />
             )}
             {/* 2026-07-17, Lino: "auf der Szenenansicht braucht es rechts

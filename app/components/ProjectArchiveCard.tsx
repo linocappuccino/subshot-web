@@ -46,7 +46,7 @@ export function ProjectArchiveCard({ projectId, highlight }: { projectId: string
           <h2 className="text-sm font-semibold text-white mb-1">{t("archive.title")}</h2>
           <p className="text-xs leading-relaxed text-white/50">{highlight ? t("archive.hintExpired") : t("archive.hint")}</p>
           <p className="mt-2 text-[11px] leading-relaxed text-white/35 font-mono">
-            01 Ideen – Konzept · 02 Script – Shotlist · 03 Postproduction · 04 Deliver · 05 Rohdaten · 06 Assets
+            01 Konzept · 02 Script – Shotlist · 03 Postproduction · 04 Deliver · 05 Rohdaten · 06 Assets
           </p>
           {last && (
             <p className="mt-2 text-xs text-white/45">
