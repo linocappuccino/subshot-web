@@ -732,7 +732,9 @@ function IdeaBoardScreen({
               title={t("ideaCard.unapproveTitle")}
               className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-full px-3 py-1.5 whitespace-nowrap transition-colors disabled:opacity-60"
             >
-              {t("ideaCard.approvedToggle")}
+              {/* phones: short label, the long one pushed everything else out of the header */}
+              <span className="sm:hidden">✓ {t("ideaCard.approveButton")}</span>
+              <span className="hidden sm:inline">{t("ideaCard.approvedToggle")}</span>
             </button>
           ) : (
             <span className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 rounded-full px-3 py-1.5 whitespace-nowrap">✓ {t("ideaCard.approvedBadge")}</span>
@@ -997,7 +999,7 @@ function Pill({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`rounded-full px-3 h-8 text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${dim ? "opacity-50" : ""} ${
+      className={`rounded-full px-3 max-sm:px-2.5 h-8 text-xs font-semibold whitespace-nowrap transition-colors disabled:opacity-50 ${dim ? "opacity-50" : ""} ${
         tone === "red" ? "text-white/80 bg-white/10 hover:bg-red-500/20 hover:text-red-300" : "text-white/80 bg-white/10 hover:bg-emerald-500/20 hover:text-emerald-300"
       }`}
     >

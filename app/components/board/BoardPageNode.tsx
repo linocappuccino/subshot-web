@@ -172,18 +172,20 @@ export function PageBreadcrumb({ path, onGo, left }: { path: PageElement[]; onGo
   if (!path.length) return null;
   const parent = path.length > 1 ? path[path.length - 2].id : null;
   return (
-    <div data-board-ui data-page-breadcrumb className="absolute z-30 top-3 flex items-center gap-1 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/85 text-[13px]" style={{ left, maxWidth: `calc(100% - ${left + 72}px)` }}>
-      <button data-page-back onClick={() => onGo(parent)} className="h-8 px-2.5 rounded-lg bg-white/10 hover:bg-white/15 font-semibold flex items-center gap-1 shrink-0" title={t("ideaBoard.page.back")}>
+    <div data-board-ui data-page-breadcrumb className="absolute z-30 top-3 flex items-center gap-1 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/85 text-[13px] max-sm:!left-2 max-sm:!max-w-[calc(100%-64px)]" style={{ left, maxWidth: `calc(100% - ${left + 72}px)` }}>
+      {/* 2026-11-24 (Lino, iPhone: title cut to «TORYBOARD»): on a phone only ‹ and the open page's name (shortened with
+          … at the end if needed) — the parent pages stay one tap away via ‹ */}
+      <button data-page-back onClick={() => onGo(parent)} className="h-8 px-2.5 max-sm:px-2 rounded-lg bg-white/10 hover:bg-white/15 font-semibold flex items-center gap-1 shrink-0" title={t("ideaBoard.page.back")} aria-label={t("ideaBoard.page.back")}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M15 18l-6-6 6-6" /></svg>
-        {t("ideaBoard.page.back")}
+        <span className="max-sm:hidden">{t("ideaBoard.page.back")}</span>
       </button>
-      <div ref={crumbsRef} className="flex items-center min-w-0 overflow-x-auto [scrollbar-width:none]">
-        <button data-page-crumb="" onClick={() => onGo(null)} className="h-8 px-2 rounded-lg hover:bg-white/10 shrink-0 text-white/60">{t("ideaBoard.page.board")}</button>
+      <div ref={crumbsRef} className="flex items-center min-w-0 overflow-x-auto [scrollbar-width:none] max-sm:overflow-hidden">
+        <button data-page-crumb="" onClick={() => onGo(null)} className="h-8 px-2 rounded-lg hover:bg-white/10 shrink-0 text-white/60 max-sm:hidden">{t("ideaBoard.page.board")}</button>
         {path.map((p, i) => (
-          <span key={p.id} className="flex items-center min-w-0 shrink-0">
-            <span className="text-white/30 px-0.5">/</span>
+          <span key={p.id} className={`flex items-center min-w-0 ${i === path.length - 1 ? "max-sm:shrink" : "shrink-0 max-sm:hidden"} shrink-0`}>
+            <span className="text-white/30 px-0.5 max-sm:hidden">/</span>
             {i === path.length - 1 ? (
-              <span data-page-crumb-current={p.id} className="h-8 px-2 flex items-center font-semibold max-w-[180px] truncate">{p.title || t("ideaBoard.page.untitled")}</span>
+              <span data-page-crumb-current={p.id} className="h-8 px-2 flex items-center font-semibold max-w-[180px] max-sm:max-w-none min-w-0"><span className="truncate">{p.title || t("ideaBoard.page.untitled")}</span></span>
             ) : (
               <button data-page-crumb={p.id} onClick={() => onGo(p.id)} className="h-8 px-2 rounded-lg hover:bg-white/10 text-white/60 max-w-[140px] truncate">{p.title || t("ideaBoard.page.untitled")}</button>
             )}

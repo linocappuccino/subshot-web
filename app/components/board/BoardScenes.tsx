@@ -168,7 +168,7 @@ export function BoardScenesBar({
   };
 
   return (
-    <div className="absolute z-30 bottom-3 left-[76px] right-[262px] flex justify-center pointer-events-none">
+    <div data-board-scenesbar className={`absolute z-30 bottom-3 left-[76px] right-[262px] flex justify-center pointer-events-none max-sm:left-2 max-sm:right-[196px] max-sm:justify-start ${editable ? "max-sm:bottom-[calc(max(8px,env(safe-area-inset-bottom))_+_58px)]" : ""}`}>
       <div data-board-ui className="pointer-events-auto relative flex items-end gap-1.5 max-w-full p-1.5 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
         {naming !== null && (
           // name the new scene: above the bar

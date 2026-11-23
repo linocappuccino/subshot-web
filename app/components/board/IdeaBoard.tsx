@@ -549,6 +549,27 @@ export function IdeaBoard({
     ro.observe(node);
     return () => ro.disconnect();
   }, []);
+  // 2026-11-24 (Lino: «der Zoom muss smooth sein und der Inhalt immer dargestellt»): the small previews the far-zoom
+  // blocks show are fetched in the background once the board is open (a few KB each, at most 600) — zooming out
+  // then never shows a block waiting for its picture
+  const preloadedRef = useRef(new Set<string>());
+  useEffect(() => {
+    const urls: string[] = [];
+    for (const el of data.elements) {
+      const u = lodPreview(el);
+      if (u && !preloadedRef.current.has(u)) urls.push(u);
+    }
+    if (!urls.length) return;
+    const idle = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 400));
+    idle(() => {
+      for (const u of urls.slice(0, Math.max(0, 600 - preloadedRef.current.size))) {
+        preloadedRef.current.add(u);
+        const img = new Image();
+        img.decoding = "async";
+        img.src = u;
+      }
+    });
+  }, [data.elements]);
   // 2026-10-08 (Lino, iPad: "immer noch super unscharf und verpixelt"):
   // WebKit on Apple devices paints a composited layer at device resolution
   // and IGNORES CSS scale transforms (GraphicsLayerCA::updateRootRelativeScale
@@ -579,6 +600,12 @@ export function IdeaBoard({
   }, [targetZoom, settledScale]);
   const viewScaleRef = useRef(view.scale);
   viewScaleRef.current = view.scale;
+  // 2026-11-24 (Lino: «wenn man zoomt fehlen Darstellungssachen»): while the layout is zoomed DOWN (CSS zoom < 1, far
+  // zoom), WebKit's 9-px minimum font size blows text up — a card measured then reports a wrong height (a 15-px text
+  // at 5 % measures 20× taller) and saved it; cards grew huge or collapsed to a few px (Lino's board: 8-px timetable).
+  // Heights are only measured at the normal layout zoom.
+  const settledScaleRef = useRef(settledScale);
+  settledScaleRef.current = settledScale;
   const viewRef = useRef(view);
   viewRef.current = view;
   const [tool, setTool] = useState<Tool>("select");
@@ -4098,7 +4125,10 @@ export function IdeaBoard({
     const s = Math.max(MIN_SCALE_ABS, view.scale);
     const w = viewportSize.w / s, h = viewportSize.h / s;
     const x0 = -view.x / s, y0 = -view.y / s;
-    return { x1: x0 - w, y1: y0 - h, x2: x0 + 2 * w, y2: y0 + 2 * h };
+    // 2026-11-24: while a zoom gesture runs (layout zoom not caught up yet) two screens of margin instead of one, so
+    // zooming out does not uncover cards that are still being mounted
+    const m = opRef.current?.kind === "pinch" || targetZoom !== settledScale ? 2 : 1;
+    return { x1: x0 - m * w, y1: y0 - m * h, x2: x0 + (1 + m) * w, y2: y0 + (1 + m) * h };
   })();
 
   return (
@@ -4273,7 +4303,9 @@ export function IdeaBoard({
               (el.x > cullRect.x2 || el.y > cullRect.y2 || el.x + el.w < cullRect.x1 || el.y + Math.max(el.h, 40) < cullRect.y1)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
-          const lod = view.scale < LOD_SCALE;
+          // real cards only in the normal layout zoom (see settledScaleRef) — right after zooming in from far away the
+          // layout is still zoomed down for ~150 ms; the light blocks stay until it is back at 1
+          const lod = view.scale < LOD_SCALE || settledScale < 1;
           const isFrame = el.type === "group" && !el.collapsed;
           const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow" || el.type === "credits" || el.type === "dubbing";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
@@ -4293,7 +4325,11 @@ export function IdeaBoard({
                 transition: "opacity .2s",
               }}
             >
-              {lod && !selected && editingId !== el.id && !isDrawing && el.type !== "group" ? <LodBlock el={el} scale={view.scale} /> : (
+              {lod && !selected && editingId !== el.id && el.type === "group" && !el.collapsed ? (
+                // 2026-11-24: far out a group is just its frame (its title is the readable label above it) — its real
+                // header would be blown up by WebKit's minimum font size in the zoomed-down layout and cover the cards
+                <div data-lod-group className="absolute inset-0" style={{ height: el.h, border: `${Math.max(1, 1.5 / Math.max(view.scale, MIN_SCALE_ABS))}px solid rgba(255,255,255,0.14)`, background: "rgba(255,255,255,0.025)", borderRadius: Math.min(30, 12 / Math.max(view.scale, 0.05)) }} />
+              ) : lod && !selected && editingId !== el.id && !isDrawing && (el.type !== "group" || el.collapsed) ? <LodBlock el={el} scale={view.scale} /> : (
               <BoardElementView
                 el={el}
                 voted={el.type === "video" && votedIds.has(el.id)}
@@ -4335,7 +4371,7 @@ export function IdeaBoard({
                 groupMembers={el.type === "group" ? el.children.map((c) => byId.get(c)).filter((m): m is BoardElement => !!m) : undefined}
                 onToggleGroup={() => toggleGroup(el.id)}
                 onCommitGroupTitle={(title) => commitGroupTitle(el.id, title)}
-                onMeasure={(h) => updateElement(el.id, { h: Math.ceil(h) }, { notify: editable })}
+                onMeasure={(h) => { if (settledScaleRef.current >= 1 && viewScaleRef.current >= LOD_SCALE && h >= 24) updateElement(el.id, { h: Math.ceil(h) }, { notify: editable }); }}
                 onNaturalSize={(nw, nh) => {
                   if (!nw || !nh) return;
                   if (el.type === "scene") {
@@ -4473,6 +4509,24 @@ export function IdeaBoard({
 
         {/* variant votes (2026-10-08): letter top-left, 👍🏼 bottom-right. 2026-11-09, Lino: they must not grow
             on screen when zooming out — they scale with the board below 100 %, keep their size above */}
+        {/* 2026-11-24 (Lino, iPhone at 6 %: «Gruppentitel unlesbar winzig»): zoomed out, a group's title stays readable —
+            drawn at a fixed size on screen above its frame (cut to the frame's width) */}
+        {view.scale < 0.4 && elements.map((el) => {
+          if (el.type !== "group" || el.collapsed || hidden.has(el.id) || !el.title?.trim()) return null;
+          const sc = Math.max(view.scale, MIN_SCALE_ABS);
+          // only when the frame is big enough on screen that the title above it doesn't cover the next group
+          if (el.w * sc < 40 || el.h * sc < 40) return null;
+          return (
+            <div
+              key={`glabel-${el.id}`}
+              data-group-label={el.id}
+              className="absolute pointer-events-none truncate font-semibold text-white/90 rounded-md bg-[#1c1c1e]/90 border border-white/10"
+              style={{ left: el.x, top: el.y, zIndex: 89000, fontSize: 12 / sc, lineHeight: 1.25, padding: `${3 / sc}px ${7 / sc}px`, maxWidth: el.w, transform: "translateY(-100%) translateY(" + -4 / sc + "px)" }}
+            >
+              {el.title}
+            </div>
+          );
+        })}
         {view.scale >= LOD_SCALE && voteInfo.map((v) => (
           <div key={`vote-${v.el.id}`} style={{ opacity: matches && !matches.has(v.el.id) ? 0.18 : undefined, transition: "opacity .2s" }}>
             {v.leader && (
@@ -4801,6 +4855,7 @@ export function IdeaBoard({
       {/* selection actions */}
       {editable && !editingEl && !busyOp && (selBounds || selectedConnector) && (
         <FloatingBar
+          dock
           view={view}
           bounds={
             selBarBounds ??
@@ -5319,7 +5374,13 @@ export function IdeaBoard({
 
       {/* tools */}
       {editable && (
-        <div data-board-ui className="absolute z-30 left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-2xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur max-sm:left-2 max-sm:gap-0.5 max-sm:p-1 [@media(max-height:640px)]:grid [@media(max-height:640px)]:grid-cols-2">
+        <div
+          data-board-ui
+          data-board-tools
+          // 2026-11-24 (Lino, iPhone: «der Canvas ist für Mobile noch gar nicht optimiert»): on a phone the tools are one
+          // row at the bottom that you swipe sideways (undo / redo first), not a column that runs off the screen
+          className="absolute z-30 left-3 top-1/2 -translate-y-1/2 flex flex-col gap-1 p-1.5 rounded-2xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur max-sm:transform-none max-sm:translate-none max-sm:top-auto max-sm:left-2 max-sm:right-2 max-sm:bottom-[max(8px,env(safe-area-inset-bottom))] max-sm:flex-row max-sm:gap-0.5 max-sm:p-1 max-sm:overflow-x-auto max-sm:overscroll-contain max-sm:[scrollbar-width:none] sm:[@media(max-height:640px)]:grid sm:[@media(max-height:640px)]:grid-cols-2"
+        >
           <ToolButton active={tool === "select"} title={t("ideaBoard.toolSelect")} onPress={() => setTool("select")}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l14 8-6 2-2 6z" /></svg>
           </ToolButton>
@@ -5382,7 +5443,7 @@ export function IdeaBoard({
             </ToolButton>
             {linkOpen && (
               <form
-                className="absolute left-full top-0 ml-2 flex gap-1.5 p-1.5 rounded-xl bg-[#1c1c1e] border border-white/10 shadow-xl"
+                className="absolute left-full top-0 ml-2 flex gap-1.5 p-1.5 rounded-xl bg-[#1c1c1e] border border-white/10 shadow-xl max-sm:fixed max-sm:left-2 max-sm:right-2 max-sm:top-auto max-sm:bottom-[calc(max(8px,env(safe-area-inset-bottom))_+_64px)] max-sm:ml-0 max-sm:z-40"
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!linkValue.trim()) return;
@@ -5397,7 +5458,7 @@ export function IdeaBoard({
                   onChange={(e) => setLinkValue(e.target.value)}
                   placeholder={t("ideaBoard.linkPlaceholder")}
                   inputMode="url"
-                  className="w-64 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 select-text"
+                  className="w-64 max-sm:w-auto max-sm:flex-1 max-sm:min-w-0 rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-sm max-sm:text-base outline-none focus:border-blue-500 select-text"
                 />
                 <button type="submit" className="rounded-lg bg-blue-600 hover:bg-blue-500 px-3 text-sm font-semibold">
                   {t("ideaBoard.linkAdd")}
@@ -5410,7 +5471,7 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
             </ToolButton>
             {tool === "draw" && (
-              <div className="absolute left-full top-0 ml-2 flex flex-col gap-2 p-2 rounded-xl bg-[#1c1c1e] border border-white/10 shadow-xl">
+              <div className="absolute left-full top-0 ml-2 flex flex-col gap-2 p-2 rounded-xl bg-[#1c1c1e] border border-white/10 shadow-xl max-sm:fixed max-sm:left-2 max-sm:top-auto max-sm:bottom-[calc(max(8px,env(safe-area-inset-bottom))_+_64px)] max-sm:ml-0 max-sm:z-40">
                 <div className="flex gap-1.5">
                   {STROKE_COLORS.map((c) => (
                     <button
@@ -5442,11 +5503,11 @@ export function IdeaBoard({
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M9 21V9" /></svg>
             </ToolButton>
           )}
-          <div className="h-px bg-white/10 my-1 col-span-2" />
-          <ToolButton title={t("ideaBoard.undo")} onPress={undo} disabled={historyApi ? !historyApi.canUndo : historySize.undo === 0}>
+          <div className="h-px bg-white/10 my-1 col-span-2 max-sm:hidden" />
+          <ToolButton className="max-sm:order-first" title={t("ideaBoard.undo")} onPress={undo} disabled={historyApi ? !historyApi.canUndo : historySize.undo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" /></svg>
           </ToolButton>
-          <ToolButton title={t("ideaBoard.redo")} onPress={redo} disabled={historyApi ? !historyApi.canRedo : historySize.redo === 0}>
+          <ToolButton className="max-sm:order-first max-sm:mr-1" title={t("ideaBoard.redo")} onPress={redo} disabled={historyApi ? !historyApi.canRedo : historySize.redo === 0}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" /></svg>
           </ToolButton>
           <input
@@ -5600,11 +5661,11 @@ export function IdeaBoard({
         </div>
       )}
       {storyBar && (
-        <div data-board-ui className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
+        <div data-board-ui data-board-storybar className="absolute z-30 right-3 bottom-14 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80 max-sm:bottom-auto max-sm:top-[56px] max-sm:right-2">
           {editable && storyScenes.length > 1 && (
             <button title={t("ideaBoard.arrangeHint")} onClick={arrangeStoryboard} className="h-8 px-2.5 rounded-lg text-xs font-semibold hover:bg-white/10 flex items-center gap-1.5">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
-              {t("ideaBoard.arrange")}
+              <span className="max-sm:hidden">{t("ideaBoard.arrange")}</span>
             </button>
           )}
           {allowPresentation && (
@@ -5617,7 +5678,7 @@ export function IdeaBoard({
             className="h-8 px-2.5 rounded-lg text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z" /></svg>
-            {t("ideaBoard.present.button")}
+            <span className="max-sm:hidden">{t("ideaBoard.present.button")}</span>
           </button>
           )}
         </div>
@@ -5704,12 +5765,12 @@ export function IdeaBoard({
         onDelete={deleteScene}
         onGo={goToScene}
       />
-      <div data-board-ui className="absolute z-30 right-3 bottom-3 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80">
+      <div data-board-ui data-board-zoom className={`absolute z-30 right-3 bottom-3 flex items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur text-white/80 max-sm:right-2 ${editable ? "max-sm:bottom-[calc(max(8px,env(safe-area-inset-bottom))_+_58px)]" : ""}`}>
         <ZoomButton title={t("ideaBoard.zoomOut")} onPress={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, view.scale / 1.25); }}>−</ZoomButton>
         <button
           title={t("ideaBoard.zoomReset")}
           onClick={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1); }}
-          className="min-w-[52px] h-8 rounded-lg text-xs tabular-nums hover:bg-white/10"
+          className="min-w-[52px] max-sm:min-w-[42px] h-8 rounded-lg text-xs tabular-nums hover:bg-white/10"
         >
           {view.scale < 0.01 ? Number((view.scale * 100).toPrecision(2)) : Math.round(view.scale * 100)}%
         </button>
@@ -5807,7 +5868,7 @@ function MenuDivider() {
   return <div className="h-px bg-white/10 my-1 mx-1" />;
 }
 
-function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: number; y: number; w: number; h: number }; children: React.ReactNode }) {
+function FloatingBar({ view, bounds, dock, children }: { view: View; bounds: { x: number; y: number; w: number; h: number }; dock?: boolean; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const [shift, setShift] = useState(0);
   const left = view.x + (bounds.x + bounds.w / 2) * view.scale;
@@ -5826,7 +5887,9 @@ function FloatingBar({ view, bounds, children }: { view: View; bounds: { x: numb
     <div
       ref={ref}
       data-board-ui
-      className="absolute z-40 flex flex-wrap justify-center items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur -translate-x-1/2 -translate-y-full max-w-[calc(100%-16px)] w-max"
+      data-floating-bar
+      // phones (2026-11-24): docked above the bottom bars, always in the same place, never over the page title
+      className={`absolute z-40 flex flex-wrap justify-center items-center gap-0.5 p-1 rounded-xl bg-[#1c1c1e]/95 border border-white/10 shadow-xl backdrop-blur -translate-x-1/2 -translate-y-full max-w-[calc(100%-16px)] w-max ${dock ? "max-sm:!left-1/2 max-sm:!top-auto max-sm:bottom-[calc(max(8px,env(safe-area-inset-bottom))_+_108px)] max-sm:translate-y-0" : ""}`}
       style={{ left: left + shift, top: Math.max(56, top) }}
     >
       {children}
@@ -5893,17 +5956,17 @@ function Divider() {
 // own title tooltip only appears after a delay) — only with a real mouse
 // (hover: hover), so a tap on the iPad doesn't leave a label hanging; hidden
 // while the tool's own popover (link field, pen colors) is open next to it
-function ToolButton({ title, onPress, active, disabled, popoverOpen, children }: { title: string; onPress: () => void; active?: boolean; disabled?: boolean; popoverOpen?: boolean; children: React.ReactNode }) {
+function ToolButton({ title, onPress, active, disabled, popoverOpen, className = "", children }: { title: string; onPress: () => void; active?: boolean; disabled?: boolean; popoverOpen?: boolean; className?: string; children: React.ReactNode }) {
   return (
     <button
       aria-label={title}
       disabled={disabled}
       onClick={onPress}
-      className={`group/tool relative w-10 h-10 max-sm:w-9 max-sm:h-9 [@media(max-height:640px)]:w-9 [@media(max-height:640px)]:h-9 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"}`}
+      className={`group/tool relative w-10 h-10 shrink-0 sm:[@media(max-height:640px)]:w-9 sm:[@media(max-height:640px)]:h-9 rounded-xl flex items-center justify-center transition-colors disabled:opacity-30 ${active ? "bg-blue-600 text-white" : "text-white/75 hover:bg-white/10"} ${className}`}
     >
       {children}
       {!popoverOpen && (
-        <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 whitespace-nowrap rounded-lg bg-[#2c2c2e] border border-white/10 px-2.5 py-1 text-xs font-medium text-white shadow-lg opacity-0 [@media(hover:hover)]:group-hover/tool:opacity-100 z-50">
+        <span className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-3 whitespace-nowrap rounded-lg bg-[#2c2c2e] border border-white/10 px-2.5 py-1 text-xs font-medium text-white shadow-lg opacity-0 [@media(hover:hover)]:group-hover/tool:opacity-100 z-50 max-sm:hidden">
           {title}
         </span>
       )}
@@ -5998,7 +6061,7 @@ function lodPreview(el: BoardElement): string | null {
 }
 
 function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
-  const e = el as BoardElement & { title?: string; name?: string; color?: string };
+  const e = el as BoardElement & { title?: string; name?: string; color?: string; image_ratio?: number };
   const tiny = lodPreview(el);
   const look = lodLook(el);
   const [failed, setFailed] = useState(false);
@@ -6006,16 +6069,28 @@ function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
   const s = Math.max(scale, MIN_SCALE_ABS);
   // on-screen size of the block → the title only if it fits in full (≈ 0.6 em per character)
   const fits = !!title && e.w * s >= title.length * LOD_FONT * 0.6 + 8 && e.h * s >= LOD_FONT + 6;
+  const headerH = look.header ? Math.min(e.h * 0.18, 56) : 0;
+  const pic = !!tiny && !failed;
+  // 2026-11-24 (Lino, iPhone at 6 %: «Szenenkarten zeigen nur das Bild, darunter ist es leer»): a card with a picture
+  // above its text (scene, link, location, light plot) shows the picture in its real format like the card does, and
+  // the text below it as lines — never an empty area
+  const inset = e.type === "scene" || e.type === "link" || e.type === "location" || e.type === "light_plot";
+  const ratio = Math.min(3, Math.max(0.5, e.image_ratio ?? 16 / 9));
+  const imgH = pic && inset ? Math.min(e.h - headerH - 12, (e.w - 24) / ratio) : 0;
+  const textTop = pic && inset ? headerH + 12 + imgH + 14 : headerH + 12;
+  const showLines = !pic || (inset && e.h - textTop > 24);
   return (
     <div
       data-lod={e.type}
       className="absolute inset-0 overflow-hidden"
       style={{ height: e.h, background: look.bg, border: look.border ? `${Math.max(1, 1.5 / s)}px ${e.type === "placeholder" ? "dashed" : "solid"} ${look.border}` : undefined, borderRadius: Math.min(Math.min(e.w, e.h) * 0.06, 14 / Math.max(s, 0.05)) }}
     >
-      {look.header && <div className="absolute left-0 right-0 top-0" style={{ height: Math.min(e.h * 0.18, 56), background: "rgba(255,255,255,0.06)", borderBottom: `1px solid ${look.border ?? "transparent"}` }} />}
-      {!tiny || failed ? (
-        <div className="absolute" style={{ inset: look.header ? `${Math.min(e.h * 0.18, 56) + 12}px 12px 12px 12px` : "12px", backgroundImage: lodPattern(look, e) }} />
-      ) : null}
+      {look.header && (
+        <div className="absolute left-0 right-0 top-0" style={{ height: headerH, background: "rgba(255,255,255,0.06)", borderBottom: `1px solid ${look.border ?? "transparent"}` }}>
+          {!fits && title && <div className="absolute rounded-full" style={{ left: 12, top: headerH * 0.36, height: headerH * 0.28, width: Math.min(e.w - 24, Math.max(e.w * 0.25, title.length * 9)), background: "rgba(255,255,255,0.28)" }} />}
+        </div>
+      )}
+      {showLines && <div data-lod-lines className="absolute" style={{ left: 12, right: 12, top: textTop, bottom: 12, backgroundImage: lodPattern(look.lines ? look : { ...look, lines: "text", ink: "rgba(255,255,255,0.16)" }, e) }} />}
       {e.type === "palette" && (
         <div className="absolute inset-[8%] flex gap-[3%]">
           {((e as unknown as { colors?: string[] }).colors ?? []).slice(0, 8).map((c, i) => <div key={i} className="flex-1 rounded" style={{ background: c }} />)}
@@ -6027,10 +6102,12 @@ function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
         </div>
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {tiny && !failed && <img data-lod-tiny src={tiny} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="absolute w-full object-cover" style={{ top: e.type === "scene" || e.type === "link" || e.type === "light_plot" ? Math.min(e.h * 0.18, 56) : 0, bottom: 0, height: "auto" }} />}
-      {look.icon && (!tiny || failed) && <div className="absolute inset-0 flex items-center justify-center" style={{ fontSize: Math.min(e.w, e.h) * 0.3, color: "rgba(255,255,255,0.5)" }}>{look.icon}</div>}
-      {fits && (!tiny || failed) && e.type !== "page" && (
-        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px`, color: e.type === "sticky" ? "#1f1a0a" : undefined }}>{title}</div>
+      {pic && inset && <img data-lod-tiny src={tiny!} alt="" decoding="async" onError={() => setFailed(true)} className="absolute object-cover" style={{ left: 12, right: 12, top: headerH + 12, width: e.w - 24, height: imgH, borderRadius: Math.min(30, 4 / s), background: "rgba(255,255,255,0.05)" }} />}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {pic && !inset && <img data-lod-tiny src={tiny!} alt="" decoding="async" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" style={{ top: headerH }} />}
+      {look.icon && !pic && <div className="absolute inset-0 flex items-center justify-center" style={{ fontSize: Math.min(e.w, e.h) * 0.3, color: "rgba(255,255,255,0.5)" }}>{look.icon}</div>}
+      {fits && (!pic || inset) && e.type !== "page" && (
+        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap overflow-hidden" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px`, color: e.type === "sticky" ? "#1f1a0a" : undefined, background: inset && pic ? "rgba(28,28,30,0.85)" : undefined }}>{title}</div>
       )}
     </div>
   );
