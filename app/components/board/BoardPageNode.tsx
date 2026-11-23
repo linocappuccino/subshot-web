@@ -7,6 +7,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { BoardElement, PageElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
+import { EmojiPicker } from "./EmojiPicker";
 
 export type BoardPagesInfo = {
   /** nodes directly on a page */
@@ -62,11 +63,10 @@ export function PageIcon({ icon, color, size }: { icon?: string; color?: string;
 /** icon + colour picker (screen space, works with touch) */
 export function PageIconPicker({ icon, color, onPick, onClose }: { icon?: string; color?: string; onPick: (p: { icon?: string; color?: string }) => void; onClose: () => void }) {
   const { t } = useLanguage();
-  const [emoji, setEmoji] = useState(icon && !PAGE_ICONS[icon] ? icon : "");
   const c = color || DEFAULT_PAGE_COLOR;
   return (
     <div data-board-ui data-page-icon-picker className="absolute inset-0 z-50 flex items-center justify-center bg-black/40" onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-[min(380px,calc(100%-24px))] rounded-2xl bg-[#1c1c1e] border border-white/10 shadow-2xl p-4 text-white" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="w-[min(380px,calc(100%-24px))] max-h-[calc(100%-24px)] overflow-y-auto rounded-2xl bg-[#1c1c1e] border border-white/10 shadow-2xl p-4 text-white" onPointerDown={(e) => e.stopPropagation()}>
         <div className="text-[15px] font-semibold mb-3">{t("ideaBoard.page.iconTitle")}</div>
         <div className="grid grid-cols-6 gap-1.5">
           {Object.keys(PAGE_ICONS).map((k) => (
@@ -75,17 +75,8 @@ export function PageIconPicker({ icon, color, onPick, onClose }: { icon?: string
             </button>
           ))}
         </div>
-        <label className="block text-[12px] text-white/55 mt-3">{t("ideaBoard.page.emoji")}
-          <input
-            data-pick-emoji
-            value={emoji}
-            onChange={(e) => setEmoji(e.target.value)}
-            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && emoji.trim()) onPick({ icon: [...emoji.trim()].slice(0, 2).join("") }); }}
-            onBlur={() => { if (emoji.trim() && emoji.trim() !== icon) onPick({ icon: [...emoji.trim()].slice(0, 2).join("") }); }}
-            placeholder="🎬"
-            className="mt-1 w-full h-9 rounded-lg bg-white/5 border border-white/10 px-2 text-[18px] outline-none focus:border-blue-500 select-text"
-          />
-        </label>
+        <div className="text-[12px] text-white/55 mt-3">{t("ideaBoard.page.emoji")}</div>
+        <EmojiPicker current={icon && !PAGE_ICONS[icon] ? icon : undefined} onPick={(e) => onPick({ icon: e })} />
         <div className="text-[12px] text-white/55 mt-3 mb-1">{t("ideaBoard.page.color")}</div>
         <div className="flex gap-2">
           {PAGE_COLORS.map((col) => (
