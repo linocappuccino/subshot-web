@@ -177,6 +177,8 @@ type Op =
       snapshot: BoardData;
       clickedId: string;
       onGroupTitle: boolean;
+      /** 2026-11-23: pressed on the icon of a «Seite» tile (a click on the selected tile opens the icon picker) */
+      onPageIcon?: boolean;
       /** the clicked element was already the only selected one when pressed */
       wasSelected: boolean;
       /** smart guides: the moving set's bounds at the start + what it can align to */
@@ -1165,6 +1167,7 @@ export function IdeaBoard({
   }
   const [pageDelete, setPageDelete] = useState<{ pages: PageElement[]; count: number } | null>(null);
   const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
+  const pageIconTimer = useRef<number | null>(null);
   // 2026-11-11, Lino: «Credits» — the project's AI spend (members only; data from the server)
   const creditsCtx = useContext(BoardCreditsContext);
   function addCredits(at: Point) {
@@ -3162,6 +3165,7 @@ export function IdeaBoard({
         snapshot,
         clickedId: id,
         onGroupTitle: !!target.closest("[data-group-title]"),
+        onPageIcon: !!target.closest("[data-page-icon-button]"),
         wasSelected: !duplicated && selectionRef.current.size === 1 && selectionRef.current.has(id),
         duplicated,
         videoToggle: target.closest<HTMLElement>("[data-video-toggle]"),
@@ -3553,6 +3557,18 @@ export function IdeaBoard({
         const wasSelected = op.wasSelected;
         if (!e.shiftKey && !e.metaKey && !e.ctrlKey) setSelection(new Set([op.clickedId]));
         const clickedEl = dataRef.current.elements.find((x) => x.id === op.clickedId);
+        if (pageIconTimer.current) {
+          window.clearTimeout(pageIconTimer.current);
+          pageIconTimer.current = null;
+        }
+        if (!isDouble && wasSelected && editable && clickedEl?.type === "page" && op.onPageIcon) {
+          // wait for a possible second click (that one opens the page)
+          const pid = clickedEl.id;
+          pageIconTimer.current = window.setTimeout(() => {
+            pageIconTimer.current = null;
+            setIconPickerFor(pid);
+          }, DOUBLE_CLICK_MS + 20);
+        }
         if (!isDouble && wasSelected && clickedEl?.type === "group" && op.onGroupTitle) {
           setEditingId(clickedEl.id);
           return;
@@ -4297,7 +4313,7 @@ export function IdeaBoard({
                 onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onCommitCredits={(patch) => commitCredits(el.id, patch)}
                 onCommitPageTitle={(title) => commitPageTitle(el.id, title)}
-                onPickPageIcon={editable && el.type === "page" ? () => setIconPickerFor(el.id) : undefined}
+                onPickPageIcon={editable && el.type === "page" && selected && selection.size === 1 ? () => setIconPickerFor(el.id) : undefined}
                 onOpenLightPlot={() => setLightPlotOpen(el.id)}
                 onCommitDubbing={(patch) => commitDubbing(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}

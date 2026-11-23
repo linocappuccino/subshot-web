@@ -107,6 +107,7 @@ export function PageNode({ el, editing, editable, onCommitTitle, onPickIcon }: {
   const total = info?.totalOf(el.id) ?? items.length;
   const subpages = items.filter((e) => e.type === "page").length;
   const [draft, setDraft] = useState(el.title);
+
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (editing) {
@@ -147,10 +148,10 @@ export function PageNode({ el, editing, editable, onCommitTitle, onPickIcon }: {
         <button
           type="button"
           data-page-icon-button
-          disabled={!editable || !onPickIcon}
-          onPointerDown={(e) => { if (editable && onPickIcon) e.stopPropagation(); }}
-          onClick={(e) => { e.stopPropagation(); onPickIcon?.(); }}
-          className="rounded-2xl p-2 enabled:hover:bg-white/5 disabled:cursor-default"
+          aria-disabled={!editable || !onPickIcon}
+          tabIndex={onPickIcon ? 0 : -1}
+          // a single click on the icon of the SELECTED tile opens the picker; a double click still opens the page
+          className={`rounded-2xl p-2 ${onPickIcon ? "hover:bg-white/5 cursor-pointer" : "cursor-default"}`}
           title={editable ? t("ideaBoard.page.icon") : undefined}
         >
           <PageIcon icon={el.icon} color={el.color} size={Math.max(40, Math.min(el.w, el.h) * 0.42)} />
