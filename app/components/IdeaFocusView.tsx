@@ -634,20 +634,7 @@ function IdeaBoardScreen({
         <IconButton label={t("ideaFocusView.close")} onClick={onClose}>
           <path d="M18 6 6 18M6 6l12 12" />
         </IconButton>
-        <div className="flex items-center">
-          <IconButton label={t("ideaFocusView.previousIdea")} onClick={onPrev} disabled={!hasPrev}>
-            <path d="m15 18-6-6 6-6" />
-          </IconButton>
-          {hasNext ? (
-            <IconButton label={t("ideaFocusView.nextIdea")} onClick={onNext}>
-              <path d="m9 18 6-6-6-6" />
-            </IconButton>
-          ) : (
-            <IconButton label={t("ideaFocusView.newIdea")} onClick={onCreateNext}>
-              <path d="M12 5v14M5 12h14" />
-            </IconButton>
-          )}
-        </div>
+        {/* 2026-11-23, Lino: no more jumping to the previous / next concept from inside the canvas (arrows removed) */}
         <input
           ref={titleRef}
           value={title}
