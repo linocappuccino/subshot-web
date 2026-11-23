@@ -805,7 +805,7 @@ export function IdeaBoard({
 
   /** frames a world rect in the viewport (null = the empty-board default) */
   const zoomToRect = useCallback(
-    (b: Rect | null, opts: { pad?: number; maxScale?: number; animate?: boolean } = {}) => {
+    (b: Rect | null, opts: { pad?: number; maxScale?: number; minScale?: number; animate?: boolean } = {}) => {
       const rect = viewportRef.current?.getBoundingClientRect();
       if (!rect) return;
       let next: View;
@@ -813,7 +813,7 @@ export function IdeaBoard({
         next = { scale: 1, x: rect.width / 2 - 216, y: Math.min(160, rect.height / 4) };
       } else {
         const pad = opts.pad ?? 96;
-        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), minScaleRef.current, opts.maxScale ?? 1);
+        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), Math.max(minScaleRef.current, opts.minScale ?? 0), opts.maxScale ?? 1);
         next = { scale: s, x: rect.width / 2 - (b.x + b.w / 2) * s, y: rect.height / 2 - (b.y + b.h / 2) * s };
       }
       if (opts.animate) {
@@ -969,7 +969,8 @@ export function IdeaBoard({
 
   useLayoutEffect(() => {
     if (initialView && initialView.w > 0 && initialView.h > 0) zoomToRect(initialView, { pad: 0, maxScale: MAX_SCALE });
-    else fitToContent();
+    // 2026-11-23: opening a board shows real content (≥ 10 %), not the far-zoom blocks — further out only on purpose
+    else zoomToRect(boundsOf(dataRef.current.elements), { minScale: LOD_SCALE });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitToContent]);
   useEffect(() => {
@@ -1137,7 +1138,7 @@ export function IdeaBoard({
       viewRef.current = saved;
       setView(saved);
     } else if (next.elements.length) {
-      requestAnimationFrame(() => zoomToRect(boundsOf(next.elements), { maxScale: 1 }));
+      requestAnimationFrame(() => zoomToRect(boundsOf(next.elements), { maxScale: 1, minScale: LOD_SCALE }));
     } else {
       const r = viewportRef.current?.getBoundingClientRect();
       const v = { x: r ? r.width / 2 : 0, y: r ? r.height / 3 : 0, scale: 1 };
