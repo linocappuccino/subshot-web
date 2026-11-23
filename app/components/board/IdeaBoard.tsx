@@ -5804,7 +5804,7 @@ function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
 const LOD_COLORS: Record<string, string> = {
   text: "#3f3f46", sticky: "#ca8a04", scene: "#1d4ed8", image: "#27272a", video: "#7f1d1d", moodboard: "#27272a", todo: "#065f46",
   timetable: "#4338ca", flow: "#0e7490", credits: "#6d28d9", palette: "#9d174d", location: "#166534", link: "#334155", pdf: "#991b1b",
-  file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46",
+  file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46", page: "#5b21b6",
 };
 const LOD_FONT = 11;   // px on screen
 /** nodes smaller than this on screen (px) are drawn in the single svg of rectangles (see «very far out») */
