@@ -31,7 +31,7 @@ const PEER_COLORS = ["#f43f5e", "#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#ec
 
 export type CollabStatus = "connecting" | "live" | "offline" | "off";
 export type CollabSession = { token: string; url: string; document: string; readonly: boolean; name: string; uid: string };
-export type CollabPeer = { clientId: number; name: string; color: string; cursor: { x: number; y: number } | null; selection: string[] };
+export type CollabPeer = { clientId: number; name: string; color: string; cursor: { x: number; y: number } | null; selection: string[]; page?: string | null };
 
 export function peerColor(uid: string): string {
   let h = 0;
@@ -309,7 +309,7 @@ export function useBoardCollab({
           provider.awareness?.getStates().forEach((st, clientId) => {
             const u = st.user as { name?: string; color?: string } | undefined;
             if (clientId === me || !u?.name) return;
-            list.push({ clientId, name: u.name, color: u.color ?? "#3b82f6", cursor: (st.cursor as CollabPeer["cursor"]) ?? null, selection: (st.selection as string[]) ?? [] });
+            list.push({ clientId, name: u.name, color: u.color ?? "#3b82f6", cursor: (st.cursor as CollabPeer["cursor"]) ?? null, selection: (st.selection as string[]) ?? [], page: (st.page as string | null | undefined) ?? null });
           });
           setPeers(list);
         };
@@ -342,9 +342,13 @@ export function useBoardCollab({
   // (a trailing send), so a cursor never gets stuck where it was throttled
   const lastCursor = useRef(0);
   const trailing = useRef<{ timer: number | null; value: { x: number; y: number } | null }>({ timer: null, value: null });
-  const setPresence = useCallback((p: { cursor?: { x: number; y: number } | null; selection?: string[] }) => {
+  // 2026-11-23 «Seiten»: the page I have open (cursors / selections are only shown to people on the same page)
+  const myPage = useRef<string | null>(null);
+  const setPresence = useCallback((p: { cursor?: { x: number; y: number } | null; selection?: string[]; page?: string | null }) => {
+    if (p.page !== undefined) myPage.current = p.page;
     const provider = providerRef.current;
     if (!provider || !syncedRef.current) return;
+    if (p.page !== undefined || (provider.awareness?.getLocalState()?.page ?? null) !== myPage.current) provider.setAwarenessField("page", myPage.current);
     if (p.cursor !== undefined) {
       const send = (c: { x: number; y: number } | null) => {
         lastCursor.current = performance.now();

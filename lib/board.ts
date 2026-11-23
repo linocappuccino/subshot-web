@@ -36,6 +36,8 @@ interface BaseElement {
   tags?: string[];
   /** 2026-11-11, Lino: «Ausgeblendet» — the team sees it dimmed, share / preview pages never get it */
   hidden?: boolean;
+  /** 2026-11-23, Lino: «Seiten» — id of the page node this node sits on (missing = the board itself) */
+  page?: string;
 }
 
 /** ids of hidden nodes incl. the members of hidden groups (mirrors subshot-api idea_board.hidden_ids) */
@@ -838,6 +840,12 @@ export interface DubbingTake {
   download_url?: string;
 }
 
+/** 2026-11-23, Lino: «Seite» — a node that opens its own (nested) board; nodes on it carry page = its id */
+export interface PageElement extends BaseElement {
+  type: "page";
+  title: string;
+}
+
 export interface CreditsElement extends BaseElement {
   type: "credits";
   title: string;
@@ -867,7 +875,7 @@ export interface FlowElement extends BaseElement {
   finished?: boolean;
 }
 
-export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement | DubbingElement | LightPlotElement;
+export type BoardElement = TextElement | MediaElement | LinkElement | DrawingElement | SceneElement | GroupElement | TodoElement | PaletteElement | LocationElement | StickyElement | ColorElement | MoodboardElement | PlaceholderElement | LutPreviewElement | TimetableElement | FlowElement | CreditsElement | DubbingElement | LightPlotElement | PageElement;
 
 /** a saved board template (GET /board-templates): the layout and texts of a
  * board, content replaced by placeholders (server: idea_board.make_template);
@@ -1065,6 +1073,8 @@ export interface BoardData {
 export interface BoardView {
   id: string;
   name: string;
+  /** 2026-11-23 — the page the view belongs to (missing = the board itself) */
+  page?: string;
   x: number;
   y: number;
   w: number;

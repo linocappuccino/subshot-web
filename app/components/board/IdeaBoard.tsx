@@ -28,6 +28,7 @@ import {
   type BoardElement,
   type BoardView,
   type Connector,
+  type PageElement,
   type DrawingElement,
   type GroupElement,
   type LightPlotElement,
@@ -91,6 +92,9 @@ import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
 import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, ClientDownloadButton, DownloadButton, type ClientDownload } from "./BoardDownload";
 import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
+import { BoardPagesContext, PageBreadcrumb } from "./BoardPageNode";
+import { clonePageContents, mergePage, pageDescendants, pageOf, pagePath, projectPage, type OffPage, type PageId } from "@/lib/boardPages";
+import { setUrlParams, urlParam } from "@/lib/urlState";
 import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
 
 /** 2026-10-08, Lino — Milanote-style idea board: a dotted, zoomable canvas
@@ -134,7 +138,7 @@ export type BoardImageFromUrlFn = (url: string) => Promise<{ image: false } | { 
 export type BoardPin = { id: string; elementId: string; x: number; y: number; color: string; label: string; resolved?: boolean; active?: boolean; title?: string };
 export type BoardPinAnchor = { elementId: string; x: number; y: number };
 /** 2026-10-08 — live collaboration: another person on the board */
-export type BoardPeer = { clientId: number; name: string; color: string; cursor: { x: number; y: number } | null; selection: string[] };
+export type BoardPeer = { clientId: number; name: string; color: string; cursor: { x: number; y: number } | null; selection: string[]; page?: string | null };
 export type BoardLocationMapFn = (lat: number, lng: number, style: "satellite" | "map") => Promise<{ key: string; src: string; style?: "satellite" | "map" }>;
 export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
@@ -390,9 +394,12 @@ export function IdeaBoard({
   onError,
   onNotice,
   onEscape,
+  pageUrl = true,
   className = "",
 }: {
   initial: BoardData;
+  /** 2026-11-23 «Seiten»: keep the open page in ?page= (reload / shared URL open it again) */
+  pageUrl?: boolean;
   editable: boolean;
   onChange?: (data: BoardData) => void;
   uploadFile?: BoardUploadFn;
@@ -449,7 +456,7 @@ export function IdeaBoard({
   /** live collaboration: the others' cursors and selections */
   peers?: BoardPeer[];
   /** live collaboration: my pointer (board coordinates) and selection */
-  onPresence?: (p: { cursor?: { x: number; y: number } | null; selection?: string[] }) => void;
+  onPresence?: (p: { cursor?: { x: number; y: number } | null; selection?: string[]; page?: string | null }) => void;
   /** download the ORIGINAL of a board file (key + original file name) */
   downloadFile?: (key: string, name: string) => void;
   /** 2026-11-19 — client pages: download of the nodes / groups the team allowed (see BoardClientDownloadContext) */
@@ -475,8 +482,35 @@ export function IdeaBoard({
     }
     return null;
   });
-  const [data, setData] = useState<BoardData>(() => normalizeGroups(initial));
+  // 2026-11-23, Lino: «Seiten» — the editor works on ONE page of the board (see lib/boardPages.ts): `data` is the
+  // open page, fullRef the whole board (every page) that is saved / synced
+  const [page, setPage] = useState<PageId>(() => {
+    const want = pageUrl ? urlParam("page") : null;
+    return want && initial.elements.some((e) => e.id === want && e.type === "page") ? want : null;
+  });
+  const pageRef = useRef<PageId>(page);
+  const fullRef = useRef<BoardData>(initial);
+  const graveyardRef = useRef(new Map<string, BoardElement>());
+  const offPageRef = useRef<OffPage>({});
+  const [data, setData] = useState<BoardData>(() => normalizeGroups(projectPage(initial, page)));
   const dataRef = useRef(data);
+  /** every node of every page as it is right now (the open page from the editor) */
+  const allElementsNow = useCallback(
+    () => [...fullRef.current.elements.filter((e) => pageOf(e) !== pageRef.current), ...dataRef.current.elements],
+    [],
+  );
+  const allElements = useMemo(
+    () => [...fullRef.current.elements.filter((e) => pageOf(e) !== page), ...data.elements],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, page],
+  );
+  const pagesInfo = useMemo(
+    () => ({
+      childrenOf: (id: string) => allElements.filter((e) => pageOf(e) === id),
+      totalOf: (id: string) => pageDescendants(allElements, id).size,
+    }),
+    [allElements],
+  );
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   // viewport size in CSS px (for culling far-away nodes in the iOS embed, see cullRect)
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
@@ -570,7 +604,13 @@ export function IdeaBoard({
     next = normalizeGroups(next);
     dataRef.current = next;
     setData(next);
-    if (opts.notify !== false) onChangeRef.current?.(next);
+    if (opts.notify !== false) {
+      // «Seiten»: the open page goes back into the whole board — that is what is saved / synced
+      const full = mergePage(fullRef.current, next, pageRef.current, offPageRef.current, graveyardRef.current);
+      offPageRef.current = {};
+      fullRef.current = full;
+      onChangeRef.current?.(full);
+    }
   }, []);
 
   const commit = useCallback(
@@ -601,7 +641,14 @@ export function IdeaBoard({
   useEffect(() => {
     if (!externalData) return;
     const op = opRef.current;
-    let next = externalData.data;
+    // «Seiten»: someone else's change arrives as the whole board; the open page is taken from it
+    fullRef.current = externalData.data;
+    if (pageRef.current && !externalData.data.elements.some((e) => e.id === pageRef.current && e.type === "page")) {
+      pageRef.current = null; // the open page was deleted meanwhile → back to the board
+      setPage(null);
+      if (pageUrl) setUrlParams({ page: null });
+    }
+    let next = projectPage(externalData.data, pageRef.current);
     // a drag in progress keeps its own nodes where the pointer has them
     if (op && op.kind === "move" && op.moved) {
       const mine = new Map(dataRef.current.elements.filter((el) => op.origin.has(el.id)).map((el) => [el.id, el]));
@@ -617,6 +664,14 @@ export function IdeaBoard({
   useEffect(() => {
     onPresenceRef.current?.({ selection: [...selection] });
   }, [selection]);
+  useEffect(() => {
+    onPresenceRef.current?.({ page, cursor: null });
+  }, [page]);
+  // the ?page= of this board goes when the board closes
+  useEffect(() => () => {
+    if (pageUrl && urlParam("page")) setUrlParams({ page: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function undo() {
     if (historyApiRef.current) {
@@ -750,6 +805,11 @@ export function IdeaBoard({
   const activeFocus = !focusRequest ? innerFocus : !innerFocus ? focusRequest : focusRequest.nonce > innerFocus.nonce ? focusRequest : innerFocus;
   useEffect(() => {
     if (!activeFocus) return;
+    // «Seiten»: a node on another page (feedback pin, search, timetable) → open its page first
+    if (!dataRef.current.elements.some((x) => x.id === activeFocus.elementId)) {
+      const there = allElementsNow().find((x) => x.id === activeFocus.elementId);
+      if (there) openPage(pageOf(there));
+    }
     const els = dataRef.current.elements;
     const groupId = hiddenElementIds(els).get(activeFocus.elementId);
     const el = els.find((x) => x.id === (groupId ?? activeFocus.elementId));
@@ -796,18 +856,17 @@ export function IdeaBoard({
     if (!searchOpen || (!words.length && !tagFilter.length)) return null;
     const want = tagFilter.map((x) => x.toLowerCase());
     const set = new Set<string>();
-    for (const el of data.elements) {
+    for (const el of allElements) {
       const text = elementSearchText(el).toLowerCase();
       const tags = (el.tags ?? []).map((x) => x.toLowerCase());
       if (words.every((w) => text.includes(w)) && want.every((w) => tags.includes(w))) set.add(el.id);
     }
-    for (const el of data.elements) if (el.type === "group" && el.children.some((c) => set.has(c))) set.add(el.id);
+    for (const el of allElements) if (el.type === "group" && el.children.some((c) => set.has(c))) set.add(el.id);
     return set;
-  }, [data.elements, query, tagFilter, searchOpen]);
+  }, [allElements, query, tagFilter, searchOpen]);
 
   function pickFromSearch(el: BoardElement) {
-    setSelection(new Set([el.id]));
-    setInnerFocus({ elementId: el.id, nonce: Date.now() });
+    focusAnywhere(el);
   }
 
   const allTags = useMemo(() => {
@@ -1003,6 +1062,68 @@ export function IdeaBoard({
     setTool("select");
     setSelection(new Set([el.id]));
   }
+  // 2026-11-23, Lino: «Seite» — a sub-page (its own board, double click opens it)
+  function addPage(at: Point) {
+    const w = 280;
+    const h = 200;
+    const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
+    const el: PageElement = { id: newId(), type: "page", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: t("ideaBoard.page.untitled") };
+    addElements([el]);
+    setTool("select");
+    setSelection(new Set([el.id]));
+    setEditingId(el.id);
+  }
+  function commitPageTitle(id: string, title: string) {
+    const el = dataRef.current.elements.find((e) => e.id === id);
+    setEditingId((cur) => (cur === id ? null : cur));
+    if (!el || el.type !== "page") return;
+    const next = title || el.title || t("ideaBoard.page.untitled");
+    if (next !== el.title) updateElement(id, { title: next } as Partial<BoardElement>, { history: true });
+  }
+  // «Seiten»: open a page (null = the board). Each page keeps its own view; undo starts fresh on every page.
+  const pageViews = useRef(new Map<string, View>());
+  function openPage(target: PageId) {
+    if (target === pageRef.current) return;
+    if (target && !allElementsNow().some((e) => e.id === target && e.type === "page")) return;
+    pageViews.current.set(pageRef.current ?? "", viewRef.current);
+    // the open page goes into the whole board first (a drag / edit in progress is finished)
+    fullRef.current = mergePage(fullRef.current, dataRef.current, pageRef.current, offPageRef.current, graveyardRef.current);
+    offPageRef.current = {};
+    graveyardRef.current.clear();
+    pageRef.current = target;
+    setPage(target);
+    undoStack.current = [];
+    redoStack.current = [];
+    setHistorySize({ undo: 0, redo: 0 });
+    setSelection(new Set());
+    setSelectedConnector(null);
+    setEditingId(null);
+    setMenu(null);
+    const next = normalizeGroups(projectPage(fullRef.current, target));
+    dataRef.current = next;
+    setData(next);
+    if (pageUrl) setUrlParams({ page: target });
+    const saved = pageViews.current.get(target ?? "");
+    if (saved) {
+      viewRef.current = saved;
+      setView(saved);
+    } else if (next.elements.length) {
+      requestAnimationFrame(() => zoomToRect(boundsOf(next.elements), { maxScale: 1 }));
+    } else {
+      const r = viewportRef.current?.getBoundingClientRect();
+      const v = { x: r ? r.width / 2 : 0, y: r ? r.height / 3 : 0, scale: 1 };
+      viewRef.current = v;
+      setView(v);
+    }
+  }
+  /** go to the page a node sits on, then focus it (search, timetable rows) */
+  function focusAnywhere(el: BoardElement) {
+    const pg = pageOf(el);
+    if (pg !== pageRef.current) openPage(pg);
+    setSelection(new Set([el.id]));
+    setInnerFocus({ elementId: el.id, nonce: Date.now() });
+  }
+  const [pageDelete, setPageDelete] = useState<{ pages: PageElement[]; count: number } | null>(null);
   // 2026-11-11, Lino: «Credits» — the project's AI spend (members only; data from the server)
   const creditsCtx = useContext(BoardCreditsContext);
   function addCredits(at: Point) {
@@ -1042,6 +1163,17 @@ export function IdeaBoard({
   /** sets / removes (undefined) fields of elements in one undoable step */
   function patchElements(patches: Map<string, Record<string, unknown>>) {
     if (!patches.size) return;
+    // «Seiten»: nodes on other pages (e.g. scene cards moved by «Zeiten verketten») are changed in the whole board
+    const here = new Set(dataRef.current.elements.map((e) => e.id));
+    const off = new Map([...patches].filter(([id]) => !here.has(id)));
+    if (off.size) {
+      offPageRef.current = { ...offPageRef.current, patches: new Map([...(offPageRef.current.patches ?? []), ...off]) };
+      patches = new Map([...patches].filter(([id]) => here.has(id)));
+      if (!patches.size) {
+        apply({ ...dataRef.current }, { history: dataRef.current });
+        return;
+      }
+    }
     commit((d) => ({
       ...d,
       elements: d.elements.map((e) => {
@@ -1620,11 +1752,21 @@ export function IdeaBoard({
   }
 
   // ── selection actions ─────────────────────────────────────────────────
-  function deleteSelection() {
+  function deleteSelection(confirmed = false) {
     const ids = new Set(selectionRef.current);
     // a selected group goes together with everything in it
     for (const el of dataRef.current.elements) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
     if (ids.size === 0 && !selectedConnector) return;
+    // «Seiten»: a page with something on it asks first (its contents and sub-pages go with it)
+    if (!confirmed) {
+      const pages = dataRef.current.elements.filter((e): e is PageElement => e.type === "page" && ids.has(e.id));
+      const all = allElementsNow();
+      const count = pages.reduce((n, p) => n + pageDescendants(all, p.id).size, 0);
+      if (count > 0) {
+        setPageDelete({ pages, count });
+        return;
+      }
+    }
     commit((d) => ({
       ...d,
       elements: d.elements.filter((el) => !ids.has(el.id)),
@@ -1661,7 +1803,13 @@ export function IdeaBoard({
 
   function duplicateSelection() {
     if (selectionRef.current.size === 0) return;
-    const { copies, connectorCopies, select } = cloneNodes(selectionRef.current, GRID);
+    const { copies, connectorCopies, select, mapping } = cloneNodes(selectionRef.current, GRID);
+    // «Seiten»: a duplicated page gets a copy of everything on it
+    const pageMap = new Map([...mapping].filter(([old]) => dataRef.current.elements.find((e) => e.id === old)?.type === "page"));
+    if (pageMap.size) {
+      const inside = clonePageContents({ ...fullRef.current, elements: allElementsNow() }, pageMap, newId);
+      offPageRef.current = { ...offPageRef.current, add: [...(offPageRef.current.add ?? []), ...inside.add], connectors: [...(offPageRef.current.connectors ?? []), ...inside.connectors] };
+    }
     commit((d) => ({ ...d, elements: [...d.elements, ...copies], connectors: [...d.connectors, ...connectorCopies] }));
     setSelection(select);
   }
@@ -2262,15 +2410,16 @@ export function IdeaBoard({
   // 2026-10-29: what the Timetable nodes derive their rows from (the live board)
   const timetableCtx = useMemo(
     () => ({
-      elements: data.elements,
+      elements: allElements,
       placeColorOf: (address?: string) => (address ? boardPlaces.find((p) => p.address === address)?.color ?? null : null),
       onGoTo: (id: string) => {
-        setSelection(new Set([id]));
-        setInnerFocus({ elementId: id, nonce: Date.now() });
+        const el = allElementsNow().find((e) => e.id === id);
+        if (el) focusAnywhere(el);
       },
       onPdf: timetablePdf,
     }),
-    [data.elements, boardPlaces, timetablePdf],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allElements, boardPlaces, timetablePdf],
   );
   // the place menu belongs to the selection it was opened for (another selection → closed)
   const [placeMenuFor, setPlaceMenuFor] = useState<string | null>(null);
@@ -2346,7 +2495,7 @@ export function IdeaBoard({
       w,
       h,
       z: maxZ(dataRef.current.elements) + 1,
-      number: nextSceneNumber(dataRef.current.elements),
+      number: nextSceneNumber(allElementsNow()),
       title: "",
       html: "",
     };
@@ -2368,7 +2517,7 @@ export function IdeaBoard({
       w: Math.max(312, el.w),
       h: 300,
       z: el.z,
-      number: nextSceneNumber(dataRef.current.elements),
+      number: nextSceneNumber(allElementsNow()),
       title: "",
       html: "",
       image_key: el.asset_key,
@@ -2406,7 +2555,7 @@ export function IdeaBoard({
     if (patch.timeEdit) {
       const times = editSceneTime(el, patch.timeEdit.field, patch.timeEdit.value);
       Object.assign(fields, times);
-      const all = dataRef.current.elements;
+      const all = allElementsNow();
       if (chainEnabled(all)) {
         const chain = cascadeTimes(all, id, el, { ...el, ...times }, chainSort(all));
         for (const [fid, p] of chain.patches) patches.set(fid, p);
@@ -2430,6 +2579,11 @@ export function IdeaBoard({
     if (!el || el.type !== "scene") return;
     const target = Math.max(1, el.number + delta);
     if (target === el.number) return;
+    // «Seiten»: the card that has the number may sit on another page
+    const holder = allElementsNow().find((e) => e.type === "scene" && e.number === target && e.id !== id);
+    if (holder && !dataRef.current.elements.some((e) => e.id === holder.id)) {
+      offPageRef.current = { ...offPageRef.current, patches: new Map([...(offPageRef.current.patches ?? []), [holder.id, { number: el.number }]]) };
+    }
     commit((d) => ({
       ...d,
       elements: d.elements.map((e) => {
@@ -2517,6 +2671,7 @@ export function IdeaBoard({
     { id: "text", icon: "T", label: t("ideaBoard.menu.text"), hint: "T", keywords: "text textbox schrift titel überschrift notiz text box heading" },
     { id: "sticky", icon: "🟨", label: t("ideaBoard.menu.sticky"), hint: "N", keywords: "notizzettel post-it postit zettel klebezettel notiz sticky note" },
     { id: "scene", icon: "🎬", label: t("ideaBoard.menu.scene"), hint: "S", keywords: "szene szenenkarte shot einstellung storyboard scene card" },
+    { id: "page", icon: "📄", label: t("ideaBoard.menu.page"), keywords: "seite unterseite page subpage sub-page board ordner folder bereich kapitel" },
     { id: "light_plot", icon: "💡", label: t("ideaBoard.menu.lightPlot"), keywords: "lichtplan licht light plot lighting diagram setup lampen leuchten key fill rim aputure nanlite godox kelvin" },
     { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
     ...(dubbingCtx ? [{ id: "dubbing", icon: "🎙️", label: "Live-Dubbing", keywords: "live-dubbing dubbing voice-over voiceover sprecher aufnahme mikrofon synchron übersetzung sprache vertonen" }] : []),
@@ -2546,6 +2701,7 @@ export function IdeaBoard({
       case "moodboard": return addMoodboard(at);
       case "timetable": return addTimetable(at);
       case "light_plot": return addLightPlot(at);
+      case "page": return addPage(at);
       case "flow": return addFlow(at);
       case "credits": return addCredits(at);
       case "dubbing": return addDubbing(at);
@@ -2571,6 +2727,10 @@ export function IdeaBoard({
 
 
   function activate(el: BoardElement) {
+    if (el.type === "page") {
+      openPage(el.id);
+      return;
+    }
     if (el.type === "light_plot") {
       setSelection(new Set([el.id]));
       setLightPlotOpen(el.id);
@@ -3823,6 +3983,7 @@ export function IdeaBoard({
     <BoardZoomContext.Provider value={settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
     <BoardImageZoomContext.Provider value={settledScale <= 0.3 ? 0.3 : settledScale <= 0.55 ? 0.55 : settledScale <= 1.05 ? 1 : settledScale <= 2.1 ? 2 : 4}>
     <BoardTimetableContext.Provider value={timetableCtx}>
+    <BoardPagesContext.Provider value={pagesInfo}>
     <BoardScaleContext.Provider value={viewScaleRef}>
     <div
       ref={viewportRef}
@@ -3996,6 +4157,7 @@ export function IdeaBoard({
                 canEditFlow={allowFlow}
                 onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onCommitCredits={(patch) => commitCredits(el.id, patch)}
+                onCommitPageTitle={(title) => commitPageTitle(el.id, title)}
                 onOpenLightPlot={() => setLightPlotOpen(el.id)}
                 onCommitDubbing={(patch) => commitDubbing(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
@@ -4233,7 +4395,7 @@ export function IdeaBoard({
         ))}
 
         {/* live collaboration: the others' selections + cursors (2026-10-08) */}
-        {(peers ?? []).map((peer) =>
+        {(peers ?? []).filter((peer) => (peer.page ?? null) === page).map((peer) =>
           peer.selection.map((id) => {
             const el = byId.get(hidden.get(id) ?? id);
             if (!el) return null;
@@ -4253,7 +4415,7 @@ export function IdeaBoard({
             );
           }),
         )}
-        {(peers ?? []).map((peer) =>
+        {(peers ?? []).filter((peer) => (peer.page ?? null) === page).map((peer) =>
           peer.cursor ? (
             <div
               key={`peer-cur-${peer.clientId}`}
@@ -4755,7 +4917,7 @@ export function IdeaBoard({
               <EyeOffIcon />
             </BarButton>
           )}
-          <BarButton title={t("ideaBoard.delete")} onPress={deleteSelection} danger>
+          <BarButton title={t("ideaBoard.delete")} onPress={() => deleteSelection()} danger>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
           </BarButton>
         </FloatingBar>
@@ -4807,6 +4969,7 @@ export function IdeaBoard({
                   {storyScenes.length > 1 && <MenuItem label={t("ideaBoard.menu.arrange")} onPress={() => menuAction(arrangeStoryboard)} />}
                   <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
                   <MenuItem label={`💡 ${t("ideaBoard.menu.lightPlot")}`} onPress={() => menuAction(() => addLightPlot(menu.world))} />
+                  <MenuItem label={`📄 ${t("ideaBoard.menu.page")}`} onPress={() => menuAction(() => addPage(menu.world))} />
                   {allowFlow && <MenuItem label="Frageablauf" onPress={() => menuAction(() => addFlow(menu.world))} />}
                   {creditsCtx && <MenuItem label="Credits (KI-Kosten)" onPress={() => menuAction(() => addCredits(menu.world))} />}
                   {dubbingCtx && <MenuItem label="🎙️ Live-Dubbing" onPress={() => menuAction(() => addDubbing(menu.world))} />}
@@ -4839,6 +5002,12 @@ export function IdeaBoard({
             return (
               <>
                 {!multi && (target.type === "text" || target.type === "scene") && <MenuItem label={t("ideaBoard.menu.edit")} onPress={() => menuAction(() => activate(target))} />}
+                {!multi && target.type === "page" && (
+                  <>
+                    <MenuItem label={t("ideaBoard.page.openAction")} onPress={() => menuAction(() => openPage(target.id))} />
+                    <MenuItem label={t("ideaBoard.page.rename")} onPress={() => menuAction(() => setEditingId(target.id))} />
+                  </>
+                )}
                 {!multi && target.type === "group" && (
                   <>
                     <MenuItem label={t("ideaBoard.renameGroup")} onPress={() => menuAction(() => setEditingId(target.id))} />
@@ -4994,6 +5163,9 @@ export function IdeaBoard({
               <span className="text-[15px] leading-none">🧭</span>
             </ToolButton>
           )}
+          <ToolButton title={t("ideaBoard.menu.page")} onPress={() => addPage(viewportCenterWorld())}>
+            <svg data-tool-page width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /><path d="M9 13h6M9 17h4" /></svg>
+          </ToolButton>
           <ToolButton title={t("ideaBoard.menu.lightPlot")} onPress={() => addLightPlot(viewportCenterWorld())}>
             <span className="text-[15px] leading-none">💡</span>
           </ToolButton>
@@ -5165,7 +5337,7 @@ export function IdeaBoard({
       {/* zoom */}
       {searchOpen ? (
         <BoardSearchPanel
-          elements={data.elements.filter((el) => !hidden.has(el.id))}
+          elements={allElements.filter((el) => !hidden.has(el.id))}
           query={query}
           onQuery={setQuery}
           tagFilter={tagFilter}
@@ -5304,6 +5476,33 @@ export function IdeaBoard({
       {quickAdd && (
         <BoardQuickAdd items={quickAddItems} placeholder={t("ideaBoard.quickAdd.placeholder")} emptyLabel={t("ideaBoard.quickAdd.empty")} onPick={quickAddPick} onClose={() => setQuickAdd(null)} />
       )}
+      {/* «Seiten»: where am I, one step back / jump to any level */}
+      <PageBreadcrumb path={pagePath(allElements, page)} onGo={openPage} left={editable ? 84 : 12} />
+      {pageDelete && (
+        <div data-board-ui data-page-delete-dialog className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="w-[min(420px,calc(100%-32px))] rounded-2xl bg-[#1c1c1e] border border-white/10 shadow-2xl p-5 text-white">
+            <div className="text-[16px] font-semibold mb-2">{t("ideaBoard.page.deleteTitle")}</div>
+            <p className="text-[13px] text-white/70 leading-relaxed mb-4">
+              {pageDelete.pages.length === 1
+                ? t("ideaBoard.page.deleteBody", { title: pageDelete.pages[0].title || t("ideaBoard.page.untitled"), count: pageDelete.count })
+                : t("ideaBoard.page.deleteBodyMany", { pages: pageDelete.pages.length, count: pageDelete.count })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <button data-page-delete-cancel onClick={() => setPageDelete(null)} className="h-9 px-3.5 rounded-lg bg-white/10 hover:bg-white/15 text-sm font-semibold">{t("ideaBoard.page.cancel")}</button>
+              <button
+                data-page-delete-confirm
+                onClick={() => {
+                  setPageDelete(null);
+                  deleteSelection(true);
+                }}
+                className="h-9 px-3.5 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-semibold"
+              >
+                {t("ideaBoard.page.deleteConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <BoardScenesBar
         views={data.views ?? []}
         elements={data.elements}
@@ -5330,6 +5529,7 @@ export function IdeaBoard({
       </div>
     </div>
     </BoardScaleContext.Provider>
+    </BoardPagesContext.Provider>
     </BoardTimetableContext.Provider>
     </BoardImageZoomContext.Provider>
     </BoardZoomContext.Provider>
