@@ -1,0 +1,28 @@
+talent-female-standing.glb, talent-female-sitting.glb, talent-male-standing.glb, talent-male-sitting.glb
+— the woman and the man in the Subshot light plot camera view
+
+Made from MakeHuman assets, all released under Creative Commons CC0 1.0 Universal (public domain dedication):
+  https://creativecommons.org/publicdomain/zero/1.0/
+
+Sources
+  - Base mesh «hm08» and the macro targets (caucasian young female / male, ideal proportions):
+    https://github.com/makehumancommunity/makehuman (makehuman/data/3dobjs/base.obj, makehuman/data/targets/macrodetails/…)
+    Repository LICENSE.md, section C: «These assets have been released under CC0 1.0 Universal.»
+    Section D: «As the assets have been released under CC0, there is no limitation on what you can do with this
+    combined output.» Each target file: «This asset was explicitly released as CC0 in september 2020.»
+  - «MakeHuman system assets» asset pack (makehuman_system_assets_cc0.zip):
+    https://static.makehumancommunity.org/assets/assetpacks/makehuman_system_assets.html
+    https://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip
+    Pack metadata (packs/makehuman_system_assets.json) lists each asset used here with «license: CC0»:
+      skins/young_caucasian_female2, skins/young_caucasian_male, eyes/high-poly + eyes/materials/brown,
+      eyebrows/eyebrow001, eyelashes/eyelashes01, hair/ponytail01, hair/short02,
+      clothes/female_elegantsuit01, clothes/male_casualsuit01, clothes/shoes01
+    The asset files state: «This asset was explicitly released as CC0 in september 2020.»
+    Copyright holders at the time of the CC0 release: Data Collection AB, Joel Palmius, Jonas Hauquier
+    (targets originally © 2014 Manuel Bastioni).
+
+Changes made by Subshot (2026-11-22): figures assembled with our own script (no MakeHuman program code): targets
+applied, arms lowered from the A-pose, a seated variant (hips and knees bent), clothes / hair / eyes fitted with
+the .mhclo rules, converted to metres facing +x, textures downscaled (JPEG / PNG), vertex data quantised.
+No attribution is required under CC0; this file documents the sources. MakeHuman is a trademark of its owners —
+no endorsement is implied and no MakeHuman logo is used.

@@ -1,0 +1,23 @@
+light-plot-head.glb — head of the talent in the Subshot light plot camera view
+
+Source: "Infinite, 3D Head Scan" by Lee Perry-Smith, as distributed with three.js r170
+  https://github.com/mrdoob/three.js/tree/r170/examples/models/gltf/LeePerrySmith
+Based on a work at www.triplegangers.com (Infinite-Realities, http://www.ir-ltd.net/)
+
+Licence: Creative Commons Attribution 3.0 Unported (CC BY 3.0)
+  https://creativecommons.org/licenses/by/3.0/
+
+Original licence file (LeePerrySmith_License.txt), verbatim:
+-----------------------------------------------------------------
+Creative Commons Licence
+Infinite, 3D Head Scan by Lee Perry-Smith is licensed under a Creative Commons Attribution 3.0 Unported License.
+Based on a work at www.triplegangers.com.
+Permissions beyond the scope of this license may be available at http://www.ir-ltd.net/
+Please remember: Do what you want with the files, but always mention where you got them from...
+-----------------------------------------------------------------
+
+Changes made by Subshot (2026-11-21): mesh cut at the neck (shoulders removed), converted to metres
+(chin to crown 0.23 m), rotated to face +x, centred on the head; colour map and tangent normal map embedded
+as JPEG; specular map dropped. No endorsement by the author is implied.
+
+Attribution shown in the app (camera view of the light plot) and in the How-to «Canvas node: Light plot».

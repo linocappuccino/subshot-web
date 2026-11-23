@@ -11,8 +11,9 @@ import { createPortal } from "react-dom";
 import {
   activeLook, cameraFov, emptyPlot, ITEM_SIZE, kelvinColor, kelvinRange, LIGHT_PRESETS, lpId, lpLabels, MODIFIER_BEAM, MODIFIERS, modifierText,
   newLight, plotBounds, plotOf, presetOf, ROLES, roleText, applyPreset, closeUpCamera, PORTRAIT_PRESETS, type PortraitPreset,
-  type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind,
+  CAT_LABEL, TALENT_MODELS, type ItemKind, type LightPlotData, type LpLook, type Modifier, type Role, type WallKind, BOUNCE_KINDS, BOUNCE_Z, isBounce, type LpMod, type ModKind,
 } from "@/lib/lightPlot";
+import { FABRICS, FLAG_SIZES, FRAMES, frameAspect, LENSES, RIGS, SENSORS, SQUEEZES, type FabricKey, type FixtureCat, type FlagSize, type FrameKey, type LensKey, type SensorKey } from "@/lib/lightCatalog";
 import type { LightPlotElement } from "@/lib/board";
 import { useLanguage } from "@/lib/i18n";
 import { LightPlotDrawing, PX } from "./LightPlotDrawing";
@@ -73,6 +74,7 @@ export function LightPlotEditor({
   const [camView, setCamView] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const view3d = useRef<LightPlot3DHandle>(null);
+  const [meterLux, setMeterLux] = useState(0);
   const svgRef = useRef<SVGSVGElement>(null);
   const exportRef = useRef<SVGSVGElement>(null);
   const pointers = useRef(new Map<number, Pt>());
@@ -328,8 +330,8 @@ export function LightPlotEditor({
   const addPerson = (kind: "talent" | "camera") => {
     const c = center();
     const p = kind === "camera"
-      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, sensor: "s35" as const, z: 1.5, tilt: 0 }
-      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.75 };
+      ? { id: lpId(), kind, x: c.x, y: c.y + 2, rot: -90, name: "", body: "", kelvin: 5600, lens_mm: 35, lens: "p35" as const, sensor: "ff" as const, fstop: 2.8, iso: 800, shutter: 50, rig: "tripod" as const, z: 1.5, tilt: 0 }
+      : { id: lpId(), kind, x: c.x, y: c.y, rot: 90, name: "", pose: "standing" as const, height_m: 1.7, model: "female" as const };
     add({ ...plot, people: [...plot.people, p] }, p.id);
   };
   const addLight = (preset: string) => {
@@ -343,8 +345,23 @@ export function LightPlotEditor({
     add(setLook((lk) => ({ ...lk, lights: [...lk.lights, li] })), li.id);
     setLibOpen(false);
   };
-  const addMod = (kind: "flag" | "diffusion") => {
+  const addMod = (kind: ModKind) => {
     const c = center();
+    if (BOUNCE_KINDS.includes(kind)) {
+      // v4 bounce object: 1 m from the talent on the side away from the key (the shadow side), facing the talent
+      const t = plot.people.find((p) => p.kind === "talent");
+      const key = look.lights.find((l) => l.role === "key") ?? look.lights[0];
+      const tx = t?.x ?? c.x, ty = t?.y ?? c.y;
+      const away = key ? Math.atan2(ty - key.y, tx - key.x) : 0;
+      const half = (kind === "reflector" ? 0.8 : kind === "vflat" ? 1.2 : 0.5) / 2;
+      const d = kind === "vflat" ? 1.3 : 1.0;
+      const mx = tx + d * Math.cos(away), my = ty + d * Math.sin(away);
+      const px = -Math.sin(away) * half, py = Math.cos(away) * half;
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      const m: LpMod = { id: lpId(), kind, x1: r2(mx - px), y1: r2(my - py), x2: r2(mx + px), y2: r2(my + py), label: "", surface: "white", z: BOUNCE_Z[kind] };
+      add(setLook((lk) => ({ ...lk, mods: [...lk.mods, m] })), m.id);
+      return;
+    }
     const m = { id: lpId(), kind, x1: c.x - 0.6, y1: c.y - 1.5, x2: c.x + 0.6, y2: c.y - 1.5, label: "" };
     add(setLook((lk) => ({ ...lk, mods: [...lk.mods, m] })), m.id);
   };
@@ -502,7 +519,8 @@ export function LightPlotEditor({
   const one = selected.size === 1 ? findObj(plot, [...selected][0]) : null;
   const vb = useMemo(() => plotBounds(plot, 1.2), [plot]);
   const legendW = 4.6;
-  const exportH = Math.max(vb.h, 1.2 + look.lights.length * 0.42);
+  const exportTalents = plot.people.filter((p) => p.kind === "talent");
+  const exportH = Math.max(vb.h, 1.2 + look.lights.length * 0.42 + exportTalents.length * 0.3);
 
   const grid = useMemo(() => {
     const step = PX * (view.k < 0.25 ? 5 : 1);
@@ -587,6 +605,9 @@ export function LightPlotEditor({
               <button data-lp-add="light" title={L.library} onClick={() => setLibOpen((v) => !v)} className={`w-9 h-9 rounded-lg text-[15px] ${libOpen ? "bg-white/15" : "text-white/80 hover:bg-white/10"}`}>💡</button>
               <button data-lp-add="flag" title={L.flag} onClick={() => addMod("flag")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">▬</button>
               <button data-lp-add="diffusion" title={L.diffusion} onClick={() => addMod("diffusion")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">┅</button>
+              <button data-lp-add="reflector" title={L.reflector} onClick={() => addMod("reflector")} className="w-9 h-9 rounded-lg text-[15px] font-bold text-white/80 hover:bg-white/10">◐</button>
+              <button data-lp-add="vflat" title={L.vflat} onClick={() => addMod("vflat")} className="w-9 h-9 rounded-lg text-[14px] font-bold text-white/80 hover:bg-white/10">▯</button>
+              <button data-lp-add="card" title={L.card} onClick={() => addMod("card")} className="w-9 h-9 rounded-lg text-[13px] font-bold text-white/80 hover:bg-white/10">▭</button>
               <button data-lp-add="set" title={L.set} onClick={() => setSetOpen((v) => !v)} className={`w-9 h-9 rounded-lg text-[15px] ${setOpen ? "bg-white/15" : "text-white/80 hover:bg-white/10"}`}>🛋</button>
               {uploadFile && <button data-lp-add="photo" title={L.photo} onClick={pickPhoto} className="w-9 h-9 rounded-lg text-[15px] text-white/80 hover:bg-white/10">🗺</button>}
             </>
@@ -609,10 +630,13 @@ export function LightPlotEditor({
           {libOpen && editable && (
             <div data-lp-library className="absolute left-3 top-3 z-20 w-72 max-h-[70%] overflow-y-auto rounded-xl bg-[#1c1c1e] border border-white/12 shadow-2xl p-2">
               <div className="px-1 pb-1 text-[11px] uppercase tracking-wider text-white/45">{L.library}</div>
-              {[...new Set(LIGHT_PRESETS.map((p) => p.brand))].map((brand) => (
-                <div key={brand} className="mb-1">
-                  <div className="px-1 text-[11px] font-semibold text-white/55">{brand}</div>
-                  {LIGHT_PRESETS.filter((p) => p.brand === brand).map((p) => (
+              {/* v4: generic types grouped by category first, then the brand models */}
+              {[...CAT_ORDER.map((c) => ({ key: c, title: L[CAT_LABEL[c]], items: LIGHT_PRESETS.filter((p) => p.cat === c) })),
+                ...[...new Set(LIGHT_PRESETS.filter((p) => !p.cat).map((p) => p.brand))].map((brand) => ({ key: brand, title: brand, items: LIGHT_PRESETS.filter((p) => !p.cat && p.brand === brand) }))]
+                .filter((g) => g.items.length).map((grp) => (
+                <div key={grp.key} className="mb-1">
+                  <div className="px-1 text-[11px] font-semibold text-white/55">{grp.title}</div>
+                  {grp.items.map((p) => (
                     <button key={p.name} data-lp-preset={p.name} onClick={() => addLight(p.name)} className="w-full text-left px-2 py-1 rounded-md text-[12px] hover:bg-white/10 flex items-center gap-2">
                       <span className="w-2.5 h-2.5 rounded-full" style={{ background: kelvinColor(p.k[0]) }} />
                       {p.name}
@@ -687,6 +711,16 @@ export function LightPlotEditor({
                   onChange={(e) => setPlot({ ...plot, view: { ...plot.view, exposure: +e.target.value } })} onPointerUp={() => save(plotRef.current)} className="w-24" />
                 <span className="w-8 text-white/50">{(plot.view.exposure ?? 0) > 0 ? "+" : ""}{plot.view.exposure ?? 0}</span>
               </label>
+              {/* v4: auto exposure = a spot meter on the face; the slider is then an offset */}
+              <label className="flex items-center gap-1 text-[12px] text-white/70 whitespace-nowrap">
+                <input data-lp-auto-exposure type="checkbox" checked={plot.view.auto_exposure !== false} disabled={!editable}
+                  onChange={(e) => commit({ ...plot, view: { ...plot.view, auto_exposure: e.target.checked } })} />{L.autoExposure}
+              </label>
+              {meterLux > 0 && (
+                <span data-lp-meter className="text-[11px] text-white/50 whitespace-nowrap" title="ISO 800 · 1/50 s">
+                  {L.metered}: {meterLux >= 1000 ? `${(meterLux / 1000).toFixed(1)} klx` : `${Math.round(meterLux)} lx`} ≈ f/{fStop(meterLux)}
+                </span>
+              )}
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
                 {editable && plot.people.some((p) => p.kind === "talent") && (
                   <button data-lp-closeup onClick={() => commit(closeUpCamera(plot, one?.type === "person" && (one.obj as { kind?: string }).kind === "talent" ? one.obj.id : undefined))}
@@ -699,7 +733,7 @@ export function LightPlotEditor({
               </div>
             </div>
             <div className="flex-1 min-h-0">
-              <LightPlot3D ref={view3d} plot={plot} look={look} cam={viewCam} L={L} />
+              <LightPlot3D ref={view3d} plot={plot} look={look} cam={viewCam} L={L} onMeter={setMeterLux} />
             </div>
             {notice && <div className="absolute left-1/2 -translate-x-1/2 bottom-3 rounded-lg bg-black/80 px-3 py-1.5 text-[12px] text-white">{notice}</div>}
           </div>
@@ -717,6 +751,9 @@ export function LightPlotEditor({
             <div className="p-3 border-b border-white/10 space-y-2" data-lp-room>
               <div className="text-[11px] uppercase tracking-wider text-white/45">{L.room}</div>
               <Num label={L.wallHeight} value={plot.room.height ?? 2.6} min={2} max={8} step={0.1} onChange={(v) => commit({ ...plot, room: { ...plot.room, height: v } })} />
+              <label className="flex items-center justify-between text-[11px] text-white/55">{L.wallColor}
+                <input data-lp-wall-color type="color" value={plot.room.wall_color ?? "#d8d2c6"} onChange={(e) => commit({ ...plot, room: { ...plot.room, wall_color: e.target.value } })} className="w-10 h-7 bg-transparent" />
+              </label>
             </div>
           )}
           {plot.room.bg && editable && !one && (
@@ -740,8 +777,18 @@ export function LightPlotEditor({
                 </span>
               </button>
             ))}
+            {look.mods.filter(isBounce).map((m) => (
+              <button key={m.id} data-lp-fixture-bounce onClick={() => setSelected(new Set([m.id]))}
+                className={`w-full text-left flex gap-2 items-center rounded-lg px-2 py-1 mb-1 ${selected.has(m.id) ? "bg-blue-600/25" : "hover:bg-white/5"}`}>
+                <span className="w-5 h-5 shrink-0 rounded-full border border-white/30" style={{ background: { white: "#f4f4f5", silver: "#a1a1aa", gold: "#d4a72c", black: "#09090b", sunfire: "#d9b15c", ultrabounce: "#fafafa", poly: "#e7e5e4" }[m.surface ?? "white"] }} />
+                <span className="text-[11px] text-white/70 truncate">{m.label || L[m.kind]} · {L[m.surface ?? "white"]} · {Math.hypot(m.x2 - m.x1, m.y2 - m.y1).toFixed(1)} m</span>
+              </button>
+            ))}
+            {plot.people.filter((p) => p.kind === "talent").map((p) => (
+              <div key={p.id} data-lp-fixture-talent className="mt-2 text-[11px] text-white/55">🧍 {p.name || L.talent} · {L[p.model ?? "scan"]} · {(p.height_m ?? 1.75).toFixed(2)} m · {p.pose === "sitting" ? L.sitting : L.standing}</div>
+            ))}
             {plot.people.filter((p) => p.kind === "camera").map((p) => (
-              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {p.lens_mm} mm ({Math.round(cameraFov(p.lens_mm, p.sensor))}°) · {p.kelvin} K</div>
+              <div key={p.id} className="mt-2 text-[11px] text-white/55">🎥 {p.name || L.camera}{p.body ? ` · ${p.body}` : ""} · {L[`sn_${(p.sensor ?? "s35") as SensorKey}`]} · {p.lens_mm} mm{p.squeeze && p.squeeze > 1 ? ` ${p.squeeze}× ana` : ""} ({Math.round(cameraFov(p.lens_mm, p.sensor, p.squeeze))}°){p.fstop ? ` · f/${p.fstop}` : ""} · {p.kelvin} K{p.rig ? ` · ${L[p.rig]}` : ""}</div>
             ))}
           </div>
         </div>
@@ -761,6 +808,11 @@ export function LightPlotEditor({
               <text x={34} y={-6} fontSize={16} fontWeight={600} fill="#fff">{li.name}</text>
               <text x={34} y={13} fontSize={13} fill="rgba(255,255,255,0.6)">{`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}% · ${modifierText(L, li)} ${li.beam}°`}</text>
             </g>
+          ))}
+          {exportTalents.map((p, i) => (
+            <text key={p.id} y={70 + look.lights.length * 42 + 10 + i * 30} fontSize={14} fill="rgba(255,255,255,0.7)">
+              {`${p.name || L.talent} · ${L[p.model ?? "scan"]} · ${(p.height_m ?? 1.75).toFixed(2)} m · ${p.pose === "sitting" ? L.sitting : L.standing}`}
+            </text>
           ))}
         </g>
       </svg>
@@ -834,14 +886,33 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
           <>
             {text("body", L.body)}
             <Num label={`${L.wb} K`} value={Number(o.kelvin ?? 5600)} min={2000} max={10000} step={100} disabled={!editable} onChange={(v) => onPatch({ kelvin: v })} />
-            <Num label={`${L.lens} mm`} value={Number(o.lens_mm ?? 35)} min={8} max={200} disabled={!editable} onChange={(v) => onPatch({ lens_mm: v })} />
-            {sel("sensor", L.sensor, [["s35", "Super 35"], ["ff", "Full Frame"]])}
+            {/* v4 camera catalogue: sensor class, lens preset (zoom range / prime), focal length, anamorphic, aperture / ISO / shutter, rig */}
+            {sel("sensor", L.sensor, (Object.keys(SENSORS) as SensorKey[]).map((k) => [k, L[`sn_${k}`]] as [string, string]))}
+            <label className="block text-[11px] text-white/55">{L.lensPreset}
+              <select data-lp-lens value={String(o.lens ?? "")} disabled={!editable} className={field}
+                onChange={(e) => { const k = e.target.value as LensKey | ""; if (!k) return onPatch({ lens: undefined }); const ln = LENSES[k];
+                  const mm = Math.min(ln.max, Math.max(ln.min, Number(o.lens_mm ?? 35))); onPatch({ lens: k, lens_mm: k === "phone" ? (String(o.sensor).startsWith("phone") ? mm : 6.9) : ln.min === ln.max ? ln.min : mm, fstop: Math.max(ln.f, Number(o.fstop ?? ln.f)) }); }}>
+                <option value="">—</option>
+                {(Object.keys(LENSES) as LensKey[]).map((k) => <option key={k} value={k}>{LENSES[k].label}</option>)}
+              </select>
+            </label>
+            {(() => { const ln = o.lens ? LENSES[o.lens as LensKey] : null; return (
+              <Num label={`${L.lens} mm`} value={Number(o.lens_mm ?? 35)} min={ln ? ln.min : 1} max={ln ? ln.max : 1200} step={ln?.min === ln?.max && ln ? 1 : 0.1} disabled={!editable || (!!ln && ln.min === ln.max)} onChange={(v) => onPatch({ lens_mm: v })} />
+            ); })()}
+            {sel("squeeze", L.squeeze, SQUEEZES.map((q) => [String(q), q === 1 ? L.spherical : `${q}× ${L.anamorphic}`] as [string, string]))}
+            <div className="text-[11px] text-white/45">{Math.round(cameraFov(Number(o.lens_mm ?? 35), (o.sensor as SensorKey) ?? "s35", Number(o.squeeze ?? 1)))}° · {frameAspect((o.sensor as SensorKey) ?? "s35", Number(o.squeeze ?? 1)).toFixed(2)}:1</div>
+            <Num label={`${L.aperture} (f/)`} value={Number(o.fstop ?? 2.8)} min={o.lens ? LENSES[o.lens as LensKey].f : 0.7} max={32} step={0.1} disabled={!editable} onChange={(v) => onPatch({ fstop: v })} />
+            <Num label="ISO" value={Number(o.iso ?? 800)} min={25} max={51200} step={100} disabled={!editable} onChange={(v) => onPatch({ iso: v })} />
+            <Num label={`${L.shutter} (1/x s)`} value={Number(o.shutter ?? 50)} min={1} max={8000} disabled={!editable} onChange={(v) => onPatch({ shutter: v })} />
+            {sel("rig", L.rig, RIGS.map((r) => [r, L[r]] as [string, string]))}
             <Num label={L.height} value={Number(o.z ?? 1.5)} min={0.2} max={5} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
             <Num label={L.tilt} value={Number(o.tilt ?? 0)} min={-45} max={45} disabled={!editable} onChange={(v) => onPatch({ tilt: v })} />
           </>
         )}
         {o.kind === "talent" && (
           <>
+            {/* 2026-11-22: woman / man (MakeHuman) or the man with the head scan */}
+            {sel("model", L.figure, TALENT_MODELS.map((m) => [m, L[m]] as [string, string]))}
             {sel("pose", L.pose, [["standing", L.standing], ["sitting", L.sitting]])}
             <Num label={L.bodyHeight} value={Number(o.height_m ?? 1.75)} min={0.9} max={2.2} step={0.05} disabled={!editable} onChange={(v) => onPatch({ height_m: v })} />
             {editable && onPreset && (
@@ -878,9 +949,61 @@ function Props({ L, one, plot, editable, onPatch, onDelete, onPreset }: {
   } else if (one.type === "label") {
     body = text("text", L.label);
   } else if (one.type === "mod") {
+    const m = o as unknown as LpMod;
+    const len = Math.hypot(m.x2 - m.x1, m.y2 - m.y1);
+    // reflector sizes: keep the centre, set the diameter (= segment length)
+    const sized = (d: number) => {
+      const cx = (m.x1 + m.x2) / 2, cy = (m.y1 + m.y2) / 2, ux = (m.x2 - m.x1) / (len || 1), uy = (m.y2 - m.y1) / (len || 1);
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      return { x1: r2(cx - (ux * d) / 2), y1: r2(cy - (uy * d) / 2), x2: r2(cx + (ux * d) / 2), y2: r2(cy + (uy * d) / 2) };
+    };
+    const resize = (d: number) => onPatch(sized(d));
     body = (
       <>
-        {sel("kind", "", [["flag", L.flag], ["diffusion", L.diffusion]])}
+        {sel("kind", "", ([["flag", L.flag], ["diffusion", L.diffusion], ["reflector", L.reflector], ["vflat", L.vflat], ["card", L.card]] as [string, string][]))}
+        {isBounce(m) && (
+          <>
+            {sel("surface", L.surface, (["white", "silver", "gold", "sunfire", "ultrabounce", "poly", "black"] as const).map((k) => [k, L[k]]))}
+            {m.kind === "reflector" && (
+              <label className="block text-[11px] text-white/55">{L.size}
+                <select data-lp-reflector-size value={Math.abs(len - 1.1) < 0.05 ? "1.1" : Math.abs(len - 0.8) < 0.05 ? "0.8" : ""} disabled={!editable} onChange={(e) => e.target.value && resize(+e.target.value)}
+                  className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none">
+                  <option value="">{len.toFixed(2)} m</option><option value="0.8">80 cm</option><option value="1.1">110 cm</option>
+                </select>
+              </label>
+            )}
+            <Num label={L.centerHeight} value={Number(m.z ?? BOUNCE_Z[m.kind] ?? 1.2)} min={0.1} max={6} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
+            <div className="text-[11px] text-white/55">{len.toFixed(2)} m</div>
+          </>
+        )}
+        {/* v4 catalogue: frame size + fabric for diffusion, size + cloth for flags, and their centre height */}
+        {m.kind === "diffusion" && (
+          <>
+            <label className="block text-[11px] text-white/55">{L.frame}
+              <select data-lp-frame value={m.frame ?? ""} disabled={!editable} className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none"
+                onChange={(e) => { const k = e.target.value as FrameKey | ""; onPatch(k ? { ...sized(FRAMES[k]), frame: k } : { frame: undefined }); }}>
+                <option value="">{len.toFixed(1)} m</option>
+                {(Object.keys(FRAMES) as FrameKey[]).map((k) => <option key={k} value={k}>{k.replace("x", "×")} ({FRAMES[k]} m)</option>)}
+              </select>
+            </label>
+            {sel("fabric", L.fabric, (Object.keys(FABRICS) as FabricKey[]).map((k) => [k, L[k === "grid" ? "gridFull" : k]] as [string, string]))}
+          </>
+        )}
+        {m.kind === "flag" && (
+          <>
+            <label className="block text-[11px] text-white/55">{L.flagSize}
+              <select data-lp-flag-size value={m.size ?? ""} disabled={!editable} className="w-full mt-0.5 h-8 rounded-md bg-white/5 border border-white/10 px-2 text-[12px] text-white outline-none"
+                onChange={(e) => { const k = e.target.value as FlagSize | ""; onPatch(k ? { ...sized(FLAG_SIZES[k][0]), size: k } : { size: undefined }); }}>
+                <option value="">{len.toFixed(1)} m</option>
+                {([["18x24", "18×24″"], ["24x36", "24×36″"], ["floppy", "Floppy 4×4"], ["cutter", "Cutter 10×42″"]] as [FlagSize, string][]).map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+              </select>
+            </label>
+            {sel("cloth", L.cloth, [["solid", L.solid], ["duvetyne", L.duvetyne]])}
+          </>
+        )}
+        {(m.kind === "diffusion" || m.kind === "flag") && (
+          <Num label={L.centerHeight} value={Number(m.z ?? (m.kind === "flag" ? 1.75 : 1.5))} min={0.1} max={6} step={0.05} disabled={!editable} onChange={(v) => onPatch({ z: v })} />
+        )}
         {text("label", L.label)}
       </>
     );
@@ -917,3 +1040,14 @@ function makePdf(jpg: Uint8Array, w: number, h: number): Blob {
 }
 
 export { emptyPlot };
+
+/** v4: the f-stop an incident meter would give for `lux` at ISO 800, 1/50 s (N² = E·S·t / C, C = 250), rounded to a
+ * third-stop scale value */
+function fStop(lux: number) {
+  const n = Math.sqrt((lux * 800 * (1 / 50)) / 250);
+  const scale = [1, 1.1, 1.2, 1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22, 25, 29, 32];
+  return scale.reduce((a, b) => (Math.abs(Math.log(b / n)) < Math.abs(Math.log(a / n)) ? b : a));
+}
+
+// v4 library order of the generic categories
+const CAT_ORDER: FixtureCat[] = ["fresnel", "hmi", "cob", "par", "profile", "panel", "mat", "bank", "tube", "space", "practical", "small", "sun"];

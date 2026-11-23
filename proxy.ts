@@ -46,6 +46,12 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server
 // URL configured), so the page itself sends signed-out visitors to /sign-in and back.
 const isPublicRoute = createRouteMatcher([
   "/", "/.well-known(.*)", "/impressum", "/datenschutz", "/agb", "/sign-in(.*)", "/sign-up(.*)", "/devlog(.*)", "/how-to(.*)", "/preview(.*)", "/preview-ideas(.*)", "/preview-scenes(.*)", "/deliver(.*)", "/dubbing(.*)", "/embed/auth(.*)", "/embed/warm(.*)", "/icon", "/oauth/consent(.*)",
+  // 2026-11-22 (light plot v4, Lino «glb freigeben»): exactly the talent head model + its licence text — guests on share
+  // links render the camera view too; every other file under /models stays behind the login
+  "/models/light-plot-head.glb", "/models/LICENSE-human.txt",
+  // 2026-11-22 (Lino «Frau/Mann live»): exactly the four woman / man figures + their licence text, same reason
+  "/models/talent-female-standing.glb", "/models/talent-female-sitting.glb", "/models/talent-male-standing.glb", "/models/talent-male-sitting.glb",
+  "/models/LICENSE-makehuman.txt",
 ]);
 
 // 2026-11-17 (PostFinance-Webfilter) — guest pages never touch Clerk: no middleware handshake, and the root

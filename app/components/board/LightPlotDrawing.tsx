@@ -5,7 +5,7 @@
 // data-lp-id / data-lp-part handles for dragging). Pure render, no state.
 
 import { useId } from "react";
-import { cameraFov, kelvinColor, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
+import { cameraFov, kelvinColor, modText, roleText, type LightPlotData, type LpLabels, type LpLight, type LpLook } from "@/lib/lightPlot";
 import { CameraSymbol, ItemSymbol, LightSymbol, ModSymbol, TalentSymbol } from "./LightPlotSymbols";
 
 export const PX = 100;
@@ -60,17 +60,17 @@ export function LightPlotDrawing({
       const text = p.kind === "camera" ? [p.name || L.camera, p.lens_mm ? `${p.lens_mm} mm` : "", p.kelvin ? `${p.kelvin} K` : ""].filter(Boolean).join(" · ") : p.name || L.talent;
       entries.push({ id: p.id, x: p.x * PX, y: p.y * PX + (p.kind === "camera" ? 64 : 50), text, size: font * 0.85 });
     }
-    if (!lite) for (const li of look.lights) entries.push({ id: li.id, x: li.x * PX, y: li.y * PX + 54, text: `${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`, size: font * 0.8 });
+    if (!lite) for (const li of look.lights) entries.push({ id: li.id, x: li.x * PX, y: li.y * PX + 54, text: lightLabel(L, li), size: font * 0.8 });
     const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
     const out = new Map<string, number>();
     for (const e of entries) {
-      const w = e.text.length * e.size * 0.56;
+      const w = e.text.length * e.size * 0.6 + 8;   // v4: a little wider (no touching) and more rows to step into
       let y = e.y;
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < 8; k++) {
         const box = { x0: e.x - w / 2, x1: e.x + w / 2, y0: y - e.size, y1: y + e.size * 0.2 };
         if (!placed.some((b) => box.x0 < b.x1 && box.x1 > b.x0 && box.y0 < b.y1 && box.y1 > b.y0)) { placed.push(box); break; }
         y += e.size * 1.25;
-        if (k === 5) placed.push({ x0: e.x - w / 2, x1: e.x + w / 2, y0: y - e.size, y1: y + e.size * 0.2 });
+        if (k === 7) placed.push({ x0: e.x - w / 2, x1: e.x + w / 2, y0: y - e.size, y1: y + e.size * 0.2 });
       }
       out.set(e.id, y);
     }
@@ -156,10 +156,10 @@ export function LightPlotDrawing({
         return (
           <g key={m.id}>
             <g data-lp-id={m.id} data-lp-part="body" style={editable ? { cursor: "move" } : undefined}>
-              <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} />
+              <ModSymbol kind={m.kind} x1={x1} y1={y1} x2={x2} y2={y2} sel={sel(m.id)} surface={m.surface} />
               <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="transparent" strokeWidth={22} />
             </g>
-            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{m.label || L[m.kind]}</text>}
+            {view.labels && <text x={(x1 + x2) / 2} y={(y1 + y2) / 2 - 14} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.65)" pointerEvents="none">{modText(L, m)}</text>}
             {h(m.id, "p1", x1, y1)}
             {h(m.id, "p2", x2, y2)}
           </g>
@@ -173,7 +173,7 @@ export function LightPlotDrawing({
       {plot.people.map((p) => {
         const x = p.x * PX, y = p.y * PX, s = sel(p.id);
         if (p.kind === "camera") {
-          const fov = cameraFov(p.lens_mm, p.sensor);
+          const fov = cameraFov(p.lens_mm, p.sensor, Number(p.squeeze ?? 1));
           const len = 5.5 * PX;
           const a1 = deg(p.rot - fov / 2), a2 = deg(p.rot + fov / 2);
           return (
@@ -213,7 +213,7 @@ export function LightPlotDrawing({
             <text x={x - 30} y={y - 25} textAnchor="middle" fontSize={15} fontWeight={700} fill="#fff" pointerEvents="none">{i + 1}</text>
             {view.labels && !lite && (
               <text x={x} y={labelY.get(li.id) ?? y + 54} textAnchor="middle" fontSize={font * 0.8} fill="rgba(255,255,255,0.75)" pointerEvents="none">
-                {`${roleText(L, li)} · ${li.kelvin} K · ${li.intensity}%`}
+                {lightLabel(L, li)}
               </text>
             )}
             {rotKnob(li.id, x, y, li.rot, 80)}
@@ -222,4 +222,11 @@ export function LightPlotDrawing({
       })}
     </g>
   );
+}
+
+/** v4: the plan label of a light — role (or, for an unnamed custom role, the fixture name without its bracket note),
+ * Kelvin and intensity; kept short so neighbouring labels fit */
+function lightLabel(L: LpLabels, li: LpLight) {
+  const who = li.role === "custom" && !li.role_label ? li.name.replace(/\s*\([^)]*\)\s*$/, "") : roleText(L, li);
+  return `${who} · ${li.kelvin} K${li.intensity < 100 ? ` · ${li.intensity}%` : ""}`;
 }
