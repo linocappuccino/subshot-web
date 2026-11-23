@@ -92,7 +92,7 @@ import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
 import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, ClientDownloadButton, DownloadButton, type ClientDownload } from "./BoardDownload";
 import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
-import { BoardPagesContext, DEFAULT_PAGE_COLOR, DEFAULT_PAGE_ICON, PageBreadcrumb, PageIconPicker } from "./BoardPageNode";
+import { BoardPagesContext, DEFAULT_PAGE_COLOR, DEFAULT_PAGE_ICON, PageBreadcrumb, PageIcon, PageIconPicker } from "./BoardPageNode";
 import { clonePageContents, mergePage, pageDescendants, pageOf, pagePath, projectPage, type OffPage, type PageId } from "@/lib/boardPages";
 import { setUrlParams, urlParam } from "@/lib/urlState";
 import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
@@ -4247,7 +4247,7 @@ export function IdeaBoard({
               {dots.map((el) => {
                 const e = el as BoardElement & { color?: string };
                 const w = Math.max(el.w, 1 / view.scale), h = Math.max(el.h, 1 / view.scale);
-                const fill = el.type === "color" && e.color ? e.color : LOD_COLORS[el.type] ?? "#3f3f46";
+                const fill = el.type === "palette" ? ((el as unknown as { colors?: string[] }).colors?.[0] ?? "#232325") : el.type === "page" ? ((el as PageElement).color || DEFAULT_PAGE_COLOR) : lodLook(el).bg;
                 // 2026-11-23 (Lino: «Bilder werden nicht mehr dargestellt»): images, videos, scene cards and
                 // moodboards show their preview here too, not a dark rectangle
                 const pic = lodPreview(el);
@@ -5943,11 +5943,44 @@ function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
 /** 2026-11-21 — a node seen from far away (zoom < 10 %): a light block in the node's colour; images / videos / scene
  * cards show their 96-px preview (tiny_src, made by the server on first request — a few KB each, so even 100 of them
  * stay tiny in memory); the title only when it fits completely (no «v…» stubs) */
-const LOD_COLORS: Record<string, string> = {
-  text: "#3f3f46", sticky: "#ca8a04", scene: "#1d4ed8", image: "#27272a", video: "#7f1d1d", moodboard: "#27272a", todo: "#065f46",
-  timetable: "#4338ca", flow: "#0e7490", credits: "#6d28d9", palette: "#9d174d", location: "#166534", link: "#334155", pdf: "#991b1b",
-  file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46", page: "#5b21b6",
-};
+/** 2026-11-23 (Lino: «beim Herauszoomen werden Sachen einfach blau / violett dargestellt — das darf nicht sein»):
+ *  seen from far away every node keeps the look of its real card — its background, border and a simplified
+ *  inside (text lines, table rows, check boxes, colour swatches, its picture) — never a plain colour area. */
+type LodLook = { bg: string; border?: string; lines?: "text" | "rows" | "todo" | "boxes"; ink: string; header?: boolean; icon?: string };
+function lodLook(el: BoardElement): LodLook {
+  const e = el as BoardElement & { color?: string; hex?: string };
+  switch (el.type) {
+    case "text": {
+      const st = TEXT_COLOR_STYLES[(e.color as keyof typeof TEXT_COLOR_STYLES) ?? "default"] ?? TEXT_COLOR_STYLES.default;
+      return { bg: st.bg === "transparent" ? "rgba(0,0,0,0)" : st.bg, border: st.border, lines: "text", ink: st.fg + "55" };
+    }
+    case "sticky": return { bg: STICKY_STYLES[(e.color as keyof typeof STICKY_STYLES) ?? "yellow"]?.paper ?? "#fff383", lines: "text", ink: "rgba(31,26,10,0.28)" };
+    case "scene": return { bg: "#1c1c1e", border: "rgba(255,255,255,0.12)", lines: "text", header: true, ink: "rgba(255,255,255,0.16)" };
+    case "timetable": return { bg: "#1d1d1f", border: "rgba(255,255,255,0.10)", lines: "rows", header: true, ink: "rgba(255,255,255,0.10)" };
+    case "todo": return { bg: "#1c1c1e", border: "rgba(255,255,255,0.12)", lines: "todo", header: true, ink: "rgba(255,255,255,0.18)" };
+    case "credits": return { bg: "#1d2420", border: "rgba(52,211,153,0.3)", lines: "rows", header: true, ink: "rgba(255,255,255,0.10)" };
+    case "flow": return { bg: "#1f2026", border: "rgba(129,140,248,0.3)", lines: "boxes", header: true, ink: "rgba(129,140,248,0.25)" };
+    case "dubbing": return { bg: "#1c1c1e", border: "rgba(255,255,255,0.12)", lines: "rows", header: true, ink: "rgba(255,255,255,0.10)", icon: "🎙️" };
+    case "light_plot": return { bg: "#1c1c1e", border: "rgba(255,255,255,0.12)", header: true, ink: "rgba(255,255,255,0.12)", icon: "💡" };
+    case "page": return { bg: "#1f1f23", border: "rgba(255,255,255,0.12)", ink: "rgba(255,255,255,0.12)" };
+    case "color": return { bg: e.hex || "#52525b", ink: "transparent" };
+    case "pdf": return { bg: "#232325", border: "rgba(255,255,255,0.12)", lines: "text", ink: "rgba(255,255,255,0.14)", icon: "📄" };
+    case "file": return { bg: "#232325", border: "rgba(255,255,255,0.12)", ink: "rgba(255,255,255,0.14)", icon: "📎" };
+    case "audio": return { bg: "#232325", border: "rgba(255,255,255,0.12)", ink: "rgba(255,255,255,0.14)", icon: "🎵" };
+    case "video": return { bg: "#111113", border: "rgba(255,255,255,0.10)", ink: "transparent", icon: "▶" };
+    case "placeholder": return { bg: "rgba(255,255,255,0.03)", border: "rgba(255,255,255,0.25)", ink: "transparent" };
+    default: return { bg: "#232325", border: "rgba(255,255,255,0.10)", ink: "rgba(255,255,255,0.12)" };
+  }
+}
+/** one background-image for the simplified inside (cheap: no extra nodes) */
+function lodPattern(look: LodLook, el: BoardElement): string | undefined {
+  const step = Math.max(28, Math.min(64, el.h / 12));
+  if (look.lines === "text") return `repeating-linear-gradient(to bottom, transparent 0 ${step * 0.55}px, ${look.ink} ${step * 0.55}px ${step * 0.8}px, transparent ${step * 0.8}px ${step}px)`;
+  if (look.lines === "rows") return `repeating-linear-gradient(to bottom, transparent 0 ${step - 2}px, ${look.ink} ${step - 2}px ${step}px)`;
+  if (look.lines === "todo") return `repeating-linear-gradient(to bottom, transparent 0 ${step * 0.3}px, ${look.ink} ${step * 0.3}px ${step * 0.75}px, transparent ${step * 0.75}px ${step}px)`;
+  if (look.lines === "boxes") return `repeating-linear-gradient(to right, transparent 0 ${step}px, ${look.ink} ${step}px ${step * 2.4}px, transparent ${step * 2.4}px ${step * 3}px)`;
+  return undefined;
+}
 const LOD_FONT = 11;   // px on screen
 /** nodes smaller than this on screen (px) are drawn in the single svg of rectangles (see «very far out») */
 const DOT_PX = 14;
@@ -5967,17 +6000,37 @@ function lodPreview(el: BoardElement): string | null {
 function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
   const e = el as BoardElement & { title?: string; name?: string; color?: string };
   const tiny = lodPreview(el);
+  const look = lodLook(el);
   const [failed, setFailed] = useState(false);
   const title = (e.title || e.name || "").trim();
   const s = Math.max(scale, MIN_SCALE_ABS);
   // on-screen size of the block → the title only if it fits in full (≈ 0.6 em per character)
   const fits = !!title && e.w * s >= title.length * LOD_FONT * 0.6 + 8 && e.h * s >= LOD_FONT + 6;
   return (
-    <div data-lod className="absolute inset-0 overflow-hidden" style={{ height: e.h, background: e.type === "color" && e.color ? e.color : LOD_COLORS[e.type] ?? "#3f3f46", borderRadius: Math.min(e.w, e.h) * 0.06 }}>
+    <div
+      data-lod={e.type}
+      className="absolute inset-0 overflow-hidden"
+      style={{ height: e.h, background: look.bg, border: look.border ? `${Math.max(1, 1.5 / s)}px ${e.type === "placeholder" ? "dashed" : "solid"} ${look.border}` : undefined, borderRadius: Math.min(Math.min(e.w, e.h) * 0.06, 14 / Math.max(s, 0.05)) }}
+    >
+      {look.header && <div className="absolute left-0 right-0 top-0" style={{ height: Math.min(e.h * 0.18, 56), background: "rgba(255,255,255,0.06)", borderBottom: `1px solid ${look.border ?? "transparent"}` }} />}
+      {!tiny || failed ? (
+        <div className="absolute" style={{ inset: look.header ? `${Math.min(e.h * 0.18, 56) + 12}px 12px 12px 12px` : "12px", backgroundImage: lodPattern(look, e) }} />
+      ) : null}
+      {e.type === "palette" && (
+        <div className="absolute inset-[8%] flex gap-[3%]">
+          {((e as unknown as { colors?: string[] }).colors ?? []).slice(0, 8).map((c, i) => <div key={i} className="flex-1 rounded" style={{ background: c }} />)}
+        </div>
+      )}
+      {e.type === "page" && (
+        <div className="absolute inset-0 flex items-center justify-center" style={{ background: `${(e as unknown as PageElement).color || DEFAULT_PAGE_COLOR}1f` }}>
+          <PageIcon icon={(e as unknown as PageElement).icon} color={(e as unknown as PageElement).color} size={Math.min(e.w, e.h) * 0.5} />
+        </div>
+      )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      {tiny && !failed && <img data-lod-tiny src={tiny} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
-      {fits && (!tiny || failed) && (
-        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px` }}>{title}</div>
+      {tiny && !failed && <img data-lod-tiny src={tiny} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="absolute w-full object-cover" style={{ top: e.type === "scene" || e.type === "link" || e.type === "light_plot" ? Math.min(e.h * 0.18, 56) : 0, bottom: 0, height: "auto" }} />}
+      {look.icon && (!tiny || failed) && <div className="absolute inset-0 flex items-center justify-center" style={{ fontSize: Math.min(e.w, e.h) * 0.3, color: "rgba(255,255,255,0.5)" }}>{look.icon}</div>}
+      {fits && (!tiny || failed) && e.type !== "page" && (
+        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px`, color: e.type === "sticky" ? "#1f1a0a" : undefined }}>{title}</div>
       )}
     </div>
   );
