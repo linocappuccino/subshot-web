@@ -89,7 +89,7 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
     };
   }, [api, projectId, ideaId]);
 
-  if (failed) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/50">Idee konnte nicht geladen werden.</div>;
+  if (failed) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/50">Konzept konnte nicht geladen werden.</div>;
   if (!ideas) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/40 animate-pulse">…</div>;
   if (ideas.length === 0) {
     tellApp({ type: "close" });

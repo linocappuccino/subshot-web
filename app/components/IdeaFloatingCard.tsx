@@ -250,7 +250,7 @@ export function IdeaFloatingCard({
   useAutosave(
     () => {
       api
-        .patchIdea(idea.id, { title: title.trim() || "Neue Idee", text })
+        .patchIdea(idea.id, { title: title.trim() || "Neues Konzept", text })
         .then(onUpdated)
         .catch((e) => toast.showError(e instanceof ApiError ? e.message : t("ideaCard.autosaveFailed")));
     },
