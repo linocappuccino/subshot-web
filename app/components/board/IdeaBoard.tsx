@@ -4149,10 +4149,22 @@ export function IdeaBoard({
           if (!dots.length) return null;
           const b = boundsOf(dots)!;
           return (
-            <svg data-lod-dots={dots.length} className="absolute pointer-events-none" style={{ left: b.x, top: b.y, width: b.w, height: b.h, overflow: "visible", zIndex: 0 }} viewBox={`${b.x} ${b.y} ${b.w} ${b.h}`} aria-hidden>
+            <svg data-lod-dots={dots.length} className="absolute pointer-events-none" style={{ left: b.x, top: b.y, width: b.w, height: b.h, overflow: "visible", zIndex: 90000 }} viewBox={`${b.x} ${b.y} ${b.w} ${b.h}`} aria-hidden>
               {dots.map((el) => {
                 const e = el as BoardElement & { color?: string };
-                return <rect key={el.id} x={el.x} y={el.y} width={Math.max(el.w, 1 / view.scale)} height={Math.max(el.h, 1 / view.scale)} fill={el.type === "color" && e.color ? e.color : LOD_COLORS[el.type] ?? "#3f3f46"} />;
+                const w = Math.max(el.w, 1 / view.scale), h = Math.max(el.h, 1 / view.scale);
+                const fill = el.type === "color" && e.color ? e.color : LOD_COLORS[el.type] ?? "#3f3f46";
+                // 2026-11-23 (Lino: «Bilder werden nicht mehr dargestellt»): images, videos, scene cards and
+                // moodboards show their preview here too, not a dark rectangle
+                const pic = lodPreview(el);
+                return pic ? (
+                  <g key={el.id}>
+                    <rect x={el.x} y={el.y} width={w} height={h} fill={fill} />
+                    <image data-lod-dot-img href={pic} x={el.x} y={el.y} width={w} height={h} preserveAspectRatio="xMidYMid slice" />
+                  </g>
+                ) : (
+                  <rect key={el.id} x={el.x} y={el.y} width={w} height={h} fill={fill} />
+                );
               })}
             </svg>
           );
@@ -5810,9 +5822,22 @@ const LOD_COLORS: Record<string, string> = {
 const LOD_FONT = 11;   // px on screen
 /** nodes smaller than this on screen (px) are drawn in the single svg of rectangles (see «very far out») */
 const DOT_PX = 14;
+/** the picture a node shows when seen from far away: its 96-px preview (tiny), else the small web version
+ *  (image thumb / video poster / scene image / first moodboard image) — never a dark tile when there is a picture */
+function lodPreview(el: BoardElement): string | null {
+  const e = el as BoardElement & { tiny_src?: string | null; image_tiny_src?: string | null; thumb_src?: string | null; image_thumb_src?: string | null; image_src?: string | null; src?: string | null };
+  if (el.type === "moodboard") {
+    const first = (el.items ?? [])[0] as ({ tiny_src?: string | null; thumb_src?: string | null; src?: string | null } | undefined);
+    return first?.tiny_src ?? first?.thumb_src ?? first?.src ?? null;
+  }
+  if (el.type === "image" || el.type === "video") return e.tiny_src ?? e.thumb_src ?? (el.type === "image" ? e.src ?? null : null);
+  if (el.type === "scene" || el.type === "link" || el.type === "location" || el.type === "light_plot") return e.image_tiny_src ?? e.image_thumb_src ?? e.image_src ?? null;
+  return e.tiny_src ?? e.image_tiny_src ?? null;
+}
+
 function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
-  const e = el as BoardElement & { title?: string; name?: string; tiny_src?: string | null; image_tiny_src?: string | null; color?: string };
-  const tiny = e.tiny_src ?? e.image_tiny_src ?? null;
+  const e = el as BoardElement & { title?: string; name?: string; color?: string };
+  const tiny = lodPreview(el);
   const [failed, setFailed] = useState(false);
   const title = (e.title || e.name || "").trim();
   const s = Math.max(scale, MIN_SCALE_ABS);
