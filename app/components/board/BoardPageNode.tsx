@@ -2,7 +2,7 @@
 
 /** 2026-11-23, Lino: «Seite» — a node that opens its own board (double click / double tap). The tile shows
  * the title, a small map of what is on the page and how many items / sub-pages it holds. Plain DOM + SVG
- * (no WebGL), so it renders on every device. */
+ * (no WebGL), so it renders on every device. 2026-11-23: big selectable icon instead of the mini map. */
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { BoardElement, PageElement } from "@/lib/board";
@@ -17,36 +17,90 @@ export type BoardPagesInfo = {
 
 export const BoardPagesContext = createContext<BoardPagesInfo | null>(null);
 
-const TYPE_FILL: Partial<Record<BoardElement["type"], string>> = {
-  image: "#60a5fa", video: "#60a5fa", moodboard: "#60a5fa", scene: "#f59e0b", sticky: "#fde68a", text: "#e5e7eb",
-  page: "#a78bfa", group: "transparent", todo: "#34d399", link: "#93c5fd", light_plot: "#facc15", timetable: "#f472b6",
+/** 2026-11-23, Lino: the tile shows a big, selectable icon instead of the mini map (keys stored in el.icon; any
+ *  other short text there is shown as an emoji). One line style (24 px grid, 2 px stroke). */
+export const PAGE_ICONS: Record<string, string> = {
+  folder: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z",
+  document: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5M9 13h6M9 17h4",
+  camera: "M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM12 16.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z",
+  film: "M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4",
+  light: "M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3z",
+  pin: "M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+  person: "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
+  people: "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2 20a7 7 0 0 1 14 0M16 4.5a3.5 3.5 0 0 1 0 6.5M18 13.5a6 6 0 0 1 4 6.5",
+  costume: "M8 3 4 6l2 4 2-1v12h8V9l2 1 2-4-4-3a4 4 0 0 1-8 0z",
+  prop: "M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8",
+  sound: "M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3",
+  music: "M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM21 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z",
+  cut: "M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.1 7.6 20 20M8.1 16.4 20 4",
+  storyboard: "M3 4h8v7H3zM13 4h8v7h-8zM3 13h8v7H3zM13 13h8v7h-8z",
+  image: "M4 4h16v16H4zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM20 15l-5-5L4 20",
+  calendar: "M4 6h16v15H4zM4 10h16M8 3v5M16 3v5",
+  car: "M5 16h14M3 16v-4l2-5h14l2 5v4h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0zM6.5 12h11",
+  home: "M3 11 12 4l9 7M5 10v10h14V10M10 20v-6h4v6",
+  star: "M12 3l2.8 5.8 6.2.9-4.5 4.4 1 6.2L12 17.4 6.5 20.3l1-6.2L3 9.7l6.2-.9z",
+  heart: "M12 20s-7-4.5-9-9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c-2 4.5-9 9-9 9z",
+  flag: "M5 21V4M5 4h11l-2 4 2 4H5",
+  idea: "M12 3a6 6 0 0 0-4 10.5c.8.8 1 1.5 1 2.5h6c0-1 .2-1.7 1-2.5A6 6 0 0 0 12 3zM9 21h6",
 };
+export const PAGE_COLORS = ["#8b5cf6", "#3b82f6", "#10b981", "#eab308", "#f97316", "#ef4444", "#ec4899", "#71717a"];
+export const DEFAULT_PAGE_ICON = "folder";
+export const DEFAULT_PAGE_COLOR = "#8b5cf6";
 
-function MiniMap({ items }: { items: BoardElement[] }) {
-  const shown = items.filter((e) => e.type !== "drawing").slice(0, 200);
-  if (!shown.length) return null;
-  const x0 = Math.min(...shown.map((e) => e.x));
-  const y0 = Math.min(...shown.map((e) => e.y));
-  const x1 = Math.max(...shown.map((e) => e.x + e.w));
-  const y1 = Math.max(...shown.map((e) => e.y + e.h));
-  const w = Math.max(1, x1 - x0);
-  const h = Math.max(1, y1 - y0);
+export function PageIcon({ icon, color, size }: { icon?: string; color?: string; size: number }) {
+  const key = icon || DEFAULT_PAGE_ICON;
+  const path = PAGE_ICONS[key];
+  const c = color || DEFAULT_PAGE_COLOR;
+  if (!path) return <span data-page-icon={key} style={{ fontSize: size * 0.8, lineHeight: 1 }}>{key}</span>;
   return (
-    <svg viewBox={`${x0 - w * 0.04} ${y0 - h * 0.04} ${w * 1.08} ${h * 1.08}`} preserveAspectRatio="xMidYMid meet" className="w-full h-full" aria-hidden>
-      {shown
-        .sort((a, b) => a.z - b.z)
-        .map((e) =>
-          e.type === "group" ? (
-            <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={Math.min(e.w, e.h) * 0.04} fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.25)" strokeWidth={Math.max(w, h) / 200} />
-          ) : (
-            <rect key={e.id} x={e.x} y={e.y} width={e.w} height={e.h} rx={Math.min(e.w, e.h) * 0.08} fill={TYPE_FILL[e.type] ?? "#9ca3af"} opacity={0.75} />
-          ),
-        )}
+    <svg data-page-icon={key} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={path} />
     </svg>
   );
 }
 
-export function PageNode({ el, editing, editable, onCommitTitle }: { el: PageElement; editing: boolean; editable: boolean; onCommitTitle: (title: string) => void }) {
+/** icon + colour picker (screen space, works with touch) */
+export function PageIconPicker({ icon, color, onPick, onClose }: { icon?: string; color?: string; onPick: (p: { icon?: string; color?: string }) => void; onClose: () => void }) {
+  const { t } = useLanguage();
+  const [emoji, setEmoji] = useState(icon && !PAGE_ICONS[icon] ? icon : "");
+  const c = color || DEFAULT_PAGE_COLOR;
+  return (
+    <div data-board-ui data-page-icon-picker className="absolute inset-0 z-50 flex items-center justify-center bg-black/40" onPointerDown={(e) => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-[min(380px,calc(100%-24px))] rounded-2xl bg-[#1c1c1e] border border-white/10 shadow-2xl p-4 text-white" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="text-[15px] font-semibold mb-3">{t("ideaBoard.page.iconTitle")}</div>
+        <div className="grid grid-cols-6 gap-1.5">
+          {Object.keys(PAGE_ICONS).map((k) => (
+            <button key={k} data-pick-icon={k} onClick={() => onPick({ icon: k })} className={`h-11 rounded-xl flex items-center justify-center ${k === (icon || DEFAULT_PAGE_ICON) ? "bg-white/15 ring-2 ring-blue-500" : "bg-white/5 hover:bg-white/10"}`}>
+              <PageIcon icon={k} color={c} size={22} />
+            </button>
+          ))}
+        </div>
+        <label className="block text-[12px] text-white/55 mt-3">{t("ideaBoard.page.emoji")}
+          <input
+            data-pick-emoji
+            value={emoji}
+            onChange={(e) => setEmoji(e.target.value)}
+            onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && emoji.trim()) onPick({ icon: [...emoji.trim()].slice(0, 2).join("") }); }}
+            onBlur={() => { if (emoji.trim() && emoji.trim() !== icon) onPick({ icon: [...emoji.trim()].slice(0, 2).join("") }); }}
+            placeholder="🎬"
+            className="mt-1 w-full h-9 rounded-lg bg-white/5 border border-white/10 px-2 text-[18px] outline-none focus:border-blue-500 select-text"
+          />
+        </label>
+        <div className="text-[12px] text-white/55 mt-3 mb-1">{t("ideaBoard.page.color")}</div>
+        <div className="flex gap-2">
+          {PAGE_COLORS.map((col) => (
+            <button key={col} data-pick-color={col} onClick={() => onPick({ color: col })} aria-label={col} className={`w-8 h-8 rounded-full ${col === c ? "ring-2 ring-white ring-offset-2 ring-offset-[#1c1c1e]" : ""}`} style={{ background: col }} />
+          ))}
+        </div>
+        <div className="flex justify-end mt-4">
+          <button data-pick-done onClick={onClose} className="h-9 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-sm font-semibold">{t("ideaBoard.page.done")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function PageNode({ el, editing, editable, onCommitTitle, onPickIcon }: { el: PageElement; editing: boolean; editable: boolean; onCommitTitle: (title: string) => void; onPickIcon?: () => void }) {
   const { t } = useLanguage();
   const info = useContext(BoardPagesContext);
   const items = info?.childrenOf(el.id) ?? [];
@@ -68,11 +122,7 @@ export function PageNode({ el, editing, editable, onCommitTitle }: { el: PageEle
   return (
     <div data-page-node={el.id} className="w-full h-full rounded-2xl bg-[#1f1f23] border border-white/12 shadow-lg overflow-hidden flex flex-col text-white">
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-2 shrink-0">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-          <path d="M14 3v5h5" />
-          <path d="M9 13h6M9 17h4" />
-        </svg>
+        <PageIcon icon={el.icon} color={el.color} size={18} />
         {editing && editable ? (
           <input
             ref={inputRef}
@@ -93,8 +143,18 @@ export function PageNode({ el, editing, editable, onCommitTitle }: { el: PageEle
           <span data-page-title className="flex-1 min-w-0 truncate text-[15px] font-semibold">{title}</span>
         )}
       </div>
-      <div className="flex-1 min-h-0 mx-3 rounded-xl bg-black/30 border border-white/5 overflow-hidden flex items-center justify-center p-2">
-        {items.length ? <MiniMap items={items} /> : <span className="text-[12px] text-white/35">{t("ideaBoard.page.empty")}</span>}
+      <div className="flex-1 min-h-0 mx-3 rounded-xl overflow-hidden flex items-center justify-center p-2" style={{ background: `${el.color || DEFAULT_PAGE_COLOR}1f` }}>
+        <button
+          type="button"
+          data-page-icon-button
+          disabled={!editable || !onPickIcon}
+          onPointerDown={(e) => { if (editable && onPickIcon) e.stopPropagation(); }}
+          onClick={(e) => { e.stopPropagation(); onPickIcon?.(); }}
+          className="rounded-2xl p-2 enabled:hover:bg-white/5 disabled:cursor-default"
+          title={editable ? t("ideaBoard.page.icon") : undefined}
+        >
+          <PageIcon icon={el.icon} color={el.color} size={Math.max(40, Math.min(el.w, el.h) * 0.42)} />
+        </button>
       </div>
       <div className="flex items-center justify-between gap-2 px-3 py-2 text-[11px] text-white/55 shrink-0">
         <span data-page-count={total}>

@@ -40,7 +40,7 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
   sectionId?: string | null;
   /** 2026-11-11, Lino: kind "board" — «Aktuellen Ausschnitt teilen»: the board area visible right now
    * (board pixels); the link then opens exactly there (?view=x,y,w,h, fitted into any screen) */
-  currentView?: () => { x: number; y: number; w: number; h: number } | null;
+  currentView?: () => { x: number; y: number; w: number; h: number; page?: string | null; pagePath?: string; pageHidden?: boolean } | null;
 }) {
   const api = useApi();
   const toast = useToast();
@@ -100,7 +100,16 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
   const [viewOnly, setViewOnly] = useState(false);
   const [view, setView] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const viewUrl = (u: string) => (view ? `${u}${u.includes("?") ? "&" : "?"}view=${[view.x, view.y, view.w, view.h].map((n) => Math.round(n)).join(",")}` : u);
-  const displayUrl = url && kind === "storyboard" && sectionId ? `${url}?section=${sectionId}` : url && kind === "board" && viewOnly ? viewUrl(url) : url;
+  // 2026-11-23, Lino: a link shared from a sub-page opens exactly that page (not when it is hidden for clients)
+  const [pageInfo, setPageInfo] = useState<{ page: string; path: string; hidden: boolean } | null>(null);
+  useEffect(() => {
+    if (!open || kind !== "board" || !currentView) return;
+    const cv = currentView();
+    setPageInfo(cv?.page ? { page: cv.page, path: cv.pagePath ?? "", hidden: !!cv.pageHidden } : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, kind]);
+  const pageUrl = (u: string) => (pageInfo && !pageInfo.hidden ? `${u}${u.includes("?") ? "&" : "?"}page=${encodeURIComponent(pageInfo.page)}` : u);
+  const displayUrl = url && kind === "storyboard" && sectionId ? `${url}?section=${sectionId}` : url && kind === "board" ? pageUrl(viewOnly ? viewUrl(url) : url) : url;
 
   async function copyLink() {
     if (!displayUrl) return;
@@ -204,6 +213,11 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
           </p>
         )}
         {kind === "board" && <p className="text-xs text-white/40 mt-1">{t("shareLinkModal.boardHint")}</p>}
+        {kind === "board" && pageInfo && (
+          <p data-share-page-hint className={`text-xs mt-2 ${pageInfo.hidden ? "text-orange-300" : "text-white/55"}`}>
+            {pageInfo.hidden ? t("shareLinkModal.pageHidden") : t("shareLinkModal.pageIncluded", { path: pageInfo.path })}
+          </p>
+        )}
         {kind === "board" && currentView && (
           <div className="mt-3">
             <Switch

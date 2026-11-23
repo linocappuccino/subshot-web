@@ -92,7 +92,7 @@ import { BoardGifMaker, type BoardGifApi } from "./BoardGifMaker";
 import { BoardTemplatesPanel, type BoardTemplateApi } from "./BoardTemplates";
 import { BoardClientDownloadContext, BoardDownloadContext, BoardImageZoomContext, BoardZoomContext, BoardScaleContext, ClientDownloadButton, DownloadButton, type ClientDownload } from "./BoardDownload";
 import { LUT_HEADER, LUT_PAD } from "./BoardLutPreview";
-import { BoardPagesContext, PageBreadcrumb } from "./BoardPageNode";
+import { BoardPagesContext, DEFAULT_PAGE_COLOR, DEFAULT_PAGE_ICON, PageBreadcrumb, PageIconPicker } from "./BoardPageNode";
 import { clonePageContents, mergePage, pageDescendants, pageOf, pagePath, projectPage, type OffPage, type PageId } from "@/lib/boardPages";
 import { setUrlParams, urlParam } from "@/lib/urlState";
 import { decodeLogBlob, decodeLogImage, lutNameFromFileName, parseCubeLut, renderLogAndGraded, renderPlain, type DecodedImage } from "@/lib/lut";
@@ -437,7 +437,7 @@ export function IdeaBoard({
    * fitted into this screen, instead of the whole board */
   initialView?: Rect | null;
   /** the sender side: reads the area visible right now (board pixels) */
-  viewRectRef?: React.MutableRefObject<(() => Rect | null) | null>;
+  viewRectRef?: React.MutableRefObject<(() => (Rect & { page?: string | null; pagePath?: string; pageHidden?: boolean }) | null) | null>;
   /** zoom to a node (e.g. clicking a pinned comment in the sidebar) */
   focusRequest?: { elementId: string; nonce: number } | null;
   /** 👍🏼 on the variants of vote groups (see GroupElement.vote) */
@@ -722,6 +722,9 @@ export function IdeaBoard({
     }
     const next = redoStack.current.pop();
     if (!next) return;
+    // «Seiten»: redoing a move into another page puts the nodes there again
+    const off = offForState.current.get(next);
+    if (off) offPageRef.current = { ...offPageRef.current, add: [...(offPageRef.current.add ?? []), ...(off.add ?? [])], connectors: [...(offPageRef.current.connectors ?? []), ...(off.connectors ?? [])] };
     undoStack.current.push(dataRef.current);
     apply(next);
     setHistorySize({ undo: undoStack.current.length, redo: redoStack.current.length });
@@ -979,7 +982,14 @@ export function IdeaBoard({
       const rect = viewportRef.current?.getBoundingClientRect();
       if (!rect) return null;
       const v = viewRef.current;
-      return { x: -v.x / v.scale, y: -v.y / v.scale, w: rect.width / v.scale, h: rect.height / v.scale };
+      // 2026-11-23 «Seiten»: the open page goes with it (share links open exactly there); a page hidden for clients
+      // (itself or a parent) is reported so the share dialog can say why the client link can't open it
+      const pg = pageRef.current;
+      const path = pagePath(allElementsNow(), pg);
+      return {
+        x: -v.x / v.scale, y: -v.y / v.scale, w: rect.width / v.scale, h: rect.height / v.scale,
+        page: pg, pagePath: path.map((p) => p.title || t("ideaBoard.page.untitled")).join(" / "), pageHidden: path.some((p) => p.hidden),
+      };
     };
     return () => {
       viewRectRef.current = null;
@@ -1097,7 +1107,7 @@ export function IdeaBoard({
     const w = 280;
     const h = 200;
     const spot = place(at.x - w / 2, at.y - h / 2, w, h, true);
-    const el: PageElement = { id: newId(), type: "page", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: t("ideaBoard.page.untitled") };
+    const el: PageElement = { id: newId(), type: "page", x: spot.x, y: spot.y, w, h, z: maxZ(dataRef.current.elements) + 1, title: t("ideaBoard.page.untitled"), icon: DEFAULT_PAGE_ICON, color: DEFAULT_PAGE_COLOR };
     addElements([el]);
     setTool("select");
     setSelection(new Set([el.id]));
@@ -1154,6 +1164,7 @@ export function IdeaBoard({
     setInnerFocus({ elementId: el.id, nonce: Date.now() });
   }
   const [pageDelete, setPageDelete] = useState<{ pages: PageElement[]; count: number } | null>(null);
+  const [iconPickerFor, setIconPickerFor] = useState<string | null>(null);
   // 2026-11-11, Lino: «Credits» — the project's AI spend (members only; data from the server)
   const creditsCtx = useContext(BoardCreditsContext);
   function addCredits(at: Point) {
@@ -1275,6 +1286,58 @@ export function IdeaBoard({
   // dropping makes it a member (also a 🗳️ Variantenwahl: it becomes a variant); dragging a member out of
   // its group's other members → «Aus Gruppe nehmen». Files from the desktop and upload tiles join too.
   const [groupDrop, setGroupDrop] = useState<{ id: string; mode: "join" | "leave" } | null>(null);
+  // 2026-11-23, Lino: drag nodes onto a «Seite» tile → they move into that page («In Seite verschieben»)
+  const [pageDrop, setPageDrop] = useState<string | null>(null);
+  const pageDropRef = useRef<string | null>(null);
+  /** the page tile under the point (not one of the nodes being moved) */
+  function pageAt(p: Point, exclude: Set<string>): PageElement | null {
+    for (const el of [...dataRef.current.elements].sort((a, b) => b.z - a.z)) {
+      if (el.type !== "page" || exclude.has(el.id)) continue;
+      if (p.x >= el.x && p.y >= el.y && p.x <= el.x + el.w && p.y <= el.y + el.h) return el;
+    }
+    return null;
+  }
+  const offForState = useRef(new WeakMap<BoardData, OffPage>());
+  /** moves nodes (groups with their members, connectors between them) to another page; on the target page they
+   *  keep their arrangement and land right of what is there already. Undo / redo / live sync included. */
+  function moveToPage(idsIn: Set<string>, target: PageId, snapshot: BoardData) {
+    const els = dataRef.current.elements;
+    const ids = new Set(idsIn);
+    for (const el of els) if (el.type === "group" && ids.has(el.id)) el.children.forEach((c) => ids.add(c));
+    ids.delete(target ?? "");
+    const moving = els.filter((el) => ids.has(el.id));
+    if (!moving.length) return;
+    const b = boundsOf(moving)!;
+    const there = allElementsNow().filter((e) => pageOf(e) === target && !ids.has(e.id));
+    const tb = boundsOf(there);
+    const ox = tb ? tb.x + tb.w + 160 : 0;
+    const oy = tb ? tb.y : 0;
+    const z0 = maxZ(there);
+    const moved = moving
+      .sort((a, c) => a.z - c.z)
+      .map((el, i) => {
+        const copy = { ...el, x: el.x - b.x + ox, y: el.y - b.y + oy, z: z0 + 1 + i } as BoardElement & { page?: string };
+        if (copy.type === "group") (copy as GroupElement).children = (copy as GroupElement).children.filter((c) => ids.has(c));
+        if (target) copy.page = target;
+        else delete copy.page;
+        return copy as BoardElement;
+      });
+    const connectors = dataRef.current.connectors.filter((c) => ids.has(c.from) && ids.has(c.to));
+    const off: OffPage = { add: moved, connectors };
+    offPageRef.current = { ...offPageRef.current, add: [...(offPageRef.current.add ?? []), ...moved], connectors: [...(offPageRef.current.connectors ?? []), ...connectors] };
+    apply(
+      {
+        ...dataRef.current,
+        elements: els.filter((el) => !ids.has(el.id)).map((el) => (el.type === "group" && el.children.some((c) => ids.has(c)) ? ({ ...el, children: el.children.filter((c) => !ids.has(c)) } as BoardElement) : el)),
+        connectors: dataRef.current.connectors.filter((c) => !ids.has(c.from) && !ids.has(c.to)),
+      },
+      { history: snapshot },
+    );
+    offForState.current.set(dataRef.current, off);
+    setSelection(new Set());
+    const name = target ? (allElementsNow().find((e) => e.id === target) as PageElement | undefined)?.title || t("ideaBoard.page.untitled") : t("ideaBoard.page.board");
+    onNotice?.(t("ideaBoard.page.movedTo", { count: moving.length, page: name }));
+  }
   const groupDropRef = useRef<{ id: string; mode: "join" | "leave" } | null>(null);
   const groupHover = useRef<{ id: string | null; timer: number | null }>({ id: null, timer: null });
   function showGroupDrop(next: { id: string; mode: "join" | "leave" } | null) {
@@ -3235,7 +3298,12 @@ export function IdeaBoard({
           const ph = moving.length === 1 ? placeholderAt(wp, new Set(op.origin.keys()), (p) => placeholderTakes(p, moving[0])) : null;
           const target = ph ?? (images ? imageTargetAt(wp, new Set(op.origin.keys()), moving.length === 1 ? ["scene", "moodboard"] : ["moodboard"]) : null);
           if ((target?.id ?? null) !== imageDropTarget) setImageDropTarget(target?.id ?? null);
-          trackGroupDrop(wp, new Set(op.origin.keys()), !!target);
+          const pgT = target ? null : pageAt(wp, new Set(op.origin.keys()));
+          if ((pgT?.id ?? null) !== pageDropRef.current) {
+            pageDropRef.current = pgT?.id ?? null;
+            setPageDrop(pgT?.id ?? null);
+          }
+          trackGroupDrop(wp, new Set(op.origin.keys()), !!target || !!pgT);
         }
         const next: BoardData = {
           ...dataRef.current,
@@ -3363,6 +3431,15 @@ export function IdeaBoard({
       }
       case "move": {
         setImageDropTarget(null);
+        const pageTarget = pageDropRef.current;
+        pageDropRef.current = null;
+        setPageDrop(null);
+        if (op.moved && pageTarget) {
+          clearGroupHover();
+          showGroupDrop(null);
+          moveToPage(new Set(op.origin.keys()), pageTarget, op.snapshot);
+          return;
+        }
         if (op.moved) {
           // image cards dropped onto a moodboard card go into it (2026-10-08)
           const w = toWorld(e.clientX, e.clientY);
@@ -4220,6 +4297,7 @@ export function IdeaBoard({
                 onCommitFlow={(patch) => commitFlow(el.id, patch)}
                 onCommitCredits={(patch) => commitCredits(el.id, patch)}
                 onCommitPageTitle={(title) => commitPageTitle(el.id, title)}
+                onPickPageIcon={editable && el.type === "page" ? () => setIconPickerFor(el.id) : undefined}
                 onOpenLightPlot={() => setLightPlotOpen(el.id)}
                 onCommitDubbing={(patch) => commitDubbing(el.id, patch)}
                 onGenerateSceneImage={editable && generateImage ? () => setAiFor(el.id) : undefined}
@@ -4588,6 +4666,21 @@ export function IdeaBoard({
               >
                 <svg width={14 / view.scale} height={14 / view.scale} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" /></svg>
                 {label}
+              </span>
+            </div>
+          );
+        })()}
+        {(() => {
+          const pgEl = pageDrop ? data.elements.find((x) => x.id === pageDrop) : null;
+          if (!pgEl) return null;
+          return (
+            <div
+              data-page-drop={pgEl.id}
+              className="absolute rounded-2xl pointer-events-none flex items-start justify-center bg-blue-500/15"
+              style={{ left: pgEl.x, top: pgEl.y, width: pgEl.w, height: pgEl.h, zIndex: 99995, boxShadow: `0 0 0 ${4 / view.scale}px #3b82f6` }}
+            >
+              <span className="mt-2 rounded-full bg-blue-600 text-white font-semibold shadow-lg whitespace-nowrap" style={{ fontSize: 13 / view.scale, padding: `${6 / view.scale}px ${12 / view.scale}px`, transform: `translateY(-${36 / view.scale}px)` }}>
+                {t("ideaBoard.page.dropInto")}
               </span>
             </div>
           );
@@ -5065,10 +5158,17 @@ export function IdeaBoard({
             return (
               <>
                 {!multi && (target.type === "text" || target.type === "scene") && <MenuItem label={t("ideaBoard.menu.edit")} onPress={() => menuAction(() => activate(target))} />}
+                {page && (
+                  <MenuItem
+                    label={t("ideaBoard.page.moveUp")}
+                    onPress={() => menuAction(() => moveToPage(new Set(selectionRef.current.size ? selectionRef.current : [target.id]), pageOf(allElementsNow().find((e) => e.id === page) ?? { page: undefined }), dataRef.current))}
+                  />
+                )}
                 {!multi && target.type === "page" && (
                   <>
                     <MenuItem label={t("ideaBoard.page.openAction")} onPress={() => menuAction(() => openPage(target.id))} />
                     <MenuItem label={t("ideaBoard.page.rename")} onPress={() => menuAction(() => setEditingId(target.id))} />
+                    <MenuItem label={t("ideaBoard.page.icon")} onPress={() => menuAction(() => setIconPickerFor(target.id))} />
                   </>
                 )}
                 {!multi && target.type === "group" && (
@@ -5541,6 +5641,18 @@ export function IdeaBoard({
       )}
       {/* «Seiten»: where am I, one step back / jump to any level */}
       <PageBreadcrumb path={pagePath(allElements, page)} onGo={openPage} left={editable ? 84 : 12} />
+      {iconPickerFor && (() => {
+        const pel = data.elements.find((x) => x.id === iconPickerFor);
+        if (!pel || pel.type !== "page") return null;
+        return (
+          <PageIconPicker
+            icon={pel.icon}
+            color={pel.color}
+            onPick={(p) => updateElement(pel.id, p as Partial<BoardElement>, { history: true })}
+            onClose={() => setIconPickerFor(null)}
+          />
+        );
+      })()}
       {pageDelete && (
         <div data-board-ui data-page-delete-dialog className="absolute inset-0 z-50 flex items-center justify-center bg-black/50" onPointerDown={(e) => e.stopPropagation()}>
           <div className="w-[min(420px,calc(100%-32px))] rounded-2xl bg-[#1c1c1e] border border-white/10 shadow-2xl p-5 text-white">

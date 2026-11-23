@@ -844,6 +844,9 @@ export interface DubbingTake {
 export interface PageElement extends BaseElement {
   type: "page";
   title: string;
+  /** 2026-11-23 — icon key (see PAGE_ICONS) or a short emoji; colour #rrggbb */
+  icon?: string;
+  color?: string;
 }
 
 export interface CreditsElement extends BaseElement {

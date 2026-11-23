@@ -170,6 +170,7 @@ export function BoardElementView({
   onOpenLightPlot,
   onCommitCredits,
   onCommitPageTitle,
+  onPickPageIcon,
   onCommitDubbing,
 }: {
   el: BoardElement;
@@ -215,6 +216,8 @@ export function BoardElementView({
   onCommitCredits?: (patch: Partial<Pick<CreditsElement, "currency" | "collapsed" | "title">>) => void;
   /** 2026-11-23 «Seite»: new title (inline rename) */
   onCommitPageTitle?: (title: string) => void;
+  /** 2026-11-23 «Seite»: open the icon / colour picker */
+  onPickPageIcon?: () => void;
   /** member of a vote group: the letter badge sits on the top-left corner → the video label starts after it */
   voted?: boolean;
 }) {
@@ -278,7 +281,7 @@ export function BoardElementView({
     case "dubbing":
       return <DubbingNode el={el} editable={editable} onCommit={(patch) => onCommitDubbing?.(patch)} onMeasure={onMeasure} />;
     case "page":
-      return <PageNode el={el} editing={editing} editable={editable} onCommitTitle={(title) => onCommitPageTitle?.(title)} />;
+      return <PageNode el={el} editing={editing} editable={editable} onCommitTitle={(title) => onCommitPageTitle?.(title)} onPickIcon={onPickPageIcon} />;
     case "credits":
       return <CreditsNode el={el} editable={editable} onCommit={(patch) => onCommitCredits?.(patch)} onMeasure={onMeasure} />;
     case "flow":

@@ -326,7 +326,7 @@ function IdeaBoardScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idea.id]);
   // 2026-11-11, Lino: «Aktuellen Ausschnitt teilen» — the board's visible area for the share dialog
-  const boardViewRef = useRef<(() => { x: number; y: number; w: number; h: number } | null) | null>(null);
+  const boardViewRef = useRef<(() => { x: number; y: number; w: number; h: number; page?: string | null; pagePath?: string; pageHidden?: boolean } | null) | null>(null);
   // 2026-11-11: the «Credits» node's data (project-wide AI spend, members only)
   const creditsApi = useMemo<BoardCreditsApi>(
     () => ({
