@@ -144,7 +144,21 @@ export type BoardPaletteFn = (key: string) => Promise<string[]>;
 export type BoardImageStyle = "realistic" | "sketch" | "funny_sketch";
 export type BoardGenerateImageFn = (prompt: string, style: BoardImageStyle, aspectRatio: "16:9" | "9:16") => Promise<{ key: string; src: string }>;
 
-const MIN_SCALE = 0.1;
+// 2026-11-21, Lino: «das Board muss grösser sein und man muss weiter hinauszoomen können» — 2 % instead of 10 %
+// (5× further out). Below LOD_SCALE (the former minimum) nodes are drawn as light blocks with 96-px previews
+// (LodBlock) — so a big board stays smooth and within iOS memory when seen whole.
+// 2026-11-23, Lino: «die Grösse soll quasi unlimitiert sein» — no fixed floor you hit while working: you can
+// always zoom out until the whole board fits with room around it (dynamic, see minScaleRef), at least to 2 %;
+// 0.005 % is the technical floor: a board at the ±10 million px coordinate limit (20 million px wide) still fits a
+// 1000-px screen; positions stay exact far inside the browsers' ±33 million px layout range
+const MIN_SCALE = 0.02;
+const MIN_SCALE_ABS = 0.00005;
+const LOD_SCALE = 0.1;
+/** 2 significant digits (0.0123 → 0.012) — the CSS zoom of the far-zoom layout changes in small, relative steps */
+const zoomStep = (v: number) => {
+  const p = Math.pow(10, Math.floor(Math.log10(v)) - 1);
+  return Math.round(v / p) * p;
+};
 const MAX_SCALE = 4;
 const HISTORY_LIMIT = 100;
 const DOUBLE_CLICK_MS = 350;
@@ -514,6 +528,18 @@ export function IdeaBoard({
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
   // viewport size in CSS px (for culling far-away nodes in the iOS embed, see cullRect)
   const [viewportSize, setViewportSize] = useState({ w: 0, h: 0 });
+  // how far out you may zoom: the whole board fits at half size (room around it), never less far than 2 %
+  const minScaleRef = useRef(MIN_SCALE);
+  useEffect(() => {
+    const r = viewportRef.current?.getBoundingClientRect();
+    const b = boundsOf(data.elements);
+    if (!r || !b || !r.width || !r.height) {
+      minScaleRef.current = MIN_SCALE;
+      return;
+    }
+    const fit = Math.min(r.width / Math.max(b.w, 1), r.height / Math.max(b.h, 1));
+    minScaleRef.current = Math.max(MIN_SCALE_ABS, Math.min(MIN_SCALE, fit * 0.5));
+  }, [data.elements, viewportSize]);
   useEffect(() => {
     const node = viewportRef.current;
     if (!node || !boardImageConfig.cull) return;
@@ -540,7 +566,10 @@ export function IdeaBoard({
   const [zoomCap] = useState(() =>
     typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse) and (max-width: 900px), (pointer: coarse) and (max-height: 500px)").matches ? 2 : MAX_SCALE,
   );
-  const targetZoom = Math.min(zoomCap, Math.max(1, view.scale));
+  // 2026-11-21: in the far-zoom LOD range the layout itself is zoomed down too (CSS zoom < 1, in 0.5 % steps) —
+  // with a scale() transform alone WebKit paints the layer at its UNscaled size (50× the screen at 2 %), which cost
+  // ~190 ms frames on the iPhone emulation; LOD blocks carry no small text, so the 9-px font floor does not matter
+  const targetZoom = view.scale < LOD_SCALE ? Math.max(MIN_SCALE_ABS, zoomStep(view.scale)) : Math.min(zoomCap, Math.max(1, view.scale));
   useEffect(() => {
     if (targetZoom === settledScale) return;
     const t = window.setTimeout(() => setSettledScale(targetZoom), 150);
@@ -747,7 +776,7 @@ export function IdeaBoard({
     const rect = viewportRef.current?.getBoundingClientRect();
     if (!rect) return;
     const v = viewRef.current;
-    const s = clamp(nextScale, MIN_SCALE, MAX_SCALE);
+    const s = clamp(nextScale, minScaleRef.current, MAX_SCALE);
     const px = clientX - rect.left;
     const py = clientY - rect.top;
     const wx = (px - v.x) / v.scale;
@@ -784,7 +813,7 @@ export function IdeaBoard({
         next = { scale: 1, x: rect.width / 2 - 216, y: Math.min(160, rect.height / 4) };
       } else {
         const pad = opts.pad ?? 96;
-        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), MIN_SCALE, opts.maxScale ?? 1);
+        const s = clamp(Math.min((rect.width - pad * 2) / Math.max(b.w, 1), (rect.height - pad * 2) / Math.max(b.h, 1), opts.maxScale ?? 1), minScaleRef.current, opts.maxScale ?? 1);
         next = { scale: s, x: rect.width / 2 - (b.x + b.w / 2) * s, y: rect.height / 2 - (b.y + b.h / 2) * s };
       }
       if (opts.animate) {
@@ -3146,7 +3175,7 @@ export function IdeaBoard({
       const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const center = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const rect = viewportRef.current!.getBoundingClientRect();
-      const s = clamp(op.view.scale * (dist / op.dist), MIN_SCALE, MAX_SCALE);
+      const s = clamp(op.view.scale * (dist / op.dist), minScaleRef.current, MAX_SCALE);
       const wx = (op.center.x - rect.left - op.view.x) / op.view.scale;
       const wy = (op.center.y - rect.top - op.view.y) / op.view.scale;
       const next = { scale: s, x: center.x - rect.left - wx * s, y: center.y - rect.top - wy * s };
@@ -3971,7 +4000,7 @@ export function IdeaBoard({
   // area plus one screen in every direction
   const cullRect = (() => {
     if (!boardImageConfig.cull || !viewportSize.w) return null;
-    const s = Math.max(0.01, view.scale);
+    const s = Math.max(MIN_SCALE_ABS, view.scale);
     const w = viewportSize.w / s, h = viewportSize.h / s;
     const x0 = -view.x / s, y0 = -view.y / s;
     return { x1: x0 - w, y1: y0 - h, x2: x0 + 2 * w, y2: y0 + 2 * h };
@@ -4112,14 +4141,32 @@ export function IdeaBoard({
           );
         })}
 
+        {/* 2026-11-23 — very far out: nodes smaller than DOT_PX on screen are drawn as ONE svg of rectangles instead
+            of one DOM node each (1700 nodes: ~13'000 → a few hundred DOM elements), so huge boards stay smooth */}
+        {view.scale < LOD_SCALE && (() => {
+          const dots = elements.filter((el) => !hidden.has(el.id) && el.type !== "group" && !selection.has(el.id) && editingId !== el.id && Math.max(el.w, el.h) * view.scale < DOT_PX);
+          if (!dots.length) return null;
+          const b = boundsOf(dots)!;
+          return (
+            <svg data-lod-dots={dots.length} className="absolute pointer-events-none" style={{ left: b.x, top: b.y, width: b.w, height: b.h, overflow: "visible", zIndex: 0 }} viewBox={`${b.x} ${b.y} ${b.w} ${b.h}`} aria-hidden>
+              {dots.map((el) => {
+                const e = el as BoardElement & { color?: string };
+                return <rect key={el.id} x={el.x} y={el.y} width={Math.max(el.w, 1 / view.scale)} height={Math.max(el.h, 1 / view.scale)} fill={el.type === "color" && e.color ? e.color : LOD_COLORS[el.type] ?? "#3f3f46"} />;
+              })}
+            </svg>
+          );
+        })()}
         {elements.map((el, rank) => {
           if (hidden.has(el.id)) return null;
+          // very far out: tiny nodes are in the svg of rectangles; a group frame that small is left out (its header would cover the dots)
+          if (view.scale < LOD_SCALE && !selection.has(el.id) && editingId !== el.id && Math.max(el.w, el.h) * view.scale < DOT_PX) return null;
           // 2026-11-01 (iOS out of memory, Apfelkiste board): in the app's web view only nodes in / near the
           // visible area are rendered (one screen of margin around it) — far-away cards cost no memory there
           if (cullRect && !selection.has(el.id) && editingId !== el.id && el.type !== "group" &&
               (el.x > cullRect.x2 || el.y > cullRect.y2 || el.x + el.w < cullRect.x1 || el.y + Math.max(el.h, 40) < cullRect.y1)) return null;
           const selected = selection.has(el.id);
           const isDrawing = el.type === "drawing";
+          const lod = view.scale < LOD_SCALE;
           const isFrame = el.type === "group" && !el.collapsed;
           const growsWithContent = el.type === "text" || el.type === "link" || el.type === "scene" || el.type === "todo" || el.type === "palette" || el.type === "location" || el.type === "sticky" || el.type === "color" || el.type === "timetable" || el.type === "flow" || el.type === "credits" || el.type === "dubbing";
           const canResize = editable && selected && selection.size === 1 && !isDrawing && el.type !== "audio" && el.type !== "pdf" && el.type !== "file" && el.type !== "group";
@@ -4139,6 +4186,7 @@ export function IdeaBoard({
                 transition: "opacity .2s",
               }}
             >
+              {lod && !selected && editingId !== el.id && !isDrawing && el.type !== "group" ? <LodBlock el={el} scale={view.scale} /> : (
               <BoardElementView
                 el={el}
                 voted={el.type === "video" && votedIds.has(el.id)}
@@ -4192,6 +4240,7 @@ export function IdeaBoard({
                   if (Math.abs(want - el.h) > 2) updateElement(el.id, { h: want }, { notify: editable });
                 }}
               />
+              )}
               {el.type === "moodboard" && (moodboardBusy[el.id] ?? 0) > 0 && (
                 <div
                   className="absolute left-1/2 bottom-3 z-10 pointer-events-none rounded-full bg-black/70 px-3 py-1 text-xs font-semibold text-white animate-pulse whitespace-nowrap"
@@ -4316,7 +4365,7 @@ export function IdeaBoard({
 
         {/* variant votes (2026-10-08): letter top-left, 👍🏼 bottom-right. 2026-11-09, Lino: they must not grow
             on screen when zooming out — they scale with the board below 100 %, keep their size above */}
-        {voteInfo.map((v) => (
+        {view.scale >= LOD_SCALE && voteInfo.map((v) => (
           <div key={`vote-${v.el.id}`} style={{ opacity: matches && !matches.has(v.el.id) ? 0.18 : undefined, transition: "opacity .2s" }}>
             {v.leader && (
               <div
@@ -5520,7 +5569,7 @@ export function IdeaBoard({
           onClick={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1); }}
           className="min-w-[52px] h-8 rounded-lg text-xs tabular-nums hover:bg-white/10"
         >
-          {Math.round(view.scale * 100)}%
+          {view.scale < 0.01 ? Number((view.scale * 100).toPrecision(2)) : Math.round(view.scale * 100)}%
         </button>
         <ZoomButton title={t("ideaBoard.zoomIn")} onPress={() => { const r = viewportRef.current!.getBoundingClientRect(); zoomAt(r.left + r.width / 2, r.top + r.height / 2, view.scale * 1.25); }}>+</ZoomButton>
         <ZoomButton title={t("ideaBoard.zoomFit")} onPress={fitToContent}>
@@ -5746,5 +5795,35 @@ function ClientDownloadIcon({ crossed = false }: { crossed?: boolean }) {
       <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
       {crossed && <path d="M4 4l16 16" />}
     </svg>
+  );
+}
+
+/** 2026-11-21 — a node seen from far away (zoom < 10 %): a light block in the node's colour; images / videos / scene
+ * cards show their 96-px preview (tiny_src, made by the server on first request — a few KB each, so even 100 of them
+ * stay tiny in memory); the title only when it fits completely (no «v…» stubs) */
+const LOD_COLORS: Record<string, string> = {
+  text: "#3f3f46", sticky: "#ca8a04", scene: "#1d4ed8", image: "#27272a", video: "#7f1d1d", moodboard: "#27272a", todo: "#065f46",
+  timetable: "#4338ca", flow: "#0e7490", credits: "#6d28d9", palette: "#9d174d", location: "#166534", link: "#334155", pdf: "#991b1b",
+  file: "#334155", audio: "#9a3412", color: "#52525b", light_plot: "#854d0e", dubbing: "#be185d", lutpreview: "#3f3f46", placeholder: "#3f3f46",
+};
+const LOD_FONT = 11;   // px on screen
+/** nodes smaller than this on screen (px) are drawn in the single svg of rectangles (see «very far out») */
+const DOT_PX = 14;
+function LodBlock({ el, scale }: { el: BoardElement; scale: number }) {
+  const e = el as BoardElement & { title?: string; name?: string; tiny_src?: string | null; image_tiny_src?: string | null; color?: string };
+  const tiny = e.tiny_src ?? e.image_tiny_src ?? null;
+  const [failed, setFailed] = useState(false);
+  const title = (e.title || e.name || "").trim();
+  const s = Math.max(scale, MIN_SCALE_ABS);
+  // on-screen size of the block → the title only if it fits in full (≈ 0.6 em per character)
+  const fits = !!title && e.w * s >= title.length * LOD_FONT * 0.6 + 8 && e.h * s >= LOD_FONT + 6;
+  return (
+    <div data-lod className="absolute inset-0 overflow-hidden" style={{ height: e.h, background: e.type === "color" && e.color ? e.color : LOD_COLORS[e.type] ?? "#3f3f46", borderRadius: Math.min(e.w, e.h) * 0.06 }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {tiny && !failed && <img data-lod-tiny src={tiny} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className="absolute inset-0 w-full h-full object-cover" />}
+      {fits && (!tiny || failed) && (
+        <div className="absolute left-0 right-0 top-0 text-white/90 font-semibold whitespace-nowrap" style={{ fontSize: LOD_FONT / s, lineHeight: 1.2, padding: `${3 / s}px ${4 / s}px` }}>{title}</div>
+      )}
+    </div>
   );
 }
