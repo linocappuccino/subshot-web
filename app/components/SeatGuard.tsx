@@ -39,13 +39,14 @@ export function SeatGuard() {
       <Link href="/team" className="rounded-md bg-[#1f6feb] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#388bfd]">
         {de ? "Seat hinzufügen" : "Add a seat"}
       </Link>
-      <button type="button" onClick={() => setHidden(true)} className="text-white/50 hover:text-white" aria-label="Schliessen">×</button>
+      <button type="button" onClick={() => setHidden(true)} className="text-white/50 hover:text-white" aria-label={de ? "Schliessen" : "Close"}>×</button>
     </div>
   );
 }
 
 /** on the sign-in page: was the last session ended because the account was opened elsewhere? */
 export function KickedNotice() {
+  const de = useLanguage().language !== "en";
   const [kicked, setKicked] = useState(false);
   useEffect(() => {
     let sid: string | null = null;
@@ -60,8 +61,8 @@ export function KickedNotice() {
   if (!kicked) return null;
   return (
     <div data-kicked-notice className="mx-auto mb-6 max-w-md rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-      <p className="font-semibold">Dein Account wurde auf einem anderen Gerät geöffnet.</p>
-      <p className="mt-1 text-amber-100/80">Jede Person braucht einen eigenen Seat. <Link href="/team" className="underline">Seats verwalten</Link></p>
+      <p className="font-semibold">{de ? "Dein Account wurde auf einem anderen Gerät geöffnet." : "Your account was opened on another device."}</p>
+      <p className="mt-1 text-amber-100/80">{de ? "Jede Person braucht einen eigenen Seat." : "Every person needs their own seat."} <Link href="/team" className="underline">{de ? "Seats verwalten" : "Manage seats"}</Link></p>
     </div>
   );
 }

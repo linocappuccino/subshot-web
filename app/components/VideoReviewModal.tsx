@@ -1038,7 +1038,7 @@ export function VideoReviewModal({
     setUploadProgress(0);
     try {
       const created = await api.createVideoVersion(video.id, file);
-      if (!created.playback_url) throw new Error("Keine Upload-URL erhalten.");
+      if (!created.playback_url) throw new Error(t("pp.noUploadUrl"));
       await api.uploadVideoFile(created.playback_url, file, (fraction) => setUploadProgress(fraction));
       const { duration } = await readVideoMetadata(file);
       const completed = await api.completeVideoVersion(created.id, file.size, duration);
@@ -2043,7 +2043,7 @@ export function VideoReviewModal({
               <Menu
                 portal
                 trigger={
-                  <span data-copy-link-menu title="Link kopieren" className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+                  <span data-copy-link-menu title={t("videoReview.copyLink")} className="w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>
                   </span>
                 }

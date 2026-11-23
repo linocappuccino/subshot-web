@@ -89,14 +89,15 @@ const BULK_STATUSES: [PostproductionStatus, "postproductionStatus.wartend" | "po
 const BULK_PLATFORM_NAMES: Record<string, string> = { youtube: "YouTube", instagram: "Instagram", meta: "Meta", tiktok: "TikTok" };
 
 function BulkPlatformMenu({ onApply }: { onApply: (platforms: string[], mode: "add" | "replace") => void }) {
+  const { t } = useLanguage();
   const [sel, setSel] = useState<string[]>([]);
   const [mode, setMode] = useState<"add" | "replace">("add");
   const pill = (on: boolean) => `flex-1 rounded-full px-2 py-1 text-xs font-semibold ${on ? "bg-white text-black" : "bg-white/[0.06] text-white/70 hover:bg-white/10"}`;
   return (
     <div data-bulk-platform-menu className="w-60 p-2" onClick={(e) => e.stopPropagation()}>
       <div className="mb-2 flex gap-1">
-        <button type="button" data-bulk-platform-mode="add" className={pill(mode === "add")} onClick={() => setMode("add")}>Hinzufügen</button>
-        <button type="button" data-bulk-platform-mode="replace" className={pill(mode === "replace")} onClick={() => setMode("replace")}>Ersetzen</button>
+        <button type="button" data-bulk-platform-mode="add" className={pill(mode === "add")} onClick={() => setMode("add")}>{t("pp.bulkAdd")}</button>
+        <button type="button" data-bulk-platform-mode="replace" className={pill(mode === "replace")} onClick={() => setMode("replace")}>{t("pp.bulkReplace")}</button>
       </div>
       {Object.entries(BULK_PLATFORM_NAMES).map(([key, name]) => (
         <button key={key} type="button" data-bulk-platform-option={key}
@@ -107,9 +108,9 @@ function BulkPlatformMenu({ onApply }: { onApply: (platforms: string[], mode: "a
         </button>
       ))}
       <div className="mt-2 flex items-center gap-2 border-t border-white/10 pt-2">
-        <button type="button" data-bulk-platform-none onClick={() => onApply([], "replace")} className="text-xs text-white/55 hover:text-white">Kein Icon</button>
+        <button type="button" data-bulk-platform-none onClick={() => onApply([], "replace")} className="text-xs text-white/55 hover:text-white">{t("pp.bulkNoIcon")}</button>
         <button type="button" data-bulk-platform-apply disabled={sel.length === 0} onClick={() => onApply(sel, mode)}
-          className="ml-auto rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40">Anwenden</button>
+          className="ml-auto rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-40">{t("pp.bulkApply")}</button>
       </div>
     </div>
   );
@@ -373,7 +374,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     try {
       setLangs(await api.assignVideoLanguages(id, videoIds, languageId));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht zugewiesen werden.");
+      toast.showError(e instanceof ApiError ? e.message : t("pp.langAssignFailed"));
     }
   }
   const [dropActive, setDropActive] = useState(false);
@@ -395,8 +396,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     if (matches.length) {
       const names = matches.slice(0, 5).map((m) => `«${m.hit!.video.title}»`).join(", ") + (matches.length > 5 ? " …" : "");
       const asVersion = window.confirm(
-        `${matches.length === 1 ? "Diese Datei heisst" : `${matches.length} Dateien heissen`} wie ein bestehendes Video: ${names}.\n\n` +
-        "OK = als neue Version hochladen (empfohlen)\nAbbrechen = als eigenes, neues Video hochladen");
+        (matches.length === 1 ? t("pp.dupOne", { names }) : t("pp.dupMany", { count: matches.length, names })) + "\n\n" + t("pp.dupChoice"));
       if (asVersion) {
         for (const m of matches) void uploadVersionFromTile(m.hit!.sectionId, m.hit!.video, m.f);
         files = files.filter((f) => !existing.has(norm(f.name)));
@@ -411,7 +411,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       while (next < items.length) {
         const { file, item } = items[next++];
         if (!isVideo(file)) {
-          set(item.id, { status: "error", error: "Kein Video (nur MP4, MOV oder WebM)" });
+          set(item.id, { status: "error", error: t("pp.notAVideo") });
           continue;
         }
         set(item.id, { status: "up" });
@@ -440,7 +440,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     if (!video) {
       // 2026-11-17 — a direct link to a video that no longer exists (deleted): say so instead of doing nothing
       if (!loading && Object.keys(videosBySection).length > 0) {
-        toast.showError("Dieses Video gibt es nicht mehr (gelöscht oder verschoben).");
+        toast.showError(t("pp.videoGone"));
         setAutoOpenVideoId(null);
         setUrlParams({ video: null, openVideo: null, openComment: null }, "replace");
       }
@@ -707,7 +707,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       const created = await api.createVideo(section.id, section.name, list.length);
       onCreated?.(created.id);
       const version = await api.createVideoVersion(created.id, file);
-      if (!version.playback_url) throw new Error("Keine Upload-URL erhalten.");
+      if (!version.playback_url) throw new Error(t("pp.noUploadUrl"));
       await api.uploadVideoFile(version.playback_url, file, (fraction) => {
         setUploadProgress((prev) => ({ ...prev, [section.id]: fraction }));
         onProgress?.(fraction);
@@ -831,7 +831,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     setVersionUploadProgress((prev) => ({ ...prev, [video.id]: 0 }));
     try {
       const created = await api.createVideoVersion(video.id, file);
-      if (!created.playback_url) throw new Error("Keine Upload-URL erhalten.");
+      if (!created.playback_url) throw new Error(t("pp.noUploadUrl"));
       updateVideo(sectionId, { ...video, versions: [...video.versions, created] });
       await api.uploadVideoFile(created.playback_url, file, (fraction) =>
         setVersionUploadProgress((prev) => ({ ...prev, [video.id]: fraction }))
@@ -921,7 +921,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       for (const video of allVideos) (bySection[video.section_id] ??= []).push(video);
       setVideosBySection(bySection);
       if (detail) setData((prev) => (prev ? { ...prev, sections: detail.sections.map((s) => prev.sections.find((p) => p.id === s.id) ? { ...prev.sections.find((p) => p.id === s.id)!, ...s } : s).filter((s) => prev.sections.some((p) => p.id === s.id)) } : prev));
-      if (r.failed.length) toast.showError(`${what}: ${r.updated.length} geändert, ${r.failed.length} nicht geändert (${r.failed[0].error}).`);
+      if (r.failed.length) toast.showError(t("pp.bulkPartial", { what, updated: r.updated.length, failed: r.failed.length, error: r.failed[0].error }));
       else toast.showSuccess(`${what} · ${r.updated.length} ${r.updated.length === 1 ? "Video" : "Videos"}`);
     } catch (e) {
       toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
@@ -935,12 +935,12 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       await navigator.clipboard.writeText(text);
       toast.showSuccess(msg);
     } catch {
-      window.prompt("Link kopieren:", text);
+      window.prompt(t("pp.copyLinkPrompt"), text);
     }
   }
   function videoLinkActions(video: Video) {
     return {
-      internal: () => void copyText(`${window.location.origin}/projects/${id}/postproduction?video=${video.id}`, "Interner Link kopiert (nur für Teammitglieder)."),
+      internal: () => void copyText(`${window.location.origin}/projects/${id}/postproduction?video=${video.id}`, t("pp.internalLinkCopied")),
       client: canEditStatus
         ? async () => {
             try {
@@ -1259,14 +1259,14 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   setPicked(new Set());
                 }
               } catch (e) {
-                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht angelegt werden.");
+                toast.showError(e instanceof ApiError ? e.message : t("pp.langCreateFailed"));
               }
             }}
             onUpdate={async (lid, name, flag) => {
               try {
                 setLangs(await api.updateProjectLanguage(lid, name, flag));
               } catch (e) {
-                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gespeichert werden.");
+                toast.showError(e instanceof ApiError ? e.message : t("pp.langSaveFailed"));
               }
             }}
             onDelete={async (lid) => {
@@ -1274,7 +1274,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 setLangs(await api.deleteProjectLanguage(lid));
                 if (langTab === lid) setLangTab("all");
               } catch (e) {
-                toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gelöscht werden.");
+                toast.showError(e instanceof ApiError ? e.message : t("pp.langDeleteFailed"));
               }
             }}
             newRequest={newLangRequest}
@@ -1303,7 +1303,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
         )}
         {!manualOrder && !loading && (langTab !== "all" || fmtTab !== "all" || plTab !== "all") && filteredCount === 0 && (
           <p data-lang-empty className="mb-4 text-sm text-white/40">
-            {plTab !== "all" ? "Keine Videos für diese Plattform." : fmtTab !== "all" ? "Keine Videos in diesem Format." : langTab === "none" ? "Alle Videos sind einer Sprache zugeordnet." : "Noch keine Videos in dieser Sprache. Ziehe Videos hierher oder weise sie über die Flagge am Video zu."}
+            {plTab !== "all" ? t("pp.emptyPlatform") : fmtTab !== "all" ? t("pp.emptyFormat") : langTab === "none" ? t("pp.emptyUnassigned") : t("pp.emptyLanguage")}
           </p>
         )}
         {canEditStatus && !manualOrder && !loading && (
@@ -1325,9 +1325,9 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           >
             <div className="flex flex-wrap items-center gap-3 text-sm text-white/60">
               <span className="text-xl">⬆︎</span>
-              <span className="flex-1 min-w-[12rem]">Videos hierher ziehen – jede Datei wird ein eigenes neues Video (Titel aus dem Dateinamen).</span>
+              <span className="flex-1 min-w-[12rem]">{t("pp.dropUnplanned")}</span>
               <Button variant="secondary" size="sm" onClick={() => unplannedVideoInputRef.current?.click()}>
-                Dateien wählen
+                {t("pp.chooseFiles")}
               </Button>
             </div>
             {uploads.length > 0 && (
@@ -1342,7 +1342,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                         <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden max-w-[16rem]">
                           <div className={`h-full rounded-full transition-[width] duration-150 ${u.status === "done" ? "bg-emerald-500" : "bg-blue-500"}`} style={{ width: `${Math.round(u.progress * 100)}%` }} />
                         </div>
-                        <span className="w-20 tabular-nums text-white/50">{u.status === "done" ? "✓ fertig" : u.status === "wait" ? "wartet" : `${Math.round(u.progress * 100)} %`}</span>
+                        <span className="w-20 tabular-nums text-white/50">{u.status === "done" ? t("pp.uploadDone") : u.status === "wait" ? t("pp.uploadWaiting") : `${Math.round(u.progress * 100)} %`}</span>
                       </>
                     )}
                   </li>
@@ -1352,17 +1352,13 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
           </div>
         )}
         {loading ? (
-          <p className="text-sm text-white/40">Lädt…</p>
+          <p className="text-sm text-white/40">{t("common.loading")}</p>
         ) : sections.length === 0 ? (
           <p className="text-sm text-white/40">
             {data?.module_scripting ? (
-              <>
-                Noch keine Abschnitte in der Postproduction. Auf der Szenenübersicht: Menü (⋮) auf einem Abschnitt →
-                &bdquo;Ab in die Postproduction&ldquo;, sobald alle Szenen im Kasten sind — oder über „+ Video“ oben
-                direkt ein ungeplantes Video hochladen.
-              </>
+              <>{t("pp.noSectionsScripting")}</>
             ) : (
-              <>Noch kein Video. Über „+ Video“ oben eines hochladen.</>
+              <>{t("pp.noVideo")}</>
             )}
           </p>
         ) : !manualOrder && ppView !== "tiles" ? (
@@ -1649,7 +1645,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
       />
       {canEditStatus && picked.size > 0 && (
         <div data-lang-selection className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 flex max-w-[calc(100vw-2rem)] flex-wrap items-center justify-center gap-2 whitespace-nowrap rounded-3xl bg-[#2a2b31] border border-white/10 shadow-2xl px-4 py-2 text-sm [&>*]:shrink-0">
-          <span className="font-semibold tabular-nums">{picked.size} ausgewählt</span>
+          <span className="font-semibold tabular-nums">{t("pp.selected", { count: picked.size })}</span>
           <span className="h-4 w-px bg-white/15" />
           <Menu
             portal
@@ -1657,7 +1653,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             direction="up"
             trigger={
               <span data-lang-assign className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-blue-500 hover:bg-blue-400 px-3 py-1 font-semibold text-white">
-                Sprache zuweisen <span className="text-xs">▾</span>
+                {t("pp.assignLanguage")} <span className="text-xs">▾</span>
               </span>
             }
           >
@@ -1686,7 +1682,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                 {members.map((m) => (
                   <MenuItem key={m.user_id} onClick={() => { close(); void bulkUpdate({ editor_id: m.user_id }, `Editor: ${m.name || m.email}`); }}>{m.name || m.email}</MenuItem>
                 ))}
-                <MenuItem onClick={() => { close(); void bulkUpdate({ editor_id: null }, "Kein Editor"); }}>Kein Editor</MenuItem>
+                <MenuItem onClick={() => { close(); void bulkUpdate({ editor_id: null }, t("pp.noEditor")); }}>{t("pp.noEditor")}</MenuItem>
               </>
             )}
           </Menu>
@@ -1703,25 +1699,25 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             )}
           </Menu>
           <Menu portal align="start" direction="up"
-            trigger={<span data-bulk-platform className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 font-semibold text-white">Plattform <span className="text-xs">▾</span></span>}>
-            {(close) => <BulkPlatformMenu onApply={(platforms, mode) => { close(); void bulkUpdate({ platforms, platforms_mode: mode }, platforms.length ? `Plattform: ${platforms.map((p) => BULK_PLATFORM_NAMES[p]).join(", ")}` : "Keine Icons"); }} />}
+            trigger={<span data-bulk-platform className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3 py-1 font-semibold text-white">{t("pp.platform")} <span className="text-xs">▾</span></span>}>
+            {(close) => <BulkPlatformMenu onApply={(platforms, mode) => { close(); void bulkUpdate({ platforms, platforms_mode: mode }, platforms.length ? `${t("pp.platform")}: ${platforms.map((p) => BULK_PLATFORM_NAMES[p]).join(", ")}` : t("pp.noIcons")); }} />}
           </Menu>
           {/* 2026-11-16, Lino — delete several videos at once (red = delete only) */}
           <button type="button" data-bulk-delete onClick={() => setBulkDeleteOpen(true)}
             className="rounded-full bg-red-600 hover:bg-red-500 px-3 py-1 font-semibold text-white">
-            Löschen ({picked.size})
+            {t("pp.deleteN", { count: picked.size })}
           </button>
           <button type="button" onClick={() => setPicked(new Set())} className="text-white/55 hover:text-white">
-            Abbrechen
+            {t("common.cancel")}
           </button>
         </div>
       )}
       <ConfirmDialog
         open={bulkDeleteOpen}
-        title={`${picked.size} ${picked.size === 1 ? "Video" : "Videos"} löschen?`}
+        title={picked.size === 1 ? t("pp.bulkDeleteTitleOne") : t("pp.bulkDeleteTitleMany", { count: picked.size })}
         message={Object.values(videosBySection).flat().filter((v) => picked.has(v.id)).map((v) => `• ${v.title}`).join("\n")}
-        emphasis="Alle Versionen, Untertitel, Kommentare und Dateien dieser Videos werden endgültig entfernt."
-        confirmLabel={`Endgültig löschen (${picked.size})`}
+        emphasis={t("pp.bulkDeleteEmphasis")}
+        confirmLabel={t("pp.bulkDeleteConfirm", { count: picked.size })}
         onCancel={() => setBulkDeleteOpen(false)}
         onConfirm={async () => {
           setBulkDeleteOpen(false);
@@ -1730,8 +1726,8 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
             const gone = new Set(r.deleted.map((d) => d.video_id));
             setVideosBySection((prev) => Object.fromEntries(Object.entries(prev).map(([k, vs]) => [k, vs.filter((v) => !gone.has(v.id))])));
             setPicked(new Set());
-            if (r.failed.length) toast.showError(`${r.deleted.length} gelöscht, ${r.failed.length} nicht gelöscht.`);
-            else toast.showSuccess(`${r.deleted.length} ${r.deleted.length === 1 ? "Video" : "Videos"} gelöscht.`);
+            if (r.failed.length) toast.showError(t("pp.bulkDeletedPartial", { deleted: r.deleted.length, failed: r.failed.length }));
+            else toast.showSuccess(r.deleted.length === 1 ? t("pp.bulkDeletedOne") : t("pp.bulkDeletedMany", { count: r.deleted.length }));
           } catch (e) {
             toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
           }

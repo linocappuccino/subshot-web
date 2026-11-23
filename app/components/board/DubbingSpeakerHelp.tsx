@@ -41,8 +41,8 @@ const TEXT: Record<L, { title: string; steps: [string, string][]; blocked: strin
     steps: [
       ["🎙️ Allow the microphone", "Pick your microphone at the top right and click «Allow» when the browser asks. Headphones work best — otherwise the microphone also records the video's sound."],
       ["🎬 Pick a section", "Click a section on the timeline at the bottom. To add a new one, drag across an empty part of the timeline."],
-      ["📝 Add and read the script", "Paste or edit the script on the left. Drag the handle on its right edge to make the column narrower; «Text über Video» puts the script big over the picture."],
-      ["⏺ Record", "Press «Aufnehmen» (record): after 3-2-1 the video plays and you speak along. Record as many takes per section as you like and play each one with ▶."],
+      ["📝 Add and read the script", "Paste or edit the script on the left. Drag the handle on its right edge to make the column narrower; «Text over video» puts the script big over the picture."],
+      ["⏺ Record", "Press «Record»: after 3-2-1 the video plays and you speak along. Record as many takes per section as you like and play each one with ▶."],
       ["🔊 Playback sound", "«Split sound»: original sound where nothing is recorded yet, otherwise your recording. «Full audio»: only the original. «No sound»: silent."],
       ["✅ Done", "Everything is saved automatically — the team sees your takes right away."],
     ],

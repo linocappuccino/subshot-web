@@ -8,11 +8,14 @@ import { BoardDubbingContext, DubbingStudio, type BoardDubbingApi } from "@/app/
 import type { DubbingElement, DubbingTake } from "@/lib/board";
 import { publicDubbingApi, type PublicDubbing } from "@/lib/publicDubbingApi";
 import { DubbingSpeakerHelp, useSpeakerHelp } from "@/app/components/board/DubbingSpeakerHelp";
+import { useLanguage } from "@/lib/i18n";
+import { uiText } from "@/lib/i18nConstants";
 
 const NAME_KEY = "subshot-dubbing-speaker";
 
 export default function DubbingSpeakerPage() {
   const { token } = useParams<{ token: string }>();
+  const en = useLanguage().language === "en";
   const [data, setData] = useState<PublicDubbing | null>(null);
   const [takes, setTakes] = useState<DubbingTake[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -34,11 +37,11 @@ export default function DubbingSpeakerPage() {
         setData(d);
         setTakes(d.takes);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Dieser Link ist nicht mehr gültig."));
+      .catch((e) => setError(e instanceof Error ? e.message : uiText("Dieser Link ist nicht mehr gültig.", "This link is no longer valid.")));
   }, [token]);
 
   if (error) return <div className="min-h-screen bg-[#111214] text-white flex items-center justify-center p-6 text-center">{error}</div>;
-  if (!data) return <div className="min-h-screen bg-[#111214] text-white/40 flex items-center justify-center">Lädt …</div>;
+  if (!data) return <div className="min-h-screen bg-[#111214] text-white/40 flex items-center justify-center">{en ? "Loading …" : "Lädt …"}</div>;
   if (!name) {
     return (
       <div className="min-h-screen bg-[#111214] text-white flex items-center justify-center p-6">
@@ -58,10 +61,10 @@ export default function DubbingSpeakerPage() {
         >
           <div className="text-3xl">🎙️</div>
           <h1 className="text-xl font-bold">{data.node.title || "Live-Dubbing"}</h1>
-          <p className="text-sm text-white/60">{data.project_name} · Du nimmst hier deine Sprachaufnahmen auf. Wie heisst du?</p>
-          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Dein Name" className="rounded-lg bg-white/10 px-3 py-2.5 outline-none focus:ring-2 focus:ring-rose-400" />
+          <p className="text-sm text-white/60">{data.project_name} · {en ? "You record your voice takes here. What's your name?" : "Du nimmst hier deine Sprachaufnahmen auf. Wie heisst du?"}</p>
+          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={en ? "Your name" : "Dein Name"} className="rounded-lg bg-white/10 px-3 py-2.5 outline-none focus:ring-2 focus:ring-rose-400" />
           <button type="submit" disabled={!draft.trim()} className="rounded-lg bg-rose-500 py-2.5 font-semibold disabled:opacity-40">
-            Weiter zum Studio
+            {en ? "Continue to the studio" : "Weiter zum Studio"}
           </button>
         </form>
       </div>
@@ -76,7 +79,7 @@ export default function DubbingSpeakerPage() {
     remove: async () => takes,
     exportUrl: async () => "",
     uploadVideo: async () => {
-      throw new Error("nicht erlaubt");
+      throw new Error(en ? "not allowed" : "nicht erlaubt");
     },
   };
   return (
@@ -95,12 +98,12 @@ export default function DubbingSpeakerPage() {
           const sections = patch.sections;
           setData((d) => (d ? { ...d, node: { ...d.node, sections } } : d));
           publicDubbingApi.saveSections(token, sections).catch(() => {
-            setError("Die Abschnitte konnten nicht gespeichert werden. Bitte neu laden.");
+            setError(en ? "The sections couldn't be saved. Please reload." : "Die Abschnitte konnten nicht gespeichert werden. Bitte neu laden.");
           });
         }}
         header={
           <span className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-white/50">Sprecher·in: {name}</span>
+            <span className="text-xs text-white/50">{en ? "Speaker" : "Sprecher·in"}: {name}</span>
             <button type="button" data-help-open title="So funktioniert's / How it works" onClick={() => setHelp(true)} className="h-7 w-7 rounded-full bg-white/10 hover:bg-white/20 text-sm font-bold">
               ?
             </button>

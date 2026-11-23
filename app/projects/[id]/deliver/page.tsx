@@ -165,7 +165,7 @@ export default function DeliverAdminPage({ params }: { params: Promise<{ id: str
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
     const firstRelPath = (files[0] as File & { webkitRelativePath?: string }).webkitRelativePath || files[0].name;
-    const defaultName = firstRelPath.split("/")[0] || "Ordner";
+    const defaultName = firstRelPath.split("/")[0] || t("deliverAdmin.folderFallback");
     const name = window.prompt(t("deliverAdmin.miscGroupNamePrompt"), defaultName);
     if (!name || !name.trim()) return;
     try {

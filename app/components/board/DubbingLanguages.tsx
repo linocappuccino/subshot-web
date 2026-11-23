@@ -7,11 +7,13 @@ import { useState } from "react";
 import type { DubbingElement, DubbingSection } from "@/lib/board";
 import { Menu } from "../ui/Menu";
 import { LANGUAGE_LIST } from "../PostproLanguages";
+import { useLanguage, type Language } from "@/lib/i18n";
 
 // 2026-11-13, Lino: the same language list as the Post-Production page (name + flag come together, no flag picker)
 export const DUB_LANGS: [string, string, string][] = LANGUAGE_LIST.map((l) => [l.code, l.name, l.flag]);
-export function dubLangName(code: string): string {
-  return DUB_LANGS.find(([c]) => c === code)?.[1] ?? code.toUpperCase();
+export function dubLangName(code: string, language: Language = "de"): string {
+  const l = LANGUAGE_LIST.find((x) => x.code === code);
+  return l ? (language === "en" ? l.nameEn : l.name) : code.toUpperCase();
 }
 export function dubLangFlag(code: string, el?: Pick<DubbingElement, "language_flags">): string {
   return el?.language_flags?.[code] || DUB_LANGS.find(([c]) => c === code)?.[2] || "🏳️";
@@ -55,6 +57,7 @@ export function DubLangPills({
   only?: string | null;
   size?: "sm" | "md";
 }) {
+  const { t, language } = useLanguage();
   const langs = only ? el.languages.filter((l) => l === only) : el.languages;
   const pill = (active: boolean) =>
     `group relative inline-flex items-center gap-1.5 rounded-full font-semibold transition-colors ${size === "md" ? "px-3 py-1.5 text-sm" : "px-2 py-0.5 text-[11px]"} ${
@@ -64,17 +67,17 @@ export function DubLangPills({
     <div data-dub-langs className="flex flex-wrap items-center gap-1.5">
       {langs.map((l) => (
         <span key={l} className="relative inline-flex">
-          <button type="button" data-dub-lang={l} onClick={() => onLang(l)} className={pill(l === lang)} title={dubLangName(l)}>
+          <button type="button" data-dub-lang={l} onClick={() => onLang(l)} className={pill(l === lang)} title={dubLangName(l, language)}>
             <span className={size === "md" ? "text-base leading-none" : "text-[13px] leading-none"}>{dubLangFlag(l, el)}</span>
-            {size === "md" ? dubLangName(l) : l.toUpperCase()}
+            {size === "md" ? dubLangName(l, language) : l.toUpperCase()}
             {onDelete && el.languages.length > 1 && (
               <span
                 role="button"
                 data-dub-lang-delete={l}
-                title="Sprache löschen"
+                title={t("dubLangs.delete")}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (window.confirm(`Sprache «${dubLangName(l)}» löschen? Alle Abschnitte und Takes dieser Sprache werden gelöscht.`)) onDelete(l);
+                  if (window.confirm(t("dubLangs.deleteConfirm", { name: dubLangName(l, language) }))) onDelete(l);
                 }}
                 className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-[#2c2c2e] text-[10px] text-white/70 ring-1 ring-white/15 hover:bg-red-500 hover:text-white group-hover:flex"
               >
@@ -90,8 +93,9 @@ export function DubLangPills({
 }
 
 function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string, copyFrom: string | null) => void; size: "sm" | "md" }) {
+  const { t, language } = useLanguage();
   const [copyFrom, setCopyFrom] = useState<string>(el.languages[0] ?? "");
-  const free = DUB_LANGS.filter(([c]) => !el.languages.includes(c));
+  const free = LANGUAGE_LIST.filter((l) => !el.languages.includes(l.code)).map((l) => [l.code, language === "en" ? l.nameEn : l.name, l.flag] as const);
   const hasSections = el.sections.length > 0;
   return (
     <Menu
@@ -99,7 +103,7 @@ function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string
       align="start"
       trigger={
         <span data-dub-lang-add className={`inline-flex cursor-pointer items-center rounded-full border border-dashed border-white/25 text-white/60 hover:text-white hover:border-white/50 ${size === "md" ? "px-3 py-1 text-sm" : "px-2 py-0.5 text-[11px]"}`}>
-          {size === "md" ? "+ Sprache" : "+"}
+          {size === "md" ? t("dubLangs.add") : "+"}
         </span>
       }
     >
@@ -125,17 +129,17 @@ function AddLang({ el, onAdd, size }: { el: DubbingElement; onAdd: (code: string
             <>
               <div className="my-1 h-px bg-white/10" />
               <label className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-white/60">
-                Abschnitte übernehmen aus
+                {t("dubLangs.copyFrom")}
                 <select data-dub-lang-copy value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="flex-1 rounded-md bg-white/10 px-1.5 py-1 text-white outline-none">
-                  <option value="">– keine –</option>
+                  <option value="">{t("dubLangs.copyNone")}</option>
                   {el.languages.map((l) => (
                     <option key={l} value={l}>
-                      {dubLangFlag(l, el)} {dubLangName(l)}
+                      {dubLangFlag(l, el)} {dubLangName(l, language)}
                     </option>
                   ))}
                 </select>
               </label>
-              <p className="px-2.5 pb-1 text-[11px] text-white/40">Nur die Zeiten werden übernommen, der Text bleibt leer.</p>
+              <p className="px-2.5 pb-1 text-[11px] text-white/40">{t("dubLangs.copyHint")}</p>
             </>
           )}
         </div>

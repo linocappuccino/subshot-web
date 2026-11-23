@@ -15,6 +15,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FlowElement, FlowStep } from "@/lib/board";
 import { flowAdvance, flowCurrent, newFlowStepId, type FlowAction, type FlowState } from "@/lib/flow";
+import { useLanguage } from "@/lib/i18n";
 
 export type FlowPatch = Partial<Pick<FlowElement, "title" | "steps" | "start_step">> & Partial<Record<keyof FlowState, unknown>>;
 
@@ -34,6 +35,7 @@ export function FlowNode({
   onCommit: (patch: FlowPatch) => void;
   onMeasure: (h: number) => void;
 }) {
+  const en = useLanguage().language === "en";
   const [mode, setMode] = useState<"view" | "edit">(() => (canEdit && el.steps.length === 0 ? "edit" : "view"));
   const editing = mode === "edit" && canEdit;
 
@@ -71,7 +73,7 @@ export function FlowNode({
     >
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/10 bg-indigo-500/10">
         <span className="text-base">🧭</span>
-        <span className="flex-1 min-w-0 truncate text-sm font-semibold">{el.title || "Frageablauf"}</span>
+        <span className="flex-1 min-w-0 truncate text-sm font-semibold">{el.title || (en ? "Question flow" : "Frageablauf")}</span>
         {canEdit && (
           <div data-no-drag className="flex shrink-0 rounded-lg bg-black/30 p-0.5 text-xs font-semibold">
             {(["view", "edit"] as const).map((m) => (
@@ -81,7 +83,7 @@ export function FlowNode({
                 onClick={() => setMode(m)}
                 className={`px-2.5 py-1 rounded-md transition-colors ${mode === m ? "bg-indigo-500 text-white" : "text-white/60 hover:text-white"}`}
               >
-                {m === "view" ? "Ansicht" : "Bearbeiten"}
+                {m === "view" ? (en ? "View" : "Ansicht") : en ? "Edit" : "Bearbeiten"}
               </button>
             ))}
           </div>
@@ -93,11 +95,12 @@ export function FlowNode({
 }
 
 function FlowPlayer({ el, editable, onPlay }: { el: FlowElement; editable: boolean; onPlay: (a: FlowAction) => void }) {
+  const en = useLanguage().language === "en";
   const steps = new Map(el.steps.map((s) => [s.id, s]));
   const cur = flowCurrent(el);
   const path = el.path ?? [];
   if (!cur) {
-    return <p className="px-4 py-6 text-sm text-white/50">Noch keine Fragen. {editable ? "Unter «Bearbeiten» anlegen." : ""}</p>;
+    return <p className="px-4 py-6 text-sm text-white/50">{en ? "No questions yet." : "Noch keine Fragen."} {editable ? (en ? "Add them under «Edit»." : "Unter «Bearbeiten» anlegen.") : ""}</p>;
   }
   const btn = "rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-default";
   return (
@@ -106,7 +109,8 @@ function FlowPlayer({ el, editable, onPlay }: { el: FlowElement; editable: boole
         <div className="flex flex-wrap gap-1.5">
           {path.map((e, i) => {
             const s = steps.get(e.s);
-            const label = e.a === "yes" ? (e.r ? "Ja ↩" : "Ja") : e.a === "no" ? "Nein" : "✓";
+            const yes = en ? "Yes" : "Ja";
+            const label = e.a === "yes" ? (e.r ? `${yes} ↩` : yes) : e.a === "no" ? (en ? "No" : "Nein") : "✓";
             return (
               <span
                 key={i}
@@ -122,38 +126,38 @@ function FlowPlayer({ el, editable, onPlay }: { el: FlowElement; editable: boole
       {el.finished ? (
         <div className="rounded-xl bg-emerald-500/15 border border-emerald-400/30 px-4 py-5 text-center">
           <div className="text-2xl">✓</div>
-          <div className="text-sm font-semibold text-emerald-100 mt-1">Fertig</div>
+          <div className="text-sm font-semibold text-emerald-100 mt-1">{en ? "Done" : "Fertig"}</div>
         </div>
       ) : cur.kind === "question" ? (
         <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-4">
-          <div className="text-[11px] uppercase tracking-wide text-white/40 mb-1">Frage</div>
+          <div className="text-[11px] uppercase tracking-wide text-white/40 mb-1">{en ? "Question" : "Frage"}</div>
           <div className="text-[15px] leading-snug whitespace-pre-wrap">{cur.text || "…"}</div>
           <div data-no-drag className="flex gap-2 mt-4">
             <button type="button" disabled={!editable} onClick={() => onPlay("yes")} className={`${btn} flex-1 bg-emerald-600 hover:bg-emerald-500`}>
-              Ja
+              {en ? "Yes" : "Ja"}
             </button>
             <button type="button" disabled={!editable} onClick={() => onPlay("no")} className={`${btn} flex-1 bg-red-600 hover:bg-red-500`}>
-              Nein
+              {en ? "No" : "Nein"}
             </button>
           </div>
         </div>
       ) : (
         <div className="rounded-xl bg-amber-500/10 border border-amber-400/30 px-4 py-4">
-          <div className="text-[11px] uppercase tracking-wide text-amber-200/70 mb-1">Antwort / Aufgabe</div>
+          <div className="text-[11px] uppercase tracking-wide text-amber-200/70 mb-1">{en ? "Answer / task" : "Antwort / Aufgabe"}</div>
           <div className="text-[15px] leading-snug whitespace-pre-wrap">{cur.text || "…"}</div>
           <div data-no-drag className="mt-4">
             <button type="button" disabled={!editable} onClick={() => onPlay("done")} className={`${btn} w-full bg-amber-500 text-black hover:bg-amber-400`}>
-              Erledigt, weiter
+              {en ? "Done, next" : "Erledigt, weiter"}
             </button>
           </div>
         </div>
       )}
       <div data-no-drag className="flex justify-between text-xs">
         <button type="button" disabled={!editable || path.length === 0} onClick={() => onPlay("back")} className="px-2 py-1 rounded-md text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30">
-          ← Zurück
+          {en ? "← Back" : "← Zurück"}
         </button>
         <button type="button" disabled={!editable || (path.length === 0 && !el.finished)} onClick={() => onPlay("restart")} className="px-2 py-1 rounded-md text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30">
-          ↺ Neu starten
+          {en ? "↺ Restart" : "↺ Neu starten"}
         </button>
       </div>
     </div>
@@ -265,8 +269,11 @@ const PORT_STYLE: Record<PortKey, { label: string; color: string; cls: string }>
   no: { label: "Nein", color: "#f87171", cls: "bg-red-600 hover:bg-red-500" },
   next: { label: "Weiter", color: "#fbbf24", cls: "bg-amber-500 text-black hover:bg-amber-400" },
 };
+const PORT_LABEL_EN: Record<PortKey, string> = { yes: "Yes", no: "No", next: "Next" };
 
 function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: FlowPatch) => void }) {
+  const en = useLanguage().language === "en";
+  const portLabel = (k: PortKey) => (en ? PORT_LABEL_EN[k] : PORT_STYLE[k].label);
   const steps = el.steps;
   const start = el.start_step ?? steps[0]?.id;
   const { pos, tree, w, h } = layoutFlow(steps, start);
@@ -389,13 +396,17 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
       <div className="flex items-center gap-2 px-3 pt-3">
         <TitleInput value={el.title} onSave={(title) => onCommit({ title })} />
         <button type="button" onClick={() => addStep("question")} className="shrink-0 rounded-lg bg-indigo-500/25 hover:bg-indigo-500/40 px-2.5 py-1.5 text-xs font-semibold">
-          ＋ Frage
+          {en ? "＋ Question" : "＋ Frage"}
         </button>
         <button type="button" onClick={() => addStep("end")} className="shrink-0 rounded-lg bg-amber-500/25 hover:bg-amber-500/40 px-2.5 py-1.5 text-xs font-semibold">
-          ＋ Antwort
+          {en ? "＋ Answer" : "＋ Antwort"}
         </button>
       </div>
-      <p className="px-3 pt-1.5 text-[11px] text-white/40">Klick auf «Ja» / «Nein» / «Weiter» = nächste Box darunter · Anschluss auf eine Box ziehen = dorthin verlinken · Klick auf eine Linie = löschen</p>
+      <p className="px-3 pt-1.5 text-[11px] text-white/40">
+        {en
+          ? "Click «Yes» / «No» / «Next» = next box below · drag a connector onto a box = link there · click a line = delete"
+          : "Klick auf «Ja» / «Nein» / «Weiter» = nächste Box darunter · Anschluss auf eine Box ziehen = dorthin verlinken · Klick auf eine Linie = löschen"}
+      </p>
       <div ref={areaRef} className="relative" style={{ width: w + PAD * 2, height: (steps.length ? h : 120) + PAD * 2 + 40 }}>
         <svg className="absolute pointer-events-none" style={{ left: PAD, top: PAD, overflow: "visible" }} width={w} height={h}>
           <defs>
@@ -427,7 +438,7 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
         {steps.length === 0 && (
           <div className="absolute inset-x-0 flex justify-center gap-2" style={{ top: PAD + 20 }}>
             <button type="button" onClick={() => addStep("question")} className="rounded-xl bg-indigo-500 hover:bg-indigo-400 px-4 py-2.5 text-sm font-semibold">
-              ＋ Erste Frage
+              {en ? "＋ First question" : "＋ Erste Frage"}
             </button>
           </div>
         )}
@@ -443,19 +454,19 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
                 style={{ height: BOX_H }}
               >
                 <div className="flex items-center gap-1.5 px-2 pt-1.5 text-[10px] font-bold uppercase tracking-wide">
-                  <span className={isQ ? "text-indigo-200" : "text-amber-200"}>{isQ ? "Frage" : "Antwort / Aufgabe"}</span>
+                  <span className={isQ ? "text-indigo-200" : "text-amber-200"}>{isQ ? (en ? "Question" : "Frage") : en ? "Answer / task" : "Antwort / Aufgabe"}</span>
                   {s.id === start ? (
                     <span className="rounded bg-indigo-500 px-1.5 py-px text-white normal-case tracking-normal">▶ Start</span>
                   ) : (
-                    <button type="button" title="Hier starten" onClick={() => onCommit({ start_step: s.id })} className="rounded px-1 text-white/30 hover:text-white hover:bg-white/10 normal-case tracking-normal">
+                    <button type="button" title={en ? "Start here" : "Hier starten"} onClick={() => onCommit({ start_step: s.id })} className="rounded px-1 text-white/30 hover:text-white hover:bg-white/10 normal-case tracking-normal">
                       ▶
                     </button>
                   )}
-                  <button type="button" title="Box löschen" onClick={() => remove(s.id)} className="ml-auto rounded px-1 text-white/35 hover:text-red-300 hover:bg-white/10">
+                  <button type="button" title={en ? "Delete box" : "Box löschen"} onClick={() => remove(s.id)} className="ml-auto rounded px-1 text-white/35 hover:text-red-300 hover:bg-white/10">
                     ✕
                   </button>
                 </div>
-                <DraftText value={s.text} placeholder={isQ ? "Frage eintippen …" : "Antwort / Aufgabe eintippen …"} onSave={(text) => update(s.id, { text })} />
+                <DraftText value={s.text} placeholder={isQ ? (en ? "Type a question …" : "Frage eintippen …") : en ? "Type an answer / task …" : "Antwort / Aufgabe eintippen …"} onSave={(text) => update(s.id, { text })} />
               </div>
               <div className="flex justify-around mt-[-10px] relative">
                 {((isQ ? ["yes", "no"] : ["next"]) as PortKey[]).map((key) => {
@@ -467,22 +478,22 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
                       type="button"
                       data-flow-port={`${s.id}:${key}`}
                       onPointerDown={(e) => portDown(e, s, key)}
-                      title={used ? "Ziehen = anders verlinken · Klick = Linie löschen" : "Klick = neue Box darunter · Ziehen auf eine Box = verlinken"}
+                      title={en ? (used ? "Drag = link elsewhere · click = delete line" : "Click = new box below · drag onto a box = link") : used ? "Ziehen = anders verlinken · Klick = Linie löschen" : "Klick = neue Box darunter · Ziehen auf eine Box = verlinken"}
                       className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-md touch-none cursor-crosshair ${st.cls} ${used ? "" : "ring-2 ring-white/25"}`}
                     >
-                      {used ? st.label : `＋ ${st.label}`}
+                      {used ? portLabel(key) : `＋ ${portLabel(key)}`}
                     </button>
                   );
                 })}
               </div>
               {chooser?.from === s.id && (
                 <div className="absolute z-10 left-1/2 -translate-x-1/2 mt-2 flex gap-1.5 rounded-xl bg-[#1c1c1e] border border-white/15 p-1.5 shadow-xl whitespace-nowrap">
-                  <span className="self-center px-1 text-[11px] text-white/50">{PORT_STYLE[chooser.key].label} →</span>
+                  <span className="self-center px-1 text-[11px] text-white/50">{portLabel(chooser.key)} →</span>
                   <button type="button" onClick={() => addStep("question", chooser)} className="rounded-lg bg-indigo-500 hover:bg-indigo-400 px-2.5 py-1 text-xs font-semibold">
-                    Frage
+                    {en ? "Question" : "Frage"}
                   </button>
                   <button type="button" onClick={() => addStep("end", chooser)} className="rounded-lg bg-amber-500 text-black hover:bg-amber-400 px-2.5 py-1 text-xs font-semibold">
-                    Antwort
+                    {en ? "Answer" : "Antwort"}
                   </button>
                   <button type="button" onClick={() => setChooser(null)} className="rounded-lg px-1.5 text-white/50 hover:text-white">
                     ✕
@@ -495,7 +506,7 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
         {lineMenu && (
           <div className="absolute z-20 -translate-x-1/2 flex gap-1 rounded-lg bg-[#1c1c1e] border border-white/15 p-1 shadow-xl" style={{ left: PAD + lineMenu.at.x, top: PAD + lineMenu.at.y }}>
             <button type="button" onClick={() => link(lineMenu.from, lineMenu.key, undefined)} className="rounded-md bg-red-600 hover:bg-red-500 px-2.5 py-1 text-xs font-semibold whitespace-nowrap">
-              Linie löschen
+              {en ? "Delete line" : "Linie löschen"}
             </button>
             <button type="button" onClick={() => setLineMenu(null)} className="rounded-md px-1.5 text-white/50 hover:text-white">
               ✕
@@ -508,12 +519,13 @@ function FlowGraphEditor({ el, onCommit }: { el: FlowElement; onCommit: (patch: 
 }
 
 function TitleInput({ value, onSave }: { value: string; onSave: (v: string) => void }) {
+  const en = useLanguage().language === "en";
   const [draft, setDraft] = useState(value);
   const [focused, setFocused] = useState(false);
   return (
     <input
       value={focused ? draft : value}
-      placeholder="Titel des Ablaufs"
+      placeholder={en ? "Flow title" : "Titel des Ablaufs"}
       onFocus={() => {
         setDraft(value);
         setFocused(true);

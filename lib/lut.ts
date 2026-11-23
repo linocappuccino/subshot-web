@@ -14,6 +14,8 @@
 // Both the LOG and the graded version go through the SAME render path (mode 0 = passthrough), so
 // the two halves of the slider are guaranteed to differ only by the LUT itself.
 
+import { uiText } from "./i18nConstants";
+
 export type ParsedLut = {
   kind: "1d" | "3d";
   size: number;
@@ -36,7 +38,7 @@ export function parseCubeLut(text: string): ParsedLut {
     const keyword = parts[0].toUpperCase();
 
     if (/^[-+.\d]/.test(parts[0])) {
-      if (parts.length < 3) throw new Error("LUT-Datei ist beschädigt (ungültige Datenzeile).");
+      if (parts.length < 3) throw new Error(uiText("LUT-Datei ist beschädigt (ungültige Datenzeile).", "LUT file is damaged (invalid data line)."));
       values.push(Number(parts[0]), Number(parts[1]), Number(parts[2]));
       continue;
     }
@@ -68,23 +70,23 @@ export function parseCubeLut(text: string): ParsedLut {
     }
   }
 
-  if (values.some((v) => !Number.isFinite(v))) throw new Error("LUT-Datei enthält ungültige Zahlen.");
+  if (values.some((v) => !Number.isFinite(v))) throw new Error(uiText("LUT-Datei enthält ungültige Zahlen.", "LUT file contains invalid numbers."));
 
   if (size3d > 0) {
-    if (size3d < 2 || size3d > 256) throw new Error(`Ungültige 3D-LUT-Grösse (${size3d}).`);
+    if (size3d < 2 || size3d > 256) throw new Error(uiText(`Ungültige 3D-LUT-Grösse (${size3d}).`, `Invalid 3D LUT size (${size3d}).`));
     if (values.length !== size3d ** 3 * 3) {
-      throw new Error(`LUT-Datei unvollständig: ${values.length / 3} statt ${size3d ** 3} Einträge.`);
+      throw new Error(uiText(`LUT-Datei unvollständig: ${values.length / 3} statt ${size3d ** 3} Einträge.`, `LUT file incomplete: ${values.length / 3} instead of ${size3d ** 3} entries.`));
     }
     return { kind: "3d", size: size3d, data: new Float32Array(values), domainMin, domainMax };
   }
   if (size1d > 0) {
-    if (size1d < 2) throw new Error(`Ungültige 1D-LUT-Grösse (${size1d}).`);
+    if (size1d < 2) throw new Error(uiText(`Ungültige 1D-LUT-Grösse (${size1d}).`, `Invalid 1D LUT size (${size1d}).`));
     if (values.length !== size1d * 3) {
-      throw new Error(`LUT-Datei unvollständig: ${values.length / 3} statt ${size1d} Einträge.`);
+      throw new Error(uiText(`LUT-Datei unvollständig: ${values.length / 3} statt ${size1d} Einträge.`, `LUT file incomplete: ${values.length / 3} instead of ${size1d} entries.`));
     }
     return { kind: "1d", size: size1d, data: new Float32Array(values), domainMin, domainMax };
   }
-  throw new Error("Keine gültige .cube-Datei (LUT_3D_SIZE / LUT_1D_SIZE fehlt).");
+  throw new Error(uiText("Keine gültige .cube-Datei (LUT_3D_SIZE / LUT_1D_SIZE fehlt).", "Not a valid .cube file (LUT_3D_SIZE / LUT_1D_SIZE missing)."));
 }
 
 export function lutNameFromFileName(fileName: string): string {

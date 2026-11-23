@@ -1,5 +1,5 @@
 "use client";
-import { useLanguage } from "@/lib/i18n";
+import { useLanguage, type Language } from "@/lib/i18n";
 
 /** 2026-11-13, Lino: languages on the Post-Production page — tabs «Alle» / per language (flag + name + count) /
  * «Nicht zugeordnet»; «+ Sprache» with a flag that suits the name (changeable), rename / delete (videos then
@@ -27,36 +27,43 @@ export type LanguageTab = string;
 
 /** 2026-11-13, Lino: one list for the Post-Production page AND Live-Dubbing — the written language is picked, its
  * flag comes with it (variants like Schweizerdeutsch 🇨🇭 or Englisch (US) 🇺🇸 have their own entry) */
-export const LANGUAGE_LIST: { code: string; name: string; flag: string }[] = [
-  { code: "de", name: "Deutsch", flag: "🇩🇪" },
-  { code: "gsw", name: "Schweizerdeutsch", flag: "🇨🇭" },
-  { code: "de-AT", name: "Deutsch (Österreich)", flag: "🇦🇹" },
-  { code: "fr", name: "Französisch", flag: "🇫🇷" },
-  { code: "it", name: "Italienisch", flag: "🇮🇹" },
-  { code: "rm", name: "Rätoromanisch", flag: "🇨🇭" },
-  { code: "en", name: "Englisch", flag: "🇬🇧" },
-  { code: "en-US", name: "Englisch (US)", flag: "🇺🇸" },
-  { code: "es", name: "Spanisch", flag: "🇪🇸" },
-  { code: "pt", name: "Portugiesisch", flag: "🇵🇹" },
-  { code: "nl", name: "Niederländisch", flag: "🇳🇱" },
-  { code: "pl", name: "Polnisch", flag: "🇵🇱" },
-  { code: "tr", name: "Türkisch", flag: "🇹🇷" },
-  { code: "sq", name: "Albanisch", flag: "🇦🇱" },
-  { code: "hr", name: "Kroatisch", flag: "🇭🇷" },
-  { code: "sr", name: "Serbisch", flag: "🇷🇸" },
-  { code: "uk", name: "Ukrainisch", flag: "🇺🇦" },
-  { code: "ru", name: "Russisch", flag: "🇷🇺" },
-  { code: "el", name: "Griechisch", flag: "🇬🇷" },
-  { code: "sv", name: "Schwedisch", flag: "🇸🇪" },
-  { code: "da", name: "Dänisch", flag: "🇩🇰" },
-  { code: "no", name: "Norwegisch", flag: "🇳🇴" },
-  { code: "fi", name: "Finnisch", flag: "🇫🇮" },
-  { code: "zh", name: "Chinesisch", flag: "🇨🇳" },
-  { code: "ja", name: "Japanisch", flag: "🇯🇵" },
-  { code: "ko", name: "Koreanisch", flag: "🇰🇷" },
-  { code: "ar", name: "Arabisch", flag: "🇸🇦" },
-  { code: "hi", name: "Hindi", flag: "🇮🇳" },
+export const LANGUAGE_LIST: { code: string; name: string; nameEn: string; flag: string }[] = [
+  { code: "de", name: "Deutsch", nameEn: "German", flag: "🇩🇪" },
+  { code: "gsw", name: "Schweizerdeutsch", nameEn: "Swiss German", flag: "🇨🇭" },
+  { code: "de-AT", name: "Deutsch (Österreich)", nameEn: "German (Austria)", flag: "🇦🇹" },
+  { code: "fr", name: "Französisch", nameEn: "French", flag: "🇫🇷" },
+  { code: "it", name: "Italienisch", nameEn: "Italian", flag: "🇮🇹" },
+  { code: "rm", name: "Rätoromanisch", nameEn: "Romansh", flag: "🇨🇭" },
+  { code: "en", name: "Englisch", nameEn: "English", flag: "🇬🇧" },
+  { code: "en-US", name: "Englisch (US)", nameEn: "English (US)", flag: "🇺🇸" },
+  { code: "es", name: "Spanisch", nameEn: "Spanish", flag: "🇪🇸" },
+  { code: "pt", name: "Portugiesisch", nameEn: "Portuguese", flag: "🇵🇹" },
+  { code: "nl", name: "Niederländisch", nameEn: "Dutch", flag: "🇳🇱" },
+  { code: "pl", name: "Polnisch", nameEn: "Polish", flag: "🇵🇱" },
+  { code: "tr", name: "Türkisch", nameEn: "Turkish", flag: "🇹🇷" },
+  { code: "sq", name: "Albanisch", nameEn: "Albanian", flag: "🇦🇱" },
+  { code: "hr", name: "Kroatisch", nameEn: "Croatian", flag: "🇭🇷" },
+  { code: "sr", name: "Serbisch", nameEn: "Serbian", flag: "🇷🇸" },
+  { code: "uk", name: "Ukrainisch", nameEn: "Ukrainian", flag: "🇺🇦" },
+  { code: "ru", name: "Russisch", nameEn: "Russian", flag: "🇷🇺" },
+  { code: "el", name: "Griechisch", nameEn: "Greek", flag: "🇬🇷" },
+  { code: "sv", name: "Schwedisch", nameEn: "Swedish", flag: "🇸🇪" },
+  { code: "da", name: "Dänisch", nameEn: "Danish", flag: "🇩🇰" },
+  { code: "no", name: "Norwegisch", nameEn: "Norwegian", flag: "🇳🇴" },
+  { code: "fi", name: "Finnisch", nameEn: "Finnish", flag: "🇫🇮" },
+  { code: "zh", name: "Chinesisch", nameEn: "Chinese", flag: "🇨🇳" },
+  { code: "ja", name: "Japanisch", nameEn: "Japanese", flag: "🇯🇵" },
+  { code: "ko", name: "Koreanisch", nameEn: "Korean", flag: "🇰🇷" },
+  { code: "ar", name: "Arabisch", nameEn: "Arabic", flag: "🇸🇦" },
+  { code: "hi", name: "Hindi", nameEn: "Hindi", flag: "🇮🇳" },
 ];
+
+/** a language name as shown in the UI: the saved (German) name of a known language in English when the UI is
+ * English; unknown / custom names stay as typed */
+export function langDisplayName(name: string, language: Language): string {
+  if (language !== "en") return name;
+  return LANGUAGE_LIST.find((l) => l.name.toLowerCase() === name.trim().toLowerCase())?.nameEn ?? name;
+}
 
 export function suggestFlag(name: string): string {
   return LANGUAGE_LIST.find((l) => l.name.toLowerCase() === name.trim().toLowerCase())?.flag ?? "🏳️";
@@ -93,7 +100,7 @@ export function LanguageTabs({
   /** 2026-11-16 — chip counters from lib/postproFilter.facetCounts (key «all», «none», language id) */
   counts?: Record<string, number>;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [form, setForm] = useState<{ id: string | null; name: string; flag: string; flagTouched: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dropOn, setDropOn] = useState<string | null>(null);
@@ -147,12 +154,12 @@ export function LanguageTabs({
         {data.languages.map((l) => (
           <span key={l.id} className="group relative inline-flex">
             <button type="button" data-lang-tab={l.id} onClick={() => onTab(l.id)} className={pill(tab === l.id, l.id)} {...drop(l.id, l.id)}>
-              <span className="text-base leading-none">{l.flag}</span> {l.name} {count(counts ? counts[l.id] ?? 0 : l.count, tab === l.id)}
+              <span className="text-base leading-none">{l.flag}</span> {langDisplayName(l.name, language)} {count(counts ? counts[l.id] ?? 0 : l.count, tab === l.id)}
             </button>
             {editable && (
               <button
                 type="button"
-                title="Sprache bearbeiten"
+                title={t("langs.edit")}
                 data-lang-edit={l.id}
                 onClick={() => setForm({ id: l.id, name: l.name, flag: l.flag, flagTouched: true })}
                 className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-[#2c2c2e] text-[10px] text-white/70 ring-1 ring-white/15 hover:text-white group-hover:flex"
@@ -182,10 +189,10 @@ export function LanguageTabs({
             onChange={(e) => setForm((f) => (f ? { ...f, name: e.target.value, flag: suggestFlag(e.target.value) } : f))}
             className="w-60 rounded-md bg-white/10 px-2 py-1.5 outline-none focus:ring-1 focus:ring-blue-400"
           >
-            <option value="">Sprache wählen …</option>
+            <option value="">{t("langs.choose")}</option>
             {LANGUAGE_LIST.filter((l) => l.name === form.name || !data.languages.some((x) => x.name === l.name)).map((l) => (
               <option key={l.code} value={l.name}>
-                {l.flag} {l.name}
+                {l.flag} {language === "en" ? l.nameEn : l.name}
               </option>
             ))}
             {form.name && !LANGUAGE_LIST.some((l) => l.name === form.name) && <option value={form.name}>{form.flag} {form.name}</option>}
@@ -197,7 +204,7 @@ export function LanguageTabs({
               data-lang-delete
               disabled={busy}
               onClick={() => {
-                if (!form.id || !window.confirm(`Sprache «${form.name}» löschen? Die Videos bleiben und werden «Nicht zugeordnet».`)) return;
+                if (!form.id || !window.confirm(t("langs.deleteConfirm", { name: langDisplayName(form.name, language) }))) return;
                 setBusy(true);
                 void onDelete?.(form.id).finally(() => {
                   setBusy(false);
@@ -206,14 +213,14 @@ export function LanguageTabs({
               }}
               className="text-red-300 hover:text-red-200"
             >
-              Löschen
+              {t("common.delete")}
             </button>
           )}
           <button type="button" onClick={() => setForm(null)} className="text-white/50 hover:text-white">
-            Abbrechen
+            {t("common.cancel")}
           </button>
           <button type="button" data-lang-save disabled={busy || !form.name.trim()} onClick={() => void save()} className="rounded-md bg-blue-500 hover:bg-blue-400 px-3 py-1.5 font-semibold text-white disabled:opacity-40">
-            {form.id ? "Speichern" : "Hinzufügen"}
+            {form.id ? t("common.save") : t("common.add")}
           </button>
         </div>
       )}
@@ -257,8 +264,9 @@ export function LanguageBadge({
   /** «+ Sprache» only shows clearly on hover (tile hover group «thumb») */
   revealOnHover?: boolean;
 }) {
+  const { t, language } = useLanguage();
   const badge = current ? (
-    <span data-lang-badge={current.id} title={current.name} className={`${BADGE} bg-black/60 text-white ring-white/15`}>
+    <span data-lang-badge={current.id} title={langDisplayName(current.name, language)} className={`${BADGE} bg-black/60 text-white ring-white/15`}>
       <span className="text-[12px] leading-none">{current.flag}</span>
       {langCode(current.name)}
     </span>
@@ -267,7 +275,7 @@ export function LanguageBadge({
       data-lang-badge=""
       className={`${BADGE} bg-black/50 text-white/80 ring-white/25 transition-opacity ${revealOnHover ? "opacity-0 group-hover/thumb:opacity-100" : ""}`}
     >
-      ＋ Sprache
+      {t("langs.badgeAdd")}
     </span>
   );
   if (!onChange) return current ? badge : null;
@@ -291,19 +299,20 @@ export function LanguageMenuItems({
   onPick: (id: string | null) => void;
   onNew?: () => void;
 }) {
+  const { t, language } = useLanguage();
   const row = "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-white/10";
   return (
     <div data-lang-menu className="min-w-[13rem] p-1">
       {languages.map((l) => (
         <button key={l.id} type="button" data-lang-option={l.id} onClick={() => onPick(l.id)} className={row}>
           <span className="w-5 text-center text-base leading-none">{l.flag}</span>
-          <span className="flex-1">{l.name}</span>
+          <span className="flex-1">{langDisplayName(l.name, language)}</span>
           {current === l.id && <span className="text-blue-400">✓</span>}
         </button>
       ))}
       <button type="button" data-lang-option="" onClick={() => onPick(null)} className={`${row} text-white/60`}>
         <span className="w-5 text-center">–</span>
-        <span className="flex-1">Keine Sprache</span>
+        <span className="flex-1">{t("langs.none")}</span>
         {current === null && <span className="text-blue-400">✓</span>}
       </button>
       {onNew && (
@@ -311,7 +320,7 @@ export function LanguageMenuItems({
           <div className="my-1 h-px bg-white/10" />
           <button type="button" data-lang-new onClick={onNew} className={`${row} text-blue-300`}>
             <span className="w-5 text-center">＋</span>
-            <span className="flex-1">Neue Sprache</span>
+            <span className="flex-1">{t("langs.new")}</span>
           </button>
         </>
       )}

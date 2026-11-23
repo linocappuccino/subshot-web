@@ -48,6 +48,7 @@ import type {
 
 import type { BoardData, BoardResponse, BoardTemplate, BoardUploadTicket, BoardVote, LinkPreview, ProjectCredits, DubbingTake } from "./board";
 import type { BoardSchedule, SchedulePlanOp } from "./timetable";
+import { uiText } from "./i18nConstants";
 
 export type OAuthConsentRequest = {
   client_name: string;
@@ -204,7 +205,7 @@ function invalidateListCachesFor(path: string) {
 export function createApiClient(getToken: () => Promise<string | null>, userId?: string | null) {
   async function doRequest<T>(path: string, init?: RequestInit): Promise<T> {
     const token = await getToken();
-    if (!token) throw new ApiError(401, "Nicht angemeldet.");
+    if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
     const res = await fetch(`${BASE_URL}/${path}`, {
       ...init,
       headers: {
@@ -449,8 +450,8 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) onProgress?.(e.loaded / e.total);
         };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, "Upload fehlgeschlagen.")));
-        xhr.onerror = () => reject(new ApiError(0, "Upload fehlgeschlagen."));
+        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new ApiError(xhr.status, uiText("Upload fehlgeschlagen.", "Upload failed."))));
+        xhr.onerror = () => reject(new ApiError(0, uiText("Upload fehlgeschlagen.", "Upload failed.")));
         xhr.send(file);
       }),
     // always fresh (no GET cache): it is re-read right after every change
@@ -518,7 +519,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     callsheet: (projectId: string, date: string) => request<Callsheet>(`projects/${projectId}/callsheet?date=${date}&t=${Date.now()}`),
     callsheetPdfUrl: async (projectId: string, date: string, order: "shooting" | "story" = "shooting") => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/projects/${projectId}/callsheet.pdf?date=${date}&order=${order}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       return URL.createObjectURL(await res.blob());
@@ -527,7 +528,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       // Downloaded (not just linked) because the endpoint needs the same
       // Bearer auth as everything else — a plain <a href> can't attach one.
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/projects/${id}/pdf?view=${view}${view === "schedule" ? `&order=${order}` : ""}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       const blob = await res.blob();
@@ -810,9 +811,9 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
         };
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else reject(new ApiError(xhr.status, "Video-Upload zu R2 fehlgeschlagen."));
+          else reject(new ApiError(xhr.status, uiText("Video-Upload zu R2 fehlgeschlagen.", "Video upload to R2 failed.")));
         };
-        xhr.onerror = () => reject(new ApiError(0, "Video-Upload zu R2 fehlgeschlagen."));
+        xhr.onerror = () => reject(new ApiError(0, uiText("Video-Upload zu R2 fehlgeschlagen.", "Video upload to R2 failed.")));
         xhr.send(file);
       }),
     completeVideoVersion: (versionId: string, fileSizeBytes: number, durationSeconds?: number) =>
@@ -953,7 +954,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // aktiven Sprache.
     subtitlesDownloadUrl: async (versionId: string) => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/video-versions/${versionId}/subtitles/download`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -969,7 +970,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<any>(`video-versions/${versionId}/resolve-link`, { method: "PUT", body: JSON.stringify(body) }),
     downloadSubtitleTrack: async (versionId: string, lang: string, fmt: "srt" | "vtt") => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/video-versions/${versionId}/subtitles/export?lang=${encodeURIComponent(lang)}&fmt=${fmt}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1000,7 +1001,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // `.edl` file client-side, not displayed/rendered directly.
     sceneMarkersEdlText: async (sectionId: string) => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/sections/${sectionId}/edl`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -1083,7 +1084,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<{ url: string; expires_at: string }>(`ideas/${ideaId}/dubbing/${nodeId}/share`, { method: "POST", body: JSON.stringify({ lang: lang || null }) }),
     dubbingExportUrl: async (ideaId: string, nodeId: string, lang: string, kind: "wav" | "zip") => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/ideas/${ideaId}/dubbing/${nodeId}/export?lang=${encodeURIComponent(lang)}&kind=${kind}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       return URL.createObjectURL(await res.blob());
@@ -1100,7 +1101,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       request<ProjectCredits>(`projects/${projectId}/credits/${entryId}`, { method: "DELETE" }),
     creditsPdfUrl: async (projectId: string, currency: "CHF" | "USD", start?: string, end?: string) => {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const q = new URLSearchParams({ currency, ...(start ? { start } : {}), ...(end ? { end } : {}) });
       const res = await fetch(`${BASE_URL}/projects/${projectId}/credits.pdf?${q}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
@@ -1338,7 +1339,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
       ),
     async fetchStaticMapBlobUrl(lat: number, lng: number): Promise<string> {
       const token = await getToken();
-      if (!token) throw new ApiError(401, "Nicht angemeldet.");
+      if (!token) throw new ApiError(401, uiText("Nicht angemeldet.", "Not signed in."));
       const res = await fetch(`${BASE_URL}/static-map?lat=${lat}&lng=${lng}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => res.statusText));
       const blob = await res.blob();

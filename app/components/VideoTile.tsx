@@ -349,10 +349,10 @@ export function VideoTile({
           const file = files[0];
           if (!file) return;
           if (!(file.type.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(file.name))) {
-            onDropRejected?.(`«${file.name}» ist kein Video (nur MP4, MOV oder WebM).`);
+            onDropRejected?.(t("videoTile.notAVideo", { name: file.name }));
             return;
           }
-          if (files.length > 1) onDropRejected?.(`Nur eine Datei pro Version – «${file.name}» wird als V${nextVersionNo} hochgeladen.`);
+          if (files.length > 1) onDropRejected?.(t("videoTile.oneFilePerVersion", { name: file.name, version: nextVersionNo }));
           onUploadVersion(file);
         },
       }
@@ -515,7 +515,7 @@ export function VideoTile({
             type="button"
             data-video-pick={video.id}
             aria-pressed={selectBox.checked}
-            title="Auswählen"
+            title={t("videoTile.select")}
             onClick={(e) => {
               e.stopPropagation();
               selectBox.onToggle();

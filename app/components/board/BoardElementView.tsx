@@ -95,6 +95,8 @@ export interface ElementViewLabels extends TodoLabels {
   open: string;
   download: string;
   missingFile: string;
+  /** name shown for a file without one */
+  fileFallback?: string;
   scene: string;
   priorities: Record<Priority, string>;
   palette: string;
@@ -1176,7 +1178,7 @@ function FileNode({ el, labels }: { el: MediaElement; labels: ElementViewLabels 
         {isPdf ? "PDF" : (el.name.split(".").pop() ?? "").slice(0, 4).toUpperCase()}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-sm text-white/90 font-medium line-clamp-2 break-words">{el.name || "Datei"}</div>
+        <div className="text-sm text-white/90 font-medium line-clamp-2 break-words">{el.name || labels.fileFallback || "Datei"}</div>
         <div className="text-xs text-white/40 mt-0.5">{formatBytes(el.size)}</div>
         {el.src && canDownload && (
           <a

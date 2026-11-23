@@ -621,7 +621,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       await api.deleteAnnotation(annotation.id);
       setAnnotations((prev) => prev.filter((a) => a.id !== annotation.id));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.deleteFailed"));
     }
   }
   // 2026-07-31, Lino: "wenn man in den notifications auf einen kommentar
@@ -1048,7 +1048,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     try {
       await api.reorderScenes(data.id, sectionId, orderedIds);
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectDetail.sortFailed"));
     }
   }
 
@@ -1143,7 +1143,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         setData(fresh);
       }
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Zeiten anpassen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectDetail.retimeFailed"));
     }
   }
 
@@ -1182,7 +1182,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         return { ...prev, scenes: [...untouched, ...before, reindexedOriginal, reindexedCopy, ...after] };
       });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Duplizieren fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectDetail.duplicateFailed"));
     }
   }
 
@@ -1192,7 +1192,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       await api.deleteScene(deleteScene.id);
       setData((prev) => (prev ? { ...prev, scenes: prev.scenes.filter((s) => s.id !== deleteScene.id) } : prev));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.deleteFailed"));
     } finally {
       setDeleteScene(null);
     }
@@ -1227,7 +1227,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           : prev
       );
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.deleteFailed"));
     } finally {
       setDeleteSection(null);
     }
@@ -1249,7 +1249,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         await api.deleteScene(scene.id);
         setData((prev) => (prev ? { ...prev, scenes: prev.scenes.filter((s) => s.id !== scene.id) } : prev));
       } catch (e) {
-        toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("common.deleteFailed"));
         return;
       }
     }
@@ -1264,9 +1264,9 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     try {
       const updated = await api.sendSectionToPostproduction(sendToPostproduction.id);
       setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
-      toast.showSuccess(`"${updated.name}" ist jetzt in der Postproduction.`);
+      toast.showSuccess(t("projectDetail.inPostproduction", { name: updated.name }));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     } finally {
       setSendToPostproduction(null);
     }
@@ -1444,7 +1444,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         try {
           await api.moveSection(draggedId, beforeId);
         } catch (e) {
-          toast.showError(e instanceof ApiError ? e.message : "Umsortieren fehlgeschlagen.");
+          toast.showError(e instanceof ApiError ? e.message : t("projectDetail.reorderFailed"));
         }
       })();
       return;
@@ -1510,7 +1510,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         }),
       }));
       api.reorderScenesShootingOrder(originScene.section_id, orderedSceneIds).catch((e) => {
-        toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("projectDetail.sortFailed"));
       });
       return;
     }
@@ -1535,7 +1535,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             : await api.patchScene(activeScene.id, { clear_section: true });
           setData((prev) => (prev ? { ...prev, scenes: prev.scenes.map((s) => (s.id === patched.id ? patched : s)) } : prev));
         } catch (e) {
-          toast.showError(e instanceof ApiError ? e.message : "Verschieben fehlgeschlagen.");
+          toast.showError(e instanceof ApiError ? e.message : t("common.moveFailed"));
           return;
         }
       }
@@ -1572,7 +1572,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const section = await api.createSection(data.id, name, data.sections.length);
       setData((prev) => (prev ? { ...prev, sections: [...prev.sections, section] } : prev));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
     setNewSectionName("");
   }
@@ -1596,7 +1596,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       const updated = await api.patchSection(editingSection.id, { name });
       setData((prev) => (prev ? { ...prev, sections: prev.sections.map((s) => (s.id === updated.id ? updated : s)) } : prev));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     } finally {
       setEditingSection(null);
     }
@@ -1633,7 +1633,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       });
       setData((prev) => (prev ? { ...prev, scenes: [...prev.scenes, scene] } : prev));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.failed"));
     }
   }
 
@@ -1660,7 +1660,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       a.download = view === "schedule" ? `${data.name || "Projekt"} – Drehplan.pdf` : `${data.name || (view === "ideas" ? "ideen" : "shotlist")}.pdf`;
       a.click();
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "PDF-Export fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("projectDetail.pdfFailed"));
     } finally {
       setExportingPdf(false);
     }
@@ -1824,7 +1824,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
   if (!data || needsPostproductionRedirect || needsPipelineStageRedirect) {
     return (
       <AppShell>
-        <div className="flex-1 flex items-center justify-center text-white/50">Lädt…</div>
+        <div className="flex-1 flex items-center justify-center text-white/50">{t("common.loading")}</div>
       </AppShell>
     );
   }
@@ -1863,7 +1863,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
     if (!data) return;
     const groups: { label: string; scenes: Scene[] }[] = [
       ...sections.map((section) => ({ label: section.name || t("workflow.goodTakes"), scenes: scenesIn(section.id) })),
-      { label: "Ohne Abschnitt", scenes: unsectioned },
+      { label: t("scriptOverview.unsectionedTitle"), scenes: unsectioned },
     ]
       .map((g) => ({ label: g.label, scenes: g.scenes.filter((s) => !s.is_intermediate_step) }))
       .filter((g) => g.scenes.length > 0);
@@ -1884,10 +1884,10 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
         // see that map's own doc comment above). Same live lookup here.
         const liveNumber = sceneNumberIn(scene.section_id).get(scene.id);
         const kachelId = liveNumber != null ? String(liveNumber) : `${scene.number}${scene.letter ?? ""}`;
-        lines.push(`Kachel ID:\t${kachelId}`);
-        lines.push(`Titel:\t\t${scene.name || "-"}`);
+        lines.push(`${t("projectDetail.goodTakesTileId")}:\t${kachelId}`);
+        lines.push(`${t("projectDetail.goodTakesTitle")}:\t\t${scene.name || "-"}`);
         lines.push("");
-        lines.push(`Good Take:\t${scene.good_take_filename || "nicht eingetragen"}`);
+        lines.push(`Good Take:\t${scene.good_take_filename || t("projectDetail.goodTakesNotSet")}`);
         lines.push("");
         lines.push("-".repeat(54));
         lines.push("");
@@ -2132,14 +2132,14 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               <div className="flex bg-white/5 border border-white/10 rounded-xl p-0.5">
                 <button
                   onClick={() => setViewModePersisted("grid")}
-                  title="Kachelansicht"
+                  title={t("projects.gridView")}
                   className={`p-1.5 rounded-lg transition-colors ${viewMode === "grid" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
                 >
                   <GridIcon />
                 </button>
                 <button
                   onClick={() => setViewModePersisted("table")}
-                  title="Tabellenansicht"
+                  title={t("projectDetail.tableView")}
                   className={`p-1.5 rounded-lg transition-colors ${viewMode === "table" ? "bg-white/15 text-white" : "text-white/40 hover:text-white/70"}`}
                 >
                   <TableIcon />
@@ -2704,8 +2704,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
             <EdgeNavButton
               side="left"
               onClick={goToProjectsWithTransition}
-              ariaLabel="Projektübersicht"
-              label="Projektübersicht"
+              ariaLabel={t("projects.title")}
+              label={t("projects.title")}
             />
             {data.module_scripting && (
               <EdgeNavButton
@@ -2792,7 +2792,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       close();
                     }}
                   >
-                    Neue Szene
+                    {t("projectDetail.newScene")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -2800,7 +2800,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       close();
                     }}
                   >
-                    Zwischenschritt
+                    {t("projectDetail.intermediateStep")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -2808,7 +2808,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                       close();
                     }}
                   >
-                    Abschnitt
+                    {t("projectDetail.section")}
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -2829,20 +2829,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           the FAB (Lino, 2026-07-10) — matches every other "name this thing"
           prompt in the app (SceneEditModal etc.) instead of being the one
           exception tucked into a corner. */}
-      <Modal open={creatingSection} onClose={() => setCreatingSection(false)} title="Neuer Abschnitt">
+      <Modal open={creatingSection} onClose={() => setCreatingSection(false)} title={t("projectDetail.newSection")}>
         <Input
           autoFocus
           value={newSectionName}
           onChange={(e) => setNewSectionName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && createSection()}
-          placeholder="Abschnittsname"
+          placeholder={t("projectDetail.sectionName")}
         />
         <div className="flex justify-end gap-2 mt-5">
           <Button variant="ghost" onClick={() => setCreatingSection(false)}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={createSection}>
-            Speichern
+            {t("common.save")}
           </Button>
         </div>
       </Modal>
@@ -2850,20 +2850,20 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       {/* Abschnitt umbenennen — mirrors iOS' contextMenu "Umbenennen" entry
           (see ShotListView.swift's sectionHeader), which the web app never
           had at all (only create/delete existed here before). */}
-      <Modal open={editingSection !== null} onClose={() => setEditingSection(null)} title="Abschnitt umbenennen">
+      <Modal open={editingSection !== null} onClose={() => setEditingSection(null)} title={t("projectDetail.renameSection")}>
         <Input
           autoFocus
           value={editSectionName}
           onChange={(e) => setEditSectionName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && saveEditedSection()}
-          placeholder="Abschnittsname"
+          placeholder={t("projectDetail.sectionName")}
         />
         <div className="flex justify-end gap-2 mt-5">
           <Button variant="ghost" onClick={() => setEditingSection(null)}>
-            Abbrechen
+            {t("common.cancel")}
           </Button>
           <Button variant="primary" onClick={saveEditedSection}>
-            Speichern
+            {t("common.save")}
           </Button>
         </div>
       </Modal>
@@ -2890,8 +2890,8 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       />
       <ConfirmDialog
         open={deleteScene !== null}
-        title="Szene löschen?"
-        message={`"${deleteScene?.name || "Unbenannte Szene"}" wird endgültig gelöscht.`}
+        title={t("projectDetail.deleteSceneTitle")}
+        message={t("projectDetail.deleteSceneMessage", { name: deleteScene?.name || t("scene.unnamed") })}
         onConfirm={confirmDeleteScene}
         onCancel={() => setDeleteScene(null)}
       />
@@ -2913,26 +2913,26 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       />
       <ConfirmDialog
         open={deleteUnsectioned}
-        title={t("scriptOverview.unsectionedTitle") + " löschen?"}
-        message={`${unsectioned.length} Szene${unsectioned.length === 1 ? "" : "n"} ohne Abschnitt werden endgültig gelöscht.`}
+        title={t("projectDetail.deleteUnsectionedTitle")}
+        message={t(unsectioned.length === 1 ? "projectDetail.deleteUnsectionedOne" : "projectDetail.deleteUnsectionedMany", { count: unsectioned.length })}
         onConfirm={confirmDeleteUnsectioned}
         onCancel={() => setDeleteUnsectioned(false)}
       />
       <ConfirmDialog
         open={sendToPostproduction !== null}
-        title="Alle Szenen im Kasten?"
-        message={`"${sendToPostproduction?.name}" wandert in die Postproduction-Tracking-Liste.`}
-        confirmLabel="Ab in die Postproduction"
+        title={t("projectDetail.sendToPostTitle")}
+        message={t("projectDetail.sendToPostMessage", { name: sendToPostproduction?.name ?? "" })}
+        confirmLabel={t("projectDetail.sendToPost")}
         danger={false}
         onConfirm={confirmSendToPostproduction}
         onCancel={() => setSendToPostproduction(null)}
       />
       <ConfirmDialog
         open={cascadeConfirm !== null}
-        title="Möchtest du die nachfolgenden Szenen zeitlich angleichen?"
+        title={t("projectDetail.cascadeTitle")}
         message=""
-        confirmLabel="Bestätigen"
-        cancelLabel="Nicht angleichen"
+        confirmLabel={t("common.confirm")}
+        cancelLabel={t("projectDetail.cascadeCancel")}
         danger={false}
         onConfirm={confirmCascadeTimes}
         onCancel={() => setCascadeConfirm(null)}
@@ -2991,7 +2991,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           setShotOrderMode(true);
           toast.showSuccess(t("optimize.applied"));
         } catch (e) {
-          toast.showError(e instanceof ApiError ? e.message : "Sortieren fehlgeschlagen.");
+          toast.showError(e instanceof ApiError ? e.message : t("projectDetail.sortFailed"));
         }
       }}
     />
@@ -3361,7 +3361,7 @@ function SectionBlock({
             // [[project_subshot_architecture]]'s #38 "3 von 10" note) —
             // converting it removes the race at the root instead.
             className="cursor-grab active:cursor-grabbing text-white/20 hover:text-white/50 shrink-0 p-1.5 mt-0.5 touch-none"
-            title="Abschnitt verschieben"
+            title={t("projectDetail.moveSection")}
           >
             <svg width="12" height="16" viewBox="0 0 12 16" fill="currentColor">
               <circle cx="2" cy="2" r="1.4" /><circle cx="2" cy="8" r="1.4" /><circle cx="2" cy="14" r="1.4" />
@@ -3413,7 +3413,7 @@ function SectionBlock({
                               close();
                             }}
                           >
-                            Nach Identifikationsnummer sortieren
+                            {t("projectDetail.sortById")}
                           </MenuItem>
                           <MenuItem
                             onClick={() => {
@@ -3421,7 +3421,7 @@ function SectionBlock({
                               close();
                             }}
                           >
-                            Nach Zeit sortieren
+                            {t("projectDetail.sortByTime")}
                           </MenuItem>
                           <MenuItem
                             onClick={() => {
@@ -3429,7 +3429,7 @@ function SectionBlock({
                               close();
                             }}
                           >
-                            Nach Ort sortieren
+                            {t("projectDetail.sortByPlace")}
                           </MenuItem>
                           <MenuItem
                             onClick={() => {
@@ -3437,7 +3437,7 @@ function SectionBlock({
                               close();
                             }}
                           >
-                            Nach Priorität sortieren
+                            {t("projectDetail.sortByPriority")}
                           </MenuItem>
                         </>
                       )}
@@ -3448,7 +3448,7 @@ function SectionBlock({
                             close();
                           }}
                         >
-                          Umbenennen
+                          {t("projectDetail.rename")}
                         </MenuItem>
                       )}
                       {section && !section.in_postproduction && onSendToPostproduction && (
@@ -3458,7 +3458,7 @@ function SectionBlock({
                             close();
                           }}
                         >
-                          Ab in die Postproduction
+                          {t("projectDetail.sendToPost")}
                         </MenuItem>
                       )}
                       {section && onDeleteSection && (
@@ -3469,7 +3469,7 @@ function SectionBlock({
                             close();
                           }}
                         >
-                          Abschnitt löschen
+                          {t("projectDetail.deleteSection")}
                         </MenuItem>
                       )}
                     </>

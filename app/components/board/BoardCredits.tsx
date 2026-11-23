@@ -8,6 +8,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CreditsElement, ProjectCredits } from "@/lib/board";
+import { useLanguage } from "@/lib/i18n";
 
 export interface BoardCreditsApi {
   get: () => Promise<ProjectCredits>;
@@ -34,6 +35,7 @@ export function CreditsNode({
   onMeasure: (h: number) => void;
 }) {
   const api = useContext(BoardCreditsContext);
+  const en = useLanguage().language === "en";
   const [data, setData] = useState<ProjectCredits | null>(null);
   const [failed, setFailed] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -92,9 +94,9 @@ export function CreditsNode({
         </div>
       </div>
       <div className="px-4 pt-3 pb-2">
-        <div className="text-[11px] uppercase tracking-wide text-white/45">Total ausgegeben</div>
+        <div className="text-[11px] uppercase tracking-wide text-white/45">{en ? "Total spent" : "Total ausgegeben"}</div>
         <div data-credits-total className="text-3xl font-bold tabular-nums">{data ? (currency === "USD" ? `$ ${fmt(total)}` : `CHF ${fmt(total)}`) : failed ? "–" : "…"}</div>
-        {data && <div className="text-xs text-white/45">{fmtCredits(data.total_credits)} Credits{data.unpriced_entries > 0 && <span className="text-amber-300"> · {data.unpriced_entries} ohne Preis</span>}</div>}
+        {data && <div className="text-xs text-white/45">{fmtCredits(data.total_credits)} Credits{data.unpriced_entries > 0 && <span className="text-amber-300"> · {data.unpriced_entries} {en ? "without price" : "ohne Preis"}</span>}</div>}
       </div>
       {data && data.sources.length > 0 && (
         <div className="px-4 pb-2 flex flex-col gap-1">
@@ -104,7 +106,7 @@ export function CreditsNode({
               <span className="text-xs text-white/45 tabular-nums">{fmtCredits(s.credits)} Cr.</span>
               <span className="w-28 text-right font-semibold tabular-nums">{money(s.usd)}</span>
               {editable && (
-                <button data-no-drag type="button" title="Preis pro Credit (USD)" onClick={() => setPriceFor(priceFor === s.source ? null : s.source)} className="text-white/35 hover:text-white text-xs px-1">
+                <button data-no-drag type="button" title={en ? "Price per credit (USD)" : "Preis pro Credit (USD)"} onClick={() => setPriceFor(priceFor === s.source ? null : s.source)} className="text-white/35 hover:text-white text-xs px-1">
                   ⚙
                 </button>
               )}
@@ -122,7 +124,7 @@ export function CreditsNode({
       )}
       <div data-no-drag className="border-t border-white/10">
         <button type="button" onClick={() => editable && onCommit({ collapsed: !el.collapsed })} className="w-full flex items-center justify-between px-4 py-2 text-xs text-white/60 hover:text-white">
-          <span>{el.collapsed ? "▸" : "▾"} Einträge ({data?.entries.length ?? 0})</span>
+          <span>{el.collapsed ? "▸" : "▾"} {en ? "Entries" : "Einträge"} ({data?.entries.length ?? 0})</span>
           {editable && !el.collapsed && (
             <span
               role="button"
@@ -132,7 +134,7 @@ export function CreditsNode({
               }}
               className="rounded-md bg-emerald-500/20 hover:bg-emerald-500/35 px-2 py-0.5 font-semibold text-emerald-100"
             >
-              ＋ Eintrag
+              {en ? "＋ Entry" : "＋ Eintrag"}
             </span>
           )}
         </button>
@@ -151,25 +153,25 @@ export function CreditsNode({
                   <div className="truncate text-white/85">{e.description || "–"}</div>
                   <div className="text-white/40">{e.date ? new Date(e.date).toLocaleDateString("de-CH") : ""} · {e.source} · {fmtCredits(e.credits)} Cr.</div>
                 </div>
-                <div className="text-right tabular-nums font-semibold" title={e.estimated ? "geschätzt (Preis pro Credit)" : undefined}>
+                <div className="text-right tabular-nums font-semibold" title={e.estimated ? (en ? "estimated (price per credit)" : "geschätzt (Preis pro Credit)") : undefined}>
                   {money(e.usd)}
                   {e.estimated && <span className="text-white/35">*</span>}
                 </div>
                 {editable && (
-                  <button type="button" title="Eintrag löschen" onClick={() => api.remove(e.id).then(setData).catch(() => setFailed(true))} className="text-white/30 hover:text-red-300 opacity-0 group-hover/entry:opacity-100">
+                  <button type="button" title={en ? "Delete entry" : "Eintrag löschen"} onClick={() => api.remove(e.id).then(setData).catch(() => setFailed(true))} className="text-white/30 hover:text-red-300 opacity-0 group-hover/entry:opacity-100">
                     ✕
                   </button>
                 )}
               </div>
             ))}
-            {data && data.entries.length === 0 && !adding && <p className="px-1 py-2 text-xs text-white/40">Noch keine Einträge. Claude trägt jede Higgsfield- / Weavy-Generierung über die MCP ein.</p>}
+            {data && data.entries.length === 0 && !adding && <p className="px-1 py-2 text-xs text-white/40">{en ? "No entries yet. Claude adds every Higgsfield / Weavy generation via MCP." : "Noch keine Einträge. Claude trägt jede Higgsfield- / Weavy-Generierung über die MCP ein."}</p>}
           </div>
         )}
       </div>
       <div data-no-drag className="px-3 pb-2 flex flex-col gap-1.5">
         {!pdfOpen ? (
           <button type="button" onClick={() => setPdfOpen(true)} className="self-start rounded-md bg-white/10 hover:bg-white/15 px-2.5 py-1 text-xs font-semibold">
-            ⤓ PDF herunterladen
+            {en ? "⤓ Download PDF" : "⤓ PDF herunterladen"}
           </button>
         ) : (
           <PdfExport
@@ -185,8 +187,8 @@ export function CreditsNode({
         <div className="px-4 pb-2 text-[10px] text-white/35">
           1 USD = {data.rate.rate.toFixed(4)} CHF · {data.rate.source}
           {data.rate.date ? ` · ${new Date(data.rate.date).toLocaleDateString("de-CH")}` : ""}
-          {data.rate.stale ? " (nicht aktuell)" : ""}
-          {data.entries.some((e) => e.estimated) && " · * geschätzt mit Preis pro Credit"}
+          {data.rate.stale ? (en ? " (not current)" : " (nicht aktuell)") : ""}
+          {data.entries.some((e) => e.estimated) && (en ? " · * estimated with price per credit" : " · * geschätzt mit Preis pro Credit")}
         </div>
       )}
     </div>
@@ -194,6 +196,7 @@ export function CreditsNode({
 }
 
 function AddEntry({ sources, onAdd, onCancel }: { sources: string[]; onAdd: (b: { credits: number; amount_usd?: number | null; description: string; source: string }) => void; onCancel: () => void }) {
+  const en = useLanguage().language === "en";
   const [source, setSource] = useState(sources[0] ?? "Higgsfield");
   const [credits, setCredits] = useState("");
   const [usd, setUsd] = useState("");
@@ -204,21 +207,21 @@ function AddEntry({ sources, onAdd, onCancel }: { sources: string[]; onAdd: (b: 
   return (
     <div className="rounded-lg border border-emerald-400/30 bg-emerald-500/[0.06] p-2 flex flex-col gap-1.5">
       <div className="flex gap-1.5">
-        <input list="credit-sources" value={source} onChange={(e) => setSource(e.target.value)} placeholder="Quelle" className={`${input} flex-1`} />
+        <input list="credit-sources" value={source} onChange={(e) => setSource(e.target.value)} placeholder={en ? "Source" : "Quelle"} className={`${input} flex-1`} />
         <datalist id="credit-sources">{sources.map((s) => <option key={s} value={s} />)}</datalist>
         <input value={credits} onChange={(e) => setCredits(e.target.value)} inputMode="decimal" placeholder="Credits" className={`${input} w-20`} />
         <input value={usd} onChange={(e) => setUsd(e.target.value)} inputMode="decimal" placeholder="USD (opt.)" className={`${input} w-20`} />
       </div>
-      <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Beschreibung (z. B. Storyboard Szene 3)" className={input} />
+      <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={en ? "Description (e.g. storyboard scene 3)" : "Beschreibung (z. B. Storyboard Szene 3)"} className={input} />
       <div className="flex justify-end gap-1.5">
-        <button type="button" onClick={onCancel} className="px-2 py-1 text-xs text-white/60 hover:text-white">Abbrechen</button>
+        <button type="button" onClick={onCancel} className="px-2 py-1 text-xs text-white/60 hover:text-white">{en ? "Cancel" : "Abbrechen"}</button>
         <button
           type="button"
           disabled={!ok}
           onClick={() => onAdd({ source: source.trim() || "Higgsfield", credits: num(credits) || 0, amount_usd: usd.trim() ? num(usd) : null, description: desc.trim() })}
           className="rounded-md bg-emerald-500 text-black px-2.5 py-1 text-xs font-semibold disabled:opacity-40"
         >
-          Hinzufügen
+          {en ? "Add" : "Hinzufügen"}
         </button>
       </div>
     </div>
@@ -226,11 +229,12 @@ function AddEntry({ sources, onAdd, onCancel }: { sources: string[]; onAdd: (b: 
 }
 
 function PriceEditor({ source, value, onSave, onCancel }: { source: string; value: number | null; onSave: (v: number | null) => void; onCancel: () => void }) {
+  const en = useLanguage().language === "en";
   const [v, setV] = useState(value != null ? String(value) : "");
   return (
     <div data-no-drag className="mx-4 mb-2 rounded-lg border border-white/15 bg-black/30 p-2 flex items-center gap-1.5 text-xs">
-      <span className="flex-1 min-w-0 truncate text-white/70">Preis pro Credit (USD) · {source}</span>
-      <input value={v} onChange={(e) => setV(e.target.value)} inputMode="decimal" placeholder="z. B. 0.06" className="w-20 rounded-md bg-black/40 border border-white/10 px-2 py-1 outline-none focus:border-emerald-400 select-text" />
+      <span className="flex-1 min-w-0 truncate text-white/70">{en ? "Price per credit (USD)" : "Preis pro Credit (USD)"} · {source}</span>
+      <input value={v} onChange={(e) => setV(e.target.value)} inputMode="decimal" placeholder={en ? "e.g. 0.06" : "z. B. 0.06"} className="w-20 rounded-md bg-black/40 border border-white/10 px-2 py-1 outline-none focus:border-emerald-400 select-text" />
       <button type="button" onClick={() => onSave(v.trim() ? Number(v.replace(",", ".")) : null)} className="rounded-md bg-emerald-500 text-black px-2 py-1 font-semibold">OK</button>
       <button type="button" onClick={onCancel} className="px-1 text-white/50 hover:text-white">✕</button>
     </div>
@@ -240,6 +244,7 @@ function PriceEditor({ source, value, onSave, onCancel }: { source: string; valu
 function PdfExport({ first, last, currency, onExport, onClose }: { first: string | null; last: string | null; currency: "CHF" | "USD"; onExport: (start?: string, end?: string) => Promise<string>; onClose: () => void }) {
   const [start, setStart] = useState(first ?? "");
   const [end, setEnd] = useState(last ?? "");
+  const en = useLanguage().language === "en";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const input = "rounded-md bg-black/30 border border-white/10 px-1.5 py-1 text-xs outline-none focus:border-emerald-400 [color-scheme:dark]";
@@ -266,16 +271,16 @@ function PdfExport({ first, last, currency, onExport, onClose }: { first: string
   return (
     <div className="rounded-lg border border-white/15 bg-black/25 p-2 flex flex-col gap-1.5 text-xs">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-white/60">Zeitraum</span>
+        <span className="text-white/60">{en ? "Period" : "Zeitraum"}</span>
         <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className={input} />
         <span className="text-white/40">–</span>
         <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className={input} />
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="flex-1 text-white/45">Beträge in {currency}{error ? " · Fehler beim Erstellen" : ""}</span>
-        <button type="button" onClick={onClose} className="px-2 py-1 text-white/60 hover:text-white">Abbrechen</button>
+        <span className="flex-1 text-white/45">{en ? "Amounts in" : "Beträge in"} {currency}{error ? (en ? " · Error while creating" : " · Fehler beim Erstellen") : ""}</span>
+        <button type="button" onClick={onClose} className="px-2 py-1 text-white/60 hover:text-white">{en ? "Cancel" : "Abbrechen"}</button>
         <button type="button" disabled={busy} onClick={() => void go()} className="rounded-md bg-emerald-500 text-black px-2.5 py-1 font-semibold disabled:opacity-50">
-          {busy ? "Erstelle …" : "PDF erstellen"}
+          {busy ? (en ? "Creating …" : "Erstelle …") : en ? "Create PDF" : "PDF erstellen"}
         </button>
       </div>
     </div>

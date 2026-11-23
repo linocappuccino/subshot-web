@@ -117,9 +117,9 @@ export function elementLabel(el: BoardElement, t: (k: never) => string): string 
     case "light_plot":
       return el.title || tt("ideaBoard.menu.lightPlot");
     case "flow":
-      return el.title || "Frageablauf";
+      return el.title || tt("ideaBoard.menu.flowNode");
     case "page":
-      return el.title || "Seite";
+      return el.title || tt("ideaBoard.menu.page");
     case "credits":
       return el.title || "Credits";
     case "dubbing":

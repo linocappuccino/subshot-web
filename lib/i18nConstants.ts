@@ -13,3 +13,9 @@
 // ambiguity entirely — both layout.tsx and lib/i18n.tsx import the SAME
 // unambiguous module.
 export const LANGUAGE_COOKIE = "subshot_lang";
+
+/** 2026-11-23 — a client-side message in the UI language for plain modules without React (reads the language
+ * cookie; German on the server / without the cookie) */
+export function uiText(de: string, en: string): string {
+  return typeof document !== "undefined" && document.cookie.split("; ").includes(`${LANGUAGE_COOKIE}=en`) ? en : de;
+}
