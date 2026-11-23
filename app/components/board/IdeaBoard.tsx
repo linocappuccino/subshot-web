@@ -2705,8 +2705,8 @@ export function IdeaBoard({
     { id: "light_plot", icon: "💡", label: t("ideaBoard.menu.lightPlot"), keywords: "lichtplan licht light plot lighting diagram setup lampen leuchten key fill rim aputure nanlite godox kelvin" },
     { id: "timetable", icon: "🗓", label: t("ideaBoard.menu.timetable"), keywords: "timetable drehplan zeitplan tagesplan ablauf schedule call sheet tabelle übersicht shots szenen zeit location" },
     ...(dubbingCtx ? [{ id: "dubbing", icon: "🎙️", label: "Live-Dubbing", keywords: "live-dubbing dubbing voice-over voiceover sprecher aufnahme mikrofon synchron übersetzung sprache vertonen" }] : []),
-    ...(creditsCtx ? [{ id: "credits", icon: "💳", label: "Credits (KI-Kosten)", keywords: "credits kosten higgsfield weavy figma ki ai geld budget chf usd ausgaben" }] : []),
-    ...(allowFlow ? [{ id: "flow", icon: "🧭", label: "Frageablauf", keywords: "frageablauf ablauf entscheidung fragen ja nein checkliste flow decision tree" }] : []),
+    ...(creditsCtx ? [{ id: "credits", icon: "💳", label: t("ideaBoard.menu.creditsNode"), keywords: "credits kosten higgsfield weavy figma ki ai geld budget chf usd ausgaben" }] : []),
+    ...(allowFlow ? [{ id: "flow", icon: "🧭", label: t("ideaBoard.menu.flowNode"), keywords: "frageablauf ablauf entscheidung fragen ja nein checkliste flow decision tree" }] : []),
     { id: "moodboard", icon: "▦", label: t("ideaBoard.menu.moodboard"), keywords: "moodboard bilder collage galerie referenzen images gallery" },
     ...(uploadFile ? [{ id: "lutpreview", icon: "◐", label: t("ideaBoard.menu.lutpreview" as never), keywords: "lut preview cube log grading look farbe vergleich vorher nachher compare before after" }] : []),
     { id: "upload", icon: "🖼", label: t("ideaBoard.menu.upload"), keywords: "bild foto video audio pdf datei hochladen upload image photo file" },
@@ -3894,6 +3894,7 @@ export function IdeaBoard({
     clientDownloadGroup: t("ideaBoard.clientDownload.groupBadge"),
     clientDownloadGroupTitle: t("ideaBoard.clientDownload.groupBadgeTitle"),
     missingFile: t("ideaBoard.missingFile"),
+    fileFallback: t("ideaBoard.fileFallback"),
     scene: t("ideaBoard.scene"),
     priorities: { must: t("priority.must"), should: t("priority.should"), optional: t("priority.optional") },
     palette: t("ideaBoard.palette.label"),
@@ -4305,7 +4306,7 @@ export function IdeaBoard({
               )}
               {concealed.has(el.id) && (el.hidden || el.type !== "group") && (
                 <span
-                  title="Ausgeblendet – Kunden sehen das nicht"
+                  title={t("ideaBoard.concealedBadge")}
                   data-concealed-badge
                   className="absolute -top-2.5 -right-2.5 z-20 flex items-center justify-center w-7 h-7 rounded-full bg-[#1c1c1e] border border-white/25 text-white shadow-lg"
                   style={{ transform: `scale(${Math.min(1, 1 / view.scale)})`, transformOrigin: "100% 0" }}
@@ -4960,7 +4961,7 @@ export function IdeaBoard({
           )}
           {selectedEls.length > 0 && (
             <BarButton
-              title={selectedEls.every((e) => e.hidden) ? "Einblenden (Kunden sehen es wieder)" : "Ausblenden (Kunden sehen es nicht)"}
+              title={selectedEls.every((e) => e.hidden) ? t("ideaBoard.concealShow") : t("ideaBoard.concealHide")}
               active={selectedEls.every((e) => e.hidden)}
               onPress={() => setConcealed(!selectedEls.every((e) => e.hidden))}
             >
@@ -5020,8 +5021,8 @@ export function IdeaBoard({
                   <MenuItem label={t("ideaBoard.menu.timetable")} onPress={() => menuAction(() => addTimetable(menu.world))} />
                   <MenuItem label={`💡 ${t("ideaBoard.menu.lightPlot")}`} onPress={() => menuAction(() => addLightPlot(menu.world))} />
                   <MenuItem label={`📄 ${t("ideaBoard.menu.page")}`} onPress={() => menuAction(() => addPage(menu.world))} />
-                  {allowFlow && <MenuItem label="Frageablauf" onPress={() => menuAction(() => addFlow(menu.world))} />}
-                  {creditsCtx && <MenuItem label="Credits (KI-Kosten)" onPress={() => menuAction(() => addCredits(menu.world))} />}
+                  {allowFlow && <MenuItem label={t("ideaBoard.menu.flowNode")} onPress={() => menuAction(() => addFlow(menu.world))} />}
+                  {creditsCtx && <MenuItem label={t("ideaBoard.menu.creditsNode")} onPress={() => menuAction(() => addCredits(menu.world))} />}
                   {dubbingCtx && <MenuItem label="🎙️ Live-Dubbing" onPress={() => menuAction(() => addDubbing(menu.world))} />}
                   <MenuItem label={t("ideaBoard.menu.moodboard")} onPress={() => menuAction(() => addMoodboard(menu.world))} />
                   {uploadFile && <MenuItem label={t("ideaBoard.menu.lutpreview" as never)} onPress={() => menuAction(() => addLutPreview(menu.world))} />}
@@ -5092,7 +5093,7 @@ export function IdeaBoard({
                 {(() => {
                   const sel = data.elements.filter((e) => selection.has(e.id));
                   const allHidden = sel.length > 0 && sel.every((e) => e.hidden);
-                  return <MenuItem label={allHidden ? "Einblenden" : "Ausblenden (für Kunden)"} onPress={() => menuAction(() => setConcealed(!allHidden))} />;
+                  return <MenuItem label={allHidden ? t("ideaBoard.concealShowShort") : t("ideaBoard.concealHideShort")} onPress={() => menuAction(() => setConcealed(!allHidden))} />;
                 })()}
                 {selDownload && (
                   <MenuItem

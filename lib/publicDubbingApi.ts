@@ -1,4 +1,5 @@
 import { ApiError } from "./api";
+import { uiText } from "./i18nConstants";
 import type { DubbingSection, DubbingTake } from "./board";
 
 /** 2026-11-12, Lino: «🎙️ Live-Dubbing» — the external speaker's link (no login, one node only) */
@@ -34,7 +35,7 @@ export const publicDubbingApi = {
   uploadTake: async (token: string, wav: Blob, sectionId: string, lang: string, seconds: number, speakerName: string) => {
     const t = await fetch(`${BASE_URL}/dubbing-share/${token}/upload`, { method: "POST" }).then((r) => handle<{ key: string; upload_url: string }>(r));
     const put = await fetch(t.upload_url, { method: "PUT", headers: { "Content-Type": "audio/wav" }, body: wav });
-    if (!put.ok) throw new ApiError(put.status, "Upload fehlgeschlagen");
+    if (!put.ok) throw new ApiError(put.status, uiText("Upload fehlgeschlagen", "Upload failed"));
     const r = await fetch(`${BASE_URL}/dubbing-share/${token}/takes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

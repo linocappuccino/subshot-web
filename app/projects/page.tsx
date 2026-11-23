@@ -88,9 +88,10 @@ export default function ProjectsPage() {
   // like — every render past the first fallback frame hit it, we just never
   // exercised the exact real page structure while investigating), root-caused
   // 2026-07-22 — see project_subshot_i18n_language_switcher.md.
+  const { t } = useLanguage();
   return (
     <AppShell>
-      <Suspense fallback={<div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 text-white/50">Lädt…</div>}>
+      <Suspense fallback={<div className="flex-1 max-w-6xl mx-auto w-full px-4 sm:px-6 py-8 text-white/50">{t("common.loading")}</div>}>
         <ProjectsPageContent />
       </Suspense>
     </AppShell>
@@ -187,7 +188,7 @@ function ProjectsPageContent() {
         setFolders(f);
       } catch (e) {
         if (token !== requestTokenRef.current) return;
-        toast.showError(e instanceof ApiError ? e.message : "Laden fehlgeschlagen.");
+        toast.showError(e instanceof ApiError ? e.message : t("common.loadFailedShort"));
       } finally {
         if (token === requestTokenRef.current && !opts?.silent) {
           setLoading(false);
@@ -340,17 +341,17 @@ function ProjectsPageContent() {
           try {
             await api.invite(created.id, m.email, m.role);
           } catch (e) {
-            toast.showError(`Einladung an ${m.email} fehlgeschlagen: ${e instanceof ApiError ? e.message : "unbekannter Fehler"}`);
+            toast.showError(t("projects.inviteFailed", { email: m.email, error: e instanceof ApiError ? e.message : t("common.unknownError") }));
           }
         }
         setProjects((prev) => [{ ...created, folder_id: folderId }, ...prev]);
-        toast.showSuccess("Projekt angelegt.");
+        toast.showSuccess(t("projects.projectCreated"));
         // 2026-10-30, Lino: client logo chosen in the dialog → the project's logo (tile badge + Deliver page).
         // Needs the project id, so it runs after the project exists; a failure keeps the project.
         await applyProjectLogo(created.id, logo, clientName || name);
       }
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.saveFailed"));
     }
   }
 
@@ -376,10 +377,10 @@ function ProjectsPageContent() {
         setFolders((prev) => prev.map((f) => (f.id === folder.id ? folder : f)));
       } else {
         setFolders((prev) => [...prev, folder]);
-        toast.showSuccess("Ordner angelegt.");
+        toast.showSuccess(t("projects.folderCreated"));
       }
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.saveFailed"));
     }
   }
 
@@ -413,13 +414,13 @@ function ProjectsPageContent() {
     setFolders((prev) => prev.map((f) => (f.id === targetFolderId ? { ...f, project_count: f.project_count + 1 } : f)));
     try {
       await api.patchProject(projectId, { folder_id: targetFolderId });
-      toast.showSuccess("Projekt verschoben.");
+      toast.showSuccess(t("projects.projectMoved"));
     } catch (e) {
       // Best-effort rollback - a full reload would also fix this, but
       // putting the tile back immediately keeps the failure feeling local.
       setProjects((prev) => [...prev, project]);
       setFolders((prev) => prev.map((f) => (f.id === targetFolderId ? { ...f, project_count: f.project_count - 1 } : f)));
-      toast.showError(e instanceof ApiError ? e.message : "Verschieben fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.moveFailed"));
     }
   }
 
@@ -436,10 +437,10 @@ function ProjectsPageContent() {
     );
     try {
       await api.patchFolder(folderIdToMove, { parent_folder_id: targetFolderId });
-      toast.showSuccess("Ordner verschoben.");
+      toast.showSuccess(t("projects.folderMoved"));
     } catch (e) {
       setFolders((prev) => [...prev, folder].map((f) => (f.id === targetFolderId ? { ...f, folder_count: f.folder_count - 1 } : f)));
-      toast.showError(e instanceof ApiError ? e.message : "Verschieben fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.moveFailed"));
     }
   }
 
@@ -471,9 +472,9 @@ function ProjectsPageContent() {
         await api.deleteProject(deleteTarget.id);
         setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       }
-      toast.showSuccess("Gelöscht.");
+      toast.showSuccess(t("common.deleted"));
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Löschen fehlgeschlagen.");
+      toast.showError(e instanceof ApiError ? e.message : t("common.deleteFailed"));
     } finally {
       setDeleteTarget(null);
     }
@@ -800,8 +801,8 @@ function ProjectsPageContent() {
       />
       <ConfirmDialog
         open={deleteTarget !== null}
-        title={`${deleteTarget?.kind === "folder" ? "Ordner" : "Projekt"} löschen?`}
-        message={`"${deleteTarget?.name}" wird endgültig gelöscht. Das kann nicht rückgängig gemacht werden.`}
+        title={deleteTarget?.kind === "folder" ? t("projects.deleteFolderTitle") : t("projects.deleteProjectTitle")}
+        message={t("projects.deleteMessage", { name: deleteTarget?.name ?? "" })}
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
@@ -1264,7 +1265,7 @@ function ProjectTile({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("common.edit")}
               </MenuItem>
               {meta && (
                 <MenuItem
@@ -1283,7 +1284,7 @@ function ProjectTile({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}
@@ -1320,6 +1321,7 @@ function FolderTile({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <TileShell
       href={`/projects?folder=${folder.id}`}
@@ -1329,8 +1331,8 @@ function FolderTile({
       label={folder.name}
       subtitle={
         folder.folder_count > 0
-          ? `${folder.folder_count} Ordner, ${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
-          : `${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+          ? `${t(folder.folder_count === 1 ? "projects.folderCountOne" : "projects.folderCountMany", { folders: folder.folder_count })}, ${t(folder.project_count === 1 ? "projects.projectCountOne" : "projects.projectCountMany", { projects: folder.project_count })}`
+          : t(folder.project_count === 1 ? "projects.projectCountOne" : "projects.projectCountMany", { projects: folder.project_count })
       }
       menu={
         <Menu
@@ -1352,7 +1354,7 @@ function FolderTile({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("common.edit")}
               </MenuItem>
               <MenuItem
                 danger
@@ -1361,7 +1363,7 @@ function FolderTile({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}
@@ -1478,7 +1480,7 @@ function ProjectListRow({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("common.edit")}
               </MenuItem>
               <MenuItem
                 danger
@@ -1487,7 +1489,7 @@ function ProjectListRow({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}
@@ -1506,6 +1508,7 @@ function FolderListRow({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <ListRowShell
       href={`/projects?folder=${folder.id}`}
@@ -1514,8 +1517,8 @@ function FolderListRow({
       label={folder.name}
       subtitle={
         folder.folder_count > 0
-          ? `${folder.folder_count} Ordner, ${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
-          : `${folder.project_count} Projekt${folder.project_count === 1 ? "" : "e"}`
+          ? `${t(folder.folder_count === 1 ? "projects.folderCountOne" : "projects.folderCountMany", { folders: folder.folder_count })}, ${t(folder.project_count === 1 ? "projects.projectCountOne" : "projects.projectCountMany", { projects: folder.project_count })}`
+          : t(folder.project_count === 1 ? "projects.projectCountOne" : "projects.projectCountMany", { projects: folder.project_count })
       }
       thumbnail={
         folder.background_image_url ? (
@@ -1551,7 +1554,7 @@ function FolderListRow({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("common.edit")}
               </MenuItem>
               <MenuItem
                 danger
@@ -1560,7 +1563,7 @@ function FolderListRow({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}

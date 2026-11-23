@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { IdeaFocusView } from "@/app/components/IdeaFocusView";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 import type { Idea, Member } from "@/lib/types";
 import { boardImageConfig } from "@/lib/board";
 
@@ -17,6 +18,7 @@ const tellApp = (message: Record<string, unknown>) => (window as unknown as IOSB
 export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId: string; ideaId: string }> }) {
   const { projectId, ideaId } = use(params);
   const api = useApi();
+  const { t } = useLanguage();
   const [ideas, setIdeas] = useState<Idea[] | null>(null);
   const [index, setIndex] = useState(0);
   const [myRole, setMyRole] = useState<Member["role"] | null>(null);
@@ -89,7 +91,7 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
     };
   }, [api, projectId, ideaId]);
 
-  if (failed) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/50">Konzept konnte nicht geladen werden.</div>;
+  if (failed) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/50">{t("embedIdea.loadFailed")}</div>;
   if (!ideas) return <div className="flex min-h-screen items-center justify-center bg-[#161616] text-sm text-white/40 animate-pulse">…</div>;
   if (ideas.length === 0) {
     tellApp({ type: "close" });
@@ -106,7 +108,7 @@ export default function EmbedIdeaPage({ params }: { params: Promise<{ projectId:
           onClick={() => setLiteNote(false)}
           className="absolute left-1/2 top-14 z-[90] -translate-x-1/2 whitespace-nowrap rounded-full bg-amber-500/90 px-3 py-1.5 text-[12px] font-semibold text-black shadow-lg"
         >
-          Dieses Board ist gross – Speichersparmodus aktiv ✕
+          {t("embedIdea.liteNote")}
         </button>
       )}
       <IdeaFocusView

@@ -213,9 +213,9 @@ export function ShareLinkModal({ open, onClose, projectId, projectName, kind = "
                 if (on) setView(currentView());
                 setViewOnly(on);
               }}
-              label="Aktuellen Ausschnitt teilen"
+              label={t("shareLinkModal.viewOnly")}
             />
-            <p className="text-xs text-white/40 mt-1">Der Link öffnet genau den Bereich, den du gerade siehst – auf jedem Bildschirm passend eingepasst.</p>
+            <p className="text-xs text-white/40 mt-1">{t("shareLinkModal.viewOnlyHint")}</p>
           </div>
         )}
       </FieldGroup>

@@ -95,8 +95,8 @@ export default async function RootLayout({
             <ToastProvider>{children}</ToastProvider>
             {/* 2026-11-17 — legal links on every guest page */}
             <footer data-guest-legal className="mt-auto flex justify-center gap-4 px-4 py-6 text-[11px] text-white/35">
-              <a href="https://subshot.ch/impressum" className="hover:text-white/70">Impressum</a>
-              <a href="https://subshot.ch/datenschutz" className="hover:text-white/70">Datenschutz</a>
+              <a href="https://subshot.ch/impressum" className="hover:text-white/70">{isEnglish ? "Imprint" : "Impressum"}</a>
+              <a href="https://subshot.ch/datenschutz" className="hover:text-white/70">{isEnglish ? "Privacy" : "Datenschutz"}</a>
             </footer>
           </NoClerk>
         ) : (

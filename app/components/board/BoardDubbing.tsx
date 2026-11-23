@@ -12,6 +12,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useLanguage } from "@/lib/i18n";
 import type { DubbingElement, DubbingSection, DubbingTake } from "@/lib/board";
 import { DubLangPills, addLanguage, mergeSections, sectionsFor } from "./DubbingLanguages";
 import { backupTake, dropBackup, DubRecorder, listMics, pendingBackups, type MicInfo } from "@/lib/dubbingRecorder";
@@ -42,7 +43,8 @@ export function dubbingTileWidth(ar: number): number {
 }
 
 const LANG_NAMES: Record<string, string> = { de: "Deutsch", fr: "Französisch", it: "Italienisch", en: "Englisch", es: "Spanisch", pt: "Portugiesisch", nl: "Niederländisch", rm: "Rätoromanisch" };
-const langName = (l: string) => LANG_NAMES[l] ?? l.toUpperCase();
+const LANG_NAMES_EN: Record<string, string> = { de: "German", fr: "French", it: "Italian", en: "English", es: "Spanish", pt: "Portuguese", nl: "Dutch", rm: "Romansh" };
+const langName = (l: string, en = false) => (en ? LANG_NAMES_EN : LANG_NAMES)[l] ?? l.toUpperCase();
 const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 const newId = () => Math.random().toString(36).slice(2, 10);
 
@@ -87,10 +89,11 @@ function useSoundMode(nodeDefault?: SoundMode): [SoundMode, (m: SoundMode) => vo
   return [own ?? nodeDefault ?? "split", set];
 }
 function SoundModeSwitch({ value, onChange, small }: { value: SoundMode; onChange: (m: SoundMode) => void; small?: boolean }) {
+  const en = useLanguage().language === "en";
   const opts: [SoundMode, string, string][] = [
-    ["none", "🔇 No sound", "Kein Ton, auch keine Takes"],
-    ["split", "🎙️ Split sound", "Originalton, wo nichts aufgenommen ist — sonst nur der Take"],
-    ["full", "🔊 Full audio", "Originalton durchgehend, keine Takes"],
+    ["none", "🔇 No sound", en ? "No sound, no takes either" : "Kein Ton, auch keine Takes"],
+    ["split", "🎙️ Split sound", en ? "Original sound where nothing is recorded — otherwise only the take" : "Originalton, wo nichts aufgenommen ist — sonst nur der Take"],
+    ["full", "🔊 Full audio", en ? "Original sound throughout, no takes" : "Originalton durchgehend, keine Takes"],
   ];
   return (
     <div data-sound-mode={value} className={`flex rounded-lg bg-black/30 p-0.5 font-semibold ${small ? "text-[11px]" : "text-xs"}`}>
@@ -208,6 +211,7 @@ export function DubbingNode({
   onMeasure: (h: number) => void;
 }) {
   const api = useContext(BoardDubbingContext);
+  const en = useLanguage().language === "en";
   const [takes, setTakes] = useState<DubbingTake[]>([]);
   const [studio, setStudio] = useState(false);
   const [mode, setMode] = useState<"original" | "take" | "ai">("original");
@@ -271,7 +275,7 @@ export function DubbingNode({
 
   async function pickVideo(file: File) {
     if (!api) return;
-    setBusy("Video wird hochgeladen …");
+    setBusy(en ? "Uploading video …" : "Video wird hochgeladen …");
     try {
       const v = await api.uploadVideo(file);
       onCommit({ asset_key: v.key, src: v.src, name: v.name, mime: v.mime });
@@ -281,7 +285,7 @@ export function DubbingNode({
   }
   async function download(l: string, kind: "wav" | "zip") {
     if (!api) return;
-    setBusy(kind === "wav" ? `WAV ${l.toUpperCase()} wird erstellt …` : `ZIP ${l.toUpperCase()} wird erstellt …`);
+    setBusy(en ? `Creating ${kind.toUpperCase()} ${l.toUpperCase()} …` : kind === "wav" ? `WAV ${l.toUpperCase()} wird erstellt …` : `ZIP ${l.toUpperCase()} wird erstellt …`);
     try {
       const url = await api.exportUrl(el.id, l, kind);
       const a = document.createElement("a");
@@ -305,12 +309,12 @@ export function DubbingNode({
         <span className="flex-1 min-w-0 flex flex-col">
           <span className="truncate text-xs font-semibold text-white/60">{el.title || "Live-Dubbing"}</span>
           <span data-video-name className="text-base font-bold leading-tight break-all" title={el.name || ""}>
-            {el.name || (el.asset_key ? "Video ohne Namen" : "Noch kein Video")}
+            {el.name || (el.asset_key ? (en ? "Untitled video" : "Video ohne Namen") : en ? "No video yet" : "Noch kein Video")}
           </span>
         </span>
         {el.asset_key && (
           <button data-no-drag type="button" onClick={() => setStudio(true)} className="shrink-0 rounded-lg bg-rose-500 hover:bg-rose-400 px-2.5 py-1 text-xs font-semibold">
-            🎙️ Studio öffnen
+            {en ? "🎙️ Open studio" : "🎙️ Studio öffnen"}
           </button>
         )}
       </div>
@@ -326,7 +330,7 @@ export function DubbingNode({
           }}
           className="m-3 flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-white/20 py-8 text-sm text-white/60 cursor-pointer hover:bg-white/5"
         >
-          <span>{busy ?? "Original-Video hierher ziehen oder wählen"}</span>
+          <span>{busy ?? (en ? "Drop the original video here or choose one" : "Original-Video hierher ziehen oder wählen")}</span>
           <input type="file" accept="video/*" className="hidden" disabled={!editable} onChange={(e) => e.target.files?.[0] && void pickVideo(e.target.files[0])} />
         </label>
       ) : (
@@ -362,7 +366,7 @@ export function DubbingNode({
       {el.asset_key && (
         <div data-no-drag className="px-3 pt-2 flex flex-wrap items-center gap-1.5 text-xs">
           <div className="flex rounded-lg bg-black/30 p-0.5 font-semibold">
-            {([["original", "Original"], ["take", "Aufnahme"]] as const).map(([m, label]) => (
+            {([["original", "Original"], ["take", en ? "Recording" : "Aufnahme"]] as const).map(([m, label]) => (
               <button key={m} type="button" onClick={() => setMode(m)} className={`px-2 py-1 rounded-md ${mode === m ? "bg-rose-500 text-white" : "text-white/60 hover:text-white"}`}>
                 {label}
               </button>
@@ -370,11 +374,11 @@ export function DubbingNode({
             <button
               type="button"
               disabled={!takes.some((t) => t.source === "ai" && t.lang === curLang)}
-              title={takes.some((t) => t.source === "ai" && t.lang === curLang) ? "KI-Dubbing von ElevenLabs" : "Noch kein KI-Dubbing für diese Sprache"}
+              title={takes.some((t) => t.source === "ai" && t.lang === curLang) ? (en ? "AI dubbing by ElevenLabs" : "KI-Dubbing von ElevenLabs") : en ? "No AI dubbing for this language yet" : "Noch kein KI-Dubbing für diese Sprache"}
               onClick={() => setMode("ai")}
               className={`px-2 py-1 rounded-md disabled:text-white/25 disabled:cursor-not-allowed ${mode === "ai" ? "bg-rose-500 text-white" : "text-white/60 hover:text-white"}`}
             >
-              KI-Dubbing
+              {en ? "AI dubbing" : "KI-Dubbing"}
             </button>
           </div>
           {mode === "take" && <SoundModeSwitch value={soundMode} onChange={setSoundMode} small />}
@@ -410,15 +414,15 @@ export function DubbingNode({
                 const own = takes.filter((t) => t.section_id === s.id && t.lang === curLang && t.source !== "ai");
                 const c = chosen(own, s.id, curLang);
                 return c ? (
-                  <span data-used-take className={`shrink-0 ${c.best ? "text-amber-300" : "text-white/55"}`} title="Dieser Take wird im Schnellcheck und im Export verwendet">
-                    {c.best ? `★ Take ${c.number ?? own.indexOf(c) + 1}` : `Take ${c.number ?? own.length}, neuester`}
+                  <span data-used-take className={`shrink-0 ${c.best ? "text-amber-300" : "text-white/55"}`} title={en ? "This take is used in the quick check and the export" : "Dieser Take wird im Schnellcheck und im Export verwendet"}>
+                    {c.best ? `★ Take ${c.number ?? own.indexOf(c) + 1}` : `Take ${c.number ?? own.length}, ${en ? "newest" : "neuester"}`}
                   </span>
                 ) : null;
               })()}
               {(() => {
                 const n = done(s.id, curLang);
                 return (
-                  <span title={`${langName(curLang)}: ${n.length} Takes`} className={`rounded px-1 font-semibold ${n.some((t) => t.best) ? "bg-emerald-500/25 text-emerald-200" : n.length ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-white/30"}`}>
+                  <span title={`${langName(curLang, en)}: ${n.length} Takes`} className={`rounded px-1 font-semibold ${n.some((t) => t.best) ? "bg-emerald-500/25 text-emerald-200" : n.length ? "bg-amber-500/20 text-amber-200" : "bg-white/5 text-white/30"}`}>
                     {curLang.toUpperCase()}
                     {n.length ? ` ${n.length}` : ""}
                   </span>
@@ -451,13 +455,13 @@ export function DubbingNode({
                   onClick={() => void api.startAi!(el.id, l).then(reload).catch(() => reload())}
                   className="rounded-md bg-violet-500/20 hover:bg-violet-500/35 px-2 py-1 font-semibold disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  🤖 KI-Dubbing {l.toUpperCase()}
-                  {job?.status === "läuft" ? " · läuft …" : job?.status === "fertig" ? " ✓" : job?.status === "fehler" ? " ⚠︎" : ""}
+                  {en ? "🤖 AI dubbing" : "🤖 KI-Dubbing"} {l.toUpperCase()}
+                  {job?.status === "läuft" ? (en ? " · running …" : " · läuft …") : job?.status === "fertig" ? " ✓" : job?.status === "fehler" ? " ⚠︎" : ""}
                 </button>
               );
             })}
           </div>
-          {ai && !ai.available && <span className="text-white/45">Admin kann den ElevenLabs-Schlüssel in den Team-Einstellungen hinterlegen.</span>}
+          {ai && !ai.available && <span className="text-white/45">{en ? "An admin can add the ElevenLabs key in the team settings." : "Admin kann den ElevenLabs-Schlüssel in den Team-Einstellungen hinterlegen."}</span>}
           {Object.entries(ai?.jobs ?? {}).filter(([, j]) => j.status === "fehler").map(([l, j]) => (
             <span key={l} className="text-red-300">{l.toUpperCase()}: {j.error}</span>
           ))}
@@ -475,11 +479,11 @@ export function DubbingNode({
             }
             className="self-start rounded-md bg-white/10 hover:bg-white/15 px-2 py-1 font-semibold"
           >
-            🔗 Sprecher-Link
+            {en ? "🔗 Speaker link" : "🔗 Sprecher-Link"}
           </button>
           {link && (
             <span data-speaker-link className="break-all text-white/55">
-              {link} <span className="text-emerald-300">(kopiert – gilt 30 Tage, nur für diese Aufnahme)</span>
+              {link} <span className="text-emerald-300">{en ? "(copied – valid 30 days, only for this recording)" : "(kopiert – gilt 30 Tage, nur für diese Aufnahme)"}</span>
             </span>
           )}
         </div>
@@ -507,6 +511,19 @@ export function DubbingNode({
 // 2026-11-12, Lino: «so einfach wie möglich»: the sections live on a TIMELINE under the video (click = choose, the
 // team drags the ends / drags in an empty spot for a new one); the list on the right only shows them. The video
 // box always has the video's own aspect (9:16, 16:9, …), as big as fits, nothing cut, no bars, round corners.
+
+const STUDIO_ERRORS = {
+  de: {
+    noMic: "Kein Zugriff aufs Mikrofon. Bitte im Browser erlauben.",
+    micOpen: "Das Mikrofon lässt sich nicht öffnen.",
+    upload: "Upload fehlgeschlagen — der Take ist lokal gesichert und wird beim nächsten Öffnen erneut hochgeladen.",
+  },
+  en: {
+    noMic: "No access to the microphone. Please allow it in the browser.",
+    micOpen: "The microphone can't be opened.",
+    upload: "Upload failed — the take is saved locally and will be uploaded again the next time you open this.",
+  },
+};
 
 const COLORS = ["#f43f5e", "#8b5cf6", "#0ea5e9", "#10b981", "#f59e0b", "#ec4899", "#14b8a6", "#6366f1"];
 
@@ -562,6 +579,7 @@ function Timeline({
   onChange: (id: string, start: number, end: number) => void;
   onCreate: (start: number, end: number) => void;
 }) {
+  const en = useLanguage().language === "en";
   const scrollRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ a: number; b: number } | null>(null);
@@ -633,11 +651,13 @@ function Timeline({
     <div className="select-none">
       <div className="flex items-center gap-2 mb-1 text-[11px] text-white/40">
         <span className="flex-1 truncate">
-          {editable ? "Oben ziehen = durchs Video spulen · unten in freier Stelle ziehen = neuer Abschnitt · Enden ziehen = anpassen" : "Oben ziehen = spulen · Abschnitt anklicken = auswählen"}
+          {en
+            ? editable ? "Drag at the top = scrub through the video · drag in an empty spot below = new section · drag the ends = adjust" : "Drag at the top = scrub · click a section = select"
+            : editable ? "Oben ziehen = durchs Video spulen · unten in freier Stelle ziehen = neuer Abschnitt · Enden ziehen = anpassen" : "Oben ziehen = spulen · Abschnitt anklicken = auswählen"}
         </span>
-        <button type="button" title="Timeline verkleinern" disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">−</button>
+        <button type="button" title={en ? "Zoom out timeline" : "Timeline verkleinern"} disabled={zoom <= 1} onClick={() => setZoom((z) => Math.max(1, z / 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">−</button>
         <span className="tabular-nums w-8 text-center">{zoom}×</span>
-        <button type="button" title="Timeline vergrössern" disabled={zoom >= 16} onClick={() => setZoom((z) => Math.min(16, z * 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">+</button>
+        <button type="button" title={en ? "Zoom in timeline" : "Timeline vergrössern"} disabled={zoom >= 16} onClick={() => setZoom((z) => Math.min(16, z * 2))} className="h-6 w-6 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30">+</button>
       </div>
       <div ref={scrollRef} data-timeline-scroll className="overflow-x-auto overflow-y-hidden rounded-xl border border-white/10 bg-white/[0.04]">
         <div ref={innerRef} className="relative" style={{ width: `${zoom * 100}%`, minWidth: "100%" }}>
@@ -722,6 +742,7 @@ export function DubbingStudio({
   onlyLang?: string | null;
 }) {
   const api = useContext(BoardDubbingContext)!;
+  const en = useLanguage().language === "en";
   const [shared, setShared] = useState<string | null>(null);
   // 2026-11-13: the speaker link for every language, or fixed to one
   const [shareLang, setShareLang] = useState<string>("");
@@ -735,7 +756,7 @@ export function DubbingStudio({
   const [phase, setPhase] = useState<"idle" | "count" | "rec" | "saving">("idle");
   const [count, setCount] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<keyof (typeof STUDIO_ERRORS)["de"] | null>(null);
   const [uploads, setUploads] = useState(0);
   const [time, setTime] = useState(0);
   const [aspect, setAspect] = useState(16 / 9);
@@ -903,7 +924,7 @@ export function DubbingStudio({
         setMics(m);
         setMic((cur) => cur || m[0]?.deviceId || "");
       })
-      .catch(() => setError("Kein Zugriff aufs Mikrofon. Bitte im Browser erlauben."));
+      .catch(() => setError("noMic"));
     return () => {
       alive = false;
     };
@@ -922,7 +943,7 @@ export function DubbingStudio({
         };
         tick();
       })
-      .catch(() => setError("Das Mikrofon lässt sich nicht öffnen."));
+      .catch(() => setError("micOpen"));
     return () => {
       cancelAnimationFrame(raf);
       rec.close();
@@ -1002,7 +1023,7 @@ export function DubbingStudio({
       setTakes(await api.uploadTake(el.id, wav, sec.id, lang, seconds));
       await dropBackup(id);
     } catch {
-      setError("Upload fehlgeschlagen — der Take ist lokal gesichert und wird beim nächsten Öffnen erneut hochgeladen.");
+      setError("upload");
     } finally {
       setUploads((n) => n - 1);
     }
@@ -1034,7 +1055,7 @@ export function DubbingStudio({
         <span className="text-lg">🎙️</span>
         <span className="min-w-0 flex flex-col">
           <span className="text-xs text-white/50 truncate">{el.title || "Live-Dubbing"}</span>
-          <span data-studio-video-name className="font-bold break-all leading-tight">{el.name || "Video ohne Namen"}</span>
+          <span data-studio-video-name className="font-bold break-all leading-tight">{el.name || (en ? "Untitled video" : "Video ohne Namen")}</span>
         </span>
         <div className="ml-2" data-studio-langs>
           <DubLangPills
@@ -1080,31 +1101,31 @@ export function DubbingStudio({
             }}
             className="rounded-lg bg-rose-500 hover:bg-rose-400 px-3 py-1.5 text-sm font-semibold"
           >
-            🔗 Teilen
+            {en ? "🔗 Share" : "🔗 Teilen"}
           </button>
         )}
         {canChoose && api.shareLink && el.asset_key && el.languages.length > 1 && (
-          <select data-studio-share-lang value={shareLang} onChange={(e) => setShareLang(e.target.value)} title="Für welche Sprache der Sprecher-Link gilt" className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none">
-            <option value="">Link: alle Sprachen</option>
+          <select data-studio-share-lang value={shareLang} onChange={(e) => setShareLang(e.target.value)} title={en ? "Which language the speaker link is for" : "Für welche Sprache der Sprecher-Link gilt"} className="rounded-md bg-white/10 px-2 py-1 text-xs outline-none">
+            <option value="">{en ? "Link: all languages" : "Link: alle Sprachen"}</option>
             {el.languages.map((l) => (
               <option key={l} value={l}>
-                Link: nur {langName(l)}
+                {en ? "Link: only" : "Link: nur"} {langName(l, en)}
               </option>
             ))}
           </select>
         )}
         {shared && (
           <span data-studio-share-link className="text-xs text-white/60 break-all max-w-[22rem]">
-            {shared === "error" ? <span className="text-red-300">Link konnte nicht erstellt werden.</span> : <>
-              <span className="text-emerald-300">Link kopiert</span> – öffnet nur dieses Studio, ohne Login (30 Tage): {shared}
+            {shared === "error" ? <span className="text-red-300">{en ? "Couldn't create the link." : "Link konnte nicht erstellt werden."}</span> : <>
+              <span className="text-emerald-300">{en ? "Link copied" : "Link kopiert"}</span> {en ? "– opens only this studio, no login (30 days):" : "– öffnet nur dieses Studio, ohne Login (30 Tage):"} {shared}
             </>}
           </span>
         )}
-        {uploads > 0 && <span className="text-xs text-amber-300">Lädt {uploads} Take{uploads > 1 ? "s" : ""} hoch …</span>}
+        {uploads > 0 && <span className="text-xs text-amber-300">{en ? "Uploading" : "Lädt"} {uploads} Take{uploads > 1 ? "s" : ""} {en ? "…" : "hoch …"}</span>}
         {header}
         {onClose && (
           <button type="button" onClick={onClose} disabled={phase !== "idle"} className="ml-auto rounded-lg bg-white/10 hover:bg-white/15 px-3 py-1.5 text-sm disabled:opacity-40">
-            Schliessen
+            {en ? "Close" : "Schliessen"}
           </button>
         )}
       </div>
@@ -1116,8 +1137,8 @@ export function DubbingStudio({
             <div className={wide ? "flex-1 min-w-0 flex flex-col justify-center gap-1.5" : "shrink-0 flex flex-col gap-1.5"} style={wide ? { height: box.h || undefined } : undefined}>
               <div className="flex flex-wrap justify-end items-center gap-x-3 gap-y-1">
                 {overlay && (
-                  <label className="flex items-center gap-2 text-xs text-white/70" title="Deckkraft vom Text über dem Video">
-                    Deckkraft
+                  <label className="flex items-center gap-2 text-xs text-white/70" title={en ? "Opacity of the text over the video" : "Deckkraft vom Text über dem Video"}>
+                    {en ? "Opacity" : "Deckkraft"}
                     <input
                       type="range"
                       data-overlay-opacity
@@ -1132,8 +1153,8 @@ export function DubbingStudio({
                   </label>
                 )}
                 {overlay && (
-                  <label className="flex items-center gap-2 text-xs text-white/70" title="Breite der Textspalte über dem Video">
-                    Breite
+                  <label className="flex items-center gap-2 text-xs text-white/70" title={en ? "Width of the text column over the video" : "Breite der Textspalte über dem Video"}>
+                    {en ? "Width" : "Breite"}
                     <input
                       type="range"
                       data-overlay-width
@@ -1152,14 +1173,14 @@ export function DubbingStudio({
                   onClick={toggleOverlay}
                   className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold ${overlay ? "bg-rose-500 text-white" : "bg-white/10 text-white/70 hover:bg-white/15"}`}
                 >
-                  {overlay ? "✓ Text über Video" : "Text über Video"}
+                  {en ? (overlay ? "✓ Text over video" : "Text over video") : overlay ? "✓ Text über Video" : "Text über Video"}
                 </button>
               </div>
               <ScriptBox
                 height={wide && box.h ? Math.max(80, box.h - 34) : undefined}
               key={`${secId ?? "none"}-${lang}`}
               text={sec?.scripts[lang] ?? ""}
-              langLabel={langName(lang)}
+              langLabel={langName(lang, en)}
               editable={editable && phase === "idle"}
               recording={phase === "rec"}
               progress={progress}
@@ -1192,7 +1213,7 @@ export function DubbingStudio({
               />
               {phase === "count" && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                  <span data-countin className="text-8xl font-bold">{count || "Los"}</span>
+                  <span data-countin className="text-8xl font-bold">{count || (en ? "Go" : "Los")}</span>
                 </div>
               )}
               {phase === "rec" && <span className="absolute left-3 top-3 rounded-full bg-red-600 px-2.5 py-1 text-xs font-bold animate-pulse">● REC</span>}
@@ -1237,7 +1258,7 @@ export function DubbingStudio({
         {/* right: record + takes, the section list only shows */}
         <div className="w-full md:w-[340px] shrink-0 min-h-0 border-t md:border-t-0 md:border-l border-white/10 p-4 flex flex-col gap-4 overflow-auto">
           <div>
-            <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">Mikrofon</div>
+            <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">{en ? "Microphone" : "Mikrofon"}</div>
             <select data-mic-select value={mic} onChange={(e) => setMic(e.target.value)} className="w-full rounded-md bg-white/10 px-2 py-1.5 text-sm">
               {mics.map((m) => (
                 <option key={m.deviceId} value={m.deviceId}>
@@ -1248,14 +1269,14 @@ export function DubbingStudio({
             <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
               <div data-level className={`h-full ${level > 0.9 ? "bg-red-500" : level > 0.6 ? "bg-amber-400" : "bg-emerald-400"}`} style={{ width: `${Math.min(100, level * 100)}%` }} />
             </div>
-            <p className="mt-2 text-xs text-white/55">🎧 Kopfhörer auf? Sonst nimmt das Mikrofon das Original mit auf.</p>
-            {micInfo?.bluetooth && <p data-bt-warning className="mt-1 text-xs text-amber-300">⚠︎ Bluetooth-Gerät: Ton verzögert und schlechtere Qualität. Besser Kabel.</p>}
-            {error && <p className="mt-1 text-xs text-red-300">{error}</p>}
+            <p className="mt-2 text-xs text-white/55">{en ? "🎧 Headphones on? Otherwise the microphone also records the original." : "🎧 Kopfhörer auf? Sonst nimmt das Mikrofon das Original mit auf."}</p>
+            {micInfo?.bluetooth && <p data-bt-warning className="mt-1 text-xs text-amber-300">{en ? "⚠︎ Bluetooth device: delayed sound and lower quality. A cable is better." : "⚠︎ Bluetooth-Gerät: Ton verzögert und schlechtere Qualität. Besser Kabel."}</p>}
+            {error && <p className="mt-1 text-xs text-red-300">{STUDIO_ERRORS[en ? "en" : "de"][error]}</p>}
           </div>
           {sec ? (
             <div className="flex flex-col gap-2">
               <div className="text-sm font-semibold">
-                Abschnitt {el.sections.indexOf(sec) + 1}
+                {en ? "Section" : "Abschnitt"} {el.sections.indexOf(sec) + 1}
                 <span className="ml-2 font-normal text-white/45 tabular-nums">{fmt(sec.start)}–{fmt(sec.end)}</span>
               </div>
               <button
@@ -1264,41 +1285,43 @@ export function DubbingStudio({
                 aria-pressed={videoSound}
                 disabled={phase !== "idle"}
                 onClick={toggleVideoSound}
-                title="Videoton während der Aufnahme"
+                title={en ? "Video sound while recording" : "Videoton während der Aufnahme"}
                 className={`rounded-xl py-2 text-sm font-semibold border ${videoSound ? "border-white/15 bg-white/10 text-white" : "border-amber-300/40 bg-amber-300/15 text-amber-200"}`}
               >
-                {videoSound ? "🔊 Videoton an" : "🔇 Videoton aus"}
+                {en ? (videoSound ? "🔊 Video sound on" : "🔇 Video sound off") : videoSound ? "🔊 Videoton an" : "🔇 Videoton aus"}
               </button>
               {videoSound && (
                 <p data-video-sound-hint className="-mt-1 text-[11px] leading-snug text-amber-200/80">
-                  🎧 Bitte mit Kopfhörern – über Lautsprecher kann der Videoton sonst trotz Echo-Unterdrückung in den Take gelangen.
+                  {en
+                    ? "🎧 Please use headphones – through speakers the video sound can end up in the take despite echo cancellation."
+                    : "🎧 Bitte mit Kopfhörern – über Lautsprecher kann der Videoton sonst trotz Echo-Unterdrückung in den Take gelangen."}
                 </p>
               )}
               {phase === "rec" ? (
                 <button type="button" onClick={() => stopRef.current?.()} className="rounded-xl bg-white text-black py-3 font-bold">
-                  ■ Stopp
+                  {en ? "■ Stop" : "■ Stopp"}
                 </button>
               ) : (
                 <button type="button" data-record disabled={phase !== "idle" || !mic} onClick={() => { stopPreview(); void record(); }} className="rounded-xl bg-red-600 hover:bg-red-500 py-3 font-bold disabled:opacity-50">
-                  {phase === "count" ? "…" : phase === "saving" ? "Speichert …" : "● Aufnehmen"}
+                  {phase === "count" ? "…" : phase === "saving" ? (en ? "Saving …" : "Speichert …") : en ? "● Record" : "● Aufnehmen"}
                 </button>
               )}
               {editable && (
                 <>
-                  <input value={sec.label ?? ""} placeholder="Bezeichnung (optional)" onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text" />
+                  <input value={sec.label ?? ""} placeholder={en ? "Label (optional)" : "Bezeichnung (optional)"} onChange={(e) => patchSection(sec.id, { label: e.target.value })} className="rounded-md bg-white/10 px-2 py-1.5 text-sm select-text" />
                   {canChoose && <button type="button" onClick={() => { setSections(el.sections.filter((s) => s.id !== sec.id)); setSecId(null); }} className="self-start text-xs text-white/40 hover:text-red-300">
-                    Abschnitt löschen
+                    {en ? "Delete section" : "Abschnitt löschen"}
                   </button>}
                 </>
               )}
-              <div className="text-xs uppercase tracking-wide text-white/40 mt-1">Takes ({langName(lang)})</div>
+              <div className="text-xs uppercase tracking-wide text-white/40 mt-1">Takes ({langName(lang, en)})</div>
               {own.map((t, i) => (
                 <div key={t.id} data-take className="flex items-center gap-2 rounded-lg bg-white/[0.05] px-2 py-1.5 text-sm">
                   <button
                     type="button"
                     data-take-play
                     onClick={() => void playTake(t, sec.start)}
-                    title="Take mit dem Bild abspielen (Lippensynchronität prüfen)"
+                    title={en ? "Play take with the picture (check lip sync)" : "Take mit dem Bild abspielen (Lippensynchronität prüfen)"}
                     className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${playing === t.id ? "bg-white text-black" : "bg-white/10 hover:bg-white/20"}`}
                   >
                     {playing === t.id ? "■" : "▶"}
@@ -1308,25 +1331,25 @@ export function DubbingStudio({
                     <span className="ml-1.5 text-xs text-white/35">{t.duration ? `${t.duration.toFixed(1)} s` : ""}{t.speaker_name ? ` · ${t.speaker_name}` : ""}</span>
                   </span>
                   {t.download_url && (
-                    <a href={t.download_url} download title="Take herunterladen (WAV)" data-take-download className="text-white/45 hover:text-white text-lg leading-none">
+                    <a href={t.download_url} download title={en ? "Download take (WAV)" : "Take herunterladen (WAV)"} data-take-download className="text-white/45 hover:text-white text-lg leading-none">
                       ⬇
                     </a>
                   )}
                   {canChoose ? (
-                    <button type="button" title="Bester Take" onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
+                    <button type="button" title={en ? "Best take" : "Bester Take"} onClick={() => void api.best(el.id, t.id).then(setTakes)} className={`text-lg ${t.best ? "text-amber-300" : "text-white/30 hover:text-white"}`}>
                       ★
                     </button>
                   ) : (
-                    t.best && <span title="Vom Team als bester Take gewählt" className="text-lg text-amber-300">★</span>
+                    t.best && <span title={en ? "Picked by the team as the best take" : "Vom Team als bester Take gewählt"} className="text-lg text-amber-300">★</span>
                   )}
                   {editable && canChoose && (
-                    <button type="button" title="Take löschen" onClick={() => void api.remove(el.id, t.id).then(setTakes)} className="text-white/30 hover:text-red-300">
+                    <button type="button" title={en ? "Delete take" : "Take löschen"} onClick={() => void api.remove(el.id, t.id).then(setTakes)} className="text-white/30 hover:text-red-300">
                       ✕
                     </button>
                   )}
                 </div>
               ))}
-              {own.length === 0 && <p className="text-xs text-white/40">Noch kein Take für diesen Abschnitt.</p>}
+              {own.length === 0 && <p className="text-xs text-white/40">{en ? "No take for this section yet." : "Noch kein Take für diesen Abschnitt."}</p>}
               {takes
                 .filter((t) => t.source === "ai" && t.lang === lang)
                 .map((t) => (
@@ -1334,9 +1357,9 @@ export function DubbingStudio({
                     <button type="button" data-take-play onClick={() => void playTake(t, 0)} className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${playing === t.id ? "bg-white text-black" : "bg-white/10 hover:bg-white/20"}`}>
                       {playing === t.id ? "■" : "▶"}
                     </button>
-                    <span className="flex-1 text-white/70">🤖 KI-Dubbing (ganzes Video)</span>
+                    <span className="flex-1 text-white/70">{en ? "🤖 AI dubbing (whole video)" : "🤖 KI-Dubbing (ganzes Video)"}</span>
                     {t.download_url && (
-                      <a href={t.download_url} download title="KI-Dubbing herunterladen" data-take-download className="text-white/45 hover:text-white text-lg leading-none">
+                      <a href={t.download_url} download title={en ? "Download AI dubbing" : "KI-Dubbing herunterladen"} data-take-download className="text-white/45 hover:text-white text-lg leading-none">
                         ⬇
                       </a>
                     )}
@@ -1344,11 +1367,11 @@ export function DubbingStudio({
                 ))}
             </div>
           ) : (
-            <p className="text-sm text-white/45">Wähle unten auf der Timeline einen Abschnitt.</p>
+            <p className="text-sm text-white/45">{en ? "Pick a section on the timeline below." : "Wähle unten auf der Timeline einen Abschnitt."}</p>
           )}
           {el.sections.length > 0 && (
             <div>
-              <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">Abschnitte</div>
+              <div className="text-xs uppercase tracking-wide text-white/40 mb-1.5">{en ? "Sections" : "Abschnitte"}</div>
               <div className="flex flex-col gap-1">
                 {el.sections.map((s, i) => {
                   const n = takes.filter((t) => t.section_id === s.id && t.lang === lang && t.source !== "ai");
@@ -1393,6 +1416,7 @@ function ScriptBox({
   hasSection: boolean;
   onChange: (text: string) => void;
 }) {
+  const en = useLanguage().language === "en";
   const [draft, setDraft] = useState(text);
   const [focused, setFocused] = useState(false);
   // 2026-11-13, Lino: the reading column narrower / wider by dragging the right edge (40–100 %, per person)
@@ -1431,7 +1455,7 @@ function ScriptBox({
   const handle = (
     <span
       data-script-width-handle
-      title="Textbreite ziehen"
+      title={en ? "Drag to change the text width" : "Textbreite ziehen"}
       onPointerDown={dragWidth}
       className="absolute top-2 bottom-2 w-3 -ml-1.5 cursor-ew-resize touch-none flex items-center justify-center group"
       style={{ left: `${(1 - width) * 100}%` }}
@@ -1481,7 +1505,7 @@ function ScriptBox({
             );
           })
         ) : (
-          <span className="text-white/35">{hasSection ? `Noch kein Sprechtext (${langLabel}).` : "Wähle unten auf der Timeline einen Abschnitt."}</span>
+          <span className="text-white/35">{hasSection ? (en ? `No script yet (${langLabel}).` : `Noch kein Sprechtext (${langLabel}).`) : en ? "Pick a section on the timeline below." : "Wähle unten auf der Timeline einen Abschnitt."}</span>
         )}
       </div>
       {handle}
@@ -1494,7 +1518,7 @@ function ScriptBox({
       data-karaoke
       data-script-box
       value={shown}
-      placeholder={`Sprechtext hier einfügen (${langLabel}) …`}
+      placeholder={en ? `Paste the script here (${langLabel}) …` : `Sprechtext hier einfügen (${langLabel}) …`}
       onFocus={() => {
         setDraft(text);
         setFocused(true);

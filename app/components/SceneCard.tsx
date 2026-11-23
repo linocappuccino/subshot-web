@@ -628,7 +628,7 @@ export function SceneCard({
                     close();
                   }}
                 >
-                  Bearbeiten
+                  {t("common.edit")}
                 </MenuItem>
                 <MenuItem
                   onClick={() => {
@@ -636,7 +636,7 @@ export function SceneCard({
                     close();
                   }}
                 >
-                  Tick off aufheben
+                  {t("sceneCard.untick")}
                 </MenuItem>
                 {onDuplicate && (
                   <MenuItem
@@ -645,7 +645,7 @@ export function SceneCard({
                       close();
                     }}
                   >
-                    Duplizieren
+                    {t("sceneCard.duplicate")}
                   </MenuItem>
                 )}
                 <MenuItem
@@ -655,7 +655,7 @@ export function SceneCard({
                     close();
                   }}
                 >
-                  Löschen
+                  {t("common.delete")}
                 </MenuItem>
               </>
             )}
@@ -817,7 +817,7 @@ export function SceneCard({
                   close();
                 }}
               >
-                Bearbeiten
+                {t("common.edit")}
               </MenuItem>
               {onDuplicate && (
                 <MenuItem
@@ -826,7 +826,7 @@ export function SceneCard({
                     close();
                   }}
                 >
-                  Duplizieren
+                  {t("sceneCard.duplicate")}
                 </MenuItem>
               )}
               <MenuItem
@@ -836,7 +836,7 @@ export function SceneCard({
                   close();
                 }}
               >
-                Löschen
+                {t("common.delete")}
               </MenuItem>
             </>
           )}
@@ -845,7 +845,7 @@ export function SceneCard({
 
       {pinnedImageUrl && (
         <div className="cursor-pointer mb-2 rounded-xl overflow-hidden" onClick={handleTileClick}>
-          <AuthImage path={pinnedImageUrl} alt={scene.name ?? "Szene"} className="w-full object-cover" lockAspectRatio />
+          <AuthImage path={pinnedImageUrl} alt={scene.name ?? t("ideaBoard.scene")} className="w-full object-cover" lockAspectRatio />
         </div>
       )}
 
@@ -934,7 +934,7 @@ export function SceneCard({
             onClick={() => setShotsOpen((v) => !v)}
             className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-white/40 hover:text-white/70 transition-colors w-full mb-1.5"
           >
-            Einstellungen
+            {t("sceneCard.shotsHeading")}
             <span className="ml-auto text-white/30 normal-case tracking-normal font-medium">{shots.length}</span>
             <span className="transition-transform duration-200 shrink-0" style={{ transform: shotsOpen ? "rotate(90deg)" : "rotate(0deg)" }}>
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
@@ -970,7 +970,7 @@ export function SceneCard({
               onChange={(e) => setGoodTakeText(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && saveGoodTake()}
               onBlur={saveGoodTake}
-              placeholder="Dateiname, z.B. A003_C012"
+              placeholder={t("sceneCard.goodTakePlaceholder")}
               className="bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-xs w-36 min-w-0 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             />
           ) : (

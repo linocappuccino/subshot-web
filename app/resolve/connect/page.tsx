@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/lib/useApi";
+import { useLanguage } from "@/lib/i18n";
 
 // 2026-10-13 — "Subshot × DaVinci Resolve": the Resolve tool shows a short code and opens this page;
 // one click connects that Resolve installation to the signed-in account (device-code flow, see
@@ -13,11 +14,12 @@ type Phase = "loading" | "ask" | "working" | "done" | "error";
 function Connect() {
   const api = useApi();
   const params = useSearchParams();
+  const en = useLanguage().language === "en";
   const raw = (params.get("code") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   const code = raw.length === 6 ? `${raw.slice(0, 3)}-${raw.slice(3)}` : raw;
   const [phase, setPhase] = useState<Phase>(raw ? "loading" : "error");
   const [label, setLabel] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(raw ? null : "Kein Code gefunden. Bitte in Resolve nochmals auf «Mit Subshot verbinden» klicken.");
+  const [message, setMessage] = useState<string | null>(raw ? null : en ? "No code found. Please click «Mit Subshot verbinden» in Resolve again." : "Kein Code gefunden. Bitte in Resolve nochmals auf «Mit Subshot verbinden» klicken.");
 
   useEffect(() => {
     if (!raw) return;
@@ -50,12 +52,12 @@ function Connect() {
         <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-[#ff453a] to-[#ff9f0a] text-3xl shadow-lg shadow-[#ff453a]/30">
           🎬
         </div>
-        <h1 className="text-xl font-semibold tracking-tight">DaVinci Resolve verbinden</h1>
+        <h1 className="text-xl font-semibold tracking-tight">{en ? "Connect DaVinci Resolve" : "DaVinci Resolve verbinden"}</h1>
         {phase === "loading" && <p className="mt-4 animate-pulse text-sm text-white/50">…</p>}
         {(phase === "ask" || phase === "working") && (
           <>
             <p className="mt-3 text-sm leading-relaxed text-white/60">
-              Stimmt dieser Code mit dem im Subshot-Fenster in Resolve überein?
+              {en ? "Does this code match the one in the Subshot window in Resolve?" : "Stimmt dieser Code mit dem im Subshot-Fenster in Resolve überein?"}
             </p>
             <p className="mt-5 font-mono text-3xl font-semibold tracking-[0.2em]">{code}</p>
             {label && <p className="mt-2 text-xs text-white/40">{label}</p>}
@@ -65,17 +67,19 @@ function Connect() {
               disabled={phase === "working"}
               className="mt-7 w-full rounded-full bg-white py-3 text-[15px] font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              {phase === "working" ? "Verbinde …" : "Ja, verbinden"}
+              {phase === "working" ? (en ? "Connecting …" : "Verbinde …") : en ? "Yes, connect" : "Ja, verbinden"}
             </button>
             <p className="mt-4 text-xs leading-relaxed text-white/35">
-              Resolve kann danach deine Shotlists, Take-Marker und das Kunden-Feedback lesen. Trennen geht jederzeit im Tool.
+              {en
+                ? "Resolve can then read your shot lists, take markers and client feedback. You can disconnect any time in the tool."
+                : "Resolve kann danach deine Shotlists, Take-Marker und das Kunden-Feedback lesen. Trennen geht jederzeit im Tool."}
             </p>
           </>
         )}
         {phase === "done" && (
           <>
             <p className="mt-4 text-4xl">✓</p>
-            <p className="mt-2 text-sm leading-relaxed text-white/70">Verbunden! Du kannst dieses Fenster schliessen und zurück zu Resolve wechseln.</p>
+            <p className="mt-2 text-sm leading-relaxed text-white/70">{en ? "Connected! You can close this window and switch back to Resolve." : "Verbunden! Du kannst dieses Fenster schliessen und zurück zu Resolve wechseln."}</p>
           </>
         )}
         {phase === "error" && <p className="mt-4 text-sm leading-relaxed text-[#ff6b61]">{message}</p>}

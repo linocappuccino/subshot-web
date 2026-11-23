@@ -26,7 +26,7 @@ export function LanguageDialog({ open, onClose }: { open: boolean; onClose: () =
     try {
       await api.patchMe({ language: lang });
     } catch (e) {
-      toast.showError(e instanceof ApiError ? e.message : "Sprache konnte nicht gespeichert werden.");
+      toast.showError(e instanceof ApiError ? e.message : t("language.saveFailed"));
     }
     onClose();
   }

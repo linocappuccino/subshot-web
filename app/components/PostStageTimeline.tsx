@@ -40,7 +40,7 @@ export function PostStageTimeline({
     // 'Working on'" — absolutely positioned above the current step; `pt-3` reserves that line
     // permanently (inside the scroll container's padding box, so it isn't clipped) so switching
     // stages never changes the header height. Not shown for "Abgenommen" (nothing in work).
-    <ol className="flex items-center gap-0 min-w-0 pt-3" aria-label="Stadium">
+    <ol className="flex items-center gap-0 min-w-0 pt-3" aria-label={t("postStage.ariaLabel")}>
       {POST_STAGES.map((s, i) => {
         const reached = i <= activeIndex;
         const current = i === activeIndex;
