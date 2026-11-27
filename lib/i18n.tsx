@@ -479,17 +479,17 @@ const translations = {
 
     // 2026-09-08 — Referenz-Video, ganz oben auf der Shotlist-Übersicht.
     // 2026-09-08, Lino: "der button soll heissen 'scribble Video
-    // hinzufügen'" — user-facing label only, internal key/DB naming stays
+    // hinzufügen'"; 2026-11-27, Lino: «heisst nicht Scribble-Video, das heisst Previs» — user-facing label only, internal key/DB naming stays
     // reference_video_* (see Section.reference_video_url in models.py).
-    "referenceVideo.upload": "Scribble Video hinzufügen",
+    "referenceVideo.upload": "Previs hinzufügen",
     "referenceVideo.replace": "Video ersetzen",
-    "referenceVideo.play": "Scribble Video abspielen",
+    "referenceVideo.play": "Previs abspielen",
     "referenceVideo.unsupportedType": "Nicht unterstützter Dateityp — nur MP4, MOV oder WebM.",
     "referenceVideo.uploadFailed": "Upload fehlgeschlagen.",
     "referenceVideo.deleteFailed": "Löschen fehlgeschlagen.",
     "referenceVideo.reorderFailed": "Reihenfolge konnte nicht gespeichert werden.",
-    "referenceVideo.deleteTitle": "Scribble Video löschen?",
-    "referenceVideo.deleteMessage": "Das Scribble Video wird endgültig entfernt.",
+    "referenceVideo.deleteTitle": "Previs löschen?",
+    "referenceVideo.deleteMessage": "Die Previs wird endgültig entfernt.",
     "referenceVideo.processing": "Video wird optimiert…",
     "referenceVideo.fullscreen": "Vollbild",
     "referenceVideo.exitFullscreen": "Vollbild verlassen",
@@ -2402,15 +2402,15 @@ const translations = {
     "scriptOverview.shotOrderTab": "Shot order",
     "shotOrderView.empty": "No shots in this shotlist yet.",
 
-    "referenceVideo.upload": "Add scribble video",
+    "referenceVideo.upload": "Add previs",
     "referenceVideo.replace": "Replace video",
-    "referenceVideo.play": "Play scribble video",
+    "referenceVideo.play": "Play previs",
     "referenceVideo.unsupportedType": "Unsupported file type — MP4, MOV, or WebM only.",
     "referenceVideo.uploadFailed": "Upload failed.",
     "referenceVideo.deleteFailed": "Delete failed.",
     "referenceVideo.reorderFailed": "Could not save the new order.",
-    "referenceVideo.deleteTitle": "Delete scribble video?",
-    "referenceVideo.deleteMessage": "The scribble video will be removed permanently.",
+    "referenceVideo.deleteTitle": "Delete previs?",
+    "referenceVideo.deleteMessage": "The previs will be removed permanently.",
     "referenceVideo.processing": "Optimizing video…",
     "referenceVideo.fullscreen": "Fullscreen",
     "referenceVideo.exitFullscreen": "Exit fullscreen",
