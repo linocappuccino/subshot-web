@@ -149,6 +149,39 @@ export function BoardScenesBar({
   const [naming, setNaming] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 2026-11-27, Lino: «warum ist unten bei der scene creation … ein horizontaler scrollbalken??» — the strip
+  // still scrolls (swipe, trackpad, mouse wheel), but without a scrollbar; a soft fade + arrow shows that
+  // more scenes are hidden on that side, nothing when everything fits
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  const measure = () => {
+    const s = stripRef.current;
+    if (!s) return;
+    const left = s.scrollLeft > 1;
+    const right = s.scrollLeft + s.clientWidth < s.scrollWidth - 1;
+    setMore((m) => (m.left === left && m.right === right ? m : { left, right }));
+  };
+  useEffect(() => {
+    const s = stripRef.current;
+    if (!s) return;
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(s);
+    if (s.firstElementChild) ro.observe(s.firstElementChild);
+    return () => ro.disconnect();
+  }, [views.length]);
+  // (the delete × used to stick out 6 px past the last scene → the strip always overflowed and showed a scrollbar)
+  // the active scene stays in sight
+  useEffect(() => {
+    const s = stripRef.current;
+    const el = activeId ? s?.querySelector<HTMLElement>(`[data-scene-id="${CSS.escape(activeId)}"]`) : null;
+    if (s && el) {
+      const l = el.offsetLeft - s.offsetLeft;
+      if (l < s.scrollLeft) s.scrollTo({ left: l, behavior: "smooth" });
+      else if (l + el.offsetWidth > s.scrollLeft + s.clientWidth) s.scrollTo({ left: l + el.offsetWidth - s.clientWidth, behavior: "smooth" });
+    }
+  }, [activeId]);
+  const page = (dir: 1 | -1) => stripRef.current?.scrollBy({ left: dir * Math.max(120, stripRef.current.clientWidth * 0.8), behavior: "smooth" });
   // the name is selected once when the field opens (typing replaces it)
   const open = naming !== null ? "new" : renaming?.id ?? null;
   useEffect(() => {
@@ -212,9 +245,20 @@ export function BoardScenesBar({
           </button>
         )}
         {views.length > 0 && (
-          <div className="flex items-end gap-1.5 overflow-x-auto overscroll-contain [scrollbar-width:thin]">
+          <div className="relative min-w-0">
+          <div
+            ref={stripRef}
+            data-scenes-strip
+            onScroll={measure}
+            onWheel={(e) => {
+              // a plain mouse wheel (vertical) scrolls the strip sideways; the board ignores wheels over its UI
+              const s = stripRef.current;
+              if (s && Math.abs(e.deltaY) > Math.abs(e.deltaX)) s.scrollLeft += e.deltaY;
+            }}
+            className="flex items-end gap-1.5 overflow-x-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
             {views.map((v) => (
-              <div key={v.id} className="group/scene relative shrink-0">
+              <div key={v.id} data-scene-id={v.id} className="group/scene relative shrink-0">
                 <button
                   title={t("ideaBoard.scenes.go")}
                   onClick={() => onGo(v)}
@@ -249,7 +293,7 @@ export function BoardScenesBar({
                   <button
                     title={t("ideaBoard.scenes.delete")}
                     onClick={() => onDelete(v.id)}
-                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white text-xs leading-none opacity-0 group-hover/scene:opacity-100 [@media(hover:none)]:opacity-70 hover:bg-red-600 transition-opacity"
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/80 border border-white/20 text-white text-xs leading-none opacity-0 group-hover/scene:opacity-100 [@media(hover:none)]:opacity-70 hover:bg-red-600 transition-opacity"
                     aria-label="×"
                   >
                     ×
@@ -257,6 +301,23 @@ export function BoardScenesBar({
                 )}
               </div>
             ))}
+          </div>
+          {(["left", "right"] as const).map((side) =>
+            more[side] ? (
+              <button
+                key={side}
+                data-scenes-more={side}
+                tabIndex={-1}
+                aria-label={side === "left" ? "‹" : "›"}
+                onClick={() => page(side === "left" ? -1 : 1)}
+                className={`absolute top-0 bottom-0 ${side === "left" ? "left-0 justify-start bg-gradient-to-r" : "right-0 justify-end bg-gradient-to-l"} w-9 flex items-center from-[#1c1c1e] via-[#1c1c1e]/80 to-transparent text-white/70 hover:text-white`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={side === "left" ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"} />
+                </svg>
+              </button>
+            ) : null,
+          )}
           </div>
         )}
       </div>
