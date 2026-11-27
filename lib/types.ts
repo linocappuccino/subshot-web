@@ -504,6 +504,8 @@ export interface Video {
   platform?: string | null;
   /** 2026-11-16 — all platform icons (several per video possible) */
   platforms?: string[];
+  /** 2026-11-27 — «Werbeanzeige»: paid placement (stricter TikTok safe zone in the QC) */
+  platform_ads?: boolean;
   /** 2026-08-06, Lino: "wer verantwortlich ist für das video: da soll
    * Editor stehen" — one Team member, nullable until picked. Resolved to a
    * display name/avatar client-side via the already-fetched `members` list
@@ -797,10 +799,33 @@ export interface FeedbackRounds {
 }
 
 /** 2026-10-12 — technical check of a video version (QC report), verdict per point */
+/** 2026-11-27 — a burned-in text / graphic outside a platform's safe zone (box + zone normalised 0..1) */
+export interface SafeZoneFinding {
+  t0: number;
+  t1: number;
+  kind: "text" | "graphic";
+  kind_label?: string;
+  box: [number, number, number, number];
+  preview_url?: string;
+}
+
+export interface VideoQcCheck {
+  key: string;
+  label: string;
+  value: string;
+  ok: boolean;
+  /** 2026-11-27 — «bitte prüfen» (orange), never red: the safe-zone check */
+  warn?: boolean;
+  zone?: string;
+  zone_rects?: { safe: [number, number, number, number]; column: [number, number, number, number] };
+  findings?: SafeZoneFinding[];
+}
+
 export interface VideoQc {
   status: "none" | "pending" | "done" | "error";
-  checks: { key: string; label: string; value: string; ok: boolean }[];
+  checks: VideoQcCheck[];
   failed: number;
+  warnings?: number;
   error?: string | null;
   measured_at?: string | null;
 }

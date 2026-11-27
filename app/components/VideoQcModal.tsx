@@ -4,7 +4,7 @@ import { Modal } from "./ui/Modal";
 import { Button } from "./ui/Button";
 import { useLanguage } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import type { VideoQc } from "@/lib/types";
+import type { SafeZoneFinding, VideoQc, VideoQcCheck } from "@/lib/types";
 
 // 2026-10-12, Lino: "Technischer Check beim Upload — grün oder rot pro Punkt". The server measures
 // every new version (ffprobe/ffmpeg, see backend app/video_qc.py); the verdict is computed for the
@@ -62,17 +62,23 @@ export function VideoQcModal({
         {status === "done" && qc && (
           <ul className="divide-y divide-white/8 rounded-xl border border-white/10 overflow-hidden">
             {qc.checks.map((c) => (
-              <li key={c.key} className="flex items-center gap-3 px-3 py-2.5 bg-white/[0.02]">
-                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", c.ok ? "bg-emerald-400" : "bg-red-500")} aria-label={c.ok ? "OK" : "!"} />
-                <span className="w-44 shrink-0 text-sm text-white/80">{c.label}</span>
-                <span className={cn("min-w-0 flex-1 text-sm tabular-nums", c.ok ? "text-white/55" : "text-red-300")}>{c.value}</span>
+              <li key={c.key} data-qc-check={c.key} className="px-3 py-2.5 bg-white/[0.02]">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cn("h-2.5 w-2.5 shrink-0 rounded-full", !c.ok ? "bg-red-500" : c.warn ? "bg-amber-400" : "bg-emerald-400")}
+                    aria-label={!c.ok ? "!" : c.warn ? "?" : "OK"}
+                  />
+                  <span className="w-44 shrink-0 text-sm text-white/80">{c.label}</span>
+                  <span className={cn("min-w-0 flex-1 text-sm tabular-nums", !c.ok ? "text-red-300" : c.warn ? "text-amber-300" : "text-white/55")}>{c.value}</span>
+                </div>
+                {c.warn && c.findings && c.findings.length > 0 && <SafeZoneFindings check={c} />}
               </li>
             ))}
           </ul>
         )}
         {status === "done" && qc && (
-          <p className={cn("text-sm font-medium", qc.failed ? "text-red-300" : "text-emerald-300")}>
-            {qc.failed ? t("videoQc.failedCount", { n: qc.failed }) : t("videoQc.allGood")}
+          <p className={cn("text-sm font-medium", qc.failed ? "text-red-300" : qc.warnings ? "text-amber-300" : "text-emerald-300")}>
+            {qc.failed ? t("videoQc.failedCount", { n: qc.failed }) : qc.warnings ? t("videoQc.safeZoneCheck") : t("videoQc.allGood")}
           </p>
         )}
         {onRerun && (
@@ -84,5 +90,55 @@ export function VideoQcModal({
         )}
       </div>
     </Modal>
+  );
+}
+
+/** 2026-11-27, Lino: Safe-Zone-Check — every spot outside the zone as a small 9:16 picture: the frame, the blocked
+ *  area of the platform (top / bottom / sides / icon column) shaded, the found text or graphic framed in orange */
+function SafeZoneFindings({ check }: { check: VideoQcCheck }) {
+  const { t } = useLanguage();
+  const list = check.findings ?? [];
+  const shown = list.slice(0, 12);
+  return (
+    <div data-safe-zone-findings className="mt-2.5 ml-[22px]">
+      <div className="flex flex-wrap gap-2">
+        {shown.map((f, i) => (
+          <SafeZoneThumb key={i} f={f} rects={check.zone_rects} />
+        ))}
+      </div>
+      {list.length > shown.length && <p className="mt-1.5 text-xs text-white/45">{t("videoQc.safeZoneMore", { n: list.length - shown.length })}</p>}
+    </div>
+  );
+}
+
+function fmt(s: number) {
+  const m = Math.floor(s / 60);
+  return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`;
+}
+
+function SafeZoneThumb({ f, rects }: { f: SafeZoneFinding; rects?: VideoQcCheck["zone_rects"] }) {
+  const [x, y, w, h] = f.box;
+  const W = 90;
+  const H = 160;
+  return (
+    <figure data-safe-zone-finding className="w-[90px]">
+      <div className="relative overflow-hidden rounded-md bg-black/60" style={{ width: W, height: H }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- presigned R2 preview */}
+        {f.preview_url && <img src={f.preview_url} alt="" className="absolute inset-0 h-full w-full object-cover" loading="lazy" />}
+        <svg viewBox="0 0 1 1" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
+          {rects && (
+            <path
+              fillRule="evenodd"
+              fill="rgba(245,158,11,0.28)"
+              d={`M0 0H1V1H0Z M${rects.safe[0]} ${rects.safe[1]}H${rects.safe[2]}V${rects.column[1]}H${rects.column[0]}V${rects.safe[3]}H${rects.safe[0]}Z`}
+            />
+          )}
+          <rect x={x} y={y} width={w} height={h} fill="none" stroke="#f59e0b" strokeWidth={0.012} vectorEffect="non-scaling-stroke" style={{ strokeWidth: 2 }} />
+        </svg>
+      </div>
+      <figcaption className="mt-1 text-[10.5px] leading-tight text-white/60 tabular-nums">
+        {f.kind_label ?? f.kind} · {fmt(f.t0)}–{fmt(f.t1)}
+      </figcaption>
+    </figure>
   );
 }

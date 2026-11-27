@@ -911,6 +911,17 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
     }
   }
 
+  // 2026-11-27 — «Werbeanzeige»: the QC (safe zone) is computed when shown, so the badge updates after a reload of the QC
+  async function updateVideoPlatformAds(sectionId: string, video: Video, ads: boolean) {
+    updateVideo(sectionId, { ...video, platform_ads: ads });
+    try {
+      updateVideo(sectionId, await api.patchVideo(video.id, { platform_ads: ads }));
+      api.videoQc(id, qcTarget).then(setQc).catch(() => {});
+    } catch (e) {
+      toast.showError(e instanceof ApiError ? e.message : t("postproduction.saveFailed"));
+    }
+  }
+
   async function bulkUpdate(body: { editor_id?: string | null; status?: string; platforms?: string[]; platforms_mode?: "add" | "replace" }, what: string) {
     try {
       const r = await api.bulkUpdateVideos(id, { video_ids: [...picked], ...body });
@@ -1491,6 +1502,7 @@ export default function PostproductionPage({ params }: { params: Promise<{ id: s
                   members={members}
                   onChangeAssignee={(userId) => updateVideoAssignee(section.id, video, userId)}
                   onChangePlatform={canEditStatus ? (p) => updateVideoPlatform(section.id, video, p) : undefined}
+                  onChangePlatformAds={canEditStatus ? (ads) => updateVideoPlatformAds(section.id, video, ads) : undefined}
                   extrasBadge={(() => {
                     const x = extrasOf(video.id);
                     return { done: x.deliverables.filter((d) => d.status === "ready").length, total: x.deliverables.length, licenses: x.licenses.length };

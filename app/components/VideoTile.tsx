@@ -118,7 +118,7 @@ export function useVideoGridCols(landscape: boolean): [React.RefCallback<HTMLDiv
 
 export function VideoTile({
   video, status, deadline, canEditStatus, canEditDeadline, onOpen, onChangeStatus, onChangeDeadline, onUploadVersion, onRename,
-  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, onReprocess, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds, onCopyLink,
+  showDeadlineLabel, uploadFraction, members, onChangeAssignee, onChangePlatform, onChangePlatformAds, onReprocess, sortable, extrasBadge, onOpenExtras, fassungen, qcBadge, onOpenQc, roundsBadge, onOpenRounds, onCopyLink,
   languageBadge, selectBox, dragVideoIds, onDropRejected, fill,
 }: {
   /** 2026-11-14, Lino: inside the even grid (VIDEO_GRID) — the tile fills its cell(s), height from the format */
@@ -150,6 +150,8 @@ export function VideoTile({
   onChangeAssignee?: (userId: string | null) => void;
   /** 2026-11-16, Lino — platform icons (stacked, top right below QC); undefined = read-only (share view) */
   onChangePlatform?: (platforms: string[]) => void;
+  /** 2026-11-27 — «Werbeanzeige» (paid): the stricter TikTok safe zone in the QC */
+  onChangePlatformAds?: (ads: boolean) => void;
   /** 2026-11-16 — «Erneut versuchen» when processing failed or hangs (team only) */
   onReprocess?: () => Promise<void> | void;
   /** Undefined = kein 3-Punkte-Menü (nur canEditStatus-Nutzer). */
@@ -161,7 +163,7 @@ export function VideoTile({
   /** 2026-10-12 — the Fassungen as chips right on the tile (internal pages only) */
   fassungen?: { extras: VideoExtras; onChange: (update: (x: VideoExtras) => VideoExtras) => void };
   /** 2026-10-12 — technical check of the newest version (internal only) */
-  qcBadge?: { status: "none" | "pending" | "done" | "error"; failed: number } | null;
+  qcBadge?: { status: "none" | "pending" | "done" | "error"; failed: number; warnings?: number } | null;
   onOpenQc?: () => void;
   /** 2026-10-12 — feedback rounds "Runde 2/3" (internal pages ONLY — never pass this on client pages) */
   roundsBadge?: { used: number; limit: number | null } | null;
@@ -583,7 +585,7 @@ export function VideoTile({
               }}
               title={t("videoQc.menu")}
               className={`text-[11px] rounded-full px-2 py-0.5 tabular-nums transition-colors ${
-                qcBadge.status === "done" && !qcBadge.failed
+                qcBadge.status === "done" && !qcBadge.failed && !qcBadge.warnings
                   ? "bg-emerald-500/85 text-[#0f1f17] hover:bg-emerald-400"
                   : qcBadge.status === "done" || qcBadge.status === "error"
                     ? "bg-amber-400/90 text-[#241a00] hover:bg-amber-300"
@@ -593,7 +595,9 @@ export function VideoTile({
               {qcBadge.status === "done"
                 ? qcBadge.failed
                   ? t("videoQc.badgeFail", { n: qcBadge.failed })
-                  : t("videoQc.badgeOk")
+                  : qcBadge.warnings
+                    ? t("videoQc.badgeCheck")
+                    : t("videoQc.badgeOk")
                 : qcBadge.status === "error"
                   ? t("videoQc.badgeFail", { n: "!" })
                   : t("videoQc.badgePending")}
@@ -644,6 +648,15 @@ export function VideoTile({
                         </span>
                       </MenuItem>
                     ))}
+                    {/* 2026-11-27, Lino: TikTok organisch / beworben have different safe zones */}
+                    {plats.includes("tiktok") && onChangePlatformAds && (
+                      <MenuItem onClick={() => onChangePlatformAds(!video.platform_ads)}>
+                        <span data-platform-ads className="flex w-full items-center gap-2">
+                          <span className="h-4 w-4 text-center text-[13px] leading-4">€</span>{t("videoTile.platformAds")}
+                          <span className={`ml-auto pl-4 ${video.platform_ads ? "text-white" : "text-transparent"}`}>✓</span>
+                        </span>
+                      </MenuItem>
+                    )}
                     {plats.length > 0 && (
                       <MenuItem onClick={() => setPlats([])}>{t("videoTile.platformNone")}</MenuItem>
                     )}

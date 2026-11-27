@@ -778,7 +778,7 @@ export function createApiClient(getToken: () => Promise<string | null>, userId?:
     // assignee_id: undefined = don't touch it, null = explicitly unassign
     // (clear_assignee), a string = assign to that member — same "unset vs
     // explicit clear" idiom as patchFolder's parent_folder_id above.
-    patchVideo: (id: string, body: Partial<{ title: string; sort_order: number; watermark_enabled: boolean; assignee_id: string | null; platform: string; platforms: string[] }>) => {
+    patchVideo: (id: string, body: Partial<{ title: string; sort_order: number; watermark_enabled: boolean; assignee_id: string | null; platform: string; platforms: string[]; platform_ads: boolean }>) => {
       const { assignee_id, ...rest } = body;
       return request<Video>(`videos/${id}`, {
         method: "PATCH",
